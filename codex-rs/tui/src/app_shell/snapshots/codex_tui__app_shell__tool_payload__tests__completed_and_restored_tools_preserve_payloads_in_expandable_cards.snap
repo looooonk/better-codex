@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/tool_payload_tests.rs
+assertion_line: 47
+expression: rendered
+---
+▌ tool mcp files/read
+  ▌ output ... 3 earlier output lines
+  ▌        {
+  ▌          "count": 3
+  ▌        }
+▌ tool tool create: ok
+  ▌ output Created a preview.
+  ▌        Image: [inline image/png attachment]
+  ▌        Audio: https://example.com/audio.wav
+▌ tool functions/lookup
+  ▌ output Tool result.
+  ▌        Image file: file-image-123
+▌ tool image generation: /workspace/garden.png
+  ▌ output A quiet garden.
+  ▌        Saved to: file:///workspace/garden.png
+  ▌        Transparent background
+▌ tool image generation
+  ▌ output Image generation usage limit reached: image-generation
+  ▌        Limit resets at 1791046800 (Unix time)
+▌ tool web search: native features
+  ▌ output ... 2 earlier output lines
+  ▌          "url": "https://example.com/release",
+  ▌          "snippet": "New capabilities."
+  ▌        }

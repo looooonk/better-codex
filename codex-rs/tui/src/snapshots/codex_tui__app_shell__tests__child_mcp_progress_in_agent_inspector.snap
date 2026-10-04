@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
+assertion_line: 9358
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
@@ -10,9 +11,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
  ▌ tool agent SpawnAgent                          │▎Agents 1  ● 1 active
                                                   │▎› ● running  agent-thread
  ▎ CODEX  The new shell owns the fullscreen       │▎Inspector  agent-thread  ● running
-          surface.                                │▎Path  agent-thread
+          surface.                                │▎Model  gpt-5-codex
+                                                  │▎Reasoning  high
+                                                  │▎Path  agent-thread
                                                   │▎Task  Inspect dashboard activity.
-                                                  │▎Runtime  gpt-5-codex · high reasoning
                                                   │▎Latest  Review complete.
                                                   │▎Recent
                                                   │▎  • mcp progress: indexed 42 files
@@ -20,7 +22,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │▎  • reasoning: checking constraints
                                                   │▎  • message completed: Review complete.
                                                   │▎Enter full log · j/k select · Esc release
-                                                  │
                                                   │
                                                   │
                                                   │

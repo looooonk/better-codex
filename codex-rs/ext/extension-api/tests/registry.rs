@@ -3,23 +3,22 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use codex_extension_api::ApprovalReviewAction;
-use codex_extension_api::ApprovalReviewBinding;
-use codex_extension_api::ApprovalReviewCancellation;
 use codex_extension_api::ApprovalReviewContributor;
-use codex_extension_api::ApprovalReviewFailure;
-use codex_extension_api::ApprovalReviewInput;
-use codex_extension_api::ApprovalReviewOutcome;
-use codex_extension_api::ApprovalReviewResult;
 use codex_extension_api::ConfigContributor;
+use codex_extension_api::ContentItemKind;
 use codex_extension_api::ContextContributor;
 use codex_extension_api::ContextualUserFragment;
+use codex_extension_api::ConversationHistorySnapshot;
 use codex_extension_api::ExtensionData;
+use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ExtensionEventSink;
 use codex_extension_api::ExtensionFuture;
+use codex_extension_api::ExtensionMetrics;
 use codex_extension_api::ExtensionRegistryBuilder;
+use codex_extension_api::ExtensionWarning;
+use codex_extension_api::McpServerContributionContext;
 use codex_extension_api::PromptFragment;
-use codex_extension_api::PromptSlot;
+use codex_extension_api::ResponseItem;
 use codex_extension_api::SkillInvocationContributor;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::TokenUsageContributor;
@@ -32,51 +31,40 @@ use codex_extension_api::TurnInputContext;
 use codex_extension_api::TurnInputContributor;
 use codex_extension_api::TurnItemContributor;
 use codex_extension_api::TurnLifecycleContributor;
-use codex_extension_api::empty_extension_registry;
 use codex_protocol::items::HookPromptItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::GuardianRiskLevel;
-use codex_protocol::protocol::GuardianUserAuthorization;
+use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::WarningEvent;
 use pretty_assertions::assert_eq;
 
-struct TestPromptFragment {
-    role: &'static str,
-    text: &'static str,
-}
-
-impl ContextualUserFragment for TestPromptFragment {
-    fn role(&self) -> &'static str {
-        self.role
-    }
-
-    fn markers(&self) -> (&'static str, &'static str) {
-        Self::type_markers()
-    }
-
-    fn body(&self) -> String {
-        self.text.to_string()
-    }
-
-    fn type_markers() -> (&'static str, &'static str) {
-        ("", "")
-    }
-}
-
-fn developer_fragment(text: &'static str) -> TestPromptFragment {
-    TestPromptFragment {
-        role: "developer",
-        text,
-    }
-}
-
-fn user_fragment(text: &'static str) -> TestPromptFragment {
-    TestPromptFragment { role: "user", text }
-}
-
 struct AllContributors;
+
+#[test]
+fn mcp_contribution_context_identifies_the_running_thread() {
+    let config = ();
+    let thread_init = ExtensionDataInit::new();
+    let thread_store = ExtensionData::new("child-thread");
+    let session_source = SessionSource::SubAgent(SubAgentSource::Review);
+
+    let thread_context = McpServerContributionContext::for_step(
+        &config,
+        &thread_init,
+        &thread_store,
+        "codex_work_cca",
+        &[],
+        /*executor_capability_discovery*/ None,
+    )
+    .with_session_source(&session_source);
+
+    assert_eq!(thread_context.session_source(), Some(&session_source));
+    assert_eq!(
+        McpServerContributionContext::global(&config).session_source(),
+        None
+    );
+}
 
 impl ContextContributor for AllContributors {
     fn contribute_thread_context<'a>(
@@ -98,10 +86,37 @@ impl TokenUsageContributor for AllContributors {}
 
 impl SkillInvocationContributor for AllContributors {}
 
+struct ExecutorOnlySkillContributor;
+
+impl SkillInvocationContributor for ExecutorOnlySkillContributor {
+    fn requires_host_skill_discovery(&self) -> bool {
+        false
+    }
+}
+
+#[test]
+fn host_skill_discovery_preserves_legacy_and_host_contributor_behavior() {
+    assert!(
+        ExtensionRegistryBuilder::<()>::new()
+            .build()
+            .requires_host_skill_discovery()
+    );
+
+    let mut executor_only = ExtensionRegistryBuilder::<()>::new();
+    executor_only.skill_invocation_contributor(Arc::new(ExecutorOnlySkillContributor));
+    assert!(!executor_only.build().requires_host_skill_discovery());
+
+    let mut mixed = ExtensionRegistryBuilder::<()>::new();
+    mixed.skill_invocation_contributor(Arc::new(ExecutorOnlySkillContributor));
+    mixed.skill_invocation_contributor(Arc::new(AllContributors));
+    assert!(mixed.build().requires_host_skill_discovery());
+}
+
 impl TurnInputContributor for AllContributors {
     fn contribute<'a>(
         &'a self,
-        input: TurnInputContext,
+        input: TurnInputContext<'a>,
+        _extension_metrics: Option<Arc<dyn ExtensionMetrics>>,
         _session_store: &'a ExtensionData,
         _thread_store: &'a ExtensionData,
         _turn_store: &'a ExtensionData,
@@ -119,7 +134,7 @@ impl ToolContributor for AllContributors {
         &self,
         _session_store: &ExtensionData,
         _thread_store: &ExtensionData,
-    ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
+    ) -> Vec<Arc<dyn for<'call> ToolExecutor<ToolCall<'call>>>> {
         Vec::new()
     }
 }
@@ -141,63 +156,22 @@ impl TurnItemContributor for AllContributors {
 }
 
 impl ApprovalReviewContributor for AllContributors {
-    fn review<'a>(
+    fn decide<'a>(
         &'a self,
-        _session_store: &'a ExtensionData,
-        _thread_store: &'a ExtensionData,
-        _input: ApprovalReviewInput,
-    ) -> ExtensionFuture<'a, ApprovalReviewResult> {
-        Box::pin(async move {
-            let _self = self;
-            ApprovalReviewResult::Allow(review_outcome())
-        })
+        _input: &'a codex_extension_api::ApprovalDecisionInput<'_>,
+    ) -> ExtensionFuture<'a, Option<codex_extension_api::ApprovalDecision>> {
+        Box::pin(async { Some(codex_extension_api::ApprovalDecision::AskUser) })
     }
 }
 
-struct TestCancellation;
-
-impl ApprovalReviewCancellation for TestCancellation {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
-
-    fn cancelled(&self) -> ExtensionFuture<'_, ()> {
-        Box::pin(std::future::pending())
-    }
-}
-
-fn review_outcome() -> ApprovalReviewOutcome {
-    ApprovalReviewOutcome {
-        risk_level: GuardianRiskLevel::Low,
-        user_authorization: GuardianUserAuthorization::High,
-        rationale: "allowed".to_string(),
-    }
-}
-
-fn review_input() -> ApprovalReviewInput {
-    let cwd = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
-        std::env::current_dir().expect("current directory"),
-    )
-    .expect("current directory should be absolute");
-    ApprovalReviewInput {
-        binding: ApprovalReviewBinding {
-            thread_id: "thread".to_string(),
-            turn_id: "turn".to_string(),
-            action_id: "action".to_string(),
-            attempt_id: "attempt".to_string(),
-            source: codex_extension_api::ToolCallSource::Direct,
-            evidence_revision: 0,
-        },
-        action: ApprovalReviewAction::ApplyPatch {
-            cwd,
-            files: Vec::new(),
-            patch: String::new(),
-        },
-        history: Vec::new(),
-        evidence: Vec::new(),
-        images: Vec::new(),
-        deadline: std::time::Instant::now() + std::time::Duration::from_secs(1),
-        cancellation: Arc::new(TestCancellation),
+impl codex_extension_api::SynchronousApprovalReviewer for AllContributors {
+    fn review(
+        &self,
+        _reason: codex_protocol::approvals::GuardianReviewReason,
+    ) -> ExtensionFuture<'_, Option<codex_protocol::protocol::ReviewDecision>> {
+        Box::pin(std::future::ready(Some(
+            codex_protocol::protocol::ReviewDecision::Approved,
+        )))
     }
 }
 
@@ -228,16 +202,41 @@ async fn build_round_trips_every_contributor_category() {
     assert_eq!(registry.tool_contributors().len(), 1);
     assert_eq!(registry.tool_lifecycle_contributors().len(), 1);
     assert_eq!(registry.turn_item_contributors().len(), 1);
+    let thread_store = ExtensionData::new("thread");
+    let input = codex_extension_api::ApprovalDecisionInput {
+        permissions: Some(&Default::default()),
+        approval_id: "approval-1",
+        tool_call_id: None,
+        action: &serde_json::Value::Null,
+        thread_id: codex_protocol::ThreadId::new(),
+        thread_store: &thread_store,
+        category: codex_protocol::openai_models::GuardianScope::Shell,
+        approval_policy: codex_protocol::protocol::AskForApproval::OnRequest,
+        approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::AutoReview,
+        require_guardian: false,
+        require_fresh_review: false,
+        full_access: false,
+        metrics: None,
+        synchronous_reviewer: &AllContributors,
+    };
     assert_eq!(
-        registry
-            .approval_review(
-                &ExtensionData::new("session"),
-                &ExtensionData::new("thread"),
-                review_input(),
-            )
-            .await,
-        ApprovalReviewResult::Allow(review_outcome())
+        registry.decide_approval(&input).await,
+        Some(codex_extension_api::ApprovalDecision::AskUser)
     );
+}
+
+impl ConversationHistorySnapshot for AllContributors {
+    fn history_version(&self) -> u64 {
+        0
+    }
+
+    fn user_message_revision(&self) -> u64 {
+        0
+    }
+
+    fn items(&self) -> Box<dyn Iterator<Item = &ResponseItem> + Send + '_> {
+        Box::new(std::iter::empty())
+    }
 }
 
 struct NamedContextContributor(&'static str);
@@ -249,7 +248,8 @@ impl ContextContributor for NamedContextContributor {
         _thread_store: &'a ExtensionData,
     ) -> ExtensionFuture<'a, Vec<PromptFragment>> {
         Box::pin(std::future::ready(vec![PromptFragment::developer_policy(
-            developer_fragment(self.0),
+            self.0,
+            ContentItemKind("test.thread_context".to_string()),
         )]))
     }
 }
@@ -261,10 +261,12 @@ impl ContextContributor for NamedTurnContextContributor {
         &'a self,
         _input: TurnContextContributionInput<'a>,
     ) -> ExtensionFuture<'a, Vec<PromptFragment>> {
-        Box::pin(std::future::ready(vec![PromptFragment::new(
-            PromptSlot::ContextualUser,
-            user_fragment(self.0),
-        )]))
+        Box::pin(std::future::ready(vec![
+            PromptFragment::developer_capability(
+                self.0,
+                ContentItemKind("test.turn_context".to_string()),
+            ),
+        ]))
     }
 }
 
@@ -343,15 +345,24 @@ async fn contributors_preserve_registration_order() {
     }
 
     assert_eq!(
-        fragments
-            .iter()
-            .map(|fragment| (fragment.slot(), fragment.render()))
-            .collect::<Vec<_>>(),
+        fragments,
         vec![
-            (PromptSlot::DeveloperPolicy, "first".to_string()),
-            (PromptSlot::DeveloperPolicy, "second".to_string()),
-            (PromptSlot::ContextualUser, "turn-first".to_string()),
-            (PromptSlot::ContextualUser, "turn-second".to_string()),
+            PromptFragment::developer_policy(
+                "first",
+                ContentItemKind("test.thread_context".to_string()),
+            ),
+            PromptFragment::developer_policy(
+                "second",
+                ContentItemKind("test.thread_context".to_string()),
+            ),
+            PromptFragment::developer_capability(
+                "turn-first",
+                ContentItemKind("test.turn_context".to_string()),
+            ),
+            PromptFragment::developer_capability(
+                "turn-second",
+                ContentItemKind("test.turn_context".to_string()),
+            ),
         ]
     );
     assert_eq!(
@@ -361,70 +372,6 @@ async fn contributors_preserve_registration_order() {
             .as_slice(),
         ["first", "second"]
     );
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct ApprovalCall {
-    contributor: &'static str,
-    session_id: String,
-    thread_id: String,
-    action_id: String,
-}
-
-struct RecordingApprovalContributor {
-    name: &'static str,
-    decision: ApprovalReviewResult,
-    calls: Arc<Mutex<Vec<ApprovalCall>>>,
-}
-
-impl ApprovalReviewContributor for RecordingApprovalContributor {
-    fn review<'a>(
-        &'a self,
-        session_store: &'a ExtensionData,
-        thread_store: &'a ExtensionData,
-        input: ApprovalReviewInput,
-    ) -> ExtensionFuture<'a, ApprovalReviewResult> {
-        Box::pin(async move {
-            self.calls
-                .lock()
-                .expect("approval calls lock should not be poisoned")
-                .push(ApprovalCall {
-                    contributor: self.name,
-                    session_id: session_store.level_id().to_string(),
-                    thread_id: thread_store.level_id().to_string(),
-                    action_id: input.binding.action_id,
-                });
-            self.decision.clone()
-        })
-    }
-}
-
-#[tokio::test]
-async fn approval_review_requires_exactly_one_authority() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let mut builder = ExtensionRegistryBuilder::<()>::new();
-    for name in ["first", "second"] {
-        builder.approval_review_contributor(Arc::new(RecordingApprovalContributor {
-            name,
-            decision: ApprovalReviewResult::Allow(review_outcome()),
-            calls: Arc::clone(&calls),
-        }));
-    }
-    let registry = builder.build();
-
-    let decision = registry
-        .approval_review(
-            &ExtensionData::new("session-1"),
-            &ExtensionData::new("thread-1"),
-            review_input(),
-        )
-        .await;
-
-    assert_eq!(
-        decision,
-        ApprovalReviewResult::ManualReview(ApprovalReviewFailure::MultipleAuthorities)
-    );
-    assert!(calls.lock().expect("approval calls lock").is_empty());
 }
 
 #[derive(Default)]
@@ -442,6 +389,13 @@ impl ExtensionEventSink for RecordingEventSink {
             .expect("recording event sink lock should not be poisoned")
             .push((event.id, warning.message));
     }
+
+    fn emit_warning(&self, warning: ExtensionWarning) {
+        self.events
+            .lock()
+            .expect("recording event sink lock should not be poisoned")
+            .push((warning.thread_id, warning.message));
+    }
 }
 
 #[test]
@@ -456,6 +410,11 @@ fn custom_event_sink_survives_registry_build() {
     registry
         .event_sink()
         .emit(warning_event("registry", "after"));
+    registry.event_sink().emit_warning(ExtensionWarning {
+        thread_id: "thread".to_string(),
+        turn_id: Some("turn".to_string()),
+        message: "warning".to_string(),
+    });
 
     assert_eq!(
         sink.events
@@ -465,23 +424,8 @@ fn custom_event_sink_survives_registry_build() {
         [
             ("builder".to_string(), "before".to_string()),
             ("registry".to_string(), "after".to_string()),
+            ("thread".to_string(), "warning".to_string()),
         ]
-    );
-}
-
-#[tokio::test]
-async fn empty_registry_requires_manual_approval_review() {
-    let registry = empty_extension_registry::<()>();
-
-    assert_eq!(
-        registry
-            .approval_review(
-                &ExtensionData::new("session"),
-                &ExtensionData::new("thread"),
-                review_input(),
-            )
-            .await,
-        ApprovalReviewResult::ManualReview(ApprovalReviewFailure::NotInstalled)
     );
 }
 

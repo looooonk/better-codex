@@ -15,7 +15,6 @@ use image::ImageDecoder;
 use image::ImageEncoder;
 use image::ImageFormat;
 use image::ImageReader;
-use image::Limits;
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::PngEncoder;
 use image::codecs::webp::WebPEncoder;
@@ -31,8 +30,6 @@ pub const MAX_DIMENSION: u32 = 2048;
 /// requirement or target upload size.
 pub const MAX_PROMPT_IMAGE_INPUT_BYTES: usize = 1024 * 1024 * 1024;
 const MAX_IMAGE_CACHE_BYTES: usize = 64 * 1024 * 1024;
-const MAX_LIMITED_IMAGE_SOURCE_DIMENSION: u32 = 32 * 1024;
-const MAX_LIMITED_IMAGE_DECODE_BYTES: u64 = 256 * 1024 * 1024;
 
 pub mod error;
 
@@ -42,6 +39,8 @@ pub use crate::error::ImageProcessingError;
 pub struct EncodedImage {
     pub bytes: Arc<[u8]>,
     pub mime: String,
+    pub source_width: u32,
+    pub source_height: u32,
     pub width: u32,
     pub height: u32,
 }
@@ -69,6 +68,19 @@ pub enum PromptImageMode {
 pub struct PromptImageResizeLimits {
     pub max_dimension: u32,
     pub max_patches: usize,
+}
+
+impl PromptImageMode {
+    /// Resize policy for high-detail prompt images.
+    pub const HIGH_DETAIL: Self = Self::ResizeWithLimits(PromptImageResizeLimits {
+        max_dimension: 2048,
+        max_patches: 2_500,
+    });
+    /// Resize policy for original-detail prompt images.
+    pub const ORIGINAL_DETAIL: Self = Self::ResizeWithLimits(PromptImageResizeLimits {
+        max_dimension: 6000,
+        max_patches: 10_000,
+    });
 }
 
 struct ImageMetadata {
@@ -125,22 +137,8 @@ fn load_for_prompt_bytes_uncached(
             _ => None,
         };
 
-        let mut limits = Limits::default();
-        if matches!(mode, PromptImageMode::ResizeWithLimits(_)) {
-            limits.max_image_width = Some(MAX_LIMITED_IMAGE_SOURCE_DIMENSION);
-            limits.max_image_height = Some(MAX_LIMITED_IMAGE_SOURCE_DIMENSION);
-            limits.max_alloc = Some(MAX_LIMITED_IMAGE_DECODE_BYTES);
-        }
-        let mut reader = ImageReader::with_format(Cursor::new(&file_bytes), guessed_format);
-        reader.limits(limits.clone());
-        let mut decoder = reader
+        let mut decoder = ImageReader::with_format(Cursor::new(&file_bytes), guessed_format)
             .into_decoder()
-            .map_err(|source| ImageProcessingError::decode_error(&path_buf, source))?;
-        limits
-            .reserve(decoder.total_bytes())
-            .map_err(|source| ImageProcessingError::decode_error(&path_buf, source))?;
-        decoder
-            .set_limits(limits)
             .map_err(|source| ImageProcessingError::decode_error(&path_buf, source))?;
         // Preserve the metadata most important for rendering prompt images faithfully: the color
         // profile and EXIF data, including orientation. Other format-specific metadata is
@@ -180,7 +178,7 @@ fn load_for_prompt_bytes_uncached(
             PromptImageMode::ResizeToFit | PromptImageMode::Original => None,
         };
 
-        let encoded = if let Some((width, height, resized)) = target_dimensions {
+        let encoded = if let Some((prepared_width, prepared_height, resized)) = target_dimensions {
             let target_format = format
                 .filter(|format| can_preserve_source_bytes(*format))
                 .unwrap_or(ImageFormat::Png);
@@ -189,8 +187,10 @@ fn load_for_prompt_bytes_uncached(
             EncodedImage {
                 bytes: bytes.into(),
                 mime,
-                width,
-                height,
+                source_width: width,
+                source_height: height,
+                width: prepared_width,
+                height: prepared_height,
             }
         } else {
             if let Some(format) = format.filter(|format| can_preserve_source_bytes(*format)) {
@@ -198,6 +198,8 @@ fn load_for_prompt_bytes_uncached(
                 EncodedImage {
                     bytes: file_bytes.into(),
                     mime,
+                    source_width: width,
+                    source_height: height,
                     width,
                     height,
                 }
@@ -207,6 +209,8 @@ fn load_for_prompt_bytes_uncached(
                 EncodedImage {
                     bytes: bytes.into(),
                     mime,
+                    source_width: width,
+                    source_height: height,
                     width,
                     height,
                 }
@@ -244,7 +248,7 @@ pub fn load_data_url_for_prompt(
     load_data_url_for_prompt_with(image_url, mode, load_for_prompt_bytes)
 }
 
-fn load_data_url_for_prompt_uncached(
+pub fn load_data_url_for_prompt_uncached(
     image_url: &str,
     mode: PromptImageMode,
 ) -> Result<EncodedImage, ImageProcessingError> {
@@ -299,38 +303,6 @@ fn load_data_url_for_prompt_with(
     }
 
     load(Path::new("<data-url-image>"), file_bytes, mode)
-}
-
-/// Decodes and re-encodes a prompt image without retaining source metadata.
-pub fn load_sanitized_data_url_for_prompt(
-    image_url: &str,
-    mode: PromptImageMode,
-) -> Result<EncodedImage, ImageProcessingError> {
-    let prepared = load_data_url_for_prompt_uncached(image_url, mode)?;
-    let path = Path::new("<sanitized-data-url-image>");
-    let format = image::guess_format(&prepared.bytes)
-        .map_err(|source| ImageProcessingError::decode_error(path, source))?;
-    let image = image::load_from_memory_with_format(&prepared.bytes, format)
-        .map_err(|source| ImageProcessingError::decode_error(path, source))?;
-    let preferred_format = match format {
-        ImageFormat::Jpeg => ImageFormat::Jpeg,
-        ImageFormat::WebP => ImageFormat::WebP,
-        _ => ImageFormat::Png,
-    };
-    let (bytes, output_format) = encode_image(
-        &image,
-        preferred_format,
-        ImageMetadata {
-            icc_profile: None,
-            exif: None,
-        },
-    )?;
-    Ok(EncodedImage {
-        bytes: bytes.into(),
-        mime: format_to_mime(output_format),
-        width: image.width(),
-        height: image.height(),
-    })
 }
 
 fn prompt_image_output_dimensions_for_limits(

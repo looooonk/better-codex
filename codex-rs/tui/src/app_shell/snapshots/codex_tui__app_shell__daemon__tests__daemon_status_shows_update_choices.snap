@@ -1,0 +1,27 @@
+---
+source: tui/src/app_shell/daemon_tests.rs
+assertion_line: 74
+expression: "lines.join(\"\\n\")"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+         2. Wire transcript                                                                       │
+         3. Render dashboard                                                                      │
+                                                                                                  │
+ ▌ tool exec just test -p codex-tui                                                               ┃
+                                                                                                  ┃
+ ▌ edited 3 files +128 -24                                                                        ┃
+ ▎ SYSTEM  Connected to the local background server. Use /daemon update latest to install the     ┃
+           latest Better Codex release, or /daemon update from-cli to use this CLI. Updating      ┃
+           closes this interface and restarts the server.                                         ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

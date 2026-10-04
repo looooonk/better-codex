@@ -3,9 +3,10 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
-use super::transcript_view::render_transcript_line;
+use super::transcript_view::render_transcript_line_with_visualizations;
+use crate::app_theme::TuiAppTheme;
+use crate::inline_visualization::InlineVisualizationContext;
 use crate::terminal_hyperlinks::HyperlinkLine;
-use codex_config::types::TuiAppTheme;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::Path;
@@ -27,6 +28,7 @@ const MAX_LAYOUT_VARIANTS: usize = 4;
 pub(super) struct TranscriptRenderCache {
     items: HashMap<u64, CachedTranscriptItem>,
     layouts: VecDeque<CachedTranscriptLayout>,
+    visualizations: super::inline_visualizations::VisualizationState,
 }
 
 impl TranscriptRenderCache {
@@ -36,10 +38,19 @@ impl TranscriptRenderCache {
         width: u16,
         cwd: &Path,
     ) -> Arc<TranscriptLayout> {
-        if let Some(index) = self
-            .layouts
+        let has_visualizations = shell
+            .transcript
             .iter()
-            .position(|cached| cached.matches(shell, width, cwd))
+            .any(|item| crate::inline_visualization::contains_inline_visualization(&item.text))
+            || crate::inline_visualization::contains_inline_visualization(
+                &shell.streaming_assistant,
+            )
+            || crate::inline_visualization::contains_inline_visualization(&shell.streaming_plan);
+        if !has_visualizations
+            && let Some(index) = self
+                .layouts
+                .iter()
+                .position(|cached| cached.matches(shell, width, cwd))
             && let Some(cached) = self.layouts.remove(index)
         {
             let layout = Arc::clone(&cached.layout);
@@ -47,6 +58,9 @@ impl TranscriptRenderCache {
             return layout;
         }
 
+        let visualization_context = has_visualizations
+            .then(|| self.visualizations.context(shell))
+            .flatten();
         let mut previous_items = std::mem::take(&mut self.items);
         let mut current_items = HashMap::with_capacity(
             shell.transcript.len()
@@ -82,6 +96,7 @@ impl TranscriptRenderCache {
                     width,
                     cwd,
                     app_theme: shell.app_theme,
+                    visualization_context,
                 },
             );
         }
@@ -111,6 +126,7 @@ impl TranscriptRenderCache {
                     width,
                     cwd,
                     app_theme: shell.app_theme,
+                    visualization_context,
                 },
             );
         }
@@ -139,6 +155,7 @@ impl TranscriptRenderCache {
                     width,
                     cwd,
                     app_theme: shell.app_theme,
+                    visualization_context,
                 },
             );
         }
@@ -210,6 +227,7 @@ struct CachedRenderContext<'a> {
     width: u16,
     cwd: &'a Path,
     app_theme: TuiAppTheme,
+    visualization_context: Option<&'a InlineVisualizationContext>,
 }
 
 fn push_cached_chunk(
@@ -228,6 +246,7 @@ fn push_cached_chunk(
         context.cwd,
         source.selected,
         context.app_theme,
+        context.visualization_context,
     );
     chunks.push(TranscriptChunk {
         transcript_index: source.transcript_index,
@@ -280,13 +299,16 @@ impl CachedTranscriptItem {
         cwd: &Path,
         selected: bool,
         app_theme: TuiAppTheme,
+        visualization_context: Option<&InlineVisualizationContext>,
     ) -> Arc<[HyperlinkLine]> {
-        if let Some(index) = self.variants.iter().position(|variant| {
-            variant.width == width
-                && variant.cwd.as_path() == cwd
-                && variant.selected == selected
-                && variant.app_theme == app_theme
-        }) && let Some(variant) = self.variants.remove(index)
+        if !crate::inline_visualization::contains_inline_visualization(source.text)
+            && let Some(index) = self.variants.iter().position(|variant| {
+                variant.width == width
+                    && variant.cwd.as_path() == cwd
+                    && variant.selected == selected
+                    && variant.app_theme == app_theme
+            })
+            && let Some(variant) = self.variants.remove(index)
         {
             let lines = Arc::clone(&variant.lines);
             self.variants.push_back(variant);
@@ -294,13 +316,14 @@ impl CachedTranscriptItem {
         }
 
         let _active_theme = crate::app_theme::activate(app_theme);
-        let lines: Arc<[HyperlinkLine]> = render_transcript_line(
+        let lines: Arc<[HyperlinkLine]> = render_transcript_line_with_visualizations(
             source.kind,
             source.text,
             source.tool_status,
             width,
             cwd,
             selected,
+            visualization_context,
         )
         .into();
         self.variants.push_back(CachedRenderVariant {

@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 166
+expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex             gpt-5-codex ▾   default ▾   default ▾  ◐ side | sending
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.
+ ▎ STATUS  Wait for the side workspace action to finish before returning to the main conversation
+
+
+
+
+
+
+
+
+
+
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:1                                                                                              │
+│> Type a message, Shift+Enter for newline                                                                   │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

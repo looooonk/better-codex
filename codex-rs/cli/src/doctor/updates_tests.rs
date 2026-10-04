@@ -5,14 +5,19 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 
 use super::InstallClassification;
+use super::MAX_VERSION_RESPONSE_BYTES;
 use super::STANDALONE_INSTALL_REMEDIATION;
 use super::UpdateCheckInput;
 use super::WINDOWS_UPDATE_REMEDIATION;
 use super::build_updates_check;
 use super::classify_install_method;
+use super::http_get_json;
 use super::is_newer;
 use crate::doctor::CheckStatus;
 use crate::doctor::DoctorCheck;
+use codex_http_client::ClientRouteClass;
+use codex_http_client::RouteAwareClientPool;
+use std::time::Duration;
 
 #[test]
 fn is_newer_compares_plain_semver() {
@@ -270,4 +275,68 @@ fn failed_probe_degrades_an_other_install_to_warning() {
 fn release_dir() -> AbsolutePathBuf {
     AbsolutePathBuf::from_absolute_path(std::env::temp_dir().join("better-codex-release"))
         .expect("release dir path should be absolute")
+}
+
+#[tokio::test]
+async fn version_http_probe_decodes_json_and_rejects_invalid_responses() {
+    use codex_http_client::HttpClientFactory;
+    use codex_http_client::OutboundProxyPolicy;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+
+    let server = MockServer::start().await;
+    let client = RouteAwareClientPool::new_without_request_logging(
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+        ClientRouteClass::Other,
+    );
+    for (endpoint, response) in [
+        (
+            "valid",
+            ResponseTemplate::new(/*s*/ 200).set_body_json(serde_json::json!({"version": "1.2.3"})),
+        ),
+        (
+            "invalid",
+            ResponseTemplate::new(/*s*/ 200).set_body_string("not JSON"),
+        ),
+        ("unavailable", ResponseTemplate::new(/*s*/ 503)),
+        ("proxy_auth_required", ResponseTemplate::new(/*s*/ 407)),
+        (
+            "redirect",
+            ResponseTemplate::new(/*s*/ 302)
+                .insert_header("Location", format!("{}/valid", server.uri())),
+        ),
+        (
+            "timeout",
+            ResponseTemplate::new(/*s*/ 200).set_delay(Duration::from_secs(/*secs*/ 6)),
+        ),
+        (
+            "oversized",
+            ResponseTemplate::new(/*s*/ 200)
+                .set_body_bytes(vec![b' '; MAX_VERSION_RESPONSE_BYTES + 1]),
+        ),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(format!("/{endpoint}")))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+        let result =
+            http_get_json::<serde_json::Value>(&client, &format!("{}/{endpoint}", server.uri()))
+                .await;
+        if matches!(endpoint, "valid" | "redirect") {
+            assert_eq!(result, Ok(serde_json::json!({"version": "1.2.3"})));
+        } else if endpoint == "timeout" {
+            assert_eq!(result, Err("version request timed out".to_string()));
+        } else if endpoint == "proxy_auth_required" {
+            assert_eq!(
+                result,
+                Err("HTTP 407 Proxy Authentication Required".to_string())
+            );
+        } else {
+            assert!(result.is_err(), "{endpoint} must not be accepted");
+        }
+    }
 }

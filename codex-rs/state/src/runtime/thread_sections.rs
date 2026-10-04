@@ -4,13 +4,6 @@ use crate::ThreadSection;
 use crate::ThreadSectionAppearance;
 use uuid::Uuid;
 
-/// Controls whether a section update preserves or replaces its appearance.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ThreadSectionAppearanceUpdate {
-    Preserve,
-    Replace(Option<ThreadSectionAppearance>),
-}
-
 impl StateRuntime {
     /// Create a custom thread section with a stable, server-assigned UUIDv7.
     pub async fn create_thread_section(
@@ -23,40 +16,39 @@ impl StateRuntime {
             name: name.to_string(),
             appearance,
         };
-        let appearance = section
-            .appearance
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()?;
 
         sqlx::query("INSERT INTO thread_sections (id, name, appearance) VALUES (?, ?, ?)")
             .bind(&section.id)
             .bind(&section.name)
-            .bind(appearance)
+            .bind(
+                section
+                    .appearance
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
+            )
             .execute(self.pool.as_ref())
             .await?;
 
         Ok(section)
     }
 
-    /// Rename a custom section and optionally replace its appearance.
+    /// Rename a custom thread section without changing its stable identity.
     pub async fn rename_thread_section(
         &self,
         id: &str,
         name: &str,
-        appearance: ThreadSectionAppearanceUpdate,
+        appearance: Option<Option<ThreadSectionAppearance>>,
     ) -> anyhow::Result<Option<ThreadSection>> {
         if id == PINNED_THREAD_SECTION_ID {
             anyhow::bail!("built-in pinned thread section cannot be renamed");
         }
 
-        let (replace_appearance, appearance) = match appearance {
-            ThreadSectionAppearanceUpdate::Preserve => (false, None),
-            ThreadSectionAppearanceUpdate::Replace(appearance) => (
-                true,
-                appearance.as_ref().map(serde_json::to_string).transpose()?,
-            ),
-        };
+        let replace_appearance = appearance.is_some();
+        let appearance = appearance
+            .flatten()
+            .map(|appearance| serde_json::to_string(&appearance))
+            .transpose()?;
         let section = sqlx::query_as::<_, (String, String, Option<String>)>(
             "UPDATE thread_sections SET name = ?, appearance = CASE WHEN ? THEN ? ELSE appearance END WHERE id = ? RETURNING id, name, appearance",
         )
@@ -78,11 +70,12 @@ impl StateRuntime {
 
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query(
-            "UPDATE threads SET thread_section_id = NULL, section_position = NULL, section_entered_at_ms = NULL WHERE thread_section_id = ?",
+            "UPDATE threads SET section_position = NULL, section_entered_at_ms = NULL WHERE thread_section_id = ?",
         )
         .bind(id)
         .execute(&mut *tx)
         .await?;
+
         let deleted = sqlx::query("DELETE FROM thread_sections WHERE id = ?")
             .bind(id)
             .execute(&mut *tx)
@@ -96,5 +89,5 @@ impl StateRuntime {
 }
 
 #[cfg(test)]
-#[path = "thread_section_management_tests.rs"]
+#[path = "thread_sections_tests.rs"]
 mod tests;

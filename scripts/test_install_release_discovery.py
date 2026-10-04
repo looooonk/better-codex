@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import hashlib
+import json
 import os
 import platform
 import subprocess
@@ -77,12 +78,109 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
         self.assertIn("set GH_TOKEN or GITHUB_TOKEN", result.stderr)
         self.assertIn("pass --version VERSION", result.stderr)
 
+    def test_daemon_install_keeps_launcher_separate_and_marks_latest(self) -> None:
+        result = self.run_installer(
+            index_mode="available",
+            api_mode="unexpected",
+            extra_env={"CODEX_INSTALL_DAEMON_ONLY": "1"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = self.root / "home/.codex/packages/app-server-daemon"
+        self.assertEqual((root / "current").resolve().name, f"{VERSION}-{self.target}")
+        self.assertEqual(
+            (root / "auto-update-version").read_text(), f"{VERSION}-{self.target}"
+        )
+        self.assertFalse((self.root / "launcher-bin/better-codex").exists())
+        self.assertFalse((self.root / "install/current").exists())
+
+    def test_guarded_latest_update_preserves_pin_and_selection(self) -> None:
+        options = {"CODEX_INSTALL_DAEMON_ONLY": "1", "CODEX_RELEASE": VERSION}
+        result = self.run_installer(
+            index_mode="available", api_mode="unexpected", extra_env=options
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = self.root / "home/.codex/packages/app-server-daemon"
+        selected = (root / "current").resolve()
+        guard = options | {
+            "CODEX_RELEASE": "latest",
+            "CODEX_INSTALL_IF_LATEST": "1",
+            "CODEX_UPDATE_FROM_RELEASE": selected.name,
+        }
+        result = self.run_installer(
+            index_mode="available", api_mode="unexpected", extra_env=guard
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((root / "current").resolve(), selected)
+        self.assertFalse((root / "auto-update-version").exists())
+        guard["CODEX_UPDATE_FROM_RELEASE"] = "changed-selection"
+        result = self.run_installer(
+            index_mode="available", api_mode="unexpected", extra_env=guard
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((root / "current").resolve(), selected)
+
+    def test_restore_guard_rejoins_latest_only_for_expected_selection(self) -> None:
+        options = {"CODEX_INSTALL_DAEMON_ONLY": "1", "CODEX_RELEASE": VERSION}
+        result = self.run_installer(
+            index_mode="available", api_mode="unexpected", extra_env=options
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = self.root / "home/.codex/packages/app-server-daemon"
+        guard = options | {
+            "CODEX_RELEASE": "latest",
+            "CODEX_INSTALL_IF_CURRENT": "1",
+            "CODEX_UPDATE_FROM_RELEASE": "changed-selection",
+        }
+        result = self.run_installer(
+            index_mode="available", api_mode="unexpected", extra_env=guard
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((root / "auto-update-version").exists())
+        guard["CODEX_UPDATE_FROM_RELEASE"] = f"{VERSION}-{self.target}"
+        result = self.run_installer(
+            index_mode="available", api_mode="unexpected", extra_env=guard
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            (root / "auto-update-version").read_text(), f"{VERSION}-{self.target}"
+        )
+
+    def test_legacy_standalone_update_requires_daemon_migration(self) -> None:
+        result = self.run_installer(
+            index_mode="unexpected",
+            api_mode="unexpected",
+            extra_env={
+                "CODEX_INSTALL_IF_LATEST": "1",
+                "CODEX_UPDATE_FROM_RELEASE": "0.160.0-target",
+            },
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("migrate the daemon", result.stderr)
+        self.assertFalse((self.root / "home/.codex/packages/standalone").exists())
+        self.assertFalse(self.log.exists())
+
+    def test_deferred_daemon_install_does_not_activate(self) -> None:
+        result = self.run_installer(
+            index_mode="available",
+            api_mode="unexpected",
+            extra_env={
+                "CODEX_INSTALL_DAEMON_ONLY": "1",
+                "CODEX_INSTALL_DEFER_SELECTION": "1",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        root = self.root / "home/.codex/packages/app-server-daemon"
+        self.assertFalse((root / "current").exists())
+        self.assertTrue((root / ".migration-current/bin/codex").is_file())
+        self.assertFalse((self.root / "launcher-bin").exists())
+
     def run_installer(
         self,
         *,
         index_mode: str,
         api_mode: str,
         github_token: Optional[str] = None,
+        extra_env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         home = self.root / "home"
         install_root = self.root / "install"
@@ -90,6 +188,12 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
         home.mkdir(exist_ok=True)
         environment = os.environ | {
             "HOME": str(home),
+            "CODEX_HOME": str(home / ".codex"),
+            "CODEX_RELEASE": "latest",
+            "CODEX_INSTALL_DAEMON_ONLY": "0",
+            "CODEX_INSTALL_DEFER_SELECTION": "0",
+            "CODEX_INSTALL_IF_LATEST": "0",
+            "CODEX_INSTALL_IF_CURRENT": "0",
             "PATH": f"{self.mock_bin}{os.pathsep}{os.environ['PATH']}",
             "BETTER_CODEX_INSTALL_ROOT": str(install_root),
             "BETTER_CODEX_BIN_DIR": str(launcher_bin),
@@ -101,6 +205,7 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
             "MOCK_INDEX_MODE": index_mode,
             "MOCK_METADATA": str(self.metadata),
         }
+        environment.update(extra_env or {})
         environment.pop("GH_TOKEN", None)
         environment.pop("GITHUB_TOKEN", None)
         if github_token is not None:
@@ -124,6 +229,13 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
             binary_dir / "codex-code-mode-host",
             "#!/bin/sh\nexit 0\n",
         )
+        (package / "codex-package.json").write_text(
+            json.dumps({"target": self.target, "version": VERSION})
+        )
+        for name in ("codex-path/rg", "codex-resources/bwrap"):
+            path = package / name
+            path.parent.mkdir(exist_ok=True)
+            self.write_executable(path, "#!/bin/sh\nexit 0\n")
         archive = self.root / f"better-codex-package-{self.target}.tar.gz"
         with tarfile.open(archive, "w:gz") as output:
             output.add(package, arcname=package.name)

@@ -33,8 +33,14 @@ fn astra_async_question_is_visible_while_the_turn_runs() {
     let mut shell = ShellState::snapshot_fixture();
     shell.ingest_completed_item(
         ThreadItem::AgentMessage {
+            delivery: None,
+            questions: Some(vec![codex_app_server_protocol::AsyncUserInputQuestion {
+                title: "Which approach?".to_string(),
+                options: Some(vec!["Small change".to_string(), "Full rewrite".to_string()]),
+            }]),
+
             id: "question-1".to_string(),
-            text: "Which approach?\n- Small change\n- Full rewrite".to_string(),
+            text: String::new(),
             phase: Some(codex_protocol::models::MessagePhase::Commentary),
             memory_citation: None,
         },

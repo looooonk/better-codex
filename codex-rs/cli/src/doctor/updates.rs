@@ -15,7 +15,18 @@ use serde::Deserialize;
 use super::CheckStatus;
 use super::DoctorCheck;
 use super::doctor_install_context;
-use super::run_command;
+use codex_http_client::ClientRouteClass;
+use codex_http_client::RouteAwareClientPool;
+use http::Method;
+use std::time::Duration;
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[path = "updates_desktop.rs"]
+mod desktop;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(super) use desktop::append_desktop_update;
+
+const MAX_VERSION_RESPONSE_BYTES: usize = 1024 * 1024;
 
 const VERSION_FILE_NAME: &str = "better-codex-version.json";
 const GITHUB_LATEST_RELEASE_URL: &str =
@@ -42,17 +53,22 @@ struct UpdateCheckInput<'a> {
 /// Network failures while fetching latest-version metadata degrade the row to a
 /// warning instead of failing doctor outright; update freshness is useful
 /// support context but should not mask more direct install/config failures.
-pub(super) fn updates_check(config: &Config) -> DoctorCheck {
+pub(super) async fn updates_check(config: &Config) -> DoctorCheck {
     let current_exe = std::env::current_exe().ok();
     let install_context = doctor_install_context(current_exe.as_deref());
     let version_file = config.codex_home.join(VERSION_FILE_NAME);
+    let client = RouteAwareClientPool::new_without_request_logging(
+        config.http_client_factory(),
+        ClientRouteClass::Other,
+    );
+    let latest_version = fetch_latest_github_release_version(&client).await;
     build_updates_check(
         UpdateCheckInput {
             check_for_update_on_startup: config.check_for_update_on_startup,
             version_file: &version_file,
             install_context: &install_context,
         },
-        fetch_latest_github_release_version,
+        || latest_version,
     )
 }
 
@@ -104,6 +120,9 @@ fn classify_install_method(method: &InstallMethod) -> InstallClassification {
         ),
         InstallMethod::Pnpm => package_manager_install_classification(
             "unsupported pnpm install (use standalone installer)",
+        ),
+        InstallMethod::VitePlus => package_manager_install_classification(
+            "unsupported Vite+ install (use standalone installer)",
         ),
         InstallMethod::Brew => package_manager_install_classification(
             "unsupported Homebrew install (use standalone installer)",
@@ -166,13 +185,16 @@ fn push_cached_version_details(details: &mut Vec<String>, version_file: &Path) {
     }
 }
 
-fn fetch_latest_github_release_version() -> Result<String, String> {
+async fn fetch_latest_github_release_version(
+    client: &RouteAwareClientPool,
+) -> Result<String, String> {
     #[derive(Deserialize)]
     struct ReleaseInfo {
         tag_name: String,
     }
 
-    let info = http_get_json::<Vec<ReleaseInfo>>(GITHUB_LATEST_RELEASE_URL)?
+    let info = http_get_json::<Vec<ReleaseInfo>>(client, GITHUB_LATEST_RELEASE_URL)
+        .await?
         .into_iter()
         .next()
         .ok_or_else(|| "Better Codex has no published releases".to_string())?;
@@ -185,12 +207,34 @@ fn fetch_latest_github_release_version() -> Result<String, String> {
         .map_err(|err| format!("failed to parse latest tag {}: {err}", info.tag_name))
 }
 
-fn http_get_json<T>(url: &str) -> Result<T, String>
+async fn http_get_json<T>(client: &RouteAwareClientPool, url: &str) -> Result<T, String>
 where
     T: for<'de> Deserialize<'de>,
 {
-    let body = run_command("curl", ["-fsSL", "--max-time", "5", url])?;
-    serde_json::from_str::<T>(&body).map_err(|err| err.to_string())
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 5), async {
+        let mut response = client
+            .request(Method::GET, url)
+            .header(
+                http::header::USER_AGENT,
+                concat!("better-codex-doctor/", env!("CARGO_PKG_VERSION")),
+            )
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("HTTP {}", response.status()));
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|err| err.to_string())? {
+            if chunk.len() > MAX_VERSION_RESPONSE_BYTES.saturating_sub(body.len()) {
+                return Err("version response exceeds size limit".to_string());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        serde_json::from_slice(&body).map_err(|err| err.to_string())
+    })
+    .await
+    .map_err(|_| "version request timed out".to_string())?
 }
 
 fn is_newer(latest: &str, current: &str) -> Option<bool> {

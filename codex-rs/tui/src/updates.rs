@@ -53,7 +53,7 @@ impl From<Option<UpdateAction>> for UpdateCheckEligibility {
     fn from(update_action: Option<UpdateAction>) -> Self {
         match update_action {
             Some(UpdateAction::StandaloneUnix) => Self::StandaloneUnix,
-            None => Self::UnsupportedInstall,
+            Some(UpdateAction::Daemon(_)) | None => Self::UnsupportedInstall,
         }
     }
 }

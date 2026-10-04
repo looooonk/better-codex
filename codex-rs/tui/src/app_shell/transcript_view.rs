@@ -1,3 +1,7 @@
+#[path = "transcript_semantic_copy.rs"]
+mod semantic_copy;
+pub(super) use semantic_copy::selected_markdown as transcript_selected_copy_text;
+
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
@@ -151,7 +155,7 @@ pub(super) fn transcript_hyperlink_at(
     line.hyperlinks
         .iter()
         .find(|hyperlink| hyperlink.columns.contains(&column))
-        .map(|hyperlink| hyperlink.destination.clone())
+        .and_then(crate::terminal_hyperlinks::TerminalHyperlink::terminal_destination)
 }
 
 /// Resolve a terminal position inside the rendered transcript body to its complete grapheme.
@@ -516,6 +520,26 @@ pub(super) fn render_transcript_line(
     cwd: &std::path::Path,
     selected: bool,
 ) -> Vec<HyperlinkLine> {
+    render_transcript_line_with_visualizations(
+        kind,
+        text,
+        tool_status,
+        width,
+        cwd,
+        selected,
+        /*inline_visualization_context*/ None,
+    )
+}
+
+pub(super) fn render_transcript_line_with_visualizations(
+    kind: TranscriptKind,
+    text: &str,
+    tool_status: Option<ToolBlockStatus>,
+    width: u16,
+    cwd: &std::path::Path,
+    selected: bool,
+    inline_visualization_context: Option<&crate::inline_visualization::InlineVisualizationContext>,
+) -> Vec<HyperlinkLine> {
     if kind == TranscriptKind::Separator {
         return vec![HyperlinkLine::new(
             Line::from("─".repeat(usize::from(width))).style(Style::new().fg(palette::border())),
@@ -552,11 +576,17 @@ pub(super) fn render_transcript_line(
     let subsequent_prefix = " ".repeat(prefix_width).into();
 
     let mut rendered_lines = if matches!(kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
-        let rendered = markdown::render_markdown_agent_with_links_and_cwd(
+        let rendered = markdown::render_markdown_agent_with_styles(
             text,
             Some(body_width),
             Some(cwd),
+            inline_visualization_context,
+            crate::markdown_render::ListSpacing::AfterMultiline,
             markdown_styles(),
+        );
+        let rendered = crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines(
+            &rendered,
+            crate::wrapping::RtOptions::new(body_width),
         )
         .into_iter()
         .map(|line| line.style(style.line_style()))

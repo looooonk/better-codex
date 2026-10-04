@@ -1,0 +1,6 @@
+---
+source: tui/src/public_widgets/composer_input_tests.rs
+assertion_line: 71
+expression: composer.footer_line().to_string()
+---
+Message too long; limit 1048576 characters

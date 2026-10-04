@@ -194,6 +194,7 @@ impl WidgetRef for &UpdatePromptScreen {
 
         let update_description = match self.update_action {
             UpdateAction::StandaloneUnix => "Update now (runs the Better Codex installer)",
+            UpdateAction::Daemon(_) => "Update the local background server",
         };
 
         column.push("");

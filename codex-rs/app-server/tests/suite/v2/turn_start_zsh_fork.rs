@@ -7,21 +7,19 @@
 // network access are required the first time the artifact is fetched.
 
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
+use app_test_support::create_command_execution_sse_response;
+use app_test_support::create_escalated_command_execution_sse_response;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
-use app_test_support::create_shell_command_sse_response;
-use app_test_support::to_response;
 use codex_app_server_protocol::CommandAction;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
-use codex_app_server_protocol::JSONRPCMessage;
-use codex_app_server_protocol::JSONRPCResponse;
-use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadStartParams;
@@ -31,7 +29,6 @@ use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput as V2UserInput;
-use codex_features::FEATURES;
 use codex_features::Feature;
 use core_test_support::responses;
 use core_test_support::skip_if_no_network;
@@ -41,13 +38,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use test_case::test_case;
 use tokio::time::timeout;
 
 #[cfg(windows)]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
-#[cfg(target_os = "macos")]
-const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(windows))]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[tokio::test]
@@ -79,7 +75,7 @@ async fn turn_start_shell_zsh_fork_executes_command_v2() -> Result<()> {
     let release_marker_escaped = release_marker.to_string_lossy().replace('\'', r#"'\''"#);
     let wait_for_interrupt =
         format!("while [ ! -f '{release_marker_escaped}' ]; do sleep 0.01; done");
-    let response = create_shell_command_sse_response(
+    let response = create_command_execution_sse_response(
         vec!["/bin/sh".to_string(), "-c".to_string(), wait_for_interrupt],
         /*workdir*/ None,
         Some(5000),
@@ -101,13 +97,11 @@ async fn turn_start_shell_zsh_fork_executes_command_v2() -> Result<()> {
         "never",
         &BTreeMap::from([
             (Feature::ShellZshFork, true),
-            (Feature::UnifiedExec, false),
             (Feature::ShellSnapshot, false),
         ]),
     )?;
 
     let mut mcp = create_zsh_test_mcp_process(&codex_home, &workspace, &zsh_path).await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let start_id = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -116,12 +110,8 @@ async fn turn_start_shell_zsh_fork_executes_command_v2() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    let start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
 
     let turn_id = mcp
         .send_turn_start_request(TurnStartParams {
@@ -140,12 +130,8 @@ async fn turn_start_shell_zsh_fork_executes_command_v2() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    let turn_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_id)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
+    let TurnStartResponse { turn } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(turn_id)).await??;
 
     let started_command_execution = timeout(DEFAULT_READ_TIMEOUT, async {
         loop {
@@ -184,8 +170,12 @@ async fn turn_start_shell_zsh_fork_executes_command_v2() -> Result<()> {
     Ok(())
 }
 
+#[test_case(CommandExecutionApprovalDecision::Decline; "declined")]
+#[test_case(CommandExecutionApprovalDecision::Accept; "launch_failure")]
 #[tokio::test]
-async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
+async fn turn_start_shell_zsh_fork_exec_approval_v2(
+    decision: CommandExecutionApprovalDecision,
+) -> Result<()> {
     // TODO(anp): Remove after zsh-fork fixtures can run in the selected remote environment.
     skip_if_remote!(
         Ok(()),
@@ -205,14 +195,16 @@ async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
     };
     eprintln!("using zsh path for zsh-fork test: {}", zsh_path.display());
 
+    let launch_failed = matches!(decision, CommandExecutionApprovalDecision::Accept);
+    let missing_cwd = workspace.join("missing-work-directory");
     let responses = vec![
-        create_shell_command_sse_response(
+        create_escalated_command_execution_sse_response(
             vec![
                 "python3".to_string(),
                 "-c".to_string(),
                 "print(42)".to_string(),
             ],
-            /*workdir*/ None,
+            launch_failed.then_some(missing_cwd.as_path()),
             Some(5000),
             "call-zsh-fork-decline",
         )?,
@@ -222,16 +214,15 @@ async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
     create_config_toml(
         &codex_home,
         &server.uri(),
-        "untrusted",
+        "on-request",
         &BTreeMap::from([
+            (Feature::UnifiedExec, true),
             (Feature::ShellZshFork, true),
-            (Feature::UnifiedExec, false),
             (Feature::ShellSnapshot, false),
         ]),
     )?;
 
     let mut mcp = create_zsh_test_mcp_process(&codex_home, &workspace, &zsh_path).await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let start_id = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -240,12 +231,8 @@ async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    let start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
 
     let turn_id = mcp
         .send_turn_start_request(TurnStartParams {
@@ -259,11 +246,7 @@ async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_id)),
-    )
-    .await??;
+    let _: TurnStartResponse = timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(turn_id)).await??;
 
     let server_req = timeout(
         DEFAULT_READ_TIMEOUT,
@@ -278,9 +261,7 @@ async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
 
     mcp.send_response(
         request_id,
-        serde_json::to_value(CommandExecutionRequestApprovalResponse {
-            decision: CommandExecutionApprovalDecision::Decline,
-        })?,
+        serde_json::to_value(CommandExecutionRequestApprovalResponse { decision })?,
     )
     .await?;
 
@@ -305,6 +286,8 @@ async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
         id,
         status,
         exit_code,
+        process_id,
+        duration_ms,
         aggregated_output,
         ..
     } = completed_command_execution
@@ -312,15 +295,41 @@ async fn turn_start_shell_zsh_fork_exec_approval_decline_v2() -> Result<()> {
         unreachable!("loop ensures we break on command execution items");
     };
     assert_eq!(id, "call-zsh-fork-decline");
-    assert_eq!(status, CommandExecutionStatus::Declined);
-    assert!(exit_code.is_none());
-    assert!(aggregated_output.is_none());
+    assert_eq!(process_id, None);
+    if launch_failed {
+        assert_eq!(
+            (status, exit_code, duration_ms),
+            (CommandExecutionStatus::Failed, Some(-1), Some(0))
+        );
+        assert!(
+            aggregated_output
+                .expect("launch diagnostic")
+                .starts_with("Failed to create unified exec process:")
+        );
+    } else {
+        assert_eq!(
+            (status, exit_code, duration_ms),
+            (CommandExecutionStatus::Declined, None, None)
+        );
+        assert!(aggregated_output.is_none());
+    }
 
     timeout(
         DEFAULT_READ_TIMEOUT,
         mcp.read_stream_until_notification_message("turn/completed"),
     )
     .await??;
+
+    let mut command_events = Vec::new();
+    for method in mcp.pending_notification_methods() {
+        let notification = mcp.read_stream_until_notification_message(&method).await?;
+        if notification.params.expect("notification params")["item"]["id"]
+            == "call-zsh-fork-decline"
+        {
+            command_events.push(method);
+        }
+    }
+    assert_eq!(command_events, ["item/started"]);
 
     Ok(())
 }
@@ -346,7 +355,7 @@ async fn turn_start_shell_zsh_fork_exec_approval_cancel_v2() -> Result<()> {
     };
     eprintln!("using zsh path for zsh-fork test: {}", zsh_path.display());
 
-    let responses = vec![create_shell_command_sse_response(
+    let responses = vec![create_escalated_command_execution_sse_response(
         vec![
             "python3".to_string(),
             "-c".to_string(),
@@ -360,16 +369,14 @@ async fn turn_start_shell_zsh_fork_exec_approval_cancel_v2() -> Result<()> {
     create_config_toml(
         &codex_home,
         &server.uri(),
-        "untrusted",
+        "on-request",
         &BTreeMap::from([
             (Feature::ShellZshFork, true),
-            (Feature::UnifiedExec, false),
             (Feature::ShellSnapshot, false),
         ]),
     )?;
 
     let mut mcp = create_zsh_test_mcp_process(&codex_home, &workspace, &zsh_path).await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let start_id = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -378,12 +385,8 @@ async fn turn_start_shell_zsh_fork_exec_approval_cancel_v2() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    let start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
 
     let turn_id = mcp
         .send_turn_start_request(TurnStartParams {
@@ -397,11 +400,7 @@ async fn turn_start_shell_zsh_fork_exec_approval_cancel_v2() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_id)),
-    )
-    .await??;
+    let _: TurnStartResponse = timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(turn_id)).await??;
 
     let server_req = timeout(
         DEFAULT_READ_TIMEOUT,
@@ -462,20 +461,7 @@ async fn turn_start_shell_zsh_fork_exec_approval_cancel_v2() -> Result<()> {
 }
 
 #[tokio::test]
-async fn turn_start_shell_zsh_fork_subcommand_cancel_completes_parent_once_v2() -> Result<()> {
-    assert_subcommand_rejection_completes_parent_once(CommandExecutionApprovalDecision::Cancel)
-        .await
-}
-
-#[tokio::test]
-async fn turn_start_shell_zsh_fork_subcommand_decline_completes_parent_once_v2() -> Result<()> {
-    assert_subcommand_rejection_completes_parent_once(CommandExecutionApprovalDecision::Decline)
-        .await
-}
-
-async fn assert_subcommand_rejection_completes_parent_once(
-    rejection_decision: CommandExecutionApprovalDecision,
-) -> Result<()> {
+async fn turn_start_shell_zsh_fork_subcommand_decline_marks_parent_declined_v2() -> Result<()> {
     // TODO(anp): Remove after zsh-fork fixtures can run in the selected remote environment.
     skip_if_remote!(
         Ok(()),
@@ -511,15 +497,15 @@ async fn assert_subcommand_rejection_completes_parent_once(
         second_file.display()
     );
     let tool_call_arguments = serde_json::to_string(&serde_json::json!({
-        "command": shell_command,
+        "cmd": shell_command,
         "workdir": serde_json::Value::Null,
-        "timeout_ms": 5000
+        "yield_time_ms": 20000
     }))?;
     let response = responses::sse(vec![
         responses::ev_response_created("resp-1"),
         responses::ev_function_call(
             "call-zsh-fork-subcommand-decline",
-            "shell_command",
+            "exec_command",
             &tool_call_arguments,
         ),
         responses::ev_completed("resp-1"),
@@ -537,15 +523,14 @@ async fn assert_subcommand_rejection_completes_parent_once(
     create_config_toml(
         &codex_home,
         &server.uri(),
-        "untrusted",
+        "on-request",
         &BTreeMap::from([
             (Feature::ShellZshFork, true),
-            (Feature::UnifiedExec, false),
             (Feature::ShellSnapshot, false),
         ]),
     )?;
+
     let mut mcp = create_zsh_test_mcp_process(&codex_home, &workspace, &zsh_path).await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let start_id = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -554,12 +539,8 @@ async fn assert_subcommand_rejection_completes_parent_once(
             ..Default::default()
         })
         .await?;
-    let start_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
+    let ThreadStartResponse { thread, .. } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(start_id)).await??;
 
     let turn_id = mcp
         .send_turn_start_request(TurnStartParams {
@@ -582,21 +563,20 @@ async fn assert_subcommand_rejection_completes_parent_once(
             ..Default::default()
         })
         .await?;
-    let turn_resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(turn_id)),
-    )
-    .await??;
-    let TurnStartResponse { turn } = to_response::<TurnStartResponse>(turn_resp)?;
+    let TurnStartResponse { turn } =
+        timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(turn_id)).await??;
 
     let mut approved_subcommand_strings = Vec::new();
     let mut approved_subcommand_ids = Vec::new();
     let mut saw_parent_approval = false;
-    let target_decisions = [CommandExecutionApprovalDecision::Accept, rejection_decision];
+    let target_decisions = [
+        CommandExecutionApprovalDecision::Accept,
+        CommandExecutionApprovalDecision::Cancel,
+    ];
     let mut target_decision_index = 0;
     let first_file_str = first_file.to_string_lossy().into_owned();
     let second_file_str = second_file.to_string_lossy().into_owned();
-    let parent_shell_hint = format!("&& {first_file_str}");
+    let parent_shell_hint = format!("&& {}", &first_file_str);
     while target_decision_index < target_decisions.len() || !saw_parent_approval {
         let server_req = timeout(
             DEFAULT_READ_TIMEOUT,
@@ -673,62 +653,101 @@ async fn assert_subcommand_rejection_completes_parent_once(
     assert_eq!(approved_subcommand_strings.len(), 2);
     assert!(approved_subcommand_strings[0].contains(&first_file.display().to_string()));
     assert!(approved_subcommand_strings[1].contains(&second_file.display().to_string()));
-    let (parent_completions, completed) = timeout(DEFAULT_READ_TIMEOUT, async {
-        let mut parent_completions = Vec::new();
+    let parent_completed_command_execution = timeout(DEFAULT_READ_TIMEOUT, async {
         loop {
-            let JSONRPCMessage::Notification(notification) = mcp.read_next_message().await? else {
-                continue;
-            };
-            match notification.method.as_str() {
-                "item/completed" => {
-                    let completed: ItemCompletedNotification = serde_json::from_value(
-                        notification.params.expect("item/completed params"),
-                    )?;
-                    if matches!(
-                        &completed.item,
-                        ThreadItem::CommandExecution { id, .. }
-                            if id == "call-zsh-fork-subcommand-decline"
-                    ) {
-                        parent_completions.push(completed.item);
-                    }
-                }
-                "turn/completed" => {
-                    let completed: TurnCompletedNotification = serde_json::from_value(
-                        notification.params.expect("turn/completed params"),
-                    )?;
-                    return Ok::<_, anyhow::Error>((parent_completions, completed));
-                }
-                _ => {}
+            let completed_notif = mcp
+                .read_stream_until_notification_message("item/completed")
+                .await?;
+            let completed: ItemCompletedNotification = serde_json::from_value(
+                completed_notif
+                    .params
+                    .clone()
+                    .expect("item/completed params"),
+            )?;
+            if let ThreadItem::CommandExecution { id, .. } = &completed.item
+                && id == "call-zsh-fork-subcommand-decline"
+            {
+                return Ok::<ThreadItem, anyhow::Error>(completed.item);
             }
         }
     })
-    .await??;
+    .await;
 
-    assert_eq!(parent_completions.len(), 1);
-    let ThreadItem::CommandExecution {
-        id,
-        status,
-        aggregated_output,
-        ..
-    } = &parent_completions[0]
-    else {
-        unreachable!("parent completions only collect command execution items");
-    };
-    assert_eq!(id, "call-zsh-fork-subcommand-decline");
-    assert_eq!(*status, CommandExecutionStatus::Declined);
-    if let Some(output) = aggregated_output.as_deref() {
-        assert!(
-            output == "exec command rejected by user"
-                || output.contains("sandbox denied exec error"),
-            "unexpected aggregated output: {output}"
-        );
+    match parent_completed_command_execution {
+        Ok(Ok(parent_completed_command_execution)) => {
+            let ThreadItem::CommandExecution {
+                id,
+                status,
+                aggregated_output,
+                ..
+            } = parent_completed_command_execution
+            else {
+                unreachable!("loop ensures we break on parent command execution item");
+            };
+            assert_eq!(id, "call-zsh-fork-subcommand-decline");
+            assert_eq!(status, CommandExecutionStatus::Declined);
+            if let Some(output) = aggregated_output.as_deref() {
+                assert!(
+                    output == "exec command rejected by user"
+                        || output.contains("sandbox denied exec error"),
+                    "unexpected aggregated output: {output}"
+                );
+            }
+
+            match timeout(
+                DEFAULT_READ_TIMEOUT,
+                mcp.read_stream_until_notification_message("turn/completed"),
+            )
+            .await
+            {
+                Ok(Ok(completed_notif)) => {
+                    let completed: TurnCompletedNotification = serde_json::from_value(
+                        completed_notif
+                            .params
+                            .expect("turn/completed params must be present"),
+                    )?;
+                    assert_eq!(completed.thread_id, thread.id);
+                    assert_eq!(completed.turn.id, turn.id);
+                    assert!(matches!(
+                        completed.turn.status,
+                        TurnStatus::Interrupted | TurnStatus::Completed
+                    ));
+                }
+                Ok(Err(error)) => return Err(error),
+                Err(_) => {
+                    mcp.interrupt_turn_and_wait_for_aborted(
+                        thread.id.clone(),
+                        turn.id.clone(),
+                        DEFAULT_READ_TIMEOUT,
+                    )
+                    .await?;
+                }
+            }
+        }
+        Ok(Err(error)) => return Err(error),
+        Err(_) => {
+            // Some zsh builds abort the turn immediately after the rejected
+            // subcommand without emitting a parent `item/completed`, and Linux
+            // sandbox failures can also complete the turn before the parent
+            // completion item is observed.
+            let completed_notif = timeout(
+                DEFAULT_READ_TIMEOUT,
+                mcp.read_stream_until_notification_message("turn/completed"),
+            )
+            .await??;
+            let completed: TurnCompletedNotification = serde_json::from_value(
+                completed_notif
+                    .params
+                    .expect("turn/completed params must be present"),
+            )?;
+            assert_eq!(completed.thread_id, thread.id);
+            assert_eq!(completed.turn.id, turn.id);
+            assert!(matches!(
+                completed.turn.status,
+                TurnStatus::Interrupted | TurnStatus::Completed
+            ));
+        }
     }
-    assert_eq!(completed.thread_id, thread.id);
-    assert_eq!(completed.turn.id, turn.id);
-    assert!(matches!(
-        completed.turn.status,
-        TurnStatus::Interrupted | TurnStatus::Completed
-    ));
 
     Ok(())
 }
@@ -744,7 +763,7 @@ async fn create_zsh_test_mcp_process(
         .with_codex_home(codex_home)
         .with_program(&app_server)
         .with_env_overrides(&[("ZDOTDIR", Some(zdotdir.as_str()))])
-        .build()
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
         .await
 }
 
@@ -760,11 +779,11 @@ fn create_test_package_app_server(codex_home: &Path, zsh_path: &Path) -> Result<
     std::fs::write(package_dir.join("codex-package.json"), "{}")?;
 
     let app_server = bin_dir.join("codex-app-server");
-    copy_with_permissions(
+    codex_utils_cargo_bin::copy_executable(
         &codex_utils_cargo_bin::cargo_bin("codex-app-server")?,
         &app_server,
     )?;
-    copy_with_permissions(zsh_path, &package_zsh_path)?;
+    codex_utils_cargo_bin::copy_executable(zsh_path, &package_zsh_path)?;
     Ok(app_server)
 }
 
@@ -782,56 +801,17 @@ fn command_packaged_zsh_path(codex_home: &Path) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
 
-fn copy_with_permissions(source: &Path, destination: &Path) -> std::io::Result<()> {
-    std::fs::copy(source, destination)?;
-    std::fs::set_permissions(destination, std::fs::metadata(source)?.permissions())
-}
-
 fn create_config_toml(
     codex_home: &Path,
     server_uri: &str,
     approval_policy: &str,
     feature_flags: &BTreeMap<Feature, bool>,
 ) -> std::io::Result<()> {
-    let mut features = BTreeMap::from([(Feature::RemoteModels, false)]);
-    for (feature, enabled) in feature_flags {
-        features.insert(*feature, *enabled);
-    }
-    let feature_entries = features
-        .into_iter()
-        .map(|(feature, enabled)| {
-            let key = FEATURES
-                .iter()
-                .find(|spec| spec.id == feature)
-                .map(|spec| spec.key)
-                .expect("feature should have a config key");
-            format!("{key} = {enabled}")
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let config_toml = codex_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "{approval_policy}"
-sandbox_mode = "read-only"
-
-model_provider = "mock_provider"
-
-[features]
-{feature_entries}
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
+    MockResponsesConfig::new(server_uri)
+        .with_approval_policy(approval_policy)
+        .disable_feature(Feature::RemoteModels)
+        .with_features(feature_flags)
+        .write(codex_home)
 }
 
 fn find_test_zsh_path() -> Result<Option<std::path::PathBuf>> {

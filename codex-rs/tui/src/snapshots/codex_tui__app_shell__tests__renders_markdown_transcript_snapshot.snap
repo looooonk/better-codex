@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
+assertion_line: 2326
 expression: "render_shell(&shell, area)"
 ---
                                                               │
@@ -7,9 +8,9 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                               │
  ◆ CONVERSATION                                               │▎◆ SESSIONS
-          - Render assistant text as markdown.              │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          - Preserve local links like codex-rs/tui/src/     ┃ │▎+ New session  Ctrl+N
-            app_shell/render.rs:1.                          ┃ │▎loading sessions
+          • Render assistant text as markdown.              │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+          • Preserve local links like render.rs (codex-rs/  ┃ │▎+ New session  Ctrl+N
+            tui/src/app_shell/render.rs:1).                 ┃ │▎loading sessions
                                                             ┃ │
           fn transcript() -> &'static str {                 ┃ │▎◆ THREAD
           "markdown"                                        ┃ │▎stage-one

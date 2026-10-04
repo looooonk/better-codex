@@ -6,9 +6,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use codex_app_server_protocol::ClientRequestSerializationScope;
-use futures::future::join_all;
+use codex_diagnostics::Gauge;
+use codex_diagnostics::GaugeGuard;
+use futures::stream::FuturesUnordered;
+use futures::stream::StreamExt;
 use tokio::sync::Mutex;
-use tokio::sync::oneshot;
+use tokio::sync::Notify;
 use tracing::Instrument;
 
 use crate::connection_rpc_gate::ConnectionRpcGate;
@@ -16,12 +19,7 @@ use crate::outgoing_message::ConnectionId;
 
 type BoxFutureUnit = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
-tokio::task_local! {
-    static CURRENT_REQUEST_SERIALIZATION_KEY: RequestSerializationQueueKey;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct RequestSerializationTaskEnded;
+static QUEUED_REQUESTS: Gauge = Gauge::new("app.requests.queued");
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum RequestSerializationQueueKey {
@@ -146,35 +144,36 @@ impl QueuedInitializedRequest {
 struct QueuedSerializedRequest {
     access: RequestSerializationAccess,
     request: QueuedInitializedRequest,
+    _diagnostics_guard: GaugeGuard,
+}
+
+struct RequestSerializationQueue {
+    requests: VecDeque<QueuedSerializedRequest>,
+    changed: Arc<Notify>,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct RequestSerializationQueues {
-    inner: Arc<Mutex<HashMap<RequestSerializationQueueKey, VecDeque<QueuedSerializedRequest>>>>,
+    inner: Arc<Mutex<HashMap<RequestSerializationQueueKey, RequestSerializationQueue>>>,
 }
 
 impl RequestSerializationQueues {
-    pub(crate) async fn run_exclusive_or_enqueue_and_wait<T>(
-        &self,
-        key: RequestSerializationQueueKey,
-        future: impl Future<Output = T> + Send + 'static,
-    ) -> Result<T, RequestSerializationTaskEnded>
-    where
-        T: Send + 'static,
-    {
-        if CURRENT_REQUEST_SERIALIZATION_KEY
-            .try_with(|current| current == &key)
-            .unwrap_or(false)
-        {
-            return Ok(future.await);
+    /// Release requests whose connection closed while they waited in a queue.
+    pub(crate) async fn discard_closed(&self) {
+        let mut queues = self.inner.lock().await;
+        for queue in queues.values_mut() {
+            let previous_len = queue.requests.len();
+            queue.requests.retain(|request| {
+                !request
+                    .request
+                    .gate
+                    .as_ref()
+                    .is_some_and(|gate| gate.is_closed())
+            });
+            if queue.requests.len() != previous_len {
+                queue.changed.notify_one();
+            }
         }
-
-        let (result_tx, result_rx) = oneshot::channel();
-        self.enqueue_background(key, RequestSerializationAccess::Exclusive, async move {
-            let _ = result_tx.send(future.await);
-        })
-        .await;
-        result_rx.await.map_err(|_| RequestSerializationTaskEnded)
     }
 
     /// Enqueue app-owned work alongside RPCs that mutate the same serialized resource.
@@ -198,17 +197,26 @@ impl RequestSerializationQueues {
         access: RequestSerializationAccess,
         request: QueuedInitializedRequest,
     ) {
-        let request = QueuedSerializedRequest { access, request };
+        let request = QueuedSerializedRequest {
+            access,
+            request,
+            _diagnostics_guard: QUEUED_REQUESTS.track(),
+        };
         let should_spawn = {
             let mut queues = self.inner.lock().await;
             match queues.get_mut(&key) {
                 Some(queue) => {
-                    queue.push_back(request);
+                    queue.requests.push_back(request);
+                    queue.changed.notify_one();
                     false
                 }
                 None => {
-                    let mut queue = VecDeque::new();
-                    queue.push_back(request);
+                    let mut requests = VecDeque::new();
+                    requests.push_back(request);
+                    let queue = RequestSerializationQueue {
+                        requests,
+                        changed: Arc::new(Notify::new()),
+                    };
                     queues.insert(key.clone(), queue);
                     true
                 }
@@ -224,26 +232,26 @@ impl RequestSerializationQueues {
 
     async fn drain(self, key: RequestSerializationQueueKey) {
         loop {
-            let requests = {
+            let (requests, changed) = {
                 let mut queues = self.inner.lock().await;
                 let Some(queue) = queues.get_mut(&key) else {
                     return;
                 };
-                match queue.pop_front() {
+                match queue.requests.pop_front() {
                     Some(request) => {
                         let access = request.access;
                         let mut requests = vec![request];
                         if access == RequestSerializationAccess::SharedRead {
-                            while queue.front().is_some_and(|request| {
+                            while queue.requests.front().is_some_and(|request| {
                                 request.access == RequestSerializationAccess::SharedRead
                             }) {
-                                let Some(request) = queue.pop_front() else {
+                                let Some(request) = queue.requests.pop_front() else {
                                     break;
                                 };
                                 requests.push(request);
                             }
                         }
-                        requests
+                        (requests, Arc::clone(&queue.changed))
                     }
                     None => {
                         queues.remove(&key);
@@ -252,10 +260,49 @@ impl RequestSerializationQueues {
                 }
             };
 
-            join_all(requests.into_iter().map(|request| {
-                CURRENT_REQUEST_SERIALIZATION_KEY.scope(key.clone(), request.request.run())
-            }))
-            .await;
+            if requests[0].access == RequestSerializationAccess::Exclusive {
+                for request in requests {
+                    request.request.run().await;
+                }
+                continue;
+            }
+
+            let mut running_reads = requests
+                .into_iter()
+                .map(|request| request.request.run())
+                .collect::<FuturesUnordered<_>>();
+
+            loop {
+                tokio::select! {
+                    Some(()) = running_reads.next() => {
+                        if running_reads.is_empty() {
+                            break;
+                        }
+                    }
+                    () = changed.notified() => {
+                        let requests = {
+                            let mut queues = self.inner.lock().await;
+                            let Some(queue) = queues.get_mut(&key) else {
+                                return;
+                            };
+                            let mut requests = Vec::new();
+                            while queue.requests.front().is_some_and(|request| {
+                                request.access == RequestSerializationAccess::SharedRead
+                            }) {
+                                let Some(request) = queue.requests.pop_front() else {
+                                    break;
+                                };
+                                requests.push(request);
+                            }
+                            requests
+                        };
+
+                        for request in requests {
+                            running_reads.push(request.request.run());
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -263,6 +310,10 @@ impl RequestSerializationQueues {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_app_server_protocol::ClientRequest;
+    use codex_app_server_protocol::ConfigBatchWriteParams;
+    use codex_app_server_protocol::HooksListParams;
+    use codex_app_server_protocol::RequestId;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
     use tokio::sync::broadcast;
@@ -440,6 +491,9 @@ mod tests {
     #[tokio::test]
     async fn shutdown_of_live_gate_skips_already_queued_requests() {
         let queues = RequestSerializationQueues::default();
+        let admission = crate::turn_admission::TurnAdmission::default();
+        let active = admission.subscribe_active();
+        let permit = admission.admit().expect("admit queued request");
         let key = RequestSerializationQueueKey::Global("test");
         let live_gate = gate();
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -466,6 +520,7 @@ mod tests {
                     key,
                     RequestSerializationAccess::Exclusive,
                     QueuedInitializedRequest::new(live_gate.clone(), async move {
+                        let _permit = permit;
                         tx.send(SECOND_REQUEST_VALUE)
                             .expect("receiver should be open");
                     }),
@@ -480,6 +535,12 @@ mod tests {
                 .expect("timed out waiting for first request"),
             Some(FIRST_REQUEST_VALUE)
         );
+
+        admission.begin_drain();
+        assert_eq!(*active.borrow(), 1);
+        live_gate.close().await;
+        queues.discard_closed().await;
+        assert_eq!(*active.borrow(), 0);
 
         let gate_for_shutdown = Arc::clone(&live_gate);
         let shutdown_task = tokio::spawn(async move {
@@ -564,9 +625,129 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exclusive_write_waits_for_running_shared_reads() {
+    async fn later_shared_read_joins_running_shared_read() {
         let queues = RequestSerializationQueues::default();
         let key = RequestSerializationQueueKey::Global("test");
+        let (first_started_tx, first_started_rx) = oneshot::channel::<()>();
+        let (first_release_tx, first_release_rx) = oneshot::channel::<()>();
+        let (later_started_tx, later_started_rx) = oneshot::channel::<()>();
+
+        queues
+            .enqueue(
+                key.clone(),
+                RequestSerializationAccess::SharedRead,
+                QueuedInitializedRequest::new(gate(), async move {
+                    first_started_tx.send(()).expect("receiver should be open");
+                    let _ = first_release_rx.await;
+                }),
+            )
+            .await;
+        timeout(queue_drain_timeout(), first_started_rx)
+            .await
+            .expect("first read should start")
+            .expect("sender should be open");
+
+        queues
+            .enqueue(
+                key,
+                RequestSerializationAccess::SharedRead,
+                QueuedInitializedRequest::new(gate(), async move {
+                    later_started_tx.send(()).expect("receiver should be open");
+                }),
+            )
+            .await;
+
+        timeout(queue_drain_timeout(), later_started_rx)
+            .await
+            .expect("later read should join the running read")
+            .expect("sender should be open");
+        first_release_tx
+            .send(())
+            .expect("first read should still be waiting");
+    }
+
+    #[tokio::test]
+    async fn later_shared_read_waits_behind_writer_queued_during_running_read() {
+        let queues = RequestSerializationQueues::default();
+        let key = RequestSerializationQueueKey::Global("test");
+        let (first_read_started_tx, first_read_started_rx) = oneshot::channel::<()>();
+        let (first_read_release_tx, first_read_release_rx) = oneshot::channel::<()>();
+        let (write_started_tx, write_started_rx) = oneshot::channel::<()>();
+        let (write_release_tx, write_release_rx) = oneshot::channel::<()>();
+        let (later_read_started_tx, later_read_started_rx) = oneshot::channel::<()>();
+
+        queues
+            .enqueue(
+                key.clone(),
+                RequestSerializationAccess::SharedRead,
+                QueuedInitializedRequest::new(gate(), async move {
+                    first_read_started_tx
+                        .send(())
+                        .expect("receiver should be open");
+                    let _ = first_read_release_rx.await;
+                }),
+            )
+            .await;
+        timeout(queue_drain_timeout(), first_read_started_rx)
+            .await
+            .expect("first read should start")
+            .expect("sender should be open");
+
+        queues
+            .enqueue(
+                key.clone(),
+                RequestSerializationAccess::Exclusive,
+                QueuedInitializedRequest::new(gate(), async move {
+                    write_started_tx.send(()).expect("receiver should be open");
+                    let _ = write_release_rx.await;
+                }),
+            )
+            .await;
+        queues
+            .enqueue(
+                key,
+                RequestSerializationAccess::SharedRead,
+                QueuedInitializedRequest::new(gate(), async move {
+                    later_read_started_tx
+                        .send(())
+                        .expect("receiver should be open");
+                }),
+            )
+            .await;
+
+        let mut write_started_rx = Box::pin(write_started_rx);
+        timeout(shutdown_wait_timeout(), &mut write_started_rx)
+            .await
+            .expect_err("write should wait for the running read");
+        let mut later_read_started_rx = Box::pin(later_read_started_rx);
+        timeout(shutdown_wait_timeout(), &mut later_read_started_rx)
+            .await
+            .expect_err("later read should wait behind the queued write");
+
+        first_read_release_tx
+            .send(())
+            .expect("first read should still be waiting");
+        timeout(queue_drain_timeout(), &mut write_started_rx)
+            .await
+            .expect("write should start after the running read finishes")
+            .expect("sender should be open");
+        timeout(shutdown_wait_timeout(), &mut later_read_started_rx)
+            .await
+            .expect_err("later read should wait for the running write");
+
+        write_release_tx
+            .send(())
+            .expect("write should still be waiting");
+        timeout(queue_drain_timeout(), &mut later_read_started_rx)
+            .await
+            .expect("later read should start after the write finishes")
+            .expect("sender should be open");
+    }
+
+    #[tokio::test]
+    async fn startup_config_reads_run_concurrently_and_exclude_writes() {
+        let queues = RequestSerializationQueues::default();
+        let key = RequestSerializationQueueKey::Global("config");
         let (blocker_started_tx, blocker_started_rx) = oneshot::channel::<()>();
         let (blocker_release_tx, blocker_release_rx) = oneshot::channel::<()>();
         let (read_started_tx, mut read_started_rx) = mpsc::unbounded_channel();
@@ -590,13 +771,34 @@ mod tests {
             .expect("blocker should start")
             .expect("sender should be open");
 
-        for value in [FIRST_REQUEST_VALUE, SECOND_REQUEST_VALUE] {
+        for (value, request) in [
+            (
+                FIRST_REQUEST_VALUE,
+                ClientRequest::HooksList {
+                    request_id: RequestId::Integer(i64::from(FIRST_REQUEST_VALUE)),
+                    params: HooksListParams { cwds: Vec::new() },
+                },
+            ),
+            (
+                SECOND_REQUEST_VALUE,
+                ClientRequest::ConfigRequirementsRead {
+                    request_id: RequestId::Integer(i64::from(SECOND_REQUEST_VALUE)),
+                    params: None,
+                },
+            ),
+        ] {
             let read_started_tx = read_started_tx.clone();
             let mut read_release_rx = read_release_tx.subscribe();
+            let (request_key, access) = RequestSerializationQueueKey::from_scope(
+                ConnectionId(0),
+                request
+                    .serialization_scope()
+                    .expect("startup config reads should be serialized"),
+            );
             queues
                 .enqueue(
-                    key.clone(),
-                    RequestSerializationAccess::SharedRead,
+                    request_key,
+                    access,
                     QueuedInitializedRequest::new(gate(), async move {
                         read_started_tx
                             .send(value)
@@ -606,10 +808,26 @@ mod tests {
                 )
                 .await;
         }
+
+        let config_write = ClientRequest::ConfigBatchWrite {
+            request_id: RequestId::Integer(i64::from(THIRD_REQUEST_VALUE)),
+            params: ConfigBatchWriteParams {
+                edits: Vec::new(),
+                file_path: None,
+                expected_version: None,
+                reload_user_config: false,
+            },
+        };
+        let (write_key, write_access) = RequestSerializationQueueKey::from_scope(
+            ConnectionId(0),
+            config_write
+                .serialization_scope()
+                .expect("config writes should be serialized"),
+        );
         queues
             .enqueue(
-                key.clone(),
-                RequestSerializationAccess::Exclusive,
+                write_key,
+                write_access,
                 QueuedInitializedRequest::new(gate(), async move {
                     write_started_tx.send(()).expect("receiver should be open");
                 }),
@@ -737,125 +955,5 @@ mod tests {
             .await
             .expect("later read should start after the write")
             .expect("sender should be open");
-    }
-
-    #[tokio::test]
-    async fn same_key_nested_wait_runs_inline() {
-        let queues = RequestSerializationQueues::default();
-        let key = RequestSerializationQueueKey::Global("nested");
-        let nested_queues = queues.clone();
-        let nested_key = key.clone();
-
-        let result = timeout(
-            queue_drain_timeout(),
-            queues.run_exclusive_or_enqueue_and_wait(key, async move {
-                nested_queues
-                    .run_exclusive_or_enqueue_and_wait(nested_key, async { SECOND_REQUEST_VALUE })
-                    .await
-            }),
-        )
-        .await
-        .expect("nested request should not deadlock")
-        .expect("outer serialized task should complete")
-        .expect("nested serialized task should complete");
-
-        assert_eq!(result, SECOND_REQUEST_VALUE);
-    }
-
-    #[tokio::test]
-    async fn reentrant_wait_preserves_earlier_nested_and_later_fifo() {
-        let queues = RequestSerializationQueues::default();
-        let key = RequestSerializationQueueKey::Global("nested-fifo");
-        let (values_tx, mut values_rx) = mpsc::unbounded_channel();
-        let (earlier_release_tx, earlier_release_rx) = oneshot::channel::<()>();
-
-        let earlier_values_tx = values_tx.clone();
-        queues
-            .enqueue_background(
-                key.clone(),
-                RequestSerializationAccess::Exclusive,
-                async move {
-                    earlier_values_tx
-                        .send(FIRST_REQUEST_VALUE)
-                        .expect("receiver should be open");
-                    let _ = earlier_release_rx.await;
-                },
-            )
-            .await;
-        assert_eq!(
-            timeout(queue_drain_timeout(), values_rx.recv())
-                .await
-                .expect("earlier request should start"),
-            Some(FIRST_REQUEST_VALUE)
-        );
-
-        let current_queues = queues.clone();
-        let nested_queues = queues.clone();
-        let current_key = key.clone();
-        let nested_key = key.clone();
-        let current_values_tx = values_tx.clone();
-        let current = tokio::spawn(async move {
-            current_queues
-                .run_exclusive_or_enqueue_and_wait(current_key, async move {
-                    nested_queues
-                        .run_exclusive_or_enqueue_and_wait(nested_key, async move {
-                            current_values_tx
-                                .send(SECOND_REQUEST_VALUE)
-                                .expect("receiver should be open");
-                        })
-                        .await
-                })
-                .await
-        });
-        timeout(queue_drain_timeout(), async {
-            loop {
-                let queued = queues
-                    .inner
-                    .lock()
-                    .await
-                    .get(&key)
-                    .is_some_and(|queue| !queue.is_empty());
-                if queued {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("current request should be queued");
-
-        let later_values_tx = values_tx.clone();
-        queues
-            .enqueue_background(key, RequestSerializationAccess::Exclusive, async move {
-                later_values_tx
-                    .send(THIRD_REQUEST_VALUE)
-                    .expect("receiver should be open");
-            })
-            .await;
-        drop(values_tx);
-        earlier_release_tx
-            .send(())
-            .expect("earlier request should still be waiting");
-
-        current
-            .await
-            .expect("current task should join")
-            .expect("current serialized task should complete")
-            .expect("nested serialized task should complete");
-        let mut values = vec![FIRST_REQUEST_VALUE];
-        while let Some(value) = timeout(queue_drain_timeout(), values_rx.recv())
-            .await
-            .expect("timed out waiting for queue to drain")
-        {
-            values.push(value);
-        }
-        assert_eq!(
-            values,
-            vec![
-                FIRST_REQUEST_VALUE,
-                SECOND_REQUEST_VALUE,
-                THIRD_REQUEST_VALUE
-            ]
-        );
     }
 }

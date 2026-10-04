@@ -1,4 +1,3 @@
-use codex_config::types::TuiAppTheme;
 use ratatui::style::Color;
 use std::cell::Cell;
 use std::marker::PhantomData;
@@ -133,3 +132,41 @@ pub(crate) fn palette() -> ThemePalette {
 #[cfg(test)]
 #[path = "app_theme_tests.rs"]
 mod tests;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum TuiAppTheme {
+    #[default]
+    TokyoNight,
+    GruvboxDark,
+    CatppuccinMocha,
+    Monochrome,
+}
+
+impl TuiAppTheme {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::TokyoNight => "tokyo-night",
+            Self::GruvboxDark => "gruvbox-dark",
+            Self::CatppuccinMocha => "catppuccin-mocha",
+            Self::Monochrome => "monochrome",
+        }
+    }
+}
+
+pub(crate) fn configured(config: &crate::legacy_core::config::Config) -> TuiAppTheme {
+    config
+        .config_layer_stack
+        .effective_config()
+        .get("tui")
+        .and_then(|tui| tui.get("app_theme"))
+        .and_then(|theme| theme.clone().try_into().ok())
+        .unwrap_or_default()
+}
+
+pub(crate) fn app_theme_edit(theme: TuiAppTheme) -> crate::legacy_core::config::edit::ConfigEdit {
+    crate::legacy_core::config::edit::ConfigEdit::SetPath {
+        segments: vec!["tui".into(), "app_theme".into()],
+        value: toml_edit::value(theme.as_str()),
+    }
+}

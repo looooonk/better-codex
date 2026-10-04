@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::Path;
 
-use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::SessionMeta;
@@ -17,71 +16,232 @@ use super::super::test_support::test_config;
 use super::RolloutLineageSegment;
 
 #[tokio::test]
-async fn resolves_replacement_lineage_for_one_logical_thread() {
+async fn reads_better_replacement_identity_and_saved_ancestor_after_upgrade() {
     let home = TempDir::new().expect("temp dir");
-    let store = test_store(home.path()).await;
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
     let thread_id = ThreadId::new();
-    let root_id = thread_id;
-    let middle_id = RolloutId::new();
-    let head_id = RolloutId::new();
-    let root_path = write_rollout(
+    let replacement_id = ThreadId::new();
+    let source_path = write_rollout(
         home.path(),
         thread_id,
-        root_id,
+        /*history_base*/ None,
+        /*next_ordinal*/ 3,
+    );
+    let revision_dir = home
+        .path()
+        .join("rollout_revisions")
+        .join(thread_id.to_string());
+    fs::create_dir_all(&revision_dir).expect("revision directory");
+    let revision_path = revision_dir.join(format!("{thread_id}.jsonl"));
+    fs::copy(&source_path, &revision_path).expect("save original rollout");
+    let contents = fs::read_to_string(&source_path).expect("read original");
+    let (header, remaining) = contents.split_once('\n').expect("metadata header");
+    let mut header: serde_json::Value = serde_json::from_str(header).expect("metadata JSON");
+    header["payload"]["rollout_id"] = serde_json::json!(replacement_id);
+    fs::write(&source_path, format!("{header}\n{remaining}")).expect("write legacy replacement");
+    let child_id = ThreadId::new();
+    write_rollout(
+        home.path(),
+        child_id,
+        Some(history_position(
+            &revision_path,
+            thread_id,
+            /*end_ordinal_exclusive*/ 3,
+        )),
+        /*next_ordinal*/ 2,
+    );
+
+    let current = store
+        .resolve_rollout_lineage(thread_id, /*initial_path*/ None)
+        .await
+        .expect("resolve legacy replacement");
+    assert_eq!(
+        current
+            .segments()
+            .iter()
+            .map(RolloutLineageSegment::rollout_id)
+            .collect::<Vec<_>>(),
+        vec![replacement_id]
+    );
+    let inherited = store
+        .resolve_rollout_lineage_for_reference(child_id)
+        .await
+        .expect("resolve saved ancestor");
+    assert_eq!(
+        inherited
+            .segments()
+            .iter()
+            .map(RolloutLineageSegment::rollout_id)
+            .collect::<Vec<_>>(),
+        vec![thread_id, child_id]
+    );
+    assert_eq!(
+        fs::read(&revision_path).expect("unchanged ancestor"),
+        contents.as_bytes()
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rejects_reference_lineage_escaping_symlinked_sessions_root() {
+    let home = TempDir::new().expect("temp dir");
+    let external = TempDir::new().expect("external temp dir");
+    let external_sessions = external.path().join("sessions");
+    fs::create_dir_all(external_sessions.as_path()).expect("create external sessions");
+    std::os::unix::fs::symlink(external_sessions.as_path(), home.path().join("sessions"))
+        .expect("symlink sessions");
+    let escaped = TempDir::new().expect("escaped temp dir");
+    let escaped_rollouts = escaped.path().join("rollouts");
+    fs::create_dir_all(escaped_rollouts.as_path()).expect("create escaped rollouts");
+    std::os::unix::fs::symlink(escaped_rollouts.as_path(), external_sessions.join("2026"))
+        .expect("symlink nested sessions directory");
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+    let thread_id = ThreadId::default();
+    write_rollout(
+        home.path(),
+        thread_id,
+        /*history_base*/ None,
+        /*next_ordinal*/ 3,
+    );
+
+    let error = store
+        .resolve_rollout_lineage_for_reference(thread_id)
+        .await
+        .expect_err("escaping reference lineage should be rejected");
+
+    assert!(error.to_string().contains("must be in Codex home"));
+}
+
+#[tokio::test]
+async fn resolves_nested_lineage_with_empty_intermediate_segments() {
+    let home = TempDir::new().expect("temp dir");
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+    let root = ThreadId::default();
+    let middle = ThreadId::default();
+    let child = ThreadId::default();
+    let root_path = write_rollout(
+        home.path(),
+        root,
         /*history_base*/ None,
         /*next_ordinal*/ 6,
     );
-    let root_end = history_position(
-        root_path.as_path(),
-        root_id,
-        /*end_ordinal_exclusive*/ 4,
-    );
-    let middle_path = write_rollout(
-        home.path(),
-        thread_id,
-        middle_id,
-        Some(root_end),
-        /*next_ordinal*/ 7,
-    );
+    let root_end = history_position(root_path.as_path(), root, /*end_ordinal_exclusive*/ 4);
+    let middle_path = write_rollout(home.path(), middle, Some(root_end), /*next_ordinal*/ 1);
     let middle_end = history_position(
         middle_path.as_path(),
-        middle_id,
-        /*end_ordinal_exclusive*/ 6,
+        middle,
+        /*end_ordinal_exclusive*/ 5,
     );
-    let head_path = write_rollout(
+    let child_path = write_rollout(
         home.path(),
-        thread_id,
-        head_id,
+        child,
         Some(middle_end),
-        /*next_ordinal*/ 9,
+        /*next_ordinal*/ 3,
     );
-    seed_selected_rollout(&store, thread_id, head_path.clone()).await;
 
     let lineage = store
-        .resolve_rollout_lineage(thread_id)
+        .resolve_rollout_lineage(child, /*initial_path*/ None)
         .await
-        .expect("resolve replacement lineage");
+        .expect("resolve nested lineage");
 
     assert_eq!(
         lineage.segments,
         vec![
             RolloutLineageSegment {
-                rollout_id: root_id,
-                rollout_path: root_path,
+                rollout_id: root,
+                rollout_path: root_path.clone(),
                 start_ordinal: 1,
                 end: Some(root_end),
             },
             RolloutLineageSegment {
-                rollout_id: middle_id,
-                rollout_path: middle_path,
+                rollout_id: middle,
+                rollout_path: middle_path.clone(),
                 start_ordinal: 5,
                 end: Some(middle_end),
             },
             RolloutLineageSegment {
-                rollout_id: head_id,
-                rollout_path: head_path,
-                start_ordinal: 7,
+                rollout_id: child,
+                rollout_path: child_path,
+                start_ordinal: 6,
                 end: None,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn resolves_archived_ancestors() {
+    let home = TempDir::new().expect("temp dir");
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+    let root = ThreadId::default();
+    let child = ThreadId::default();
+    let root_path = write_rollout_under(
+        home.path().join("archived_sessions"),
+        root,
+        /*history_base*/ None,
+        /*next_ordinal*/ 3,
+    );
+    write_rollout(
+        home.path(),
+        child,
+        Some(history_position(
+            root_path.as_path(),
+            root,
+            /*end_ordinal_exclusive*/ 3,
+        )),
+        /*next_ordinal*/ 2,
+    );
+
+    let lineage = store
+        .resolve_rollout_lineage(child, /*initial_path*/ None)
+        .await
+        .expect("resolve archived ancestor");
+
+    assert_eq!(lineage.segments[0].rollout_path, root_path);
+}
+
+#[tokio::test]
+async fn resolves_lineage_at_explicit_history_position() {
+    let home = TempDir::new().expect("temp dir");
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+    let root = ThreadId::default();
+    let child = ThreadId::default();
+    let root_path = write_rollout(
+        home.path(),
+        root,
+        /*history_base*/ None,
+        /*next_ordinal*/ 6,
+    );
+    let root_end = history_position(root_path.as_path(), root, /*end_ordinal_exclusive*/ 4);
+    let child_path = write_rollout(home.path(), child, Some(root_end), /*next_ordinal*/ 4);
+    let end = history_position(
+        child_path.as_path(),
+        child,
+        /*end_ordinal_exclusive*/ 6,
+    );
+
+    let lineage = store
+        .resolve_rollout_lineage(child, /*initial_path*/ None)
+        .await
+        .expect("resolve child lineage")
+        .truncate_at(end)
+        .await
+        .expect("resolve explicit position");
+
+    assert_eq!(
+        lineage.segments,
+        vec![
+            RolloutLineageSegment {
+                rollout_id: root,
+                rollout_path: root_path.clone(),
+                start_ordinal: 1,
+                end: Some(root_end),
+            },
+            RolloutLineageSegment {
+                rollout_id: child,
+                rollout_path: child_path.clone(),
+                start_ordinal: 5,
+                end: Some(end),
             },
         ]
     );
@@ -90,284 +250,96 @@ async fn resolves_replacement_lineage_for_one_logical_thread() {
 #[tokio::test]
 async fn rejects_missing_cycles_and_out_of_bounds_offsets() {
     let home = TempDir::new().expect("temp dir");
-    let store = test_store(home.path()).await;
-
-    let missing_thread = ThreadId::new();
-    let missing_head = RolloutId::new();
-    let missing_path = write_rollout(
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+    let missing_parent = ThreadId::default();
+    let missing_child = ThreadId::default();
+    write_rollout(
         home.path(),
-        missing_thread,
-        missing_head,
-        Some(unchecked_history_position(RolloutId::new(), 1)),
+        missing_child,
+        Some(unchecked_history_position(
+            missing_parent,
+            /*end_ordinal_exclusive*/ 1,
+        )),
         /*next_ordinal*/ 2,
     );
-    seed_selected_rollout(&store, missing_thread, missing_path).await;
-    assert_invalid_lineage(&store, missing_thread, "missing source rollout").await;
+    assert_invalid_lineage(&store, missing_child, "missing source rollout").await;
 
-    let cycle_thread = ThreadId::new();
-    let cycle_a = RolloutId::new();
-    let cycle_b = RolloutId::new();
-    let cycle_a_path = write_rollout(
+    let cycle_a = ThreadId::default();
+    let cycle_b = ThreadId::default();
+    write_rollout(
         home.path(),
-        cycle_thread,
         cycle_a,
-        /*history_base*/ None,
-        /*next_ordinal*/ 1,
+        Some(unchecked_history_position(
+            cycle_b, /*end_ordinal_exclusive*/ 1,
+        )),
+        /*next_ordinal*/ 2,
     );
-    let cycle_b_path = write_rollout(
+    write_rollout(
         home.path(),
-        cycle_thread,
         cycle_b,
-        /*history_base*/ None,
-        /*next_ordinal*/ 1,
+        Some(unchecked_history_position(
+            cycle_a, /*end_ordinal_exclusive*/ 1,
+        )),
+        /*next_ordinal*/ 2,
     );
-    write_cycle_metadata(
-        cycle_a_path.as_path(),
-        cycle_a,
-        cycle_b_path.as_path(),
-        cycle_b,
-    );
-    seed_selected_rollout(&store, cycle_thread, cycle_a_path).await;
-    assert_invalid_lineage(&store, cycle_thread, "cycle detected").await;
+    assert_invalid_lineage(&store, cycle_a, "cycle detected").await;
 
-    let invalid_thread = ThreadId::new();
-    let invalid_root = invalid_thread;
-    let invalid_head = RolloutId::new();
-    let invalid_root_path = write_rollout(
+    let root = ThreadId::default();
+    let invalid_child = ThreadId::default();
+    let root_path = write_rollout(
         home.path(),
-        invalid_thread,
-        invalid_root,
+        root,
         /*history_base*/ None,
         /*next_ordinal*/ 2,
     );
-    let invalid_path = write_rollout(
+    write_rollout(
         home.path(),
-        invalid_thread,
-        invalid_head,
+        invalid_child,
         Some(HistoryPosition {
-            thread_id: invalid_root,
+            thread_id: root,
             end_ordinal_exclusive: 2,
-            end_byte_offset: fs::metadata(invalid_root_path)
-                .expect("root metadata")
-                .len()
-                + 1,
+            end_byte_offset: fs::metadata(root_path).expect("root metadata").len() + 1,
         }),
-        /*next_ordinal*/ 3,
+        /*next_ordinal*/ 2,
     );
-    seed_selected_rollout(&store, invalid_thread, invalid_path).await;
     assert_invalid_lineage(
         &store,
-        invalid_thread,
-        "rollout boundary is past the final record",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn rejects_cutoffs_inside_records_and_with_mismatched_ordinals() {
-    let home = TempDir::new().expect("temp dir");
-    let store = test_store(home.path()).await;
-
-    for (end_ordinal_exclusive, offset_adjustment, detail) in [
-        (2, -1i64, "rollout boundary is inside a JSONL record"),
-        (3, 0, "cutoff byte offset disagrees with rollout ordinals"),
-    ] {
-        let thread_id = ThreadId::new();
-        let root_path = write_rollout(
-            home.path(),
-            thread_id,
-            thread_id,
-            /*history_base*/ None,
-            /*next_ordinal*/ 4,
-        );
-        let offset = rollout_end_byte_offset(root_path.as_path(), /*end_ordinal_exclusive*/ 2);
-        let end_byte_offset = if offset_adjustment < 0 {
-            offset - offset_adjustment.unsigned_abs()
-        } else {
-            offset + offset_adjustment as u64
-        };
-        let head_id = RolloutId::new();
-        let head_path = write_rollout(
-            home.path(),
-            thread_id,
-            head_id,
-            Some(HistoryPosition {
-                thread_id,
-                end_ordinal_exclusive,
-                end_byte_offset,
-            }),
-            /*next_ordinal*/ 5,
-        );
-        seed_selected_rollout(&store, thread_id, head_path).await;
-        assert_invalid_lineage(&store, thread_id, detail).await;
-    }
-}
-
-#[tokio::test]
-async fn rejects_ancestor_rollouts_owned_by_another_logical_thread() {
-    let home = TempDir::new().expect("temp dir");
-    let store = test_store(home.path()).await;
-    let thread_id = ThreadId::new();
-    let other_thread_id = ThreadId::new();
-    let ancestor_id = RolloutId::new();
-    let ancestor_path = write_rollout(
-        home.path(),
-        other_thread_id,
-        ancestor_id,
-        /*history_base*/ None,
-        /*next_ordinal*/ 3,
-    );
-    let head_path = write_rollout(
-        home.path(),
-        thread_id,
-        RolloutId::new(),
-        Some(history_position(
-            ancestor_path.as_path(),
-            ancestor_id,
-            /*end_ordinal_exclusive*/ 2,
-        )),
-        /*next_ordinal*/ 4,
-    );
-    seed_selected_rollout(&store, thread_id, head_path).await;
-
-    assert_invalid_lineage(
-        &store,
-        thread_id,
-        "source rollout belongs to another thread",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn rejects_canonical_ancestor_with_mismatched_metadata_rollout_id() {
-    let home = TempDir::new().expect("temp dir");
-    let store = test_store(home.path()).await;
-    let thread_id = ThreadId::new();
-    let ancestor_id = RolloutId::new();
-    let ancestor_path = write_rollout(
-        home.path(),
-        thread_id,
-        ancestor_id,
-        /*history_base*/ None,
-        /*next_ordinal*/ 3,
-    );
-    set_rollout_id(ancestor_path.as_path(), RolloutId::new());
-    let head_path = write_rollout(
-        home.path(),
-        thread_id,
-        RolloutId::new(),
-        Some(history_position(
-            ancestor_path.as_path(),
-            ancestor_id,
-            /*end_ordinal_exclusive*/ 2,
-        )),
-        /*next_ordinal*/ 4,
-    );
-    seed_selected_rollout(&store, thread_id, head_path).await;
-
-    assert_invalid_lineage(
-        &store,
-        thread_id,
-        "source rollout identity disagrees with requested rollout",
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn rejects_revision_ancestor_with_mismatched_metadata_rollout_id() {
-    let home = TempDir::new().expect("temp dir");
-    let store = test_store(home.path()).await;
-    let thread_id = ThreadId::new();
-    let ancestor_id = RolloutId::new();
-    let source_path = write_rollout(
-        home.path(),
-        thread_id,
-        ancestor_id,
-        /*history_base*/ None,
-        /*next_ordinal*/ 3,
-    );
-    let revision_dir = home
-        .path()
-        .join(codex_rollout::ROLLOUT_REVISIONS_SUBDIR)
-        .join(thread_id.to_string());
-    fs::create_dir_all(revision_dir.as_path()).expect("create revision directory");
-    let ancestor_path = revision_dir.join(format!("{ancestor_id}.jsonl"));
-    fs::rename(source_path, ancestor_path.as_path()).expect("move ancestor to revisions");
-    set_rollout_id(ancestor_path.as_path(), RolloutId::new());
-    let head_path = write_rollout(
-        home.path(),
-        thread_id,
-        RolloutId::new(),
-        Some(history_position(
-            ancestor_path.as_path(),
-            ancestor_id,
-            /*end_ordinal_exclusive*/ 2,
-        )),
-        /*next_ordinal*/ 4,
-    );
-    seed_selected_rollout(&store, thread_id, head_path).await;
-
-    assert_invalid_lineage(
-        &store,
-        thread_id,
-        "source rollout identity disagrees with requested rollout",
+        invalid_child,
+        "cutoff byte offset is past the source rollout",
     )
     .await;
 }
 
 async fn assert_invalid_lineage(store: &LocalThreadStore, thread_id: ThreadId, detail: &str) {
     let err = store
-        .resolve_rollout_lineage(thread_id)
+        .resolve_rollout_lineage(thread_id, /*initial_path*/ None)
         .await
         .expect_err("lineage should be invalid");
     assert!(err.to_string().contains(detail), "{err}");
 }
 
-async fn seed_selected_rollout(
-    store: &LocalThreadStore,
-    thread_id: ThreadId,
-    rollout_path: std::path::PathBuf,
-) {
-    let runtime = store.state_db().await.expect("state runtime");
-    let mut builder = codex_state::ThreadMetadataBuilder::new(
-        thread_id,
-        rollout_path,
-        chrono::Utc::now(),
-        codex_protocol::protocol::SessionSource::Exec,
-    );
-    builder.history_mode = ThreadHistoryMode::Paginated;
-    runtime
-        .upsert_thread(&builder.build(store.config.default_model_provider_id.as_str()))
-        .await
-        .expect("seed selected rollout");
-}
-
-async fn test_store(home: &Path) -> LocalThreadStore {
-    let config = test_config(home);
-    let runtime = codex_state::StateRuntime::init(
-        config.sqlite_home.clone(),
-        config.default_model_provider_id.clone(),
-    )
-    .await
-    .expect("state runtime");
-    LocalThreadStore::new(config, Some(runtime))
-}
-
 fn write_rollout(
     home: &Path,
     thread_id: ThreadId,
-    rollout_id: RolloutId,
     history_base: Option<HistoryPosition>,
     next_ordinal: u64,
 ) -> std::path::PathBuf {
-    let directory = home.join("sessions/2026/07/16");
+    write_rollout_under(
+        home.join("sessions/2026/07/16"),
+        thread_id,
+        history_base,
+        next_ordinal,
+    )
+}
+
+fn write_rollout_under(
+    directory: std::path::PathBuf,
+    thread_id: ThreadId,
+    history_base: Option<HistoryPosition>,
+    next_ordinal: u64,
+) -> std::path::PathBuf {
     fs::create_dir_all(directory.as_path()).expect("create rollout directory");
-    let suffix = if rollout_id == thread_id {
-        thread_id.to_string()
-    } else {
-        format!("{thread_id}_{rollout_id}")
-    };
-    let path = directory.join(format!("rollout-2026-07-16T00-00-00-{suffix}.jsonl"));
+    let path = directory.join(format!("rollout-2026-07-16T00-00-00-{thread_id}.jsonl"));
     let initial_ordinal = history_base.map_or(0, |base| base.end_ordinal_exclusive);
     let mut lines = vec![rollout_line(
         initial_ordinal,
@@ -382,7 +354,10 @@ fn write_rollout(
             git: None,
         }),
     )];
-    for ordinal in initial_ordinal + 1..next_ordinal {
+    for offset in 1..next_ordinal {
+        let ordinal = initial_ordinal
+            .checked_add(offset)
+            .expect("fixture ordinal");
         lines.push(rollout_line(
             ordinal,
             RolloutItem::EventMsg(codex_protocol::protocol::EventMsg::ShutdownComplete),
@@ -403,11 +378,11 @@ fn rollout_line(ordinal: u64, item: RolloutItem) -> String {
 
 fn history_position(
     path: &Path,
-    rollout_id: RolloutId,
+    thread_id: ThreadId,
     end_ordinal_exclusive: u64,
 ) -> HistoryPosition {
     HistoryPosition {
-        thread_id: rollout_id,
+        thread_id,
         end_ordinal_exclusive,
         end_byte_offset: rollout_end_byte_offset(path, end_ordinal_exclusive),
     }
@@ -415,10 +390,10 @@ fn history_position(
 
 fn rollout_end_byte_offset(path: &Path, end_ordinal_exclusive: u64) -> u64 {
     let bytes = fs::read(path).expect("read rollout");
-    let byte_count = bytes
+    let end_byte_offset = bytes
         .split_inclusive(|byte| *byte == b'\n')
         .take_while(|line| {
-            serde_json::from_slice::<RolloutLine>(line)
+            codex_rollout::parse_rollout_line_bytes(line)
                 .expect("parse rollout fixture")
                 .ordinal
                 .expect("paginated rollout ordinal")
@@ -426,86 +401,13 @@ fn rollout_end_byte_offset(path: &Path, end_ordinal_exclusive: u64) -> u64 {
         })
         .map(<[u8]>::len)
         .sum::<usize>();
-    u64::try_from(byte_count).expect("rollout byte offset")
+    u64::try_from(end_byte_offset).expect("rollout byte offset fits u64")
 }
 
-fn unchecked_history_position(
-    rollout_id: RolloutId,
-    end_ordinal_exclusive: u64,
-) -> HistoryPosition {
+fn unchecked_history_position(thread_id: ThreadId, end_ordinal_exclusive: u64) -> HistoryPosition {
     HistoryPosition {
-        thread_id: rollout_id,
+        thread_id,
         end_ordinal_exclusive,
         end_byte_offset: 0,
     }
-}
-
-fn write_cycle_metadata(
-    cycle_a_path: &Path,
-    cycle_a: RolloutId,
-    cycle_b_path: &Path,
-    cycle_b: RolloutId,
-) {
-    let mut cycle_a_offset = 1;
-    let mut cycle_b_offset = 1;
-    for _ in 0..8 {
-        set_history_base_and_ordinal(
-            cycle_a_path,
-            HistoryPosition {
-                thread_id: cycle_b,
-                end_ordinal_exclusive: 1,
-                end_byte_offset: cycle_b_offset,
-            },
-            /*ordinal*/ 1,
-        );
-        set_history_base_and_ordinal(
-            cycle_b_path,
-            HistoryPosition {
-                thread_id: cycle_a,
-                end_ordinal_exclusive: 2,
-                end_byte_offset: cycle_a_offset,
-            },
-            /*ordinal*/ 0,
-        );
-        let next_cycle_a_offset = fs::metadata(cycle_a_path).expect("cycle A metadata").len();
-        let next_cycle_b_offset = fs::metadata(cycle_b_path).expect("cycle B metadata").len();
-        if (next_cycle_a_offset, next_cycle_b_offset) == (cycle_a_offset, cycle_b_offset) {
-            return;
-        }
-        cycle_a_offset = next_cycle_a_offset;
-        cycle_b_offset = next_cycle_b_offset;
-    }
-    panic!("cycle fixture offsets did not converge");
-}
-
-fn set_history_base_and_ordinal(path: &Path, history_base: HistoryPosition, ordinal: u64) {
-    let contents = fs::read_to_string(path).expect("read rollout");
-    let mut lines = contents.lines();
-    let mut head: serde_json::Value =
-        serde_json::from_str(lines.next().expect("session metadata")).expect("parse metadata");
-    head["ordinal"] = serde_json::json!(ordinal);
-    head["payload"]["history_base"] =
-        serde_json::to_value(history_base).expect("serialize history base");
-    let mut updated = serde_json::to_string(&head).expect("serialize metadata");
-    for line in lines {
-        updated.push('\n');
-        updated.push_str(line);
-    }
-    updated.push('\n');
-    fs::write(path, updated).expect("write history base");
-}
-
-fn set_rollout_id(path: &Path, rollout_id: RolloutId) {
-    let contents = fs::read_to_string(path).expect("read rollout");
-    let mut lines = contents.lines();
-    let mut head: serde_json::Value =
-        serde_json::from_str(lines.next().expect("session metadata")).expect("parse metadata");
-    head["payload"]["rollout_id"] = serde_json::json!(rollout_id);
-    let mut updated = serde_json::to_string(&head).expect("serialize metadata");
-    for line in lines {
-        updated.push('\n');
-        updated.push_str(line);
-    }
-    updated.push('\n');
-    fs::write(path, updated).expect("write rollout id");
 }

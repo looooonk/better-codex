@@ -1,26 +1,23 @@
+use std::time::Duration;
+
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeNestedToolCall;
 use codex_code_mode_protocol::CodeModeToolKind;
 use codex_code_mode_protocol::ExecuteRequest;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
 use codex_code_mode_protocol::ImageDetail;
-use codex_code_mode_protocol::MAX_JSON_BYTES;
 use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::ToolDefinition;
 use codex_code_mode_protocol::WaitOutcome;
-use codex_code_mode_protocol::encode_bounded_json;
 use codex_code_mode_protocol::grpc;
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
-use codex_code_mode_protocol::parse_bounded_json;
 use codex_protocol::ToolName;
-use prost::Message;
 
 pub(super) fn execute_request(
     session_id: &str,
     execution_id: String,
     request: ExecuteRequest,
 ) -> Result<grpc::ExecuteRequest, String> {
-    let request = grpc::ExecuteRequest {
+    Ok(grpc::ExecuteRequest {
         session_id: session_id.to_string(),
         execution_id,
         tool_call_id: request.tool_call_id,
@@ -36,14 +33,7 @@ pub(super) fn execute_request(
             .map(u64::try_from)
             .transpose()
             .map_err(|error| format!("invalid code-mode output token limit: {error}"))?,
-    };
-    let encoded_len = request.encoded_len();
-    if encoded_len > MAX_APPLICATION_MESSAGE_BYTES {
-        return Err(format!(
-            "code-mode execution request of {encoded_len} encoded bytes exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
-        ));
-    }
-    Ok(request)
+    })
 }
 
 fn tool_definition(definition: ToolDefinition) -> Result<grpc::ToolDefinition, String> {
@@ -60,12 +50,12 @@ fn tool_definition(definition: ToolDefinition) -> Result<grpc::ToolDefinition, S
         },
         input_schema_json: definition
             .input_schema
-            .map(|schema| encode_bounded_json(&schema, MAX_JSON_BYTES))
+            .map(|schema| serde_json::to_vec(&schema))
             .transpose()
             .map_err(|error| format!("failed to encode code-mode tool input schema: {error}"))?,
         output_schema_json: definition
             .output_schema
-            .map(|schema| encode_bounded_json(&schema, MAX_JSON_BYTES))
+            .map(|schema| serde_json::to_vec(&schema))
             .transpose()
             .map_err(|error| format!("failed to encode code-mode tool output schema: {error}"))?,
     })
@@ -87,7 +77,7 @@ pub(super) fn tool_call(call: grpc::ToolCall) -> Result<CodeModeNestedToolCall, 
     };
     let input = call
         .input_json
-        .map(|input| parse_bounded_json(&input))
+        .map(|input| serde_json::from_slice(&input))
         .transpose()
         .map_err(|error| format!("code-mode tool invocation contains invalid JSON: {error}"))?;
 
@@ -101,6 +91,7 @@ pub(super) fn tool_call(call: grpc::ToolCall) -> Result<CodeModeNestedToolCall, 
 }
 
 pub(super) fn runtime_response(outcome: grpc::ExecutionOutcome) -> Result<RuntimeResponse, String> {
+    let code_mode_host_duration = Some(Duration::from_nanos(outcome.code_mode_host_duration_ns));
     super::validate_identifier(&outcome.cell_id, "cell ID")?;
     let cell_id = CellId::new(outcome.cell_id);
     let content_items = outcome
@@ -108,24 +99,28 @@ pub(super) fn runtime_response(outcome: grpc::ExecutionOutcome) -> Result<Runtim
         .into_iter()
         .map(content_item)
         .collect::<Result<Vec<_>, _>>()?;
-    match outcome
+    let response = match outcome
         .outcome
         .ok_or_else(|| "code-mode execution omitted its outcome".to_string())?
     {
-        grpc::execution_outcome::Outcome::Yielded(_) => Ok(RuntimeResponse::Yielded {
+        grpc::execution_outcome::Outcome::Yielded(_) => RuntimeResponse::Yielded {
             cell_id,
             content_items,
-        }),
-        grpc::execution_outcome::Outcome::Terminated(_) => Ok(RuntimeResponse::Terminated {
+            code_mode_host_duration,
+        },
+        grpc::execution_outcome::Outcome::Terminated(_) => RuntimeResponse::Terminated {
             cell_id,
             content_items,
-        }),
-        grpc::execution_outcome::Outcome::Completed(completed) => Ok(RuntimeResponse::Result {
+            code_mode_host_duration,
+        },
+        grpc::execution_outcome::Outcome::Completed(completed) => RuntimeResponse::Result {
             cell_id,
             content_items,
             error_text: completed.error_text,
-        }),
-    }
+            code_mode_host_duration,
+        },
+    };
+    Ok(response)
 }
 
 pub(super) fn wait_outcome(response: grpc::WaitResponse) -> Result<WaitOutcome, String> {
@@ -153,6 +148,9 @@ fn content_item(item: grpc::ContentItem) -> Result<FunctionCallOutputContentItem
         grpc::content_item::Item::Image(image) => Ok(FunctionCallOutputContentItem::InputImage {
             image_url: image.image_url,
             detail: image.detail.map(image_detail).transpose()?,
+        }),
+        grpc::content_item::Item::Audio(audio) => Ok(FunctionCallOutputContentItem::InputAudio {
+            audio_url: audio.audio_url,
         }),
     }
 }

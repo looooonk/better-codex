@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use anyhow::Result;
 use anyhow::anyhow;
-use codex_rmcp_client::McpProtocolMode;
 use rmcp::model::PaginatedRequestParams;
 
 const MAX_MCP_CATALOG_PAGES: usize = 100;
@@ -74,30 +73,10 @@ where
         }
     };
 
-    let timeout = overall_timeout
-        .unwrap_or(DEFAULT_MCP_PAGINATION_TIMEOUT)
-        .min(DEFAULT_MCP_PAGINATION_TIMEOUT);
+    let timeout = overall_timeout.unwrap_or(DEFAULT_MCP_PAGINATION_TIMEOUT);
     tokio::time::timeout(timeout, collect)
         .await
         .map_err(|_| anyhow!("{method} pagination timed out after {timeout:?}"))?
-}
-
-pub(crate) async fn collect_tool_catalog<T, F, Fut>(
-    protocol_mode: McpProtocolMode,
-    overall_timeout: Option<Duration>,
-    max_items: usize,
-    mut fetch: F,
-) -> Result<Vec<T>>
-where
-    F: FnMut(Option<PaginatedRequestParams>) -> Fut,
-    Fut: Future<Output = Result<(Vec<T>, Option<String>)>>,
-{
-    match protocol_mode {
-        McpProtocolMode::Legacy => Ok(fetch(/*params*/ None).await?.0),
-        McpProtocolMode::V20260728 => {
-            collect_paginated_with_limit("tools/list", overall_timeout, max_items, fetch).await
-        }
-    }
 }
 
 #[cfg(test)]

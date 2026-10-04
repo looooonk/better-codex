@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
+use codex_extension_api::ContentItemKind;
 use codex_extension_api::ContextContributor;
-use codex_extension_api::ContextualUserFragment;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::PromptFragment;
@@ -17,26 +17,6 @@ pub fn install(registry: &mut ExtensionRegistryBuilder<()>) {
 #[derive(Debug)]
 struct StyleContributor;
 
-struct ExampleDeveloperFragment(&'static str);
-
-impl ContextualUserFragment for ExampleDeveloperFragment {
-    fn role(&self) -> &'static str {
-        "developer"
-    }
-
-    fn markers(&self) -> (&'static str, &'static str) {
-        Self::type_markers()
-    }
-
-    fn body(&self) -> String {
-        self.0.to_string()
-    }
-
-    fn type_markers() -> (&'static str, &'static str) {
-        ("", "")
-    }
-}
-
 impl ContextContributor for StyleContributor {
     fn contribute_thread_context<'a>(
         &'a self,
@@ -47,9 +27,10 @@ impl ContextContributor for StyleContributor {
             contribution_counts(session_store).record_style();
             contribution_counts(thread_store).record_style();
 
-            vec![PromptFragment::developer_policy(ExampleDeveloperFragment(
+            vec![PromptFragment::developer_policy(
                 "Prefer short answers unless the user asks for detail.",
-            ))]
+                ContentItemKind("example.style_instructions".to_string()),
+            )]
         })
     }
 }
@@ -68,9 +49,8 @@ impl ContextContributor for UsageContributor {
             contribution_counts(thread_store).record_usage();
 
             vec![PromptFragment::developer_capability(
-                ExampleDeveloperFragment(
-                    "This extension can contribute more than one prompt fragment.",
-                ),
+                "This extension can contribute more than one prompt fragment.",
+                ContentItemKind("example.usage_instructions".to_string()),
             )]
         })
     }

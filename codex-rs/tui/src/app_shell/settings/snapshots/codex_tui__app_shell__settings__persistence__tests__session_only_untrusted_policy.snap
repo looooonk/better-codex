@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/settings/persistence_tests.rs
+assertion_line: 71
+expression: rendered
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  Better Codex app shell
+ ▎ YOU  Create a divergent standalone TUI.
+
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build she╭ Select approval policy ──────────────────────────────────────────╮
+         2. Wire tran│   1 ○ On request                                                 │
+         3. Render da│       Let Codex request approval when an action needs it.        │
+                     │ › 2 ● Unless trusted (this session)  current                     │
+ ▌ tool exec just tes│       Ask before commands that are not known to be safe. Saved   │
+                     │   3 ○ Never                                                      │
+ ▌ edited 3 files +12│       Never pause the agent to request approval.                 │
+                     │  wheel / j k  Enter select  Esc cancel  2/3                      │
+ ▎ CODEX  The new she╰──────────────────────────────────────────────────────────────────╯
+
+
+
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                             │
+│> Summarize the new shell architecture                                                                      │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

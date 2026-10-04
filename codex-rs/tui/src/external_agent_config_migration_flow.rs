@@ -59,6 +59,7 @@ pub(crate) fn external_agent_config_migration_started_lines(
                     .filter_map(|session| session.title.as_deref())
                     .collect(),
                 ExternalAgentConfigMigrationItemType::AgentsMd
+                | ExternalAgentConfigMigrationItemType::Memory
                 | ExternalAgentConfigMigrationItemType::Config => Vec::new(),
             });
         let count = external_agent_config_migration_item_count(item);

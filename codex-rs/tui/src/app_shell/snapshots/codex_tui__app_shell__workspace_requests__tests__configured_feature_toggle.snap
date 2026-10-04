@@ -1,0 +1,27 @@
+---
+source: tui/src/app_shell/workspace_requests_tests.rs
+assertion_line: 83
+expression: rendered
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  worktrees enabled in configuration
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

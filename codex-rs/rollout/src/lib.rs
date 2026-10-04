@@ -6,9 +6,11 @@ use codex_protocol::protocol::SessionSource;
 use serde::de::Error as _;
 use serde_json::Value;
 
+mod better_compat;
 pub(crate) mod compression;
 pub(crate) mod config;
 pub(crate) mod list;
+mod maintenance;
 pub(crate) mod metadata;
 mod model_context;
 mod ordinal;
@@ -17,27 +19,42 @@ pub(crate) mod policy;
 pub(crate) mod recorder;
 mod reverse_jsonl_scanner;
 mod rollout_file_name;
-mod sanitizer;
+mod rollout_reference_index;
 pub(crate) mod search;
+mod seekable_reader;
 pub(crate) mod session_index;
 mod sqlite_metrics;
 pub mod state_db;
+mod writer_lock;
 
 pub use codex_history::CompactedItem;
+pub use codex_history::CompactionResumeMetadata;
 pub use codex_history::InitialHistory;
+pub use codex_history::ResponseItemEnvelope;
 pub use codex_history::ResumedHistory;
+pub use codex_history::RetainedContextEntry;
+pub use codex_history::RetainedContextEvent;
+pub use codex_history::RetainedInputSource;
 pub use codex_history::RolloutItem;
 pub use codex_history::RolloutLine;
+pub use codex_history::resume_multi_agent_version;
 pub(crate) use codex_protocol::protocol;
 
 /// Decodes a persisted rollout record without Serde's flattened-envelope buffering.
 ///
-/// With `serde_json/arbitrary_precision`, generic buffering cannot replay floating-point values
-/// nested inside flattened or internally tagged fields. Keep this workaround at the JSON
-/// persistence boundary so resume and projection use the same decoder.
+/// With `serde_json/arbitrary_precision`, Serde's generic buffer cannot replay
+/// floating-point values nested inside flattened or internally tagged fields:
+/// https://github.com/serde-rs/json/issues/721
+/// https://github.com/serde-rs/serde/issues/1183
+///
+/// Keep this JSON-specific workaround at the persistence boundary so history
+/// remains format-neutral and resume and projection use the same item decoder.
+/// Remove it once Serde supports format-specific buffering.
 pub fn decode_rollout_line(value: Value) -> serde_json::Result<RolloutLine> {
     let Value::Object(mut fields) = value else {
-        return serde_json::from_value(value);
+        return Err(serde_json::Error::custom(
+            "rollout line must be a JSON object",
+        ));
     };
     let timestamp = fields
         .remove("timestamp")
@@ -57,9 +74,18 @@ pub fn decode_rollout_line(value: Value) -> serde_json::Result<RolloutLine> {
     })
 }
 
+/// Parses a persisted JSONL rollout record through the canonical JSON decoder.
+pub fn parse_rollout_line(line: &str) -> serde_json::Result<RolloutLine> {
+    serde_json::from_str::<Value>(line).and_then(decode_rollout_line)
+}
+
+/// Parses persisted JSONL rollout record bytes through the canonical JSON decoder.
+pub fn parse_rollout_line_bytes(bytes: &[u8]) -> serde_json::Result<RolloutLine> {
+    serde_json::from_slice::<Value>(bytes).and_then(decode_rollout_line)
+}
+
 pub const SESSIONS_SUBDIR: &str = "sessions";
 pub const ARCHIVED_SESSIONS_SUBDIR: &str = "archived_sessions";
-pub const ROLLOUT_REVISIONS_SUBDIR: &str = "rollout_revisions";
 pub static INTERACTIVE_SESSION_SOURCES: LazyLock<Vec<SessionSource>> = LazyLock::new(|| {
     vec![
         SessionSource::Cli,
@@ -69,26 +95,23 @@ pub static INTERACTIVE_SESSION_SOURCES: LazyLock<Vec<SessionSource>> = LazyLock:
     ]
 });
 
+pub use better_compat::rollout_id_for_path;
 pub use codex_protocol::protocol::SessionMeta;
+pub use compression::RolloutCompressionTrigger;
 pub use compression::RolloutLineReader;
 pub use compression::existing_rollout_path;
 pub use compression::open_rollout_line_reader;
 pub use compression::plain_rollout_path;
 pub use compression::spawn_rollout_compression_worker;
+pub use seekable_reader::open_rollout_seekable_reader;
+pub use seekable_reader::read_rollout_prefix;
+pub use seekable_reader::rollout_contains_prefix;
 
 /// Materializes a compressed rollout as plain JSONL before another rollout references it.
 pub async fn materialize_rollout_for_reference(
     path: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
-    compression::materialize_rollout_for_reference(path).await
-}
-
-/// Returns the paginated record ordinals adjacent to a logical JSONL byte boundary.
-pub async fn rollout_ordinals_at_boundary(
-    path: &std::path::Path,
-    end_byte_offset: u64,
-) -> std::io::Result<(u64, Option<u64>)> {
-    compression::rollout_ordinals_at_boundary(path, end_byte_offset).await
+    compression::materialize_rollout_for_append(path, /*writer_lock*/ None).await
 }
 pub use config::Config;
 pub use config::RolloutConfig;
@@ -101,13 +124,10 @@ pub use list::ThreadListLayout;
 pub use list::ThreadSortKey;
 pub use list::ThreadsPage;
 pub use list::find_archived_thread_path_by_id_str;
-pub use list::find_archived_thread_paths_by_id;
 pub use list::find_rollout_path_by_rollout_id;
-pub use list::find_rollout_revision_paths_by_thread;
 pub use list::find_thread_path_by_id_str;
 #[deprecated(note = "use find_thread_path_by_id_str")]
 pub use list::find_thread_path_by_id_str as find_conversation_path_by_id_str;
-pub use list::find_thread_paths_by_id;
 pub use list::get_threads;
 pub use list::get_threads_in_root;
 pub use list::parse_cursor;
@@ -115,53 +135,40 @@ pub use list::read_head_for_summary;
 pub use list::read_session_meta_line;
 pub use list::read_thread_item_from_rollout;
 pub use list::rollout_date_parts;
+pub use maintenance::RolloutMaintenanceGuard;
+pub use maintenance::try_acquire_rollout_maintenance_lock;
 pub use metadata::builder_from_items;
+pub use metadata::forked_from_ordinal_exclusive;
 pub use metadata::rollout_id_from_path;
-pub use metadata::thread_id_from_rollout_path;
 pub use model_context::ModelContextScan;
 pub use model_context::ModelContextScanProgress;
 pub use persistence_metrics::RolloutPersistenceBatchMeasurement;
 pub use persistence_metrics::RolloutPersistenceTelemetry;
 pub use persistence_metrics::measure_and_filter_rollout_items;
-pub use policy::is_persisted_rollout_item;
+pub use policy::into_persisted_rollout_items;
+pub use policy::persisted_rollout_item;
 pub use policy::persisted_rollout_items;
+pub use policy::should_persist_response_item;
 pub use policy::should_persist_response_item_for_memories;
 pub use recorder::RolloutRecorder;
 pub use recorder::RolloutRecorderParams;
 pub use recorder::append_rollout_item_to_path;
 pub use reverse_jsonl_scanner::ReverseJsonlScanner;
 pub use reverse_jsonl_scanner::ScanOutcome;
-pub use sanitizer::redact_persisted_json;
-pub use sanitizer::redacted_event_msg_for_diagnostics;
-pub use sanitizer::redacted_response_item_for_diagnostics;
-pub use sanitizer::redacted_rollout_item_for_diagnostics;
+pub use rollout_reference_index::RolloutReferenceIndex;
 pub use search::first_rollout_content_match_snippet;
 pub use search::search_rollout_matches;
 pub use search::search_rollout_paths;
 pub use session_index::append_thread_name;
 pub use session_index::find_thread_meta_by_name_str;
+pub use session_index::find_thread_meta_candidates_by_name_str;
 pub use session_index::find_thread_name_by_id;
 pub use session_index::find_thread_names_by_ids;
 pub use session_index::remove_thread_name_entries;
 pub use state_db::StateDbHandle;
 pub use state_db::sqlite_telemetry_recorder;
-
-/// Returns the downgrade-compatible plain rollout path for a canonical thread rollout.
-pub fn stable_rollout_path(
-    rollout_path: &std::path::Path,
-    thread_id: codex_protocol::ThreadId,
-) -> Option<std::path::PathBuf> {
-    let file_name = rollout_path.file_name()?.to_str()?;
-    let parsed = rollout_file_name::RolloutFileName::parse(file_name)?;
-    if parsed.thread_id() != thread_id {
-        return None;
-    }
-    let stable_name =
-        rollout_file_name::RolloutFileName::new(parsed.timestamp(), thread_id, thread_id)
-            .render()
-            .ok()?;
-    Some(plain_rollout_path(rollout_path).with_file_name(stable_name))
-}
+pub use writer_lock::WriterLockCoordinator;
+pub use writer_lock::WriterLockGuard;
 
 #[cfg(test)]
 mod tests;

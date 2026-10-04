@@ -1,0 +1,31 @@
+---
+source: tui/src/app_shell/status_surfaces_tests.rs
+assertion_line: 41
+expression: rendered
+---
+
+
+                ╭ TERMINAL TITLE ──────────────────────────────────────────────────╮
+                │ › 1 ○ Use default items                                          │
+                │       Restore the native item order                              │
+                │   2 ○ Hide                                                       │
+                │       Disable this display                                       │
+                │   3 ○ [ ] app-name                                               │
+                │       Codex app name                                             │
+                │   4 ○ [ ] project-name                                           │
+                │       Project name (falls back to current directory name)        │
+                │   5 ○ [ ] current-dir                                            │
+                │       Current working directory                                  │
+                │   6 ○ [ ] activity                                               │
+                │       Spinner while working, action-required message while       │
+                │   7 ○ [ ] run-state                                              │
+                │       Compact session run-state text (Ready, Working, Thinking)  │
+                │   8 ○ [x] thread-name                                            │
+                │       Current thread name (omitted when unnamed)                 │
+                │   9 ○ [ ] thread-title                                           │
+                │       Current thread title, or thread identifier when unnamed    │
+                │   · ○ [ ] git-branch                                             │
+                │       Current Git branch (omitted when unavailable)              │
+                │                                                                  │
+                │  wheel / j k  Enter select  Esc cancel  1/27 ↓                   │
+                ╰──────────────────────────────────────────────────────────────────╯

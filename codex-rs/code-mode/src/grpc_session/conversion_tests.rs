@@ -11,6 +11,7 @@ use codex_code_mode_protocol::grpc;
 use codex_protocol::ToolName;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::time::Duration;
 
 use super::execute_request;
 use super::runtime_response;
@@ -27,6 +28,7 @@ fn execute_request_preserves_tool_schemas_namespaces_and_limits() {
             description: "search the workspace".to_string(),
             kind: CodeModeToolKind::Freeform,
             input_schema: Some(json!({"type": "object"})),
+            input_schema_max_bytes: None,
             output_schema: Some(json!({"type": "string"})),
         }],
         source: "text('hello')".to_string(),
@@ -73,6 +75,7 @@ fn tool_call_decodes_structured_input_and_namespace() {
         tool_kind: grpc::ToolKind::Function as i32,
         input_json: Some(br#"{"query":"hello"}"#.to_vec()),
         sequence: 1,
+        traceparent: None,
     };
 
     assert_eq!(
@@ -90,6 +93,7 @@ fn tool_call_decodes_structured_input_and_namespace() {
 #[test]
 fn runtime_response_decodes_mixed_content_items() {
     let outcome = grpc::ExecutionOutcome {
+        code_mode_host_duration_ns: 0,
         cell_id: "cell".to_string(),
         content_items: vec![
             grpc::ContentItem {
@@ -103,6 +107,11 @@ fn runtime_response_decodes_mixed_content_items() {
                     detail: Some(grpc::ImageDetail::Original as i32),
                 })),
             },
+            grpc::ContentItem {
+                item: Some(grpc::content_item::Item::Audio(grpc::AudioContent {
+                    audio_url: "data:audio/wav;base64,AA==".to_string(),
+                })),
+            },
         ],
         outcome: Some(grpc::execution_outcome::Outcome::Completed(
             grpc::ExecutionCompleted {
@@ -114,6 +123,7 @@ fn runtime_response_decodes_mixed_content_items() {
     assert_eq!(
         runtime_response(outcome),
         Ok(RuntimeResponse::Result {
+            code_mode_host_duration: Some(Duration::ZERO),
             cell_id: CellId::new("cell".to_string()),
             content_items: vec![
                 FunctionCallOutputContentItem::InputText {
@@ -122,6 +132,9 @@ fn runtime_response_decodes_mixed_content_items() {
                 FunctionCallOutputContentItem::InputImage {
                     image_url: "data:image/png;base64,AA==".to_string(),
                     detail: Some(ImageDetail::Original),
+                },
+                FunctionCallOutputContentItem::InputAudio {
+                    audio_url: "data:audio/wav;base64,AA==".to_string(),
                 },
             ],
             error_text: Some("warning".to_string()),
@@ -134,6 +147,7 @@ fn wait_outcome_preserves_missing_cell_state() {
     let response = grpc::WaitResponse {
         state: Some(grpc::wait_response::State::MissingCell(
             grpc::ExecutionOutcome {
+                code_mode_host_duration_ns: 0,
                 cell_id: "missing".to_string(),
                 content_items: Vec::new(),
                 outcome: Some(grpc::execution_outcome::Outcome::Terminated(
@@ -146,6 +160,7 @@ fn wait_outcome_preserves_missing_cell_state() {
     assert_eq!(
         wait_outcome(response),
         Ok(WaitOutcome::MissingCell(RuntimeResponse::Terminated {
+            code_mode_host_duration: Some(Duration::ZERO),
             cell_id: CellId::new("missing".to_string()),
             content_items: Vec::new(),
         }))
@@ -155,6 +170,7 @@ fn wait_outcome_preserves_missing_cell_state() {
 #[test]
 fn oversized_response_cell_ids_are_rejected() {
     let response = grpc::ExecutionOutcome {
+        code_mode_host_duration_ns: 0,
         cell_id: "x".repeat(grpc::MAX_IDENTIFIER_BYTES + 1),
         content_items: Vec::new(),
         outcome: Some(grpc::execution_outcome::Outcome::Yielded(
@@ -174,6 +190,7 @@ fn oversized_response_cell_ids_are_rejected() {
 #[test]
 fn invalid_output_enums_and_missing_oneofs_are_rejected() {
     let invalid_image = grpc::ExecutionOutcome {
+        code_mode_host_duration_ns: 0,
         cell_id: "cell".to_string(),
         content_items: vec![grpc::ContentItem {
             item: Some(grpc::content_item::Item::Image(grpc::ImageContent {
@@ -188,4 +205,32 @@ fn invalid_output_enums_and_missing_oneofs_are_rejected() {
 
     assert!(runtime_response(invalid_image).is_err());
     assert!(wait_outcome(grpc::WaitResponse { state: None }).is_err());
+}
+
+/// Zero is a valid measurement, and decoding must not round nanoseconds to
+/// milliseconds even at the limits of the wire representation.
+#[test]
+fn host_timing_preserves_zero_and_nanosecond_precision() {
+    for code_mode_host_duration_ns in [0, 1_234_567, u64::MAX] {
+        let outcome = grpc::ExecutionOutcome {
+            cell_id: "cell".to_string(),
+            content_items: Vec::new(),
+            code_mode_host_duration_ns,
+            outcome: Some(grpc::execution_outcome::Outcome::Yielded(
+                grpc::ExecutionYielded {},
+            )),
+        };
+        let expected = RuntimeResponse::Yielded {
+            cell_id: CellId::new("cell".to_string()),
+            content_items: Vec::new(),
+            code_mode_host_duration: Some(Duration::from_nanos(code_mode_host_duration_ns)),
+        };
+        assert_eq!(runtime_response(outcome.clone()).as_ref(), Ok(&expected));
+        assert_eq!(
+            wait_outcome(grpc::WaitResponse {
+                state: Some(grpc::wait_response::State::LiveCell(outcome)),
+            }),
+            Ok(WaitOutcome::LiveCell(expected))
+        );
+    }
 }

@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
+assertion_line: 2925
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ---
 
@@ -16,9 +17,9 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │▎  ! interrupted  Turing
  ▌ tool exec just test -p co│▎›   └ × errored  Socrates
                             │▎Inspector  Socrates  × errored
- ▌ edited 3 files +128 -24  │▎Path  /root/testing/failure
-                            │▎Task  Review the new TUI flow and visual
- ▎ CODEX  The new shell owns│▎      hierarchy.
+ ▌ edited 3 files +128 -24  │▎Model  gpt-5-codex
+                            │▎Reasoning  high
+ ▎ CODEX  The new shell owns│▎Path  /root/testing/failure
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │

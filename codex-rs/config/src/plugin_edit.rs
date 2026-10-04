@@ -11,7 +11,6 @@ use toml_edit::Table as TomlTable;
 use toml_edit::value;
 
 use crate::CONFIG_TOML_FILE;
-use crate::ConfigFileLock;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginConfigEdit {
@@ -58,7 +57,6 @@ fn apply_user_plugin_config_edits_blocking(
 
     let config_path = codex_home.join(CONFIG_TOML_FILE);
     let write_paths = resolve_symlink_write_paths(&config_path)?;
-    let _config_lock = ConfigFileLock::acquire_for_write_path(&write_paths.write_path)?;
     let mut doc = read_or_create_document(write_paths.read_path.as_deref())?;
     let mut mutated = false;
     for edit in edits {

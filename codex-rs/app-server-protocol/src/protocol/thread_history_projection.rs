@@ -3,13 +3,13 @@
 //! This module is only for the new paginated rollout format that persists canonical
 //! `ItemCompleted(TurnItem)` records, not legacy event-only rollouts.
 
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::EventMsg;
+use codex_rollout::RolloutItem;
+use codex_rollout::RolloutLine;
 
 use crate::protocol::thread_history::ThreadHistoryChangeSet;
 use crate::protocol::thread_history::ThreadHistoryItemChange;
-use crate::protocol::thread_history::ThreadHistoryTurnChange;
+use crate::protocol::thread_history::ThreadHistoryTurnMetadata;
 use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::TurnError;
 use crate::protocol::v2::TurnStatus;
@@ -21,10 +21,10 @@ use crate::protocol::v2::TurnStatus;
 pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
     match &line.item {
         RolloutItem::EventMsg(EventMsg::TurnStarted(event)) => ThreadHistoryChangeSet {
-            changed_turns: vec![ThreadHistoryTurnChange {
+            changed_turns: vec![ThreadHistoryTurnMetadata {
                 turn_id: event.turn_id.clone(),
+                root_turn_id: event.root_turn_id.clone(),
                 status: TurnStatus::InProgress,
-                abort_reason: None,
                 error: None,
                 started_at: event.started_at,
                 completed_at: None,
@@ -33,15 +33,16 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
             ..Default::default()
         },
         RolloutItem::EventMsg(EventMsg::TurnComplete(event)) => ThreadHistoryChangeSet {
-            changed_turns: vec![ThreadHistoryTurnChange {
+            changed_turns: vec![ThreadHistoryTurnMetadata {
                 turn_id: event.turn_id.clone(),
+                root_turn_id: None,
                 status: if event.error.is_some() {
                     TurnStatus::Failed
                 } else {
                     TurnStatus::Completed
                 },
-                abort_reason: None,
                 error: event.error.as_ref().map(|error| TurnError {
+                    misalignment: error.misalignment.clone().map(Into::into),
                     message: error.message.clone(),
                     codex_error_info: error.codex_error_info.clone().map(Into::into),
                     additional_details: None,
@@ -57,11 +58,16 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
                 return ThreadHistoryChangeSet::default();
             };
             ThreadHistoryChangeSet {
-                changed_turns: vec![ThreadHistoryTurnChange {
+                changed_turns: vec![ThreadHistoryTurnMetadata {
                     turn_id: turn_id.clone(),
+                    root_turn_id: None,
                     status: TurnStatus::Interrupted,
-                    abort_reason: Some(event.reason.clone()),
-                    error: None,
+                    error: event.error.as_ref().map(|error| TurnError {
+                        message: error.message.clone(),
+                        codex_error_info: error.codex_error_info.clone().map(Into::into),
+                        misalignment: error.misalignment.clone().map(Into::into),
+                        additional_details: None,
+                    }),
                     started_at: event.started_at,
                     completed_at: event.completed_at,
                     duration_ms: event.duration_ms,
@@ -73,6 +79,8 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
             changed_items: vec![ThreadHistoryItemChange {
                 turn_id: event.turn_id.clone(),
                 item: ThreadItem::from(event.item.clone()),
+                started_at_ms: event.started_at_ms,
+                completed_at_ms: (event.completed_at_ms != 0).then_some(event.completed_at_ms),
             }],
             ..Default::default()
         },
@@ -82,7 +90,10 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
         | RolloutItem::InterAgentCommunicationMetadata { .. }
         | RolloutItem::Compacted(_)
         | RolloutItem::TurnContext(_)
+        | RolloutItem::TokenUsageRecord(_)
         | RolloutItem::WorldState(_)
+        | RolloutItem::RealtimeItem(_)
+        | RolloutItem::RetainedContext(_)
         | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::EventMsg(_) => ThreadHistoryChangeSet::default(),
     }

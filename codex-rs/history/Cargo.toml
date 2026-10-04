@@ -15,11 +15,9 @@ workspace = true
 [dependencies]
 codex-protocol = { workspace = true }
 schemars = { workspace = true }
-serde = { workspace = true, features = ["derive", "rc"] }
-ts-rs = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
-codex-utils-absolute-path = { workspace = true }
 pretty_assertions = { workspace = true }
-serde_json = { workspace = true }

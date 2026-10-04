@@ -1,3 +1,4 @@
+use super::ComposerAction;
 use super::ComposerInput;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -58,4 +59,24 @@ fn composer_input_uses_macos_cursor_shortcuts() {
     let _ = composer.input(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
     let _ = composer.input(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL));
     assert_eq!(composer.text(), "alpha\nXbeta ");
+}
+
+#[test]
+fn oversized_submission_retains_draft_and_flashes_validation_feedback() {
+    let mut composer = ComposerInput::new();
+    let text = "x".repeat(codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS + 1);
+    composer.handle_paste(text.clone());
+    assert!(matches!(
+        composer.input(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        ComposerAction::None
+    ));
+    assert_eq!(composer.text(), text);
+    assert!(composer.footer_flash_delay().is_some());
+    assert_snapshot!(
+        "composer_validation_flash",
+        composer.footer_line().to_string()
+    );
+    composer.validation_expires_at =
+        Some(std::time::Instant::now() - std::time::Duration::from_secs(/*secs*/ 1));
+    assert_eq!(composer.footer_flash_delay(), None);
 }

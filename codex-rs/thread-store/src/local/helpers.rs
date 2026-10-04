@@ -10,6 +10,7 @@ use std::time::SystemTime;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_git_utils::GitSha;
+use codex_protocol::SanitizedGitUrl;
 use codex_protocol::ThreadId;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
@@ -19,6 +20,7 @@ use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_rollout::ARCHIVED_SESSIONS_SUBDIR;
+use codex_rollout::RolloutReferenceIndex;
 use codex_rollout::ThreadItem;
 use codex_rollout::find_thread_names_by_ids;
 use codex_state::ThreadMetadata;
@@ -27,12 +29,6 @@ use super::LocalThreadStore;
 use crate::StoredThread;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
-
-#[derive(Clone, Copy)]
-pub(super) enum RolloutCollection {
-    Active,
-    Archived,
-}
 
 pub(super) fn scoped_rollout_path(
     root: PathBuf,
@@ -72,58 +68,31 @@ pub(super) fn rollout_path_is_archived(codex_home: &Path, path: &Path) -> bool {
             .any(|component| component.as_os_str() == OsStr::new(ARCHIVED_SESSIONS_SUBDIR))
 }
 
-pub(super) async fn rollout_paths_for_thread(
-    codex_home: &Path,
-    selected_path: &Path,
+/// Returns rollout files whose session metadata belongs to `thread_id`.
+pub(super) async fn owned_rollout_paths(
+    store: &LocalThreadStore,
     thread_id: ThreadId,
-    collection: RolloutCollection,
 ) -> ThreadStoreResult<Vec<PathBuf>> {
-    let (root, root_name, paths) = match collection {
-        RolloutCollection::Active => (
-            codex_home.join(codex_rollout::SESSIONS_SUBDIR),
-            "sessions",
-            codex_rollout::find_thread_paths_by_id(codex_home, thread_id).await,
-        ),
-        RolloutCollection::Archived => (
-            codex_home.join(codex_rollout::ARCHIVED_SESSIONS_SUBDIR),
-            "archived",
-            codex_rollout::find_archived_thread_paths_by_id(codex_home, thread_id).await,
-        ),
-    };
-    let mut paths = paths.map_err(|err| ThreadStoreError::InvalidRequest {
-        message: format!("failed to locate thread id {thread_id}: {err}"),
-    })?;
-    let plain_selected = codex_rollout::plain_rollout_path(selected_path);
-    for path in [
-        selected_path.to_path_buf(),
-        plain_selected.clone(),
-        plain_selected.with_extension("jsonl.zst"),
-    ] {
-        match path.try_exists() {
-            Ok(true) => paths.push(path),
-            Ok(false) => {}
-            Err(err) => {
-                return Err(ThreadStoreError::Internal {
-                    message: format!("failed to inspect rollout path `{}`: {err}", path.display()),
-                });
-            }
-        }
-    }
-
-    let mut canonical_paths = Vec::with_capacity(paths.len());
-    for path in paths {
-        let canonical_path = scoped_rollout_path(root.clone(), path.as_path(), root_name)?;
-        matching_rollout_file_name(canonical_path.as_path(), thread_id, path.as_path())?;
-        canonical_paths.push(canonical_path);
-    }
-    canonical_paths.sort();
-    canonical_paths.dedup();
-    Ok(canonical_paths)
+    RolloutReferenceIndex::scan(store.config.codex_home.as_path())
+        .await
+        .map_err(|err| ThreadStoreError::Internal {
+            message: format!("failed to scan thread rollout files: {err}"),
+        })
+        .map(|index| owned_rollout_paths_from_index(&index, thread_id))
 }
 
-pub(super) fn matching_rollout_file_name(
-    rollout_path: &Path,
+pub(super) fn owned_rollout_paths_from_index(
+    index: &RolloutReferenceIndex,
     thread_id: ThreadId,
+) -> Vec<PathBuf> {
+    index
+        .rollouts_for_thread(thread_id)
+        .map(|(_, path)| path.to_path_buf())
+        .collect()
+}
+
+pub(super) fn validated_rollout_file_name(
+    rollout_path: &Path,
     display_path: &Path,
 ) -> ThreadStoreResult<std::ffi::OsString> {
     let Some(file_name) = rollout_path.file_name().map(OsStr::to_owned) else {
@@ -134,29 +103,12 @@ pub(super) fn matching_rollout_file_name(
             ),
         });
     };
-    if let Some(file_thread_id) = codex_rollout::thread_id_from_rollout_path(rollout_path) {
-        return if file_thread_id == thread_id {
-            Ok(file_name)
-        } else {
-            Err(ThreadStoreError::InvalidRequest {
-                message: format!(
-                    "rollout path `{}` does not match thread id {thread_id}",
-                    display_path.display()
-                ),
-            })
-        };
-    }
-    let required_plain_suffix = format!("{thread_id}.jsonl");
-    let required_compressed_suffix = format!("{required_plain_suffix}.zst");
-    let file_name_str = file_name.to_string_lossy();
-    if file_name_str.ends_with(required_plain_suffix.as_str())
-        || file_name_str.ends_with(required_compressed_suffix.as_str())
-    {
+    if codex_rollout::rollout_id_from_path(rollout_path).is_some() {
         Ok(file_name)
     } else {
         Err(ThreadStoreError::InvalidRequest {
             message: format!(
-                "rollout path `{}` does not match thread id {thread_id}",
+                "rollout path `{}` has an invalid filename",
                 display_path.display()
             ),
         })
@@ -164,12 +116,15 @@ pub(super) fn matching_rollout_file_name(
 }
 
 pub(super) fn touch_modified_time(path: &Path) -> std::io::Result<()> {
-    set_modified_time(path, SystemTime::now())
+    let times = FileTimes::new().set_modified(SystemTime::now());
+    OpenOptions::new().append(true).open(path)?.set_times(times)
 }
 
-pub(super) fn set_modified_time(path: &Path, modified: SystemTime) -> std::io::Result<()> {
-    let times = FileTimes::new().set_modified(modified);
-    OpenOptions::new().append(true).open(path)?.set_times(times)
+pub(super) fn restore_rollout_moves(moves: &[(PathBuf, PathBuf)]) -> std::io::Result<()> {
+    for (source, destination) in moves.iter().rev() {
+        std::fs::rename(destination, source)?;
+    }
+    Ok(())
 }
 
 pub(super) fn stored_thread_from_rollout_item(
@@ -204,19 +159,26 @@ pub(super) fn stored_thread_from_rollout_item(
         forked_from_id: None,
         parent_thread_id: item.parent_thread_id,
         preview,
-        name: None,
+        name: codex_state::is_guardian_review_source(&source)
+            .then(|| codex_state::GUARDIAN_THREAD_TITLE.to_string()),
         model_provider: item
             .model_provider
             .filter(|provider| !provider.is_empty())
             .unwrap_or_else(|| default_provider.to_string()),
-        model: None,
-        reasoning_effort: None,
+        model: item.model,
+        reasoning_effort: item.reasoning_effort,
         created_at,
         updated_at,
         recency_at,
         archived_at,
+        section: item.section,
+        section_position: None,
+        section_entered_at: None,
+        project_id: item.project_id,
+        daybreak_enabled: item.daybreak_enabled,
         cwd: item.cwd.unwrap_or_default(),
         cli_version: item.cli_version.unwrap_or_default(),
+        originator: item.originator,
         source,
         history_mode: item.history_mode,
         thread_source: None,
@@ -262,41 +224,66 @@ pub(super) fn sqlite_thread_name(metadata: &ThreadMetadata) -> Option<String> {
         .map(str::to_string)
 }
 
+pub(super) async fn resolve_thread_section_metadata(
+    state_db: &codex_state::StateRuntime,
+    thread_ids: &[ThreadId],
+) -> HashMap<ThreadId, (Option<i64>, Option<DateTime<Utc>>)> {
+    if thread_ids.is_empty() {
+        return HashMap::new();
+    }
+
+    state_db
+        .get_thread_section_ordering(thread_ids)
+        .await
+        .unwrap_or_default()
+}
+
 pub(super) async fn resolve_thread_names(
     store: &LocalThreadStore,
     thread_history_modes: &HashMap<ThreadId, ThreadHistoryMode>,
 ) -> HashMap<ThreadId, String> {
-    let mut names = HashMap::<ThreadId, String>::with_capacity(thread_history_modes.len());
     let legacy_thread_ids = thread_history_modes
         .iter()
         .filter_map(|(&thread_id, &history_mode)| {
             (history_mode == ThreadHistoryMode::Legacy).then_some(thread_id)
         })
         .collect::<HashSet<_>>();
+    let mut names = find_thread_names_by_ids(store.config.codex_home.as_path(), &legacy_thread_ids)
+        .await
+        .unwrap_or_default();
     if let Some(state_db_ctx) = store.state_db().await {
+        let thread_ids = thread_history_modes.keys().copied().collect::<Vec<_>>();
+        let metadata_by_id = state_db_ctx
+            .get_threads(&thread_ids)
+            .await
+            .unwrap_or_default();
         for (&thread_id, &history_mode) in thread_history_modes {
-            let Ok(Some(metadata)) = state_db_ctx.get_thread(thread_id).await else {
+            let Some(metadata) = metadata_by_id.get(&thread_id) else {
                 continue;
             };
             let name = match history_mode {
-                ThreadHistoryMode::Legacy => distinct_thread_metadata_title(&metadata),
-                ThreadHistoryMode::Paginated => sqlite_thread_name(&metadata),
+                ThreadHistoryMode::Legacy => distinct_thread_metadata_title(metadata),
+                ThreadHistoryMode::Paginated => sqlite_thread_name(metadata),
             };
             if let Some(name) = name {
-                names.insert(thread_id, name);
+                if history_mode == ThreadHistoryMode::Legacy && has_guardian_default_title(metadata)
+                {
+                    names.entry(thread_id).or_insert(name);
+                } else {
+                    names.insert(thread_id, name);
+                }
             }
         }
     }
-    if let Ok(legacy_names) =
-        find_thread_names_by_ids(store.config.codex_home.as_path(), &legacy_thread_ids).await
-    {
-        // Legacy titles remain authoritative when present; the index only fills
-        // names for threads whose SQLite title is still derived from the preview.
-        for (thread_id, name) in legacy_names {
-            names.entry(thread_id).or_insert(name);
-        }
-    }
     names
+}
+
+/// Identifies the derived Guardian label, which must yield to legacy indexed names.
+pub(super) fn has_guardian_default_title(metadata: &ThreadMetadata) -> bool {
+    metadata.title.trim() == codex_state::GUARDIAN_THREAD_TITLE
+        && serde_json::from_str::<SessionSource>(&metadata.source)
+            .as_ref()
+            .is_ok_and(codex_state::is_guardian_review_source)
 }
 
 pub(super) fn distinct_thread_metadata_title(metadata: &ThreadMetadata) -> Option<String> {
@@ -337,7 +324,7 @@ fn parse_legacy_sandbox_policy(value: &str) -> serde_json::Result<SandboxPolicy>
 pub(super) fn git_info_from_parts(
     sha: Option<String>,
     branch: Option<String>,
-    origin_url: Option<String>,
+    origin_url: Option<SanitizedGitUrl>,
 ) -> Option<GitInfo> {
     if sha.is_none() && branch.is_none() && origin_url.is_none() {
         return None;
@@ -350,9 +337,6 @@ pub(super) fn git_info_from_parts(
 }
 
 fn thread_id_from_rollout_path(path: &Path) -> Option<ThreadId> {
-    if let Some(thread_id) = codex_rollout::thread_id_from_rollout_path(path) {
-        return Some(thread_id);
-    }
     let file_name = path.file_name()?.to_str()?;
     let file_name = file_name.strip_suffix(".zst").unwrap_or(file_name);
     let stem = file_name.strip_suffix(".jsonl")?;
@@ -368,6 +352,7 @@ fn thread_id_from_rollout_path(path: &Path) -> Option<ThreadId> {
 
 #[cfg(test)]
 mod tests {
+    use codex_protocol::protocol::SubAgentSource;
     use codex_rollout::ThreadItem;
     use pretty_assertions::assert_eq;
     use uuid::Uuid;
@@ -375,7 +360,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stored_thread_from_rollout_item_returns_logical_rollout_path() {
+    fn guardian_rollout_conversion_preserves_name_and_logical_path() {
         let uuid = Uuid::from_u128(1);
         let compressed_path = PathBuf::from(format!(
             "/tmp/sessions/2025/01/03/rollout-2025-01-03T12-00-00-{uuid}.jsonl.zst"
@@ -383,6 +368,9 @@ mod tests {
         let thread = stored_thread_from_rollout_item(
             ThreadItem {
                 path: compressed_path.clone(),
+                source: Some(SessionSource::SubAgent(SubAgentSource::Other(
+                    "guardian".to_string(),
+                ))),
                 ..Default::default()
             },
             /*archived*/ false,
@@ -390,39 +378,12 @@ mod tests {
         )
         .expect("stored thread");
 
+        assert_eq!(thread.name.as_deref(), Some("Guardian review"));
         assert_eq!(
             thread.rollout_path,
             Some(
                 compressed_path.with_file_name(format!("rollout-2025-01-03T12-00-00-{uuid}.jsonl"))
             )
-        );
-    }
-
-    #[test]
-    fn replacement_rollout_file_name_matches_logical_thread() {
-        let thread_id = ThreadId::new();
-        let rollout_id = ThreadId::new();
-        let file_name = format!("rollout-2026-08-11T18-42-07-{thread_id}_{rollout_id}.jsonl.zst");
-        let path = PathBuf::from(file_name.as_str());
-
-        assert_eq!(
-            matching_rollout_file_name(path.as_path(), thread_id, path.as_path())
-                .expect("matching logical thread"),
-            OsStr::new(file_name.as_str())
-        );
-        assert!(matching_rollout_file_name(path.as_path(), rollout_id, path.as_path()).is_err());
-    }
-
-    #[test]
-    fn noncanonical_legacy_rollout_file_name_remains_accepted() {
-        let thread_id = ThreadId::new();
-        let file_name = format!("legacy-prefix-{thread_id}.jsonl");
-        let path = PathBuf::from(file_name.as_str());
-
-        assert_eq!(
-            matching_rollout_file_name(path.as_path(), thread_id, path.as_path())
-                .expect("matching legacy thread"),
-            OsStr::new(file_name.as_str())
         );
     }
 }

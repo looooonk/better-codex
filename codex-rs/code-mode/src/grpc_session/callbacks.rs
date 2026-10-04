@@ -6,11 +6,10 @@ use std::time::Duration;
 
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::grpc;
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+use codex_protocol::protocol::W3cTraceContext;
 use futures::FutureExt;
-use prost::Message;
-use tokio::sync::OwnedSemaphorePermit;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use tracing::warn;
 
 use super::SessionInner;
@@ -18,18 +17,6 @@ use super::completion;
 use super::conversion;
 use super::deadline;
 use super::state::CallbackAdmission;
-
-const MAX_NOTIFICATION_BYTES: usize = 1_024;
-const TRUNCATED_NOTIFICATION_SUFFIX: &str = "... [truncated]";
-pub(super) const MAX_CALLBACK_TASKS: usize = 64;
-pub(super) const MAX_CALLBACK_BYTES: usize = 32 * 1_024 * 1_024;
-const TOOL_CALL_ALLOCATION_MULTIPLIER: usize = 16;
-const NOTIFICATION_ALLOCATION_MULTIPLIER: usize = 2;
-
-struct CallbackResources {
-    _task: OwnedSemaphorePermit,
-    _bytes: OwnedSemaphorePermit,
-}
 
 impl SessionInner {
     pub(super) fn spawn_session_events(
@@ -102,11 +89,7 @@ impl SessionInner {
             grpc::session_event::Event::Notification(notification) => {
                 self.handle_notification(notification)
             }
-            grpc::session_event::Event::NotificationCancelled(cancelled) => self
-                .state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .request_notification_cancellation(&cancelled.notification_id),
+            grpc::session_event::Event::NotificationCancelled(_) => Ok(()),
             grpc::session_event::Event::CellClosed(closed) => {
                 let cell = self
                     .state
@@ -120,11 +103,6 @@ impl SessionInner {
     }
 
     fn handle_tool_call(self: &Arc<Self>, call: grpc::ToolCall) -> Result<(), String> {
-        let resources = self.admit_callback(
-            call.encoded_len(),
-            TOOL_CALL_ALLOCATION_MULTIPLIER,
-            "tool invocation",
-        )?;
         if call.session_id != self.id {
             return Err(format!(
                 "gRPC code-mode tool invocation belongs to session {} instead of {}",
@@ -136,19 +114,35 @@ impl SessionInner {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .admit_invocation(&call)?;
+        let callback_span = tracing::info_span!(
+            "code_mode.grpc.callback",
+            otel.name = "code_mode.grpc.callback",
+            session.id = %call.session_id,
+            execution.id = %call.execution_id,
+            cell.id = %call.cell_id,
+            invocation.id = %call.invocation_id,
+        );
+        if let Some(traceparent) = call.traceparent.as_ref() {
+            codex_otel::set_parent_from_w3c_trace_context(
+                &callback_span,
+                &W3cTraceContext {
+                    traceparent: Some(traceparent.clone()),
+                    tracestate: None,
+                },
+            );
+        }
         let invocation_id = call.invocation_id.clone();
         let cancellation = match admission {
-            CallbackAdmission::Active(cancellation) => Ok(cancellation),
+            CallbackAdmission::Active(cancellation, delegate) => Ok((cancellation, delegate)),
             CallbackAdmission::Cancelled => return Ok(()),
             CallbackAdmission::Closed => Err(format!("code-mode cell {} is closed", call.cell_id)),
             CallbackAdmission::Rejected(error) => Err(error),
         };
-        let cancellation = match cancellation {
+        let (cancellation, delegate) = match cancellation {
             Ok(cancellation) => cancellation,
             Err(error) => {
                 let inner = Arc::clone(self);
                 tokio::spawn(async move {
-                    let _resources = resources;
                     inner
                         .complete_tool_call(invocation_id, CancellationToken::new(), Err(error))
                         .await;
@@ -158,32 +152,33 @@ impl SessionInner {
         };
         let invocation = conversion::tool_call(call);
         let inner = Arc::clone(self);
-        tokio::spawn(async move {
-            let _resources = resources;
-            let result = match invocation {
-                Ok(invocation) => {
-                    let callback = AssertUnwindSafe(async {
-                        inner
-                            .delegate
-                            .invoke_tool(invocation, cancellation.child_token())
-                            .await
-                    })
-                    .catch_unwind();
-                    tokio::select! {
-                        biased;
-                        _ = cancellation.cancelled() => return,
-                        result = callback => match result {
-                            Ok(result) => result,
-                            Err(_) => Err("code-mode tool delegate panicked".to_string()),
-                        },
+        tokio::spawn(
+            async move {
+                let result = match invocation {
+                    Ok(invocation) => {
+                        let callback = AssertUnwindSafe(async {
+                            delegate
+                                .invoke_tool(invocation, cancellation.child_token())
+                                .await
+                        })
+                        .catch_unwind();
+                        tokio::select! {
+                                biased;
+                                _ = cancellation.cancelled() => return,
+                                result = callback => match result {
+                                    Ok(result) => result,
+                                    Err(_) => Err("code-mode tool delegate panicked".to_string()),
+                                },
+                        }
                     }
-                }
-                Err(error) => Err(error),
-            };
-            inner
-                .complete_tool_call(invocation_id, cancellation, result)
-                .await;
-        });
+                    Err(error) => Err(error),
+                };
+                inner
+                    .complete_tool_call(invocation_id, cancellation, result)
+                    .await;
+            }
+            .instrument(callback_span),
+        );
         Ok(())
     }
 
@@ -220,49 +215,33 @@ impl SessionInner {
 
     fn handle_notification(
         self: &Arc<Self>,
-        mut notification: grpc::Notification,
+        notification: grpc::Notification,
     ) -> Result<(), String> {
-        let resources = self.admit_callback(
-            notification.encoded_len(),
-            NOTIFICATION_ALLOCATION_MULTIPLIER,
-            "notification",
-        )?;
-        if notification.text.len() > MAX_NOTIFICATION_BYTES {
-            let boundary = notification
-                .text
-                .floor_char_boundary(MAX_NOTIFICATION_BYTES - TRUNCATED_NOTIFICATION_SUFFIX.len());
-            let mut bounded = String::with_capacity(MAX_NOTIFICATION_BYTES);
-            bounded.push_str(&notification.text[..boundary]);
-            bounded.push_str(TRUNCATED_NOTIFICATION_SUFFIX);
-            notification.text = bounded;
-        }
         let admission = self
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .admit_notification(&notification)?;
-        let cancellation = match admission {
-            CallbackAdmission::Active(cancellation) => cancellation,
+        let (cancellation, delegate) = match admission {
+            CallbackAdmission::Active(cancellation, delegate) => (cancellation, delegate),
             CallbackAdmission::Cancelled | CallbackAdmission::Closed => return Ok(()),
             CallbackAdmission::Rejected(error) => {
                 warn!("code-mode notification was dropped: {error}");
                 return Ok(());
             }
         };
-        let notification_id = notification.notification_id;
+        let execution_id = notification.execution_id;
         let inner = Arc::clone(self);
         // Delegate callbacks stay outside the tracked session tasks so shutdown can cancel
         // them without waiting for arbitrary delegate work to complete.
         tokio::spawn(async move {
-            let _resources = resources;
             let callback = AssertUnwindSafe(async {
-                inner
-                    .delegate
+                delegate
                     .notify(
                         notification.call_id,
                         CellId::new(notification.cell_id),
                         notification.text,
-                        cancellation.clone(),
+                        cancellation,
                     )
                     .await
             })
@@ -277,75 +256,13 @@ impl SessionInner {
                 Ok(Err(error)) => warn!("code-mode notification delegate failed: {error}"),
                 Err(_) => warn!("code-mode notification delegate panicked"),
             }
-            let mut client = inner.client();
-            let request = grpc::AcknowledgeNotificationRequest {
-                session_id: inner.id.clone(),
-                notification_id: notification_id.clone(),
-            };
-            let acknowledgement = tokio::select! {
-                biased;
-                _ = inner.stopped.cancelled() => return,
-                acknowledgement = deadline::acknowledge_notification(
-                    &inner,
-                    client.acknowledge_notification(request),
-                ) => acknowledgement,
-            };
-            let cell = match acknowledgement {
-                Ok(deadline::NotificationAcknowledgement::Accepted) => inner
-                    .state
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .finish_notification(&notification_id),
-                Ok(deadline::NotificationAcknowledgement::Retired) => match inner
-                    .state
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .cancel_notification(&notification_id)
-                {
-                    Ok(cell) => cell,
-                    Err(error) => {
-                        inner.fail(error);
-                        return;
-                    }
-                },
-                Err(error) => {
-                    if !cancellation.is_cancelled() && !inner.stopped.is_cancelled() {
-                        inner.fail(error);
-                    }
-                    return;
-                }
-            };
+            let cell = inner
+                .state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .finish_notification(&execution_id);
             inner.report_closed_cell(cell);
         });
         Ok(())
-    }
-
-    fn admit_callback(
-        &self,
-        encoded_len: usize,
-        multiplier: usize,
-        label: &str,
-    ) -> Result<CallbackResources, String> {
-        if encoded_len > MAX_APPLICATION_MESSAGE_BYTES {
-            return Err(format!(
-                "gRPC code-mode {label} exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
-            ));
-        }
-        let bytes = encoded_len
-            .checked_mul(multiplier)
-            .filter(|bytes| *bytes <= MAX_CALLBACK_BYTES)
-            .ok_or_else(|| format!("gRPC code-mode {label} exceeds the callback byte budget"))?;
-        let bytes = u32::try_from(bytes.max(1))
-            .map_err(|_| format!("gRPC code-mode {label} byte size exceeds this platform"))?;
-        let task = Arc::clone(&self.callback_tasks)
-            .try_acquire_owned()
-            .map_err(|_| "gRPC code-mode callback task budget is exhausted".to_string())?;
-        let bytes = Arc::clone(&self.callback_bytes)
-            .try_acquire_many_owned(bytes)
-            .map_err(|_| "gRPC code-mode callback byte budget is exhausted".to_string())?;
-        Ok(CallbackResources {
-            _task: task,
-            _bytes: bytes,
-        })
     }
 }

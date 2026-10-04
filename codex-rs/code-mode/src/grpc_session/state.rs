@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::sync::Arc;
+
+use codex_code_mode_protocol::CodeModeSessionDelegate;
 
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::grpc;
@@ -11,29 +14,22 @@ use uuid::Uuid;
 
 const MAX_RECENT_CALLBACK_IDS: usize = 4_096;
 
-fn canonical_tool_name(name: &grpc::ToolName) -> ToolName {
-    let namespace = name
-        .namespace
-        .as_deref()
-        .filter(|namespace| !namespace.is_empty() && *namespace != "functions")
-        .map(str::to_string);
-    ToolName::new(namespace, name.name.clone())
-}
-
 struct ActiveCallback {
     execution_id: String,
     cancellation: CancellationToken,
 }
 
+pub(super) type ClosedCell = (CellId, Arc<dyn CodeModeSessionDelegate>);
+
 pub(super) enum CallbackAdmission {
-    Active(CancellationToken),
+    Active(CancellationToken, Arc<dyn CodeModeSessionDelegate>),
     Cancelled,
     Closed,
     Rejected(String),
 }
 
-#[derive(Default)]
 struct ExecutionRecord {
+    delegate: Arc<dyn CodeModeSessionDelegate>,
     cell_id: Option<CellId>,
     tool_call_id: String,
     enabled_tools: HashMap<ToolName, i32>,
@@ -92,10 +88,9 @@ impl RecentIds {
 pub(super) struct SessionState {
     executions: HashMap<String, ExecutionRecord>,
     invocations: HashMap<String, ActiveCallback>,
-    notifications: HashMap<String, ActiveCallback>,
+    notifications: usize,
     seen_invocations: RecentIds,
     cancelled_invocations: RecentIds,
-    seen_notifications: RecentIds,
     failure: Option<String>,
     closed: bool,
 }
@@ -111,7 +106,11 @@ impl SessionState {
         Ok(())
     }
 
-    pub(super) fn begin_execution(&mut self, request: &grpc::ExecuteRequest) -> Result<(), String> {
+    pub(super) fn begin_execution(
+        &mut self,
+        request: &grpc::ExecuteRequest,
+        delegate: Arc<dyn CodeModeSessionDelegate>,
+    ) -> Result<(), String> {
         self.require_open()?;
         if request.execution_id.is_empty() || self.executions.contains_key(&request.execution_id) {
             return Err("code-mode execution ID was empty or reused".to_string());
@@ -125,7 +124,11 @@ impl SessionState {
                     .tool_name
                     .as_ref()
                     .ok_or_else(|| "code-mode enabled tool omitted its tool name".to_string())?;
-                Ok((canonical_tool_name(name), definition.kind))
+                Ok((
+                    ToolName::new(name.namespace.clone(), name.name.clone())
+                        .with_default_namespace(),
+                    definition.kind,
+                ))
             })
             .collect::<Result<HashMap<_, _>, String>>()?;
         self.executions.insert(
@@ -133,7 +136,13 @@ impl SessionState {
             ExecutionRecord {
                 tool_call_id: request.tool_call_id.clone(),
                 enabled_tools,
-                ..ExecutionRecord::default()
+                delegate,
+                cell_id: None,
+                started: false,
+                ready: false,
+                closed: false,
+                notifications: 0,
+                cancellation: CancellationToken::new(),
             },
         );
         Ok(())
@@ -161,7 +170,7 @@ impl SessionState {
     pub(super) fn mark_execution_ready(
         &mut self,
         execution_id: &str,
-    ) -> Result<Option<CellId>, String> {
+    ) -> Result<Option<ClosedCell>, String> {
         self.require_open()?;
         let execution = self
             .executions
@@ -210,13 +219,14 @@ impl SessionState {
                 "code-mode tool invocation omitted its tool name".to_string(),
             ));
         };
-        let tool_name = canonical_tool_name(name);
+        let tool_name =
+            ToolName::new(name.namespace.clone(), name.name.clone()).with_default_namespace();
         if execution.enabled_tools.get(&tool_name) != Some(&call.tool_kind) {
             return Ok(CallbackAdmission::Rejected(format!(
                 "code-mode tool {tool_name} is not enabled for this execution"
             )));
         }
-        if self.invocations.len() + self.notifications.len() >= MAX_PENDING_DELEGATE_CALLS {
+        if self.invocations.len() + self.notifications >= MAX_PENDING_DELEGATE_CALLS {
             return Ok(CallbackAdmission::Rejected(
                 "code-mode host exceeded its pending delegate callback limit".to_string(),
             ));
@@ -229,7 +239,10 @@ impl SessionState {
                 cancellation: cancellation.clone(),
             },
         );
-        Ok(CallbackAdmission::Active(cancellation))
+        Ok(CallbackAdmission::Active(
+            cancellation,
+            Arc::clone(&execution.delegate),
+        ))
     }
 
     pub(super) fn admit_notification(
@@ -237,15 +250,8 @@ impl SessionState {
         notification: &grpc::Notification,
     ) -> Result<CallbackAdmission, String> {
         self.require_open()?;
-        let notification_id = Uuid::parse_str(&notification.notification_id)
+        Uuid::parse_str(&notification.notification_id)
             .map_err(|_| "code-mode notification ID must be a UUID".to_string())?;
-        if self
-            .notifications
-            .contains_key(&notification.notification_id)
-            || self.seen_notifications.contains(&notification_id)
-        {
-            return Err("code-mode notification ID was reused".to_string());
-        }
         super::validate_identifier(&notification.call_id, "notification call ID")?;
         self.check_cell_ownership(&notification.execution_id, &notification.cell_id)?;
         let Some(execution) = self.executions.get_mut(&notification.execution_id) else {
@@ -258,73 +264,24 @@ impl SessionState {
         if execution.closed {
             return Ok(CallbackAdmission::Closed);
         }
-        if self.invocations.len() + self.notifications.len() >= MAX_PENDING_DELEGATE_CALLS {
+        if self.invocations.len() + self.notifications >= MAX_PENDING_DELEGATE_CALLS {
             return Ok(CallbackAdmission::Rejected(
                 "code-mode host exceeded its pending delegate callback limit".to_string(),
             ));
         }
-        let cancellation = execution.cancellation.child_token();
         execution.notifications += 1;
-        self.seen_notifications.remember(notification_id);
-        self.notifications.insert(
-            notification.notification_id.clone(),
-            ActiveCallback {
-                execution_id: notification.execution_id.clone(),
-                cancellation: cancellation.clone(),
-            },
-        );
-        Ok(CallbackAdmission::Active(cancellation))
+        self.notifications += 1;
+        Ok(CallbackAdmission::Active(
+            execution.cancellation.child_token(),
+            Arc::clone(&execution.delegate),
+        ))
     }
 
-    pub(super) fn finish_notification(&mut self, notification_id: &str) -> Option<CellId> {
-        let execution_id = self
-            .notifications
-            .get(notification_id)?
-            .execution_id
-            .clone();
-        let execution = self.executions.get_mut(&execution_id)?;
+    pub(super) fn finish_notification(&mut self, execution_id: &str) -> Option<ClosedCell> {
+        let execution = self.executions.get_mut(execution_id)?;
         execution.notifications = execution.notifications.checked_sub(1)?;
-        self.notifications.remove(notification_id);
-        self.close_execution_if_ready(&execution_id)
-    }
-
-    pub(super) fn request_notification_cancellation(
-        &self,
-        notification_id: &str,
-    ) -> Result<(), String> {
-        let parsed = Uuid::parse_str(notification_id)
-            .map_err(|_| "code-mode notification cancellation ID must be a UUID".to_string())?;
-        match self.notifications.get(notification_id) {
-            Some(callback) => {
-                callback.cancellation.cancel();
-                Ok(())
-            }
-            None if self.seen_notifications.contains(&parsed) => Ok(()),
-            None => Err("code-mode host cancelled an unknown notification".to_string()),
-        }
-    }
-
-    pub(super) fn cancel_notification(
-        &mut self,
-        notification_id: &str,
-    ) -> Result<Option<CellId>, String> {
-        let parsed = Uuid::parse_str(notification_id)
-            .map_err(|_| "code-mode notification cancellation ID must be a UUID".to_string())?;
-        let Some(callback) = self.notifications.remove(notification_id) else {
-            return if self.seen_notifications.contains(&parsed) {
-                Ok(None)
-            } else {
-                Err("code-mode host cancelled an unknown notification".to_string())
-            };
-        };
-        callback.cancellation.cancel();
-        let Some(execution) = self.executions.get_mut(&callback.execution_id) else {
-            return Ok(None);
-        };
-        execution.notifications = execution.notifications.checked_sub(1).ok_or_else(|| {
-            "code-mode notification cancellation underflowed its execution".to_string()
-        })?;
-        Ok(self.close_execution_if_ready(&callback.execution_id))
+        self.notifications -= 1;
+        self.close_execution_if_ready(execution_id)
     }
 
     pub(super) fn cancel_notifications(&self, cell_id: &CellId) {
@@ -358,7 +315,7 @@ impl SessionState {
     pub(super) fn close_cell(
         &mut self,
         closed: grpc::CellClosed,
-    ) -> Result<Option<CellId>, String> {
+    ) -> Result<Option<ClosedCell>, String> {
         self.require_open()?;
         self.check_cell_ownership(&closed.execution_id, &closed.cell_id)?;
         let Some(execution) = self.executions.get_mut(&closed.execution_id) else {
@@ -379,15 +336,13 @@ impl SessionState {
         Ok(self.close_execution_if_ready(&closed.execution_id))
     }
 
-    pub(super) fn close(&mut self, failure: Option<String>) -> Vec<CellId> {
+    pub(super) fn close(&mut self, failure: Option<String>) -> Vec<ClosedCell> {
         if self.closed {
             return Vec::new();
         }
         self.closed = true;
         self.failure = failure;
-        for (_, notification) in self.notifications.drain() {
-            notification.cancellation.cancel();
-        }
+        self.notifications = 0;
         for (_, callback) in self.invocations.drain() {
             callback.cancellation.cancel();
         }
@@ -395,12 +350,14 @@ impl SessionState {
             .drain()
             .filter_map(|(_, execution)| {
                 execution.cancellation.cancel();
-                execution.cell_id
+                execution
+                    .cell_id
+                    .map(|cell_id| (cell_id, execution.delegate))
             })
             .collect()
     }
 
-    fn close_execution_if_ready(&mut self, execution_id: &str) -> Option<CellId> {
+    fn close_execution_if_ready(&mut self, execution_id: &str) -> Option<ClosedCell> {
         self.executions
             .get(execution_id)
             .is_some_and(|execution| {
@@ -413,19 +370,14 @@ impl SessionState {
             .flatten()
     }
 
-    pub(super) fn remove_execution(&mut self, execution_id: &str) -> Option<CellId> {
+    pub(super) fn remove_execution(&mut self, execution_id: &str) -> Option<ClosedCell> {
         let execution = self.executions.remove(execution_id)?;
-        self.notifications.retain(|_, notification| {
-            if notification.execution_id == execution_id {
-                notification.cancellation.cancel();
-                false
-            } else {
-                true
-            }
-        });
+        self.notifications -= execution.notifications;
         execution.cancellation.cancel();
         self.revoke_execution_callbacks(execution_id);
-        execution.cell_id
+        execution
+            .cell_id
+            .map(|cell_id| (cell_id, execution.delegate))
     }
 
     fn check_cell_ownership(&self, execution_id: &str, cell_id: &str) -> Result<(), String> {

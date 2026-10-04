@@ -57,6 +57,7 @@ impl DashboardPlacement {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ShellLayout {
     pub(super) header: Rect,
+    pub(super) status: Option<Rect>,
     pub(super) transcript: Rect,
     pub(super) input: Rect,
     pub(super) dashboard: Option<DashboardPlacement>,
@@ -71,17 +72,19 @@ pub(super) fn terminal_size_supported(width: u16, height: u16) -> bool {
 }
 
 pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
+    let area = shell.pets.content_area(area);
     if !terminal_size_supported(area.width, area.height) {
         return None;
     }
 
+    let status_height = u16::from(shell.status_surfaces.status_visible());
     let header_height = if area.height >= PADDED_HEADER_MIN_SCREEN_HEIGHT {
         PADDED_HEADER_HEIGHT
     } else {
         COMPACT_HEADER_HEIGHT
     };
     if !shell.dashboard_visible || area.width < DASHBOARD_SIDE_BY_SIDE_MIN_WIDTH {
-        let available_height = area.height.saturating_sub(header_height);
+        let available_height = area.height.saturating_sub(header_height + status_height);
         let mut input_height = input_panel_height(shell, available_height, area.width);
         if shell.dashboard_visible && shell.dashboard_route == DashboardRoute::Help {
             let max_input_height = available_height
@@ -89,20 +92,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
                 .max(available_height.min(COMPACT_INPUT_PANEL_MIN_HEIGHT));
             input_height = input_height.min(max_input_height);
         }
-        let main = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(header_height),
-                Constraint::Min(transcript_min_height(shell, area.height)),
-                Constraint::Length(input_height),
-            ])
-            .split(area);
-        let mut layout = ShellLayout {
-            header: main[0],
-            transcript: main[1],
-            input: main[2],
-            dashboard: None,
-        };
+        let mut layout = workspace_layout(shell, area, header_height, input_height);
         if shell.dashboard_visible {
             let width = dashboard_width(shell, area.width).min(layout.transcript.width);
             layout.dashboard = Some(DashboardPlacement::Overlay(Rect::new(
@@ -125,23 +115,42 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
         .split(area);
     let input_height = input_panel_height(
         shell,
-        area.height.saturating_sub(header_height),
+        area.height.saturating_sub(header_height + status_height),
         horizontal[0].width,
     );
+    let mut layout = workspace_layout(shell, horizontal[0], header_height, input_height);
+    layout.dashboard = Some(DashboardPlacement::Sidebar(horizontal[1]));
+    Some(layout)
+}
+
+fn workspace_layout(
+    shell: &ShellState,
+    area: Rect,
+    header_height: u16,
+    input_height: u16,
+) -> ShellLayout {
+    let status_height = u16::from(shell.status_surfaces.status_visible());
+    // An extra zero-length constraint changes how tight layouts allocate their rows.
     let main = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(header_height),
+            Constraint::Length(header_height + status_height),
             Constraint::Min(transcript_min_height(shell, area.height)),
             Constraint::Length(input_height),
         ])
-        .split(horizontal[0]);
-    Some(ShellLayout {
-        header: main[0],
+        .split(area);
+    let header = Rect {
+        height: main[0].height.saturating_sub(status_height),
+        ..main[0]
+    };
+    ShellLayout {
+        header,
+        status: (status_height > 0 && main[0].height > 0)
+            .then(|| Rect::new(header.x, header.bottom(), header.width, status_height)),
         transcript: main[1],
         input: main[2],
-        dashboard: Some(DashboardPlacement::Sidebar(horizontal[1])),
-    })
+        dashboard: None,
+    }
 }
 
 fn transcript_min_height(shell: &ShellState, terminal_height: u16) -> u16 {

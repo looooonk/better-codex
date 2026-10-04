@@ -46,6 +46,16 @@ fn forked_agent_thread() -> Thread {
         ThreadId::from_string("01900000-0000-7000-8000-000000000001").expect("valid parent id");
     let thread_id = "01900000-0000-7000-8000-000000000002";
     Thread {
+        model: None,
+        reasoning_effort: None,
+        environments: None,
+        section: None,
+        section_entered_at: None,
+        project_id: None,
+        originator: None,
+        can_accept_direct_input: None,
+        daybreak_enabled: None,
+
         id: thread_id.to_string(),
         extra: None,
         session_id: parent_thread_id.to_string(),
@@ -92,6 +102,11 @@ fn forked_agent_thread() -> Thread {
                         content: Vec::new(),
                     },
                     ThreadItem::CommandExecution {
+                        model_context: None,
+                        plugin_id: None,
+                        sandbox_type: None,
+                        script_path: None,
+
                         id: "command".to_string(),
                         command: "just test -p codex-tui".to_string(),
                         cwd: LegacyAppPathString::from_path(Path::new("/workspace/better-codex")),
@@ -137,6 +152,9 @@ fn forked_agent_thread() -> Thread {
                         status: PatchApplyStatus::Completed,
                     },
                     ThreadItem::McpToolCall {
+                        mcp_app_ui: None,
+                        read_only_hint: None,
+
                         id: "tool".to_string(),
                         server: "github".to_string(),
                         tool: "get_pull_request".to_string(),
@@ -195,6 +213,9 @@ fn user_message(id: &str, text: &str) -> ThreadItem {
 
 fn agent_message(id: &str, text: &str) -> ThreadItem {
     ThreadItem::AgentMessage {
+        delivery: None,
+        questions: None,
+
         id: id.to_string(),
         text: text.to_string(),
         phase: None,

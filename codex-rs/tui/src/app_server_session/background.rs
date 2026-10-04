@@ -4,7 +4,7 @@ use super::*;
 ///
 /// Implementations must dispatch the supplied protocol request unchanged and
 /// preserve app-server transport, server, and response-decoding errors.
-trait BackgroundRequestHandle: Send + Sync {
+trait BackgroundRequestHandle: Send + Sync + timeline::TimelineReader {
     fn send_thread_fork_request(
         &self,
         request: ClientRequest,
@@ -144,6 +144,8 @@ where
     let mut started =
         started_thread_from_fork_response(response, &config, thread_params_mode).await?;
     started.session.fork_parent_title = fork_parent_title;
+    started.timeline =
+        timeline::load_thread_timeline(&request_handle, started.session.thread_id).await?;
     Ok(started)
 }
 
@@ -174,6 +176,8 @@ pub(super) async fn resume_thread(
     let mut started =
         started_thread_from_resume_response(response, &config, thread_params_mode).await?;
     started.session.fork_parent_title = fork_parent_title;
+    started.timeline =
+        timeline::load_thread_timeline(&request_handle, started.session.thread_id).await?;
     started.agent_history_task = agent_history::spawn_resumed_agent_history(
         request_handle,
         started.session.thread_id,

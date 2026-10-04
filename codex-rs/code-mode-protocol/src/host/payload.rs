@@ -1,4 +1,5 @@
 use std::num::TryFromIntError;
+use std::time::Duration;
 
 use codex_protocol::ToolName;
 use serde::Deserialize;
@@ -12,6 +13,7 @@ use crate::CodeModeToolKind;
 use crate::ExecuteRequest;
 use crate::FunctionCallOutputContentItem;
 use crate::ImageDetail;
+use crate::MissingCodeModeHostDuration;
 use crate::RuntimeResponse;
 use crate::ToolDefinition;
 use crate::WaitOutcome;
@@ -164,6 +166,7 @@ impl From<WireToolDefinition> for ToolDefinition {
             description: value.description,
             kind: value.kind.into(),
             input_schema: value.input_schema,
+            input_schema_max_bytes: None,
             output_schema: value.output_schema,
         }
     }
@@ -278,6 +281,9 @@ pub enum WireContentItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         detail: Option<WireImageDetail>,
     },
+    InputAudio {
+        audio_url: String,
+    },
 }
 
 impl From<FunctionCallOutputContentItem> for WireContentItem {
@@ -288,6 +294,9 @@ impl From<FunctionCallOutputContentItem> for WireContentItem {
                 image_url,
                 detail: detail.map(Into::into),
             },
+            FunctionCallOutputContentItem::InputAudio { audio_url } => {
+                Self::InputAudio { audio_url }
+            }
         }
     }
 }
@@ -300,56 +309,87 @@ impl From<WireContentItem> for FunctionCallOutputContentItem {
                 image_url,
                 detail: detail.map(Into::into),
             },
+            WireContentItem::InputAudio { audio_url } => Self::InputAudio { audio_url },
         }
     }
 }
 
 /// Runtime output returned over the V1 host connection.
+///
+/// Host time is required and covers this request, not the cell lifetime. The
+/// app-server and host run at the same version; no negotiation is needed.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum WireRuntimeResponse {
     Yielded {
         cell_id: WireCellId,
         content_items: Vec<WireContentItem>,
+        code_mode_host_duration_ns: u64,
     },
     Terminated {
         cell_id: WireCellId,
         content_items: Vec<WireContentItem>,
+        code_mode_host_duration_ns: u64,
     },
     Result {
         cell_id: WireCellId,
         content_items: Vec<WireContentItem>,
         error_text: Option<String>,
+        code_mode_host_duration_ns: u64,
     },
 }
 
-impl From<RuntimeResponse> for WireRuntimeResponse {
-    fn from(value: RuntimeResponse) -> Self {
-        match value {
+impl TryFrom<RuntimeResponse> for WireRuntimeResponse {
+    type Error = MissingCodeModeHostDuration;
+
+    /// Preserves the response's timing; the host handler must record it first.
+    fn try_from(value: RuntimeResponse) -> Result<Self, Self::Error> {
+        Ok(match value {
             RuntimeResponse::Yielded {
                 cell_id,
                 content_items,
-            } => Self::Yielded {
-                cell_id: cell_id.into(),
-                content_items: content_items.into_iter().map(Into::into).collect(),
-            },
+                code_mode_host_duration,
+            } => {
+                let code_mode_host_duration =
+                    code_mode_host_duration.ok_or(MissingCodeModeHostDuration)?;
+                Self::Yielded {
+                    cell_id: cell_id.into(),
+                    content_items: content_items.into_iter().map(Into::into).collect(),
+                    code_mode_host_duration_ns: u64::try_from(code_mode_host_duration.as_nanos())
+                        .unwrap_or(u64::MAX),
+                }
+            }
             RuntimeResponse::Terminated {
                 cell_id,
                 content_items,
-            } => Self::Terminated {
-                cell_id: cell_id.into(),
-                content_items: content_items.into_iter().map(Into::into).collect(),
-            },
+                code_mode_host_duration,
+            } => {
+                let code_mode_host_duration =
+                    code_mode_host_duration.ok_or(MissingCodeModeHostDuration)?;
+                Self::Terminated {
+                    cell_id: cell_id.into(),
+                    content_items: content_items.into_iter().map(Into::into).collect(),
+                    code_mode_host_duration_ns: u64::try_from(code_mode_host_duration.as_nanos())
+                        .unwrap_or(u64::MAX),
+                }
+            }
             RuntimeResponse::Result {
                 cell_id,
                 content_items,
                 error_text,
-            } => Self::Result {
-                cell_id: cell_id.into(),
-                content_items: content_items.into_iter().map(Into::into).collect(),
-                error_text,
-            },
-        }
+                code_mode_host_duration,
+            } => {
+                let code_mode_host_duration =
+                    code_mode_host_duration.ok_or(MissingCodeModeHostDuration)?;
+                Self::Result {
+                    cell_id: cell_id.into(),
+                    content_items: content_items.into_iter().map(Into::into).collect(),
+                    error_text,
+                    code_mode_host_duration_ns: u64::try_from(code_mode_host_duration.as_nanos())
+                        .unwrap_or(u64::MAX),
+                }
+            }
+        })
     }
 }
 
@@ -359,25 +399,31 @@ impl From<WireRuntimeResponse> for RuntimeResponse {
             WireRuntimeResponse::Yielded {
                 cell_id,
                 content_items,
+                code_mode_host_duration_ns,
             } => Self::Yielded {
                 cell_id: cell_id.into(),
                 content_items: content_items.into_iter().map(Into::into).collect(),
+                code_mode_host_duration: Some(Duration::from_nanos(code_mode_host_duration_ns)),
             },
             WireRuntimeResponse::Terminated {
                 cell_id,
                 content_items,
+                code_mode_host_duration_ns,
             } => Self::Terminated {
                 cell_id: cell_id.into(),
                 content_items: content_items.into_iter().map(Into::into).collect(),
+                code_mode_host_duration: Some(Duration::from_nanos(code_mode_host_duration_ns)),
             },
             WireRuntimeResponse::Result {
                 cell_id,
                 content_items,
                 error_text,
+                code_mode_host_duration_ns,
             } => Self::Result {
                 cell_id: cell_id.into(),
                 content_items: content_items.into_iter().map(Into::into).collect(),
                 error_text,
+                code_mode_host_duration: Some(Duration::from_nanos(code_mode_host_duration_ns)),
             },
         }
     }
@@ -391,12 +437,14 @@ pub enum WireWaitOutcome {
     MissingCell(WireRuntimeResponse),
 }
 
-impl From<WaitOutcome> for WireWaitOutcome {
-    fn from(value: WaitOutcome) -> Self {
-        match value {
-            WaitOutcome::LiveCell(response) => Self::LiveCell(response.into()),
-            WaitOutcome::MissingCell(response) => Self::MissingCell(response.into()),
-        }
+impl TryFrom<WaitOutcome> for WireWaitOutcome {
+    type Error = MissingCodeModeHostDuration;
+
+    fn try_from(value: WaitOutcome) -> Result<Self, Self::Error> {
+        Ok(match value {
+            WaitOutcome::LiveCell(response) => Self::LiveCell(response.try_into()?),
+            WaitOutcome::MissingCell(response) => Self::MissingCell(response.try_into()?),
+        })
     }
 }
 

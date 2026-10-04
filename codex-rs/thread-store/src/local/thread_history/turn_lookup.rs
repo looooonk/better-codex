@@ -1,4 +1,4 @@
-use codex_protocol::RolloutId;
+use codex_protocol::ThreadId;
 use sqlx::Row;
 
 use super::super::rollout_lineage::RolloutLineage;
@@ -8,10 +8,14 @@ use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
 pub(in crate::local) struct TurnRow {
-    pub rollout_id: RolloutId,
+    pub rollout_id: ThreadId,
     pub rollout_ordinal: i64,
     pub rollout_byte_offset: Option<i64>,
     pub rollout_end_ordinal: Option<i64>,
+    pub rollout_end_byte_offset: Option<i64>,
+    pub status: String,
+    pub first_user_item_id: Option<String>,
+    pub final_agent_item_id: Option<String>,
 }
 
 pub(in crate::local) async fn find_source_turn(
@@ -19,7 +23,23 @@ pub(in crate::local) async fn find_source_turn(
     lineage: &RolloutLineage,
     turn_id: &str,
 ) -> ThreadStoreResult<TurnRow> {
-    for segment in lineage.segments() {
+    find_turn(pool, lineage.segments().iter(), turn_id).await
+}
+
+pub(in crate::local) async fn find_visible_turn(
+    pool: &sqlx::SqlitePool,
+    lineage: &RolloutLineage,
+    turn_id: &str,
+) -> ThreadStoreResult<TurnRow> {
+    find_turn(pool, lineage.segments().iter().rev(), turn_id).await
+}
+
+async fn find_turn<'a>(
+    pool: &sqlx::SqlitePool,
+    segments: impl Iterator<Item = &'a RolloutLineageSegment>,
+    turn_id: &str,
+) -> ThreadStoreResult<TurnRow> {
+    for segment in segments {
         if let Some(row) = query_turn_row(pool, segment, turn_id).await? {
             return Ok(row);
         }
@@ -40,7 +60,14 @@ async fn query_turn_row(
         .transpose()?;
     sqlx::query(
         r#"
-SELECT rollout_ordinal, rollout_byte_offset, rollout_end_ordinal
+SELECT
+    rollout_ordinal,
+    rollout_byte_offset,
+    rollout_end_ordinal,
+    rollout_end_byte_offset,
+    status,
+    first_user_item_id,
+    final_agent_item_id
 FROM thread_turns
 WHERE thread_id = ?
   AND turn_id = ?
@@ -64,6 +91,10 @@ WHERE thread_id = ?
             rollout_ordinal: row.get("rollout_ordinal"),
             rollout_byte_offset: row.get("rollout_byte_offset"),
             rollout_end_ordinal: row.get("rollout_end_ordinal"),
+            rollout_end_byte_offset: row.get("rollout_end_byte_offset"),
+            status: row.get("status"),
+            first_user_item_id: row.get("first_user_item_id"),
+            final_agent_item_id: row.get("final_agent_item_id"),
         })
     })
 }

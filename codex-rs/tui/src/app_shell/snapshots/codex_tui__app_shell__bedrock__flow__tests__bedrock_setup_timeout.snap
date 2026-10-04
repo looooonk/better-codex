@@ -1,0 +1,11 @@
+---
+source: tui/src/app_shell/bedrock_flow_tests.rs
+assertion_line: 78
+expression: text
+---
+Amazon Bedrock setup timed out.
+
+The credential write may still have completed. Exit and restart Better
+Codex to check the saved configuration.
+
+Esc or Ctrl+C to exit

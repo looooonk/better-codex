@@ -94,6 +94,10 @@ impl AgentTimelineEvent {
             } => match tool {
                 CollabAgentTool::SpawnAgent => "spawning agent",
                 CollabAgentTool::SendInput => "sending input",
+                CollabAgentTool::SendMessage => "sending message",
+                CollabAgentTool::FollowupTask => "assigning follow-up task",
+                CollabAgentTool::InterruptAgent => "interrupting agent",
+                CollabAgentTool::ListAgents => "listing agents",
                 CollabAgentTool::ResumeAgent => "resuming agent",
                 CollabAgentTool::Wait => "waiting for agent",
                 CollabAgentTool::CloseAgent => "stopping agent",
@@ -103,6 +107,7 @@ impl AgentTimelineEvent {
                 phase: AgentItemPhase::Completed,
                 status,
             } => collaboration_result_label(tool, status),
+            Self::Activity(SubAgentActivityKind::Completed) => "agent completed",
             Self::Activity(SubAgentActivityKind::Started) => "agent started",
             Self::Activity(SubAgentActivityKind::Interacted) => "agent interacted",
             Self::Activity(SubAgentActivityKind::Interrupted) => "agent interrupted",
@@ -180,10 +185,15 @@ fn collaboration_result_label(
 ) -> &'static str {
     match status {
         CollabAgentToolCallStatus::Failed => "agent operation failed",
+        CollabAgentToolCallStatus::Interrupted => "agent operation interrupted",
         CollabAgentToolCallStatus::InProgress => "agent operation pending",
         CollabAgentToolCallStatus::Completed => match tool {
             CollabAgentTool::SpawnAgent => "agent spawned",
             CollabAgentTool::SendInput => "input delivered",
+            CollabAgentTool::SendMessage => "message delivered",
+            CollabAgentTool::FollowupTask => "follow-up task assigned",
+            CollabAgentTool::InterruptAgent => "agent interrupted",
+            CollabAgentTool::ListAgents => "agents listed",
             CollabAgentTool::ResumeAgent => "agent resumed",
             CollabAgentTool::Wait => "wait complete",
             CollabAgentTool::CloseAgent => "agent stopped",

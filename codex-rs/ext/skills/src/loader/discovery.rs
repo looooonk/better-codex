@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::io;
 
-use codex_exec_server::ExecutorFileSystem;
+use codex_exec_server::EnvironmentAccess;
 use codex_exec_server::WalkEntryKind;
 use codex_exec_server::WalkOptions;
 use codex_utils_path_uri::PathUri;
@@ -52,7 +52,7 @@ pub(super) enum SkillMetadataDiscovery {
 }
 
 pub(super) async fn discover_skills(
-    file_system: &dyn ExecutorFileSystem,
+    file_system: &dyn EnvironmentAccess,
     root: &PathUri,
     options: SkillDiscoveryOptions,
 ) -> SkillDiscovery {
@@ -81,7 +81,6 @@ pub(super) async fn discover_skills(
                     HiddenDirectoryPolicy::Skip
                 ),
             },
-            /*sandbox*/ None,
         )
         .await
     {
@@ -142,7 +141,15 @@ pub(super) async fn discover_skills(
             }
             WalkEntryKind::File => {
                 file_paths.insert(entry.path.clone());
-                if entry.path.basename().as_deref() == Some(SKILLS_FILENAME) {
+                if entry.path.basename().as_deref() == Some(SKILLS_FILENAME)
+                    && (options.mode == SkillDiscoveryMode::Recursive
+                        || entry
+                            .path
+                            .parent()
+                            .and_then(|parent| parent.parent())
+                            .as_ref()
+                            == Some(root))
+                {
                     skill_files.push(entry.path);
                 }
             }
@@ -210,3 +217,7 @@ fn discover_skill_metadata(
         SkillMetadataDiscovery::Probe(metadata_path)
     }
 }
+
+#[cfg(test)]
+#[path = "discovery_tests.rs"]
+mod tests;

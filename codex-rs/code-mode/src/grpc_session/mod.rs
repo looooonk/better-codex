@@ -1,7 +1,5 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::panic::AssertUnwindSafe;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
@@ -25,13 +23,14 @@ use codex_code_mode_protocol::grpc;
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
-use tokio::sync::Semaphore;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tonic::transport::Channel;
+use tracing::Instrument;
 
 use self::operations::WaitSlot;
+use self::state::ClosedCell;
 use self::state::SessionState;
 use self::transport::GrpcTransport;
 use self::transport::SharedTransport;
@@ -45,7 +44,6 @@ mod deadline;
 mod generation;
 mod operations;
 mod reconnect;
-mod response_admission;
 mod state;
 mod transport;
 
@@ -53,38 +51,12 @@ type GrpcClient = CodeModeHostClient<GrpcTransport>;
 
 const SHUTDOWN_ERROR: &str = "code mode session is shutting down";
 
-/// A server-issued bearer capability for an HTTP gRPC code-mode host.
-#[derive(Clone, Eq, PartialEq)]
-pub struct GrpcCodeModeHostCapability(String);
-
-impl GrpcCodeModeHostCapability {
-    /// Parses the fixed-size hexadecimal capability printed by the host.
-    pub fn new(value: impl Into<String>) -> Result<Self, String> {
-        let value = value.into();
-        if value.len() != grpc::CAPABILITY_HEX_BYTES
-            || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
-        {
-            return Err("invalid gRPC code-mode host capability".to_string());
-        }
-        Ok(Self(value))
-    }
-
-    pub(super) fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for GrpcCodeModeHostCapability {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("GrpcCodeModeHostCapability([REDACTED])")
-    }
-}
-
-impl FromStr for GrpcCodeModeHostCapability {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::new(value)
+fn inject_span_traceparent<T>(request: &mut tonic::Request<T>, span: &tracing::Span) {
+    if let Some(traceparent) =
+        codex_otel::span_w3c_trace_context(span).and_then(|trace| trace.traceparent)
+        && let Ok(traceparent) = traceparent.parse()
+    {
+        request.metadata_mut().insert("traceparent", traceparent);
     }
 }
 
@@ -95,10 +67,7 @@ pub struct GrpcCodeModeSessionProvider {
 }
 
 impl GrpcCodeModeSessionProvider {
-    /// Connects lazily to a trusted `https:` or local `unix:` endpoint.
-    ///
-    /// The deployment is responsible for authenticating an endpoint-only HTTPS
-    /// host. Plaintext HTTP endpoints require [`Self::with_capability`].
+    /// Connects lazily to an `http://`, `https://`, or `unix://` gRPC endpoint.
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self::with_http_client_factory(
             endpoint,
@@ -106,49 +75,15 @@ impl GrpcCodeModeSessionProvider {
         )
     }
 
-    /// Connects a trusted HTTPS or local Unix endpoint using the application's HTTP policy.
-    ///
-    /// Plaintext HTTP endpoints require
-    /// [`Self::with_http_client_factory_and_capability`].
+    /// Connects using the application's resolved outbound proxy and custom CA policy.
     pub fn with_http_client_factory(
         endpoint: impl Into<String>,
         http_client_factory: HttpClientFactory,
     ) -> Self {
-        Self::from_transport(SharedTransport::new(
-            endpoint.into(),
-            http_client_factory,
-            /*capability*/ None,
-        ))
+        Self::from_transport(SharedTransport::new(endpoint.into(), http_client_factory))
     }
 
-    /// Connects to an HTTP host using its server-issued bearer capability.
-    pub fn with_capability(
-        endpoint: impl Into<String>,
-        capability: GrpcCodeModeHostCapability,
-    ) -> Self {
-        Self::with_http_client_factory_and_capability(
-            endpoint,
-            HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-            capability,
-        )
-    }
-
-    /// Connects with the application's HTTP policy and a server-issued capability.
-    pub fn with_http_client_factory_and_capability(
-        endpoint: impl Into<String>,
-        http_client_factory: HttpClientFactory,
-        capability: GrpcCodeModeHostCapability,
-    ) -> Self {
-        Self::from_transport(SharedTransport::new(
-            endpoint.into(),
-            http_client_factory,
-            Some(capability),
-        ))
-    }
-
-    /// Uses an existing trusted channel, including channels backed by custom transports.
-    ///
-    /// The caller owns peer authentication and HTTP/2 header and flow-control bounds.
+    /// Uses an existing channel, including channels backed by custom transports.
     pub fn with_channel(channel: Channel) -> Self {
         Self::from_transport(SharedTransport::with_channel(channel))
     }
@@ -159,9 +94,9 @@ impl GrpcCodeModeSessionProvider {
         }
     }
 
+    #[tracing::instrument(name = "code_mode.grpc.open_binding", level = "info", skip_all)]
     async fn open_binding(
         &self,
-        delegate: Arc<dyn CodeModeSessionDelegate>,
         limits: CodeModeSessionCellExecutionLimits,
     ) -> Result<Arc<GrpcCodeModeSession>, String> {
         let mut client = deadline::startup("transport connection", self.transport.client()).await?;
@@ -176,17 +111,23 @@ impl GrpcCodeModeSessionProvider {
         let cell_execution_limits = (limits.max_yield_time_ms.is_some()
             || limits.max_heap_size_bytes.is_some())
         .then_some(limits);
-        let mut lease = deadline::startup(
-            "session opening",
-            client.open_session(grpc::OpenSessionRequest {
-                cell_execution_limits,
-            }),
-        )
-        .await?
-        .into_inner();
-        let first = deadline::startup("session lease opening", lease.message())
-            .await?
-            .ok_or_else(|| "gRPC code-mode session lease ended before opening".to_string())?;
+        let open_session_span = tracing::info_span!("code_mode.grpc.open_session");
+        let mut open_session_request = tonic::Request::new(grpc::OpenSessionRequest {
+            cell_execution_limits,
+        });
+        inject_span_traceparent(&mut open_session_request, &open_session_span);
+        let (lease, first) = async {
+            let mut lease =
+                deadline::startup("session opening", client.open_session(open_session_request))
+                    .await?
+                    .into_inner();
+            let first = deadline::startup("session lease opening", lease.message())
+                .await?
+                .ok_or_else(|| "gRPC code-mode session lease ended before opening".to_string())?;
+            Ok::<_, String>((lease, first))
+        }
+        .instrument(open_session_span)
+        .await?;
         let Some(grpc::session_event::Event::Opened(opened)) = first.event else {
             return Err("gRPC code-mode session lease omitted its opening event".to_string());
         };
@@ -195,7 +136,6 @@ impl GrpcCodeModeSessionProvider {
         let inner = Arc::new(SessionInner {
             id: opened.session_id,
             client,
-            delegate,
             runtime: tokio::runtime::Handle::current(),
             state: Mutex::new(SessionState::default()),
             wait_slots: Mutex::new(HashMap::new()),
@@ -203,9 +143,6 @@ impl GrpcCodeModeSessionProvider {
             shutdown_result: Mutex::new(None),
             stopped: CancellationToken::new(),
             stream_tasks: TaskTracker::new(),
-            callback_tasks: self.transport.callback_tasks(),
-            callback_bytes: self.transport.callback_bytes(),
-            cleanup_tasks: self.transport.cleanup_tasks(),
             _transport: Arc::clone(&self.transport),
         });
         let mut opening = OpeningSession {
@@ -213,13 +150,19 @@ impl GrpcCodeModeSessionProvider {
         };
         inner.spawn_session_events(lease);
 
-        let request = grpc::SubscribeToToolCallsRequest {
+        let subscribe_span = tracing::info_span!(
+            "code_mode.grpc.subscribe_to_tool_calls",
+            session.id = %inner.id,
+        );
+        let mut request = tonic::Request::new(grpc::SubscribeToToolCallsRequest {
             session_id: inner.id.clone(),
             tool_names: Vec::new(),
-        };
+        });
+        inject_span_traceparent(&mut request, &subscribe_span);
         let mut client = inner.client();
         let response =
             match deadline::startup("tool subscription", client.subscribe_to_tool_calls(request))
+                .instrument(subscribe_span)
                 .await
             {
                 Ok(response) => response,
@@ -236,24 +179,16 @@ impl GrpcCodeModeSessionProvider {
 }
 
 impl CodeModeSessionProvider for GrpcCodeModeSessionProvider {
-    fn create_session<'a>(
-        &'a self,
-        delegate: Arc<dyn CodeModeSessionDelegate>,
-    ) -> CodeModeSessionProviderFuture<'a> {
-        self.create_session_with_limits(delegate, CodeModeSessionCellExecutionLimits::default())
+    fn create_session(&self) -> CodeModeSessionProviderFuture<'_> {
+        self.create_session_with_limits(CodeModeSessionCellExecutionLimits::default())
     }
 
     fn create_session_with_limits<'a>(
         &'a self,
-        delegate: Arc<dyn CodeModeSessionDelegate>,
         limits: CodeModeSessionCellExecutionLimits,
     ) -> CodeModeSessionProviderFuture<'a> {
         Box::pin(async move {
-            let session = Arc::new(reconnect::ReconnectableSession::new(
-                self.clone(),
-                delegate,
-                limits,
-            ));
+            let session = Arc::new(reconnect::ReconnectableSession::new(self.clone(), limits));
             session.initialize().await?;
             Ok(session as _)
         })
@@ -285,12 +220,18 @@ impl CodeModeSession for GrpcCodeModeSession {
     fn execute<'a>(
         &'a self,
         request: ExecuteRequest,
+        delegate: Arc<dyn CodeModeSessionDelegate>,
+        preempt: Option<CancellationToken>,
     ) -> CodeModeSessionResultFuture<'a, StartedCell> {
-        Box::pin(self.inner.execute(request))
+        Box::pin(self.inner.execute(request, delegate, preempt))
     }
 
-    fn wait<'a>(&'a self, request: WaitRequest) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
-        Box::pin(self.inner.wait(request))
+    fn wait<'a>(
+        &'a self,
+        request: WaitRequest,
+        preempt: Option<CancellationToken>,
+    ) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
+        Box::pin(self.inner.wait(request, preempt))
     }
 
     fn terminate<'a>(&'a self, cell_id: CellId) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
@@ -311,7 +252,6 @@ impl Drop for GrpcCodeModeSession {
 pub(super) struct SessionInner {
     pub(super) id: String,
     pub(super) client: GrpcClient,
-    pub(super) delegate: Arc<dyn CodeModeSessionDelegate>,
     runtime: tokio::runtime::Handle,
     state: Mutex<SessionState>,
     wait_slots: Mutex<HashMap<CellId, Weak<WaitSlot>>>,
@@ -319,9 +259,6 @@ pub(super) struct SessionInner {
     shutdown_result: Mutex<Option<ShutdownResultReceiver>>,
     pub(super) stopped: CancellationToken,
     stream_tasks: TaskTracker,
-    callback_tasks: Arc<Semaphore>,
-    callback_bytes: Arc<Semaphore>,
-    cleanup_tasks: Arc<Semaphore>,
     _transport: Arc<SharedTransport>,
 }
 
@@ -341,14 +278,14 @@ impl SessionInner {
         Ok(())
     }
 
-    pub(super) fn report_closed_cell(&self, cell_id: Option<CellId>) {
-        if let Some(cell_id) = cell_id {
+    pub(super) fn report_closed_cell(&self, cell: Option<ClosedCell>) {
+        if let Some((cell_id, delegate)) = cell {
             self.wait_slots
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .remove(&cell_id);
             let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                self.delegate.cell_closed(&cell_id);
+                delegate.cell_closed(&cell_id);
             }));
         }
     }

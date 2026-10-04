@@ -2,7 +2,7 @@ use super::*;
 use crate::app_shell::ShellState;
 use crate::app_shell::ToolBlockStatus;
 use crate::app_shell::TranscriptKind;
-use codex_config::types::TuiAppTheme;
+use crate::app_theme::TuiAppTheme;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 

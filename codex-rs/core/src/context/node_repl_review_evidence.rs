@@ -1,230 +1,314 @@
+//! Thread-owned capture and bounded storage for completed REPL evidence.
+//! Immutable snapshots feed shared rendering; sequence and eviction stay host-owned.
+
+use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 
-use codex_secrets::redact_secrets;
-use codex_utils_output_truncation::TruncationPolicy;
+use codex_features::Feature;
+use codex_guardian_context::NodeReplContext;
+use codex_guardian_context::NodeReplResponse;
+pub(crate) use codex_guardian_context::NodeReplReviewEvidenceMode;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ImageReference;
+use codex_protocol::user_input::UserInput;
+use codex_protocol::user_input::UserInput::Image;
+use codex_protocol::user_input::UserInput::Text;
 use codex_utils_output_truncation::approx_token_count;
-use codex_utils_output_truncation::truncate_text;
+use codex_utils_string::take_bytes_at_char_boundary;
 
-const MAX_RETAINED_BYTES: usize = 128 * 1024;
-const MAX_RECORDS: usize = 40;
-const MAX_TEXT_TOKENS: usize = 1_000;
+use crate::guardian::GUARDIAN_MAX_NODE_REPL_TOOL_RESULT_TOKENS;
+use crate::guardian::guardian_truncate_text;
+use crate::session::turn_context::TurnContext;
+
 const MAX_PROVENANCE_BYTES: usize = 128;
-const MAX_IMAGES: usize = 2;
-const MAX_ENCODED_IMAGE_BYTES: usize = 12 * 1024;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum NodeReplReviewEvidenceItem {
-    Text(String),
-    Image { data_url: String },
+pub(crate) fn node_repl_review_evidence_mode(turn: &TurnContext) -> NodeReplReviewEvidenceMode {
+    let features = &turn.config.features;
+    if turn.model_info().computer_use_review_required()
+        || features.enabled(Feature::GuardianEnhancedNodeReplTranscripts)
+            && features.enabled(Feature::GuardianNodeReplTranscriptImages)
+    {
+        NodeReplReviewEvidenceMode::Multimodal
+    } else if features.enabled(Feature::GuardianEnhancedNodeReplTranscripts) {
+        NodeReplReviewEvidenceMode::TextOnly
+    } else {
+        NodeReplReviewEvidenceMode::Disabled
+    }
 }
 
-#[allow(
-    dead_code,
-    reason = "the stage 6 decision bridge consumes correlated records"
-)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct NodeReplReviewEvidenceRecord {
-    pub(crate) sequence: u64,
-    pub(crate) cell_id: String,
-    pub(crate) runtime_tool_call_id: String,
-    pub(crate) provenance: String,
-    pub(crate) items: Vec<NodeReplReviewEvidenceItem>,
+#[derive(Clone, Debug)]
+struct NodeReplReviewResponse {
+    sequence: u64,
+    provenance: String,
+    items: Vec<UserInput>,
 }
 
-impl NodeReplReviewEvidenceRecord {
+impl NodeReplReviewResponse {
+    fn has_images(&self) -> bool {
+        self.items.iter().any(|item| matches!(item, Image { .. }))
+    }
+
     fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
-            .saturating_add(self.cell_id.capacity())
-            .saturating_add(self.runtime_tool_call_id.capacity())
-            .saturating_add(self.provenance.capacity())
+            .saturating_add(std::mem::size_of::<Arc<Self>>())
+            .saturating_add(self.provenance.len())
             .saturating_add(
                 self.items
                     .capacity()
-                    .saturating_mul(std::mem::size_of::<NodeReplReviewEvidenceItem>()),
+                    .saturating_mul(std::mem::size_of::<UserInput>()),
             )
             .saturating_add(self.items.iter().fold(0_usize, |bytes, item| {
                 bytes.saturating_add(match item {
-                    NodeReplReviewEvidenceItem::Text(text) => text.capacity(),
-                    NodeReplReviewEvidenceItem::Image { data_url } => data_url.capacity(),
+                    Text { text, .. } => text.len(),
+                    Image {
+                        image: ImageReference::Inline { image_url },
+                        ..
+                    } => image_url.len(),
+                    Image {
+                        image: ImageReference::File { file_id },
+                        ..
+                    } => file_id.len(),
+                    _ => 0,
                 })
             }))
     }
 
-    pub(crate) fn has_cell_id(&self, cell_id: &str) -> bool {
-        self.cell_id == bounded_identifier(cell_id)
+    fn discard_images(&mut self) -> usize {
+        let before = self.retained_bytes();
+        self.items.retain(|item| !matches!(item, Image { .. }));
+        self.items.shrink_to_fit();
+        before.saturating_sub(self.retained_bytes())
     }
-}
-
-#[allow(
-    dead_code,
-    reason = "the stage 6 decision bridge consumes bounded snapshots"
-)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct NodeReplReviewEvidenceSnapshot {
-    pub(crate) sequence: u64,
-    pub(crate) omitted_records: u64,
-    pub(crate) records: Vec<NodeReplReviewEvidenceRecord>,
 }
 
 #[derive(Debug, Default)]
 struct NodeReplReviewEvidenceState {
-    records: VecDeque<NodeReplReviewEvidenceRecord>,
+    responses: VecDeque<Arc<NodeReplReviewResponse>>,
     next_sequence: u64,
     retained_bytes: usize,
+    image_capture_enabled: bool,
 }
 
+/// Bounded, thread-scoped evidence collected from nested `node_repl` or `cua_repl` calls.
 #[derive(Debug, Default)]
-pub(crate) struct NodeReplReviewEvidence(Mutex<NodeReplReviewEvidenceState>);
+pub struct NodeReplReviewEvidence(Mutex<NodeReplReviewEvidenceState>);
 
 impl NodeReplReviewEvidence {
+    pub(crate) const MAX_RETAINED_BYTES: usize = 8 * 1024 * 1024;
+
+    /// Enables screenshot capture even when synchronous Guardian transcripts are disabled.
+    pub fn enable_image_capture(&self) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .image_capture_enabled = true;
+    }
+
+    pub(crate) fn image_capture_enabled(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .image_capture_enabled
+    }
+
+    /// Returns the screenshots currently retained for this thread, oldest first.
+    pub fn images(&self) -> Vec<ContentItem> {
+        let state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut seen_images = HashSet::new();
+        state
+            .responses
+            .iter()
+            .flat_map(|response| &response.items)
+            .filter_map(|item| match item {
+                Image {
+                    image: ImageReference::Inline { image_url },
+                    detail,
+                } if seen_images.insert(image_url) => Some(ContentItem::InputImage {
+                    image: ImageReference::Inline {
+                        image_url: image_url.clone(),
+                    },
+                    detail: *detail,
+                }),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(crate) fn record(
         &self,
+        tool_name: &str,
         cell_id: &str,
-        runtime_tool_call_id: &str,
-        items: Vec<NodeReplReviewEvidenceItem>,
+        call_id: &str,
+        mut items: Vec<UserInput>,
     ) {
-        let items = bounded_items(items);
-        let bounded_cell_id = bounded_identifier(cell_id);
-        let bounded_runtime_tool_call_id = bounded_identifier(runtime_tool_call_id);
+        if !items.iter().any(|item| matches!(item, Image { .. })) {
+            let text = items
+                .into_iter()
+                .filter_map(|item| match item {
+                    Text { text, .. } => Some(text),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            items = Vec::from_iter((!text.is_empty()).then(|| text_input(text)));
+        }
+        let mut bounded_items = Vec::with_capacity(items.len());
+        let mut rendered_text_tokens = 0_usize;
+        let mut remaining_source_text_tokens = items
+            .iter()
+            .map(|item| match item {
+                Text { text, .. } => approx_token_count(text),
+                _ => 0,
+            })
+            .fold(0_usize, usize::saturating_add);
+        for item in items {
+            let Text { text, .. } = item else {
+                if matches!(item, Image { .. }) {
+                    bounded_items.push(item);
+                }
+                continue;
+            };
+            if text.trim().is_empty() {
+                continue;
+            }
+            remaining_source_text_tokens =
+                remaining_source_text_tokens.saturating_sub(approx_token_count(&text));
+            let remaining_tokens =
+                GUARDIAN_MAX_NODE_REPL_TOOL_RESULT_TOKENS.saturating_sub(rendered_text_tokens);
+            let reserved_tail_tokens = remaining_source_text_tokens.min(remaining_tokens / 2);
+            let (text, _) = guardian_truncate_text(
+                &text.replace("</", "<\\/"),
+                remaining_tokens.saturating_sub(reserved_tail_tokens),
+            );
+            let text_tokens = approx_token_count(&text);
+            if text_tokens <= remaining_tokens {
+                rendered_text_tokens = rendered_text_tokens.saturating_add(text_tokens);
+                bounded_items.push(text_input(text));
+            }
+        }
+
         let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         state.next_sequence = state.next_sequence.saturating_add(1);
-        let record = NodeReplReviewEvidenceRecord {
+        let mut response = Arc::new(NodeReplReviewResponse {
             sequence: state.next_sequence,
-            cell_id: bounded_cell_id,
-            runtime_tool_call_id: bounded_runtime_tool_call_id,
             provenance: format!(
-                "tool=node_repl/js cell={} call={}",
+                "tool={} cell={} call={}",
+                bounded_provenance(tool_name),
                 bounded_provenance(cell_id),
-                bounded_provenance(runtime_tool_call_id)
+                bounded_provenance(call_id)
             ),
-            items,
-        };
-        let retained_bytes = record.retained_bytes();
-        while state.records.len() >= MAX_RECORDS
-            || state.retained_bytes.saturating_add(retained_bytes) > MAX_RETAINED_BYTES
+            items: bounded_items,
+        });
+        if response.retained_bytes() > Self::MAX_RETAINED_BYTES {
+            Arc::make_mut(&mut response).discard_images();
+            if response.items.is_empty() {
+                return;
+            }
+        }
+        while state
+            .retained_bytes
+            .saturating_add(response.retained_bytes())
+            > Self::MAX_RETAINED_BYTES
         {
-            let Some(evicted) = state.records.pop_front() else {
+            if state.responses.front().is_some_and(|retained| {
+                retained
+                    .items
+                    .iter()
+                    .any(|item| matches!(item, Text { .. }))
+            }) {
+                let reclaimed = state
+                    .responses
+                    .iter_mut()
+                    .find(|retained| retained.has_images())
+                    .map_or(0, |retained| Arc::make_mut(retained).discard_images());
+                state.retained_bytes = state.retained_bytes.saturating_sub(reclaimed);
+                if reclaimed > 0 || Arc::make_mut(&mut response).discard_images() > 0 {
+                    if response.items.is_empty() {
+                        return;
+                    }
+                    continue;
+                }
+            }
+            let Some(evicted) = state.responses.pop_front() else {
                 return;
             };
             state.retained_bytes = state
                 .retained_bytes
                 .saturating_sub(evicted.retained_bytes());
         }
-        state.retained_bytes = state.retained_bytes.saturating_add(retained_bytes);
-        state.records.push_back(record);
+        state.retained_bytes = state
+            .retained_bytes
+            .saturating_add(response.retained_bytes());
+        state.responses.push_back(response);
     }
 
-    #[allow(
-        dead_code,
-        reason = "the stage 6 decision bridge consumes bounded snapshots"
-    )]
-    pub(crate) fn snapshot(&self) -> NodeReplReviewEvidenceSnapshot {
+    pub(crate) fn snapshot_since(
+        &self,
+        reviewed_sequence: u64,
+    ) -> Option<NodeReplReviewEvidenceSnapshot> {
         let state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        NodeReplReviewEvidenceSnapshot {
-            sequence: state.next_sequence,
-            omitted_records: state
+        if state.next_sequence <= reviewed_sequence {
+            return None;
+        }
+
+        let responses = state
+            .responses
+            .iter()
+            .filter(|response| response.sequence > reviewed_sequence)
+            .cloned()
+            .collect::<Vec<_>>();
+        let retained_since_review = u64::try_from(responses.len()).unwrap_or(u64::MAX);
+
+        Some(NodeReplReviewEvidenceSnapshot {
+            omitted_responses: state
                 .next_sequence
-                .saturating_sub(u64::try_from(state.records.len()).unwrap_or(u64::MAX)),
-            records: state.records.iter().cloned().collect(),
-        }
+                .saturating_sub(reviewed_sequence)
+                .saturating_sub(retained_since_review),
+            sequence: state.next_sequence,
+            responses,
+        })
     }
-}
-
-fn bounded_items(items: Vec<NodeReplReviewEvidenceItem>) -> Vec<NodeReplReviewEvidenceItem> {
-    let mut bounded = Vec::new();
-    let mut text_tokens = 0_usize;
-    let mut image_count = 0_usize;
-    let mut image_bytes = 0_usize;
-    for item in items {
-        match item {
-            NodeReplReviewEvidenceItem::Text(text) => {
-                let text = redact_secrets(text).replace("</", "<\\/");
-                let remaining = MAX_TEXT_TOKENS.saturating_sub(text_tokens);
-                if remaining == 0 || text.trim().is_empty() {
-                    continue;
-                }
-                let mut text = truncate_to_token_budget(&text, remaining);
-                text.shrink_to_fit();
-                text_tokens = text_tokens.saturating_add(approx_token_count(&text));
-                if !text.trim().is_empty() {
-                    bounded.push(NodeReplReviewEvidenceItem::Text(text));
-                }
-            }
-            NodeReplReviewEvidenceItem::Image { mut data_url } => {
-                let Some(encoded_bytes) = encoded_image_bytes(&data_url) else {
-                    continue;
-                };
-                if image_count >= MAX_IMAGES
-                    || image_bytes.saturating_add(encoded_bytes) > MAX_ENCODED_IMAGE_BYTES
-                {
-                    continue;
-                }
-                image_count += 1;
-                image_bytes = image_bytes.saturating_add(encoded_bytes);
-                data_url.shrink_to_fit();
-                bounded.push(NodeReplReviewEvidenceItem::Image { data_url });
-            }
-        }
-    }
-    bounded.shrink_to_fit();
-    bounded
-}
-
-fn truncate_to_token_budget(text: &str, budget_tokens: usize) -> String {
-    let mut truncation_budget = budget_tokens;
-    loop {
-        let candidate = truncate_text(text, TruncationPolicy::Tokens(truncation_budget));
-        let candidate_tokens = approx_token_count(&candidate);
-        if candidate_tokens <= budget_tokens {
-            return candidate;
-        }
-
-        let excess_tokens = candidate_tokens.saturating_sub(budget_tokens);
-        let next_budget = truncation_budget.saturating_sub(excess_tokens.max(1));
-        if next_budget == 0 {
-            let candidate = truncate_text(text, TruncationPolicy::Tokens(0));
-            return if approx_token_count(&candidate) <= budget_tokens {
-                candidate
-            } else {
-                Default::default()
-            };
-        }
-        truncation_budget = next_budget;
-    }
-}
-
-fn encoded_image_bytes(data_url: &str) -> Option<usize> {
-    let (metadata, encoded) = data_url.split_once(',')?;
-    (metadata
-        .get(..11)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:image/"))
-        && metadata
-            .split(';')
-            .any(|part| part.eq_ignore_ascii_case("base64"))
-        && !encoded.is_empty())
-    .then_some(encoded.len())
 }
 
 fn bounded_provenance(value: &str) -> String {
-    let value = redact_secrets(value.to_string())
+    let sanitized = take_bytes_at_char_boundary(value, MAX_PROVENANCE_BYTES)
         .replace(['\n', '\r', '[', ']', '='], "_")
         .replace("</", "<\\/");
-    take_bytes(&value, MAX_PROVENANCE_BYTES).to_string()
+    take_bytes_at_char_boundary(&sanitized, MAX_PROVENANCE_BYTES).to_string()
 }
 
-fn bounded_identifier(value: &str) -> String {
-    let value = redact_secrets(value.to_string());
-    take_bytes(&value, MAX_PROVENANCE_BYTES).to_string()
-}
-
-fn take_bytes(value: &str, max_bytes: usize) -> &str {
-    let mut end = value.len().min(max_bytes);
-    while !value.is_char_boundary(end) {
-        end = end.saturating_sub(1);
+fn text_input(text: String) -> UserInput {
+    UserInput::Text {
+        text,
+        text_elements: Vec::new(),
     }
-    &value[..end]
+}
+
+pub(crate) struct NodeReplReviewEvidenceSnapshot {
+    responses: Vec<Arc<NodeReplReviewResponse>>,
+    omitted_responses: u64,
+    pub(crate) sequence: u64,
+}
+
+impl NodeReplReviewEvidenceSnapshot {
+    pub(crate) fn context(&self, mode: NodeReplReviewEvidenceMode) -> NodeReplContext<'_> {
+        NodeReplContext {
+            responses: self
+                .responses
+                .iter()
+                .map(|response| NodeReplResponse {
+                    sequence: response.sequence,
+                    provenance: &response.provenance,
+                    items: &response.items,
+                })
+                .collect(),
+            omitted_responses: self.omitted_responses,
+            mode,
+        }
+    }
 }
 
 #[cfg(test)]

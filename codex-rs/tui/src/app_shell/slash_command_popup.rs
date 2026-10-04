@@ -63,7 +63,8 @@ impl SlashCommandSuggestions {
         }
         let query = before_cursor.to_string();
         let entries = SLASH_COMMANDS
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|definition| definition.name().starts_with(&query))
             .collect::<Vec<_>>();
         (!entries.is_empty()).then_some(Self {

@@ -7,8 +7,6 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::SkillsChangedNotification;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
-use codex_core::skills::HostSkillsLoadInput;
-use codex_core::skills::HostSkillsService;
 use codex_file_watcher::FileWatcher;
 use codex_file_watcher::FileWatcherSubscriber;
 use codex_file_watcher::Receiver;
@@ -17,6 +15,8 @@ use codex_file_watcher::WatchPath;
 use codex_file_watcher::WatchRegistration;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_skills::system_cache_root_dir;
+use codex_skills_extension::HostSkillsLoadInput;
+use codex_skills_extension::HostSkillsService;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use tokio_util::sync::CancellationToken;
 use tokio_util::sync::DropGuard;
@@ -92,23 +92,22 @@ impl SkillsWatcher {
         thread_manager: &ThreadManager,
         environments: &[TurnEnvironmentSelection],
     ) -> WatchRegistration {
-        let Some(environment) = first_local_environment(
-            environments,
-            |environment_id| {
-                let environment = thread_manager
-                    .environment_manager()
-                    .get_environment(environment_id);
-                if environment.is_none() {
-                    warn!(
-                        "failed to register skills watcher for unknown environment `{environment_id}`"
-                    );
-                }
-                environment
-            },
-            |environment| environment.is_remote(),
-        ) else {
+        let Some(environment_selection) = environments.first() else {
             return WatchRegistration::default();
         };
+        let Some(environment) = thread_manager
+            .environment_manager()
+            .get_environment(&environment_selection.environment_id)
+        else {
+            warn!(
+                "failed to register skills watcher for unknown environment `{}`",
+                environment_selection.environment_id
+            );
+            return WatchRegistration::default();
+        };
+        if environment.is_remote() {
+            return WatchRegistration::default();
+        }
 
         let plugins_input = config.plugins_config_input();
         let plugins_manager = thread_manager.plugins_manager();
@@ -152,6 +151,7 @@ impl SkillsWatcher {
                 let Some(event) = event else {
                     break;
                 };
+                // The legacy user-skills root contains `.system` and is watched recursively.
                 if event
                     .paths
                     .iter()
@@ -169,17 +169,3 @@ impl SkillsWatcher {
         });
     }
 }
-
-fn first_local_environment<T>(
-    environments: &[TurnEnvironmentSelection],
-    mut resolve: impl FnMut(&str) -> Option<T>,
-    mut is_remote: impl FnMut(&T) -> bool,
-) -> Option<T> {
-    environments.iter().find_map(|selection| {
-        resolve(&selection.environment_id).filter(|environment| !is_remote(environment))
-    })
-}
-
-#[cfg(test)]
-#[path = "skills_watcher_tests.rs"]
-mod tests;

@@ -6,12 +6,6 @@ use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_utils_path_uri::PathUri;
 use std::collections::HashSet;
-use std::path::PathBuf;
-
-const MAX_ENVIRONMENT_COLLECTION_ITEMS: usize = 8;
-const MAX_NETWORK_DOMAINS_PER_POLICY: usize = 4;
-const MAX_ENVIRONMENT_XML_VALUE_BYTES: usize = 512;
-const XML_VALUE_TRUNCATED_MARKER: &str = "[truncated]";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileSystemContext {
@@ -40,13 +34,9 @@ impl FileSystemContext {
         permission_profile: &PermissionProfile,
         workspace_roots: &[PathUri],
     ) -> Self {
-        let materialized_workspace_roots = workspace_roots
-            .iter()
-            .filter_map(|workspace_root| workspace_root.to_abs_path().ok())
-            .collect::<Vec<_>>();
         let permission_profile = permission_profile
             .clone()
-            .materialize_project_roots_with_workspace_roots(&materialized_workspace_roots);
+            .materialize_project_roots_with_path_uris(workspace_roots);
         let workspace_roots = workspace_roots
             .iter()
             .map(PathUri::inferred_native_path_string)
@@ -70,19 +60,9 @@ impl FileSystemContext {
         let mut rendered = "<filesystem>".to_string();
         if !self.workspace_roots.is_empty() {
             rendered.push_str("<workspace_roots>");
-            for root in self
-                .workspace_roots
-                .iter()
-                .take(MAX_ENVIRONMENT_COLLECTION_ITEMS)
-            {
+            for root in &self.workspace_roots {
                 push_text_element(&mut rendered, "root", root);
             }
-            push_omitted_count(
-                &mut rendered,
-                self.workspace_roots
-                    .len()
-                    .saturating_sub(MAX_ENVIRONMENT_COLLECTION_ITEMS),
-            );
             rendered.push_str("</workspace_roots>");
         }
         self.permission_profile.render(&mut rendered);
@@ -148,15 +128,9 @@ impl ManagedFileSystemContext {
                     rendered.push_str(&format!(" glob_scan_max_depth=\"{glob_scan_max_depth}\""));
                 }
                 rendered.push('>');
-                for entry in entries.iter().take(MAX_ENVIRONMENT_COLLECTION_ITEMS) {
+                for entry in entries {
                     render_file_system_entry(rendered, entry);
                 }
-                push_omitted_count(
-                    rendered,
-                    entries
-                        .len()
-                        .saturating_sub(MAX_ENVIRONMENT_COLLECTION_ITEMS),
-                );
                 rendered.push_str("</file_system>");
             }
             Self::Unrestricted => {
@@ -176,7 +150,7 @@ fn render_file_system_entry(rendered: &mut String, entry: &FileSystemSandboxEntr
     rendered.push_str("\">");
     match &entry.path {
         FileSystemPath::Path { path } => {
-            push_text_element(rendered, "path", path.to_string_lossy().as_ref());
+            push_text_element(rendered, "path", &path.inferred_native_path_string());
         }
         FileSystemPath::GlobPattern { pattern } => {
             push_text_element(rendered, "glob", pattern);
@@ -204,9 +178,9 @@ fn render_special_path(value: &FileSystemSpecialPath) -> String {
     }
 }
 
-fn render_special_path_with_subpath(base: &str, subpath: &Option<PathBuf>) -> String {
+fn render_special_path_with_subpath(base: &str, subpath: &Option<String>) -> String {
     match subpath {
-        Some(subpath) => format!("{base}/{}", subpath.display()),
+        Some(subpath) => format!("{base}/{subpath}"),
         None => base.to_string(),
     }
 }
@@ -223,34 +197,15 @@ fn push_text_element(rendered: &mut String, name: &str, value: &str) {
 }
 
 pub(crate) fn push_xml_escaped_text(rendered: &mut String, value: &str) {
-    let initial_len = rendered.len();
     for ch in value.chars() {
-        let mut encoded = [0; 4];
-        let escaped = match ch {
-            '&' => "&amp;",
-            '<' => "&lt;",
-            '>' => "&gt;",
-            '"' => "&quot;",
-            '\'' => "&apos;",
-            _ => ch.encode_utf8(&mut encoded),
-        };
-        if rendered
-            .len()
-            .saturating_sub(initial_len)
-            .saturating_add(escaped.len())
-            .saturating_add(XML_VALUE_TRUNCATED_MARKER.len())
-            > MAX_ENVIRONMENT_XML_VALUE_BYTES
-        {
-            rendered.push_str(XML_VALUE_TRUNCATED_MARKER);
-            return;
+        match ch {
+            '&' => rendered.push_str("&amp;"),
+            '<' => rendered.push_str("&lt;"),
+            '>' => rendered.push_str("&gt;"),
+            '"' => rendered.push_str("&quot;"),
+            '\'' => rendered.push_str("&apos;"),
+            _ => rendered.push(ch),
         }
-        rendered.push_str(escaped);
-    }
-}
-
-fn push_omitted_count(rendered: &mut String, count: usize) {
-    if count > 0 {
-        rendered.push_str(&format!("<omitted count=\"{count}\" />"));
     }
 }
 
@@ -282,20 +237,7 @@ impl NetworkContext {
         }
 
         rendered_network.push_str(&format!("<{name}>"));
-        for (index, domain) in domains
-            .iter()
-            .take(MAX_NETWORK_DOMAINS_PER_POLICY)
-            .enumerate()
-        {
-            if index > 0 {
-                rendered_network.push(',');
-            }
-            push_xml_escaped_text(rendered_network, domain);
-        }
-        let omitted = domains.len().saturating_sub(MAX_NETWORK_DOMAINS_PER_POLICY);
-        if omitted > 0 {
-            rendered_network.push_str(&format!(",[{omitted} omitted]"));
-        }
+        rendered_network.push_str(&domains.join(","));
         rendered_network.push_str(&format!("</{name}>"));
     }
 }

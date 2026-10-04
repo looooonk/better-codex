@@ -4,7 +4,7 @@ use std::process::Command;
 use std::process::Stdio;
 use tracing::warn;
 
-const ASSERTION_REASON: &str = "Better Codex is running an active turn";
+const ASSERTION_REASON: &str = "Codex is running an active turn";
 const APP_ID: &str = "codex";
 // Keep the blocker process alive "long enough" without needing restarts.
 // This is `i32::MAX` seconds, which is accepted by common `sleep` implementations.
@@ -227,14 +227,4 @@ fn spawn_backend(backend: LinuxBackend) -> Result<Child, std::io::Error> {
 
 fn child_exited(error: &std::io::Error) -> bool {
     matches!(error.kind(), std::io::ErrorKind::InvalidInput)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::BLOCKER_SLEEP_SECONDS;
-
-    #[test]
-    fn sleep_seconds_is_i32_max() {
-        assert_eq!(BLOCKER_SLEEP_SECONDS, format!("{}", i32::MAX));
-    }
 }

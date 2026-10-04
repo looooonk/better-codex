@@ -1,13 +1,13 @@
 use super::*;
+use crate::app_theme::TuiAppTheme;
 use crate::test_support::PathBufExt;
 use crate::test_support::buffer_style_grid;
 use crate::test_support::test_path_buf;
 use codex_app_server_protocol::HookEventName;
-use codex_app_server_protocol::HookHandlerType;
+use codex_app_server_protocol::HookHandlerMetadata;
 use codex_app_server_protocol::HookMetadata;
 use codex_app_server_protocol::HookSource;
 use codex_app_server_protocol::HookTrustStatus;
-use codex_config::types::TuiAppTheme;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -29,10 +29,13 @@ fn hook(key: &str, trust_status: HookTrustStatus) -> HookMetadata {
     HookMetadata {
         key: key.to_string(),
         event_name: HookEventName::PreToolUse,
-        handler_type: HookHandlerType::Command,
+        handler: HookHandlerMetadata::Command {
+            command: "/tmp/hook.sh".to_string(),
+            r#async: false,
+        },
+        additional_context_limit: None,
         is_managed: false,
         matcher: Some("Bash".to_string()),
-        command: Some("/tmp/hook.sh".to_string()),
         timeout_sec: 30,
         status_message: None,
         source_path: test_path_buf("/tmp/hooks.json").abs(),

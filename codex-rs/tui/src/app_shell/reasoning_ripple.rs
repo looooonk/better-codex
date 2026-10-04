@@ -33,7 +33,7 @@ impl ReasoningRippleTone {
         }
         match target {
             Some(ReasoningEffort::Max) => Some(Self::Max),
-            Some(ReasoningEffort::Ultra) => Some(Self::Ultra),
+            Some(ReasoningEffort::Ultra | ReasoningEffort::Persistent) => Some(Self::Ultra),
             Some(
                 ReasoningEffort::None
                 | ReasoningEffort::Minimal

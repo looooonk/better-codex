@@ -76,6 +76,20 @@ impl ShellState {
         if self.has_pending_backend_action(ActionGroup::Settings) {
             return Ok(());
         }
+        if self.handle_transcript_find_key(key) {
+            return Ok(());
+        }
+        self.handle_selector_navigation(key, app_server).await
+    }
+
+    pub(super) async fn handle_selector_navigation<S: AppShellBackend>(
+        &mut self,
+        key: KeyEvent,
+        app_server: &mut S,
+    ) -> Result<()> {
+        if self.has_pending_backend_action(ActionGroup::Settings) {
+            return Ok(());
+        }
         let outcome = self
             .selector
             .as_mut()
@@ -104,11 +118,21 @@ impl ShellState {
         Ok(true)
     }
 
-    fn open_selector(&mut self, selector: SelectorState<SelectorValue>) {
+    pub(super) fn open_selector(&mut self, mut selector: SelectorState<SelectorValue>) {
+        self.transcript_find = None;
         self.close_agent_log();
         self.close_tool_output();
         self.close_diff_view();
         self.command_palette = None;
+        if self.keybindings.has_overrides() {
+            selector.set_key_hints(format!(
+                "{} / {} move  {} select  {} cancel",
+                self.keybindings.hint("list", "move_up", "up"),
+                self.keybindings.hint("list", "move_down", "down"),
+                self.keybindings.hint("list", "accept", "Enter"),
+                self.keybindings.hint("list", "cancel", "Esc")
+            ));
+        }
         self.selector = Some(selector);
         self.clear_transcript_selection();
         self.clear_text_selections();
@@ -126,11 +150,18 @@ impl ShellState {
             SelectorOutcome::Pending => return Ok(()),
             SelectorOutcome::Cancelled => {
                 self.selector = None;
+                self.transcript_find = None;
                 return Ok(());
             }
             SelectorOutcome::Selected(value) => value,
         };
         match value {
+            SelectorValue::StatusSurface(change) => self.save_status_surface(change)?,
+            SelectorValue::Pet(id) => self.select_pet(id),
+            SelectorValue::FileMention(path) => {
+                self.insert_file_mention(&path);
+                self.selector = None;
+            }
             SelectorValue::Model(model) => self.apply_model(model, app_server),
             SelectorValue::ReasoningEffort(ReasoningEffortValue::Default) => {
                 self.apply_reasoning_effort(None, app_server);
@@ -149,6 +180,12 @@ impl ShellState {
             }
             SelectorValue::ApprovalPolicy(policy) => {
                 self.apply_approval_policy(policy, app_server)?;
+            }
+            SelectorValue::TranscriptMatch(revision) => self.select_transcript_match(revision),
+            SelectorValue::Keybinding(action) => {
+                self.selector = None;
+                self.composer.set_text(format!("/keymap {action} "));
+                self.push_status("Enter a key, two-key chord, JSON array, unbind, or default");
             }
             SelectorValue::AppTheme(app_theme) => {
                 self.apply_app_theme(app_theme, app_server);

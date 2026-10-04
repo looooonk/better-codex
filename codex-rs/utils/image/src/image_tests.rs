@@ -228,7 +228,7 @@ async fn preserves_large_image_in_original_mode() {
     assert_eq!(processed.bytes.as_ref(), original_bytes);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "current_thread")]
 async fn data_url_processing_preserves_supported_source_bytes() {
     let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));
     let original_bytes = image_bytes(&image, ImageFormat::Png);
@@ -236,88 +236,13 @@ async fn data_url_processing_preserves_supported_source_bytes() {
         .replacen("data:", "DATA:", 1)
         .replacen(";base64,", ";BASE64,", 1);
 
-    let processed = load_data_url_for_prompt(&image_url, PromptImageMode::ResizeToFit)
+    let processed = load_data_url_for_prompt_uncached(&image_url, PromptImageMode::ResizeToFit)
         .expect("process data URL image");
 
     assert_eq!(processed.width, 64);
     assert_eq!(processed.height, 32);
     assert_eq!(processed.mime, "image/png");
     assert_eq!(processed.bytes.as_ref(), original_bytes);
-}
-
-#[test]
-fn sanitized_data_url_processing_strips_source_metadata() {
-    let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));
-    let original_bytes = image_bytes_with_metadata(&image, ImageFormat::Png, TEST_RGB_ICC_PROFILE);
-    let image_url = data_url_from_bytes("image/png", &original_bytes);
-
-    let processed = load_sanitized_data_url_for_prompt(
-        &image_url,
-        PromptImageMode::ResizeWithLimits(PromptImageResizeLimits {
-            max_dimension: 512,
-            max_patches: 256,
-        }),
-    )
-    .expect("sanitize data URL image");
-    let mut decoder = ImageReader::with_format(Cursor::new(&processed.bytes), ImageFormat::Png)
-        .into_decoder()
-        .expect("create decoder");
-
-    assert_eq!(
-        (
-            decoder.icc_profile().expect("read ICC profile"),
-            decoder.exif_metadata().expect("read EXIF metadata"),
-        ),
-        (None, None)
-    );
-}
-
-#[test]
-fn limited_resize_rejects_tiny_png_dimension_bombs_before_allocation() {
-    let png_with_declared_dimensions = |width: u32, height: u32| {
-        let image =
-            ImageBuffer::from_pixel(/*width*/ 1, /*height*/ 1, Rgba([0u8, 0, 0, 255]));
-        let mut bytes = image_bytes(&image, ImageFormat::Png);
-        bytes[16..20].copy_from_slice(&width.to_be_bytes());
-        bytes[20..24].copy_from_slice(&height.to_be_bytes());
-        let mut crc = u32::MAX;
-        for byte in &bytes[12..29] {
-            crc ^= u32::from(*byte);
-            for _ in 0..8 {
-                crc = (crc >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(crc & 1));
-            }
-        }
-        bytes[29..33].copy_from_slice(&(!crc).to_be_bytes());
-        bytes
-    };
-    for dimensions in [
-        (MAX_LIMITED_IMAGE_SOURCE_DIMENSION + 1, 1),
-        (
-            MAX_LIMITED_IMAGE_SOURCE_DIMENSION,
-            MAX_LIMITED_IMAGE_SOURCE_DIMENSION,
-        ),
-    ] {
-        let bytes = png_with_declared_dimensions(dimensions.0, dimensions.1);
-        assert!(bytes.len() < 1_024);
-        let image_url = data_url_from_bytes("image/png", &bytes);
-
-        let error = load_sanitized_data_url_for_prompt(
-            &image_url,
-            PromptImageMode::ResizeWithLimits(PromptImageResizeLimits {
-                max_dimension: 512,
-                max_patches: 256,
-            }),
-        )
-        .expect_err("dimension bomb must fail before decoded image allocation");
-
-        assert!(matches!(
-            error,
-            ImageProcessingError::Decode {
-                source: image::ImageError::Limits(_),
-                ..
-            }
-        ));
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -351,23 +276,37 @@ fn data_url_processing_rejects_malformed_input() {
     }
 }
 
+/// The shared detail modes apply the policies used by external byte-oriented callers.
 #[tokio::test(flavor = "multi_thread")]
-async fn resize_with_limits_respects_dimension_and_patch_budgets() {
-    let image = ImageBuffer::from_pixel(2048, 2048, Rgba([200u8, 10, 10, 255]));
-    let original_bytes = image_bytes(&image, ImageFormat::Png);
-    let limits = PromptImageResizeLimits {
-        max_dimension: 2048,
-        max_patches: 2_500,
-    };
+async fn detail_modes_apply_expected_budgets() {
+    for (mode, input_dimensions, expected_dimensions) in [
+        (PromptImageMode::HIGH_DETAIL, (2048, 2048), (1600, 1600)),
+        (PromptImageMode::ORIGINAL_DETAIL, (6401, 100), (6000, 94)),
+    ] {
+        let image = ImageBuffer::from_pixel(
+            input_dimensions.0,
+            input_dimensions.1,
+            Rgba([200u8, 10, 10, 255]),
+        );
+        let original_bytes = image_bytes(&image, ImageFormat::Png);
+        let processed = load_for_prompt_bytes(Path::new("in-memory-image"), original_bytes, mode)
+            .expect("process image with detail mode");
 
-    let processed = load_for_prompt_bytes(
-        Path::new("in-memory-image"),
-        original_bytes,
-        PromptImageMode::ResizeWithLimits(limits),
-    )
-    .expect("process image with explicit limits");
-
-    assert_eq!((processed.width, processed.height), (1600, 1600));
+        assert_eq!(
+            (
+                processed.source_width,
+                processed.source_height,
+                processed.width,
+                processed.height,
+            ),
+            (
+                input_dimensions.0,
+                input_dimensions.1,
+                expected_dimensions.0,
+                expected_dimensions.1,
+            )
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -425,6 +364,8 @@ async fn bounds_cache_by_encoded_byte_size() {
     let image = |size| EncodedImage {
         bytes: vec![0; size].into(),
         mime: "image/png".to_string(),
+        source_width: 1,
+        source_height: 1,
         width: 1,
         height: 1,
     };

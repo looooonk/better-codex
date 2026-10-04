@@ -1,0 +1,15 @@
+---
+source: tui/src/app_shell/agent_activity_render_tests.rs
+assertion_line: 140
+expression: rendered
+---
+› ● running  review
+Inspector  review  ● running
+Model  provider/provider/provid…
+Reasoning  deliberatedeliberate…
+Path  /root/review
+Task  Review the
+      implementationReview the
+Latest  No message yet
+Recent
+  • agent spawned

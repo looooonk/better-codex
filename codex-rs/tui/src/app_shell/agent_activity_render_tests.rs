@@ -33,10 +33,11 @@ fn renders_bounded_agent_hierarchy_and_selected_inspector() {
         └ ✓ completed  audit
       ! interrupted  test
     ›   └ × errored  failure
-    Inspector  failure  × errored  · Unit tests failed
+    Inspector  failure  × errored
+    Model  gpt-5-codex
+    Reasoning  high
     Path  /root/test/failure
     Task  Inspect the TUI flow.
-    Runtime  gpt-5-codex · high reasoning
     Latest  Unit tests failed
     Recent
       • agent spawned
@@ -109,4 +110,56 @@ fn hierarchy_fixture() -> AgentActivityState {
     });
     assert!(state.select_thread("errored"));
     state
+}
+
+#[test]
+fn runtime_metadata_stays_above_task_and_activity_with_long_or_unknown_values() {
+    let mut state = AgentActivityState::default();
+    state.reduce_completed(&ThreadItem::SubAgentActivity {
+        id: "started-review".into(),
+        kind: SubAgentActivityKind::Started,
+        agent_thread_id: "review".into(),
+        agent_path: "/root/review".into(),
+    });
+    for known in [false, true] {
+        if known {
+            state.reduce_completed(&ThreadItem::CollabAgentToolCall {
+                id: "spawn-review".into(),
+                tool: CollabAgentTool::SpawnAgent,
+                status: CollabAgentToolCallStatus::Completed,
+                sender_thread_id: "root-thread".into(),
+                receiver_thread_ids: vec!["review".into()],
+                prompt: Some("Review the implementation".repeat(10)),
+                model: Some("provider/".repeat(12)),
+                reasoning_effort: Some(ReasoningEffort::Custom("deliberate".repeat(12))),
+                agents_states: HashMap::new(),
+            });
+        }
+        let lines =
+            agent_activity_inspector_lines(&state, /*width*/ 32, /*line_budget*/ 10);
+        assert!(
+            lines
+                .iter()
+                .all(|line| crate::line_truncation::line_width(line) <= 32)
+        );
+        let rendered = lines
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let fields = ["Model  ", "Reasoning  ", "Task  "]
+            .map(|label| rendered.find(label).expect("agent detail is visible"));
+        assert!(fields.windows(2).all(|pair| pair[0] < pair[1]));
+        if !known {
+            assert!(rendered.contains("Model  Unknown\nReasoning  Unknown"));
+        }
+        insta::assert_snapshot!(
+            if known {
+                "inspector_long_runtime"
+            } else {
+                "inspector_unknown_runtime"
+            },
+            rendered
+        );
+    }
 }

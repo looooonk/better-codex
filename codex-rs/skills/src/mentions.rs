@@ -64,8 +64,11 @@ pub fn app_id_from_path(path: &str) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
+/// Desktop app/browser mentions append `?app=...` or `?browserFamily=...`.
+/// Ignore these targeting parameters when matching the plugin ID.
 pub fn plugin_config_name_from_path(path: &str) -> Option<&str> {
     path.strip_prefix(PLUGIN_PATH_PREFIX)
+        .and_then(|value| value.split('?').next())
         .filter(|value| !value.is_empty())
 }
 
@@ -73,16 +76,20 @@ pub fn normalize_skill_path(path: &str) -> &str {
     path.strip_prefix(SKILL_PATH_PREFIX).unwrap_or(path)
 }
 
-/// Extracts `$tool-name` mentions and explicit resource links from one text input.
+/// Extract `$tool-name` mentions from a single text input.
+///
+/// Supports explicit resource links in the form `[$tool-name](resource path)`. When a
+/// resource path is present, it is captured for exact path matching while also tracking
+/// the name for fallback matching.
 pub fn extract_tool_mentions(text: &str) -> ToolMentions<'_> {
     extract_tool_mentions_with_sigil(text, TOOL_MENTION_SIGIL)
 }
 
 pub fn extract_tool_mentions_with_sigil(text: &str, sigil: char) -> ToolMentions<'_> {
     let text_bytes = text.as_bytes();
-    let mut names = HashSet::new();
-    let mut paths = HashSet::new();
-    let mut plain_names = HashSet::new();
+    let mut mentioned_names: HashSet<&str> = HashSet::new();
+    let mut mentioned_paths: HashSet<&str> = HashSet::new();
+    let mut plain_names: HashSet<&str> = HashSet::new();
 
     let mut index = 0;
     while index < text_bytes.len() {
@@ -96,9 +103,9 @@ pub fn extract_tool_mentions_with_sigil(text: &str, sigil: char) -> ToolMentions
                     tool_kind_for_path(path),
                     ToolMentionKind::App | ToolMentionKind::Mcp | ToolMentionKind::Plugin
                 ) {
-                    names.insert(name);
+                    mentioned_names.insert(name);
                 }
-                paths.insert(path);
+                mentioned_paths.insert(path);
             }
             index = end_index;
             continue;
@@ -128,15 +135,15 @@ pub fn extract_tool_mentions_with_sigil(text: &str, sigil: char) -> ToolMentions
 
         let name = &text[name_start..name_end];
         if !is_common_env_var(name) {
-            names.insert(name);
+            mentioned_names.insert(name);
             plain_names.insert(name);
         }
         index = name_end;
     }
 
     ToolMentions {
-        names,
-        paths,
+        names: mentioned_names,
+        paths: mentioned_paths,
         plain_names,
     }
 }
@@ -153,15 +160,18 @@ fn parse_linked_tool_mention<'a>(
     }
 
     let name_start = sigil_index + 1;
-    if !is_mention_name_char(*text_bytes.get(name_start)?) {
+    let first_name_byte = text_bytes.get(name_start)?;
+    if !is_mention_name_char(*first_name_byte) {
         return None;
     }
+
     let mut name_end = name_start + 1;
     while let Some(next_byte) = text_bytes.get(name_end)
         && is_mention_name_char(*next_byte)
     {
         name_end += 1;
     }
+
     if text_bytes.get(name_end) != Some(&b']') {
         return None;
     }
@@ -175,6 +185,7 @@ fn parse_linked_tool_mention<'a>(
     if text_bytes.get(path_start) != Some(&b'(') {
         return None;
     }
+
     let mut path_end = path_start + 1;
     while let Some(next_byte) = text_bytes.get(path_end)
         && *next_byte != b')'
@@ -184,17 +195,20 @@ fn parse_linked_tool_mention<'a>(
     if text_bytes.get(path_end) != Some(&b')') {
         return None;
     }
+
     let path = text[path_start + 1..path_end].trim();
     if path.is_empty() {
         return None;
     }
 
-    Some((&text[name_start..name_end], path, path_end + 1))
+    let name = &text[name_start..name_end];
+    Some((name, path, path_end + 1))
 }
 
 fn is_common_env_var(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
     matches!(
-        name.to_ascii_uppercase().as_str(),
+        upper.as_str(),
         "PATH"
             | "HOME"
             | "USER"

@@ -450,6 +450,18 @@ impl ShellState {
         params.thread_id = self.thread_id;
         params.client_user_message_id = format!("better-codex-turn-{}", uuid::Uuid::new_v4());
         params.model = faster_model.clone();
+        params.cyber_access_program = match crate::daybreak::program_for_turn(
+            &self.available_models,
+            &faster_model,
+            self.model_provider_id == "openai",
+            self.daybreak_enabled,
+        ) {
+            Ok(program) => program,
+            Err(error) => {
+                self.push_error(error);
+                return;
+            }
+        };
         params.effort = Some(ReasoningEffort::Low);
         params.collaboration_mode = params.collaboration_mode.map(|mode| {
             mode.with_updates(

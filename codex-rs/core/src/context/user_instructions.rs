@@ -1,8 +1,5 @@
 use super::ContextualUserFragment;
-use codex_utils_output_truncation::TruncationPolicy;
-use codex_utils_output_truncation::truncate_text;
-
-const USER_INSTRUCTIONS_BODY_MAX_TOKENS: usize = 8_000;
+use codex_protocol::models::ContentItemKind;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UserInstructions {
@@ -11,6 +8,10 @@ pub(crate) struct UserInstructions {
 }
 
 impl ContextualUserFragment for UserInstructions {
+    fn content_kind(&self) -> ContentItemKind {
+        ContentItemKind("agents_md.instructions".to_string())
+    }
+
     fn role(&self) -> &'static str {
         "user"
     }
@@ -29,10 +30,6 @@ impl ContextualUserFragment for UserInstructions {
             .as_ref()
             .map(|directory| format!(" for {directory}"))
             .unwrap_or_default();
-        let body = format!("{directory}\n\n<INSTRUCTIONS>\n{}\n", self.text);
-        truncate_text(
-            &body,
-            TruncationPolicy::Tokens(USER_INSTRUCTIONS_BODY_MAX_TOKENS),
-        )
+        format!("{directory}\n\n<INSTRUCTIONS>\n{}\n", self.text)
     }
 }

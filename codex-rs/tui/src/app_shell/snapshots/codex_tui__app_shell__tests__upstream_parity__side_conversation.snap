@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 105
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+
+  Dashboard  ◆ BC                 gpt-5-codex ▾   default ▾   default ▾  ● side | side conversation
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to
+           go back.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:1                                                                                    │
+│> Type a message, Shift+Enter for newline                                                         │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

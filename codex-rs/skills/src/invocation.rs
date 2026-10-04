@@ -2,9 +2,19 @@ use std::path::Path;
 
 use codex_protocol::parse_command::ParsedCommand;
 use codex_shell_command::parse_command::parse_command_impl;
+use codex_shell_command::parse_command::tokenize_powershell_command;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathConvention;
+use codex_utils_path_uri::PathUri;
 
 use crate::SkillMetadata;
+
+/// A skill document read or script execution identified in a shell command.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImplicitSkillAccess {
+    Document(PathUri),
+    Script(PathUri),
+}
 
 /// Provides the indexed skill lookups used to recognize implicit invocations.
 pub trait ImplicitSkillLookup {
@@ -19,13 +29,46 @@ pub fn detect_implicit_skill_invocation_for_command(
     workdir: &AbsolutePathBuf,
 ) -> Option<SkillMetadata> {
     let workdir = canonicalize_if_exists(workdir);
-    let tokens = tokenize_command(command);
+    let tokens = if PathConvention::native() == PathConvention::Windows {
+        tokenize_powershell_command(command)
+    } else {
+        tokenize_command(command)
+    };
 
     if let Some(candidate) = detect_skill_script_run(outcome, tokens.as_slice(), &workdir) {
         return Some(candidate);
     }
 
     detect_skill_doc_read(outcome, tokens.as_slice(), &workdir)
+}
+
+/// Resolves statically recognizable skill accesses without consulting the host filesystem.
+pub fn implicit_skill_accesses_for_command(
+    command: &str,
+    workdir: &PathUri,
+) -> Vec<ImplicitSkillAccess> {
+    let tokens = if workdir.infer_path_convention() == Some(PathConvention::Windows) {
+        tokenize_powershell_command(command)
+    } else {
+        tokenize_command(command)
+    };
+    let mut accesses = Vec::new();
+    if let Some(script) = script_run_token(&tokens)
+        && let Ok(path) = workdir.join(script)
+    {
+        accesses.push(ImplicitSkillAccess::Script(path));
+    }
+
+    for parsed in parse_command_impl(&tokens) {
+        if let ParsedCommand::Read { path, .. } = parsed
+            && let Some(path) = path.to_str()
+            && let Ok(path) = workdir.join(path)
+        {
+            accesses.push(ImplicitSkillAccess::Document(path));
+        }
+    }
+
+    accesses
 }
 
 fn tokenize_command(command: &str) -> Vec<String> {
@@ -55,10 +98,14 @@ fn script_run_token(tokens: &[String]) -> Option<&str> {
         break;
     }
     let script_token = script_token?;
-    SCRIPT_EXTENSIONS
+    if SCRIPT_EXTENSIONS
         .iter()
         .any(|extension| script_token.to_ascii_lowercase().ends_with(extension))
-        .then_some(script_token)
+    {
+        return Some(script_token);
+    }
+
+    None
 }
 
 fn detect_skill_script_run(
@@ -67,7 +114,8 @@ fn detect_skill_script_run(
     workdir: &AbsolutePathBuf,
 ) -> Option<SkillMetadata> {
     let script_token = script_run_token(tokens)?;
-    let script_path = canonicalize_if_exists(&workdir.join(Path::new(script_token)));
+    let script_path = Path::new(script_token);
+    let script_path = canonicalize_if_exists(&workdir.join(script_path));
 
     for path in script_path.ancestors() {
         if let Some(candidate) = outcome.implicit_skill_for_scripts_dir(&path) {

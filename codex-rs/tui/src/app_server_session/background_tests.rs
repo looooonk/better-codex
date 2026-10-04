@@ -22,6 +22,19 @@ enum ObservedRequest {
     Read(ThreadReadParams),
 }
 
+impl timeline::TimelineReader for FakeBackgroundRequestHandle {
+    async fn read_timeline(
+        &self,
+        _params: codex_app_server_protocol::ThreadTimelineListParams,
+    ) -> Result<codex_app_server_protocol::ThreadTimelineListResponse, TypedRequestError> {
+        Ok(codex_app_server_protocol::ThreadTimelineListResponse {
+            data: vec![],
+            next_cursor: None,
+            active_realtime_session_at_page_start: None,
+        })
+    }
+}
+
 impl BackgroundRequestHandle for FakeBackgroundRequestHandle {
     fn send_thread_fork_request(
         &self,
@@ -70,6 +83,17 @@ fn thread(
     turns: Vec<Turn>,
 ) -> Thread {
     Thread {
+        model: None,
+        reasoning_effort: None,
+
+        environments: None,
+        section: None,
+        section_entered_at: None,
+        project_id: None,
+        originator: None,
+        can_accept_direct_input: None,
+        daybreak_enabled: None,
+
         id: id.to_string(),
         extra: None,
         session_id: ThreadId::new().to_string(),
@@ -135,6 +159,8 @@ async fn background_fork_dispatches_boundary_and_hydrates_parent_title() {
     let request_handle = FakeBackgroundRequestHandle {
         requests: Arc::clone(&requests),
         fork_response: ThreadForkResponse {
+            disabled_plugin_ids: Vec::new(),
+
             thread: child_thread,
             model: "gpt-5.4".to_string(),
             model_provider: "openai".to_string(),

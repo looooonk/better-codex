@@ -5,8 +5,6 @@ use thiserror::Error;
 pub enum FunctionCallError {
     #[error("{0}")]
     RespondToModel(String),
-    #[error("turn aborted by user during approval")]
-    TurnAborted,
     #[error("Fatal error: {0}")]
     Fatal(String),
 }

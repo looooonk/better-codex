@@ -66,6 +66,9 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
     assert_eq!(
         cases.map(|(used_percent, _)| {
             let limit = RateLimitSnapshot {
+                normal_model_slug: None,
+                spend_control_reached: None,
+
                 limit_id: Some("codex".to_string()),
                 limit_name: Some("Codex".to_string()),
                 primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -107,6 +110,9 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
 fn rows_put_bar_before_padded_percentage_type_and_reset_countdown() {
     const CURRENT_TIME_AT: i64 = 1_900_000_000;
     let limit = RateLimitSnapshot {
+        normal_model_slug: None,
+        spend_control_reached: None,
+
         limit_id: Some("gpt-5.3-codex-spark".to_string()),
         limit_name: Some("GPT-5.3-Codex-Spark".to_string()),
         primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -144,6 +150,9 @@ fn rows_put_bar_before_padded_percentage_type_and_reset_countdown() {
 #[test]
 fn single_digit_percentages_have_only_one_space_before_the_type() {
     let limit = RateLimitSnapshot {
+        normal_model_slug: None,
+        spend_control_reached: None,
+
         limit_id: Some("codex".to_string()),
         limit_name: None,
         primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -205,6 +214,9 @@ fn reset_countdown_rounds_up_partial_hours_and_handles_missing_or_elapsed_resets
 #[test]
 fn quota_details_render_on_a_separate_indented_line() {
     let limit = RateLimitSnapshot {
+        normal_model_slug: None,
+        spend_control_reached: None,
+
         limit_id: Some("codex".to_string()),
         limit_name: None,
         primary: Some(codex_app_server_protocol::RateLimitWindow {

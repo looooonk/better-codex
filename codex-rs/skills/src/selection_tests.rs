@@ -1,20 +1,16 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-
-use codex_protocol::protocol::SkillScope;
-use codex_protocol::user_input::UserInput;
+use super::*;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
 use codex_utils_absolute_path::test_support::test_path_buf;
 use pretty_assertions::assert_eq;
-
-use super::*;
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 #[derive(Default)]
 struct TestLookup {
     skills: Vec<SkillMetadata>,
     disabled_paths: HashSet<AbsolutePathBuf>,
-    discovery_paths: HashMap<AbsolutePathBuf, AbsolutePathBuf>,
+    skill_discovery_path_by_path: HashMap<AbsolutePathBuf, AbsolutePathBuf>,
 }
 
 impl ExplicitSkillLookup for TestLookup {
@@ -27,11 +23,11 @@ impl ExplicitSkillLookup for TestLookup {
     }
 
     fn skill_discovery_path_for_path(&self, path: &AbsolutePathBuf) -> Option<&AbsolutePathBuf> {
-        self.discovery_paths.get(path)
+        self.skill_discovery_path_by_path.get(path)
     }
 }
 
-fn skill(name: &str, path: &str) -> SkillMetadata {
+fn make_skill(name: &str, path: &str) -> SkillMetadata {
     SkillMetadata {
         name: name.to_string(),
         description: format!("{name} skill"),
@@ -40,114 +36,319 @@ fn skill(name: &str, path: &str) -> SkillMetadata {
         dependencies: None,
         policy: None,
         path_to_skills_md: test_path_buf(path).abs(),
-        scope: SkillScope::User,
+        scope: codex_protocol::protocol::SkillScope::User,
         plugin_id: None,
+        remote_plugin_id: None,
+    }
+}
+
+fn linked_skill_mention(name: &str, unix_path: &str) -> String {
+    format!("[${name}]({})", test_path_buf(unix_path).display())
+}
+
+fn collect_mentions(
+    inputs: &[UserInput],
+    skills: &[SkillMetadata],
+    disabled_paths: &HashSet<AbsolutePathBuf>,
+    connector_slug_counts: &HashMap<String, usize>,
+) -> Vec<SkillMetadata> {
+    let loaded_skills = TestLookup {
+        skills: skills.to_vec(),
+        disabled_paths: disabled_paths.clone(),
+        ..Default::default()
+    };
+    collect_explicit_skill_mentions(inputs, &loaded_skills, connector_slug_counts)
+}
+
+fn skill_outcome_with_discovery_path(skill: SkillMetadata, discovery_path: &str) -> TestLookup {
+    TestLookup {
+        skill_discovery_path_by_path: HashMap::from([(
+            skill.path_to_skills_md.clone(),
+            test_path_buf(discovery_path).abs(),
+        )]),
+        skills: vec![skill],
+        ..Default::default()
     }
 }
 
 #[test]
-fn structured_mentions_take_priority_and_block_invalid_plain_fallbacks() {
-    let alpha = skill("alpha-skill", "/tmp/alpha");
-    let beta = skill("beta-skill", "/tmp/beta");
-    let lookup = TestLookup {
-        skills: vec![alpha.clone(), beta.clone()],
-        ..Default::default()
-    };
-    let selected = collect_explicit_skill_mentions(
-        &[
-            UserInput::Text {
-                text: "$alpha-skill $beta-skill".to_string(),
-                text_elements: Vec::new(),
-            },
-            UserInput::Skill {
-                name: "beta-skill".to_string(),
-                path: test_path_buf("/tmp/beta"),
-            },
-        ],
-        &lookup,
-        &HashMap::new(),
-    );
-    assert_eq!(selected, vec![beta, alpha]);
-
-    let blocked = collect_explicit_skill_mentions(
-        &[
-            UserInput::Text {
-                text: "$alpha-skill".to_string(),
-                text_elements: Vec::new(),
-            },
-            UserInput::Skill {
-                name: "alpha-skill".to_string(),
-                path: test_path_buf("/tmp/missing"),
-            },
-        ],
-        &lookup,
-        &HashMap::new(),
-    );
-    assert_eq!(blocked, Vec::new());
-}
-
-#[test]
-fn discovery_paths_select_canonical_skills_and_honor_disabled_state() {
-    let linked = skill("linked", "/tmp/shared/linked/SKILL.md");
-    let discovery_path = test_path_buf("/tmp/repo/.agents/skills/linked/SKILL.md").abs();
-    let mut lookup = TestLookup {
-        skills: vec![linked.clone()],
-        discovery_paths: HashMap::from([(
-            linked.path_to_skills_md.clone(),
-            discovery_path.clone(),
-        )]),
-        ..Default::default()
-    };
-    let input = [UserInput::Skill {
-        name: "linked".to_string(),
-        path: discovery_path.as_path().to_path_buf(),
-    }];
-
-    assert_eq!(
-        collect_explicit_skill_mentions(&input, &lookup, &HashMap::new()),
-        vec![linked.clone()]
-    );
-    assert_eq!(
-        collect_explicit_skill_mentions(
-            &[UserInput::Text {
-                text: format!("use [$linked]({})", discovery_path.display()),
-                text_elements: Vec::new(),
-            }],
-            &lookup,
-            &HashMap::new(),
-        ),
-        vec![linked.clone()]
-    );
-    lookup.disabled_paths.insert(linked.path_to_skills_md);
-    assert_eq!(
-        collect_explicit_skill_mentions(&input, &lookup, &HashMap::new()),
-        Vec::new()
-    );
-}
-
-#[test]
-fn plain_names_require_unambiguous_skill_and_connector_identity() {
-    let alpha = skill("demo", "/tmp/alpha");
-    let beta = skill("demo", "/tmp/beta");
-    let input = [UserInput::Text {
-        text: "$demo".to_string(),
+fn collect_explicit_skill_mentions_text_respects_skill_order() {
+    let alpha = make_skill("alpha-skill", "/tmp/alpha");
+    let beta = make_skill("beta-skill", "/tmp/beta");
+    let skills = vec![beta.clone(), alpha.clone()];
+    let inputs = vec![UserInput::Text {
+        text: "first $alpha-skill then $beta-skill".to_string(),
         text_elements: Vec::new(),
     }];
-    let ambiguous = TestLookup {
-        skills: vec![alpha.clone(), beta],
-        ..Default::default()
-    };
-    assert_eq!(
-        collect_explicit_skill_mentions(&input, &ambiguous, &HashMap::new()),
-        Vec::new()
-    );
+    let connector_counts = HashMap::new();
 
-    let unique = TestLookup {
-        skills: vec![alpha],
-        ..Default::default()
-    };
-    assert_eq!(
-        collect_explicit_skill_mentions(&input, &unique, &HashMap::from([("demo".to_string(), 1)])),
-        Vec::new()
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    // Text scanning should not change the previous selection ordering semantics.
+    assert_eq!(selected, vec![beta, alpha]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_prioritizes_structured_inputs() {
+    let alpha = make_skill("alpha-skill", "/tmp/alpha");
+    let beta = make_skill("beta-skill", "/tmp/beta");
+    let skills = vec![alpha.clone(), beta.clone()];
+    let inputs = vec![
+        UserInput::Text {
+            text: "please run $alpha-skill".to_string(),
+            text_elements: Vec::new(),
+        },
+        UserInput::Skill {
+            name: "beta-skill".to_string(),
+            path: test_path_buf("/tmp/beta"),
+        },
+    ];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, vec![beta, alpha]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_accepts_structured_discovery_path() {
+    let skill = make_skill("linked-skill", "/tmp/shared/linked-skill/SKILL.md");
+    let loaded_skills = skill_outcome_with_discovery_path(
+        skill.clone(),
+        "/tmp/project/.agents/skills/linked-skill/SKILL.md",
     );
+    let inputs = vec![UserInput::Skill {
+        name: "linked-skill".to_string(),
+        path: test_path_buf("/tmp/project/.agents/skills/linked-skill/SKILL.md"),
+    }];
+
+    let selected = collect_explicit_skill_mentions(&inputs, &loaded_skills, &HashMap::new());
+
+    assert_eq!(selected, vec![skill]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_accepts_linked_discovery_path() {
+    let skill = make_skill("linked-skill", "/tmp/shared/linked-skill/SKILL.md");
+    let loaded_skills = skill_outcome_with_discovery_path(
+        skill.clone(),
+        "/tmp/project/.agents/skills/linked-skill/SKILL.md",
+    );
+    let inputs = vec![UserInput::Text {
+        text: linked_skill_mention(
+            "linked-skill",
+            "/tmp/project/.agents/skills/linked-skill/SKILL.md",
+        ),
+        text_elements: Vec::new(),
+    }];
+
+    let selected = collect_explicit_skill_mentions(&inputs, &loaded_skills, &HashMap::new());
+
+    assert_eq!(selected, vec![skill]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_rejects_disabled_discovery_path() {
+    let skill = make_skill("linked-skill", "/tmp/shared/linked-skill/SKILL.md");
+    let mut loaded_skills = skill_outcome_with_discovery_path(
+        skill.clone(),
+        "/tmp/project/.agents/skills/linked-skill/SKILL.md",
+    );
+    loaded_skills.disabled_paths.insert(skill.path_to_skills_md);
+    let inputs = vec![UserInput::Skill {
+        name: "linked-skill".to_string(),
+        path: test_path_buf("/tmp/project/.agents/skills/linked-skill/SKILL.md"),
+    }];
+
+    let selected = collect_explicit_skill_mentions(&inputs, &loaded_skills, &HashMap::new());
+
+    assert_eq!(selected, Vec::new());
+}
+
+#[test]
+fn collect_explicit_skill_mentions_skips_invalid_structured_and_blocks_plain_fallback() {
+    let alpha = make_skill("alpha-skill", "/tmp/alpha");
+    let skills = vec![alpha];
+    let inputs = vec![
+        UserInput::Text {
+            text: "please run $alpha-skill".to_string(),
+            text_elements: Vec::new(),
+        },
+        UserInput::Skill {
+            name: "alpha-skill".to_string(),
+            path: test_path_buf("/tmp/missing"),
+        },
+    ];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, Vec::new());
+}
+
+#[test]
+fn collect_explicit_skill_mentions_skips_disabled_structured_and_blocks_plain_fallback() {
+    let alpha = make_skill("alpha-skill", "/tmp/alpha");
+    let skills = vec![alpha];
+    let inputs = vec![
+        UserInput::Text {
+            text: "please run $alpha-skill".to_string(),
+            text_elements: Vec::new(),
+        },
+        UserInput::Skill {
+            name: "alpha-skill".to_string(),
+            path: test_path_buf("/tmp/alpha"),
+        },
+    ];
+    let disabled = HashSet::from([test_path_buf("/tmp/alpha").abs()]);
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &disabled, &connector_counts);
+
+    assert_eq!(selected, Vec::new());
+}
+
+#[test]
+fn collect_explicit_skill_mentions_dedupes_by_path() {
+    let alpha = make_skill("alpha-skill", "/tmp/alpha");
+    let skills = vec![alpha.clone()];
+    let mention = linked_skill_mention("alpha-skill", "/tmp/alpha");
+    let inputs = vec![UserInput::Text {
+        text: format!("use {mention} and {mention}"),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, vec![alpha]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_skips_ambiguous_name() {
+    let alpha = make_skill("demo-skill", "/tmp/alpha");
+    let beta = make_skill("demo-skill", "/tmp/beta");
+    let skills = vec![alpha, beta];
+    let inputs = vec![UserInput::Text {
+        text: "use $demo-skill and again $demo-skill".to_string(),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, Vec::new());
+}
+
+#[test]
+fn collect_explicit_skill_mentions_prefers_linked_path_over_name() {
+    let alpha = make_skill("demo-skill", "/tmp/alpha");
+    let beta = make_skill("demo-skill", "/tmp/beta");
+    let skills = vec![alpha, beta.clone()];
+    let inputs = vec![UserInput::Text {
+        text: format!(
+            "use $demo-skill and {}",
+            linked_skill_mention("demo-skill", "/tmp/beta")
+        ),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, vec![beta]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_skips_plain_name_when_connector_matches() {
+    let alpha = make_skill("alpha-skill", "/tmp/alpha");
+    let skills = vec![alpha];
+    let inputs = vec![UserInput::Text {
+        text: "use $alpha-skill".to_string(),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::from([("alpha-skill".to_string(), 1)]);
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, Vec::new());
+}
+
+#[test]
+fn collect_explicit_skill_mentions_allows_explicit_path_with_connector_conflict() {
+    let alpha = make_skill("alpha-skill", "/tmp/alpha");
+    let skills = vec![alpha.clone()];
+    let inputs = vec![UserInput::Text {
+        text: format!("use {}", linked_skill_mention("alpha-skill", "/tmp/alpha")),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::from([("alpha-skill".to_string(), 1)]);
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, vec![alpha]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_skips_when_linked_path_disabled() {
+    let alpha = make_skill("demo-skill", "/tmp/alpha");
+    let beta = make_skill("demo-skill", "/tmp/beta");
+    let skills = vec![alpha, beta];
+    let inputs = vec![UserInput::Text {
+        text: format!("use {}", linked_skill_mention("demo-skill", "/tmp/alpha")),
+        text_elements: Vec::new(),
+    }];
+    let disabled = HashSet::from([test_path_buf("/tmp/alpha").abs()]);
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &disabled, &connector_counts);
+
+    assert_eq!(selected, Vec::new());
+}
+
+#[test]
+fn collect_explicit_skill_mentions_prefers_resource_path() {
+    let alpha = make_skill("demo-skill", "/tmp/alpha");
+    let beta = make_skill("demo-skill", "/tmp/beta");
+    let skills = vec![alpha, beta.clone()];
+    let inputs = vec![UserInput::Text {
+        text: format!("use {}", linked_skill_mention("demo-skill", "/tmp/beta")),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, vec![beta]);
+}
+
+#[test]
+fn collect_explicit_skill_mentions_skips_missing_path_with_no_fallback() {
+    let alpha = make_skill("demo-skill", "/tmp/alpha");
+    let beta = make_skill("demo-skill", "/tmp/beta");
+    let skills = vec![alpha, beta];
+    let inputs = vec![UserInput::Text {
+        text: format!("use {}", linked_skill_mention("demo-skill", "/tmp/missing")),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, Vec::new());
+}
+
+#[test]
+fn collect_explicit_skill_mentions_skips_missing_path_without_fallback() {
+    let alpha = make_skill("demo-skill", "/tmp/alpha");
+    let skills = vec![alpha];
+    let inputs = vec![UserInput::Text {
+        text: format!("use {}", linked_skill_mention("demo-skill", "/tmp/missing")),
+        text_elements: Vec::new(),
+    }];
+    let connector_counts = HashMap::new();
+
+    let selected = collect_mentions(&inputs, &skills, &HashSet::new(), &connector_counts);
+
+    assert_eq!(selected, Vec::new());
 }

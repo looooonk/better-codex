@@ -39,6 +39,7 @@ fn responsive_layout_uses_sidebar_overlay_and_minimum_size_boundaries() {
             ),
         ),
         Some(ShellLayout {
+            status: None,
             header: Rect::new(
                 /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 3
             ),
@@ -61,6 +62,7 @@ fn responsive_layout_uses_sidebar_overlay_and_minimum_size_boundaries() {
             ),
         ),
         Some(ShellLayout {
+            status: None,
             header: Rect::new(
                 /*x*/ 0, /*y*/ 0, /*width*/ 99, /*height*/ 3
             ),
@@ -83,6 +85,7 @@ fn responsive_layout_uses_sidebar_overlay_and_minimum_size_boundaries() {
             ),
         ),
         Some(ShellLayout {
+            status: None,
             header: Rect::new(
                 /*x*/ 0, /*y*/ 0, /*width*/ 50, /*height*/ 3
             ),
@@ -112,6 +115,7 @@ fn hiding_the_dashboard_reclaims_the_full_width_layout() {
             ),
         ),
         Some(ShellLayout {
+            status: None,
             header: Rect::new(
                 /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 3
             ),
@@ -139,6 +143,7 @@ fn compact_help_preserves_the_overlay_height() {
             ),
         ),
         Some(ShellLayout {
+            status: None,
             header: Rect::new(
                 /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 2
             ),

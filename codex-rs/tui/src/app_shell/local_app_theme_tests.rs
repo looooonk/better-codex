@@ -44,7 +44,10 @@ animations = false
         .await
         .expect("load profile-v2 config");
 
-    assert_eq!(config.tui_app_theme, TuiAppTheme::TokyoNight);
+    assert_eq!(
+        crate::app_theme::configured(&config),
+        TuiAppTheme::TokyoNight
+    );
     assert_eq!(super::selected_config_path(&config), selected_config_path);
 
     super::persist(
@@ -80,5 +83,8 @@ app_theme = "catppuccin-mocha"
         .build()
         .await
         .expect("reload profile-v2 config");
-    assert_eq!(reloaded_config.tui_app_theme, TuiAppTheme::CatppuccinMocha);
+    assert_eq!(
+        crate::app_theme::configured(&reloaded_config),
+        TuiAppTheme::CatppuccinMocha
+    );
 }

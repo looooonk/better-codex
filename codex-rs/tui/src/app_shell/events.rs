@@ -30,6 +30,43 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if let Some(parent) = self.side_parent.as_mut() {
+            match &event {
+                AppServerEvent::ServerNotification(notification) => {
+                    Box::pin(parent.handle_app_server_event(
+                        app_server,
+                        AppServerEvent::ServerNotification(notification.clone()),
+                    ))
+                    .await?;
+                }
+                AppServerEvent::ServerRequest(request)
+                    if request_thread_id(request).is_some_and(|id| {
+                        id == parent.thread_id.to_string() || parent.is_active_agent_thread(&id)
+                    }) =>
+                {
+                    Box::pin(parent.handle_app_server_event(app_server, event)).await?;
+                    self.push_status("Main conversation needs input. Use /side return to respond.");
+                    return Ok(());
+                }
+                AppServerEvent::Disconnected { message } => {
+                    Box::pin(parent.handle_app_server_event(
+                        app_server,
+                        AppServerEvent::Disconnected {
+                            message: message.clone(),
+                        },
+                    ))
+                    .await?;
+                }
+                AppServerEvent::Lagged { skipped } => {
+                    Box::pin(parent.handle_app_server_event(
+                        app_server,
+                        AppServerEvent::Lagged { skipped: *skipped },
+                    ))
+                    .await?;
+                }
+                AppServerEvent::ServerRequest(_) => {}
+            }
+        }
         self.drain_agent_history_updates();
         match event {
             AppServerEvent::Lagged { skipped } => {
@@ -43,6 +80,7 @@ impl ShellState {
                 }
             }
             AppServerEvent::ServerNotification(notification) => {
+                let notification = *notification;
                 if let ServerNotification::ExternalAgentConfigImportCompleted(notification) =
                     &notification
                     && app_server.consume_external_agent_config_import_completion()
@@ -83,9 +121,26 @@ impl ShellState {
                 }
             }
             AppServerEvent::ServerRequest(request) => {
-                self.handle_server_request(app_server, request).await?;
+                if request_thread_id(&request).is_some_and(|id| self.recap.owns_thread(&id)) {
+                    app_server
+                        .reject_server_request(
+                            request.id().clone(),
+                            JSONRPCErrorError {
+                                code: UNSUPPORTED_REQUEST_ERROR,
+                                message:
+                                    "Interactive requests are unavailable while generating a recap"
+                                        .to_string(),
+                                data: None,
+                            },
+                        )
+                        .await?;
+                } else {
+                    self.handle_server_request(app_server, *request).await?;
+                }
             }
             AppServerEvent::Disconnected { message } => {
+                self.recap = super::recap::RecapState::default();
+                self.disconnect_voice();
                 self.status = "disconnected".to_string();
                 self.push_error(message);
             }
@@ -98,6 +153,10 @@ impl ShellState {
     }
 
     pub(super) fn handle_notification(&mut self, notification: ServerNotification) {
+        if self.recap.forward(&notification) {
+            return;
+        }
+        self.handle_voice_notification(&notification);
         match notification {
             ServerNotification::AgentMessageDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
@@ -158,6 +217,8 @@ impl ShellState {
             }
             ServerNotification::TurnCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
+                    self.automatic_recap
+                        .note_turn_finished(&completed.turn.status, std::time::Instant::now());
                     self.mark_thread_revert_hydration_stale();
                     let completed_active_turn =
                         self.active_turn_id.as_deref() == Some(completed.turn.id.as_str());
@@ -201,6 +262,10 @@ impl ShellState {
             }
             ServerNotification::ThreadStarted(started) => {
                 let thread = started.thread;
+                if thread.id == self.thread_id.to_string() {
+                    self.can_accept_direct_input = thread.can_accept_direct_input != Some(false);
+                    self.daybreak_enabled = thread.daybreak_enabled.unwrap_or(false);
+                }
                 if thread.session_id == self.thread_id.to_string()
                     && matches!(
                         &thread.source,
@@ -256,6 +321,9 @@ impl ShellState {
                     self.service_tier = settings.service_tier;
                     self.collaboration_mode = Some(Box::new(settings.collaboration_mode));
                     self.personality = settings.personality;
+                } else if self.prepare_active_agent_thread(&updated.thread_id) {
+                    self.agent_activity
+                        .record_child_settings(&updated.thread_id, &updated.thread_settings);
                 }
             }
             ServerNotification::TurnDiffUpdated(updated) => {
@@ -333,6 +401,7 @@ impl ShellState {
                             client_id: Some(_), ..
                         }
                         | ThreadItem::HookPrompt { .. }
+                        | ThreadItem::FunctionCallOutput { .. }
                         | ThreadItem::AgentMessage { .. }
                         | ThreadItem::Plan { .. }
                         | ThreadItem::Reasoning { .. }
@@ -343,7 +412,7 @@ impl ShellState {
                         | ThreadItem::CollabAgentToolCall { .. }
                         | ThreadItem::WebSearch { .. }
                         | ThreadItem::ImageView { .. }
-                        | ThreadItem::Sleep { .. }
+                        | ThreadItem::Sleep(_)
                         | ThreadItem::ImageGeneration(_)
                         | ThreadItem::SubAgentActivity { .. }
                         | ThreadItem::EnteredReviewMode { .. }
@@ -503,16 +572,23 @@ impl ShellState {
                     .as_deref()
                     .is_none_or(|thread_id| thread_id == self.thread_id.to_string())
                 {
-                    self.push_status(warning.message);
+                    self.retain_warning(warning.message);
                 }
             }
             ServerNotification::GuardianWarning(warning) => {
                 if warning.thread_id == self.thread_id.to_string() {
-                    self.push_status(warning.message);
+                    self.retain_warning(warning.message);
                 }
             }
             ServerNotification::ConfigWarning(warning) => {
-                self.push_status(warning.summary);
+                let mut details = warning.summary;
+                if let Some(path) = warning.path {
+                    details.push_str(&format!("\n{path}"));
+                }
+                if let Some(extra) = warning.details {
+                    details.push_str(&format!("\n{extra}"));
+                }
+                self.retain_warning(details);
             }
             ServerNotification::ModelRerouted(rerouted) => {
                 if rerouted.thread_id == self.thread_id.to_string() {
@@ -540,15 +616,53 @@ impl ShellState {
                     self.pending_session_delete = None;
                 }
             }
-            ServerNotification::ProcessOutputDelta(_)
+            ServerNotification::ItemGuardianApprovalReviewStarted(notification) => {
+                if notification.thread_id == self.thread_id.to_string() {
+                    self.record_guardian_review(notification.review_id, notification.review);
+                }
+            }
+            ServerNotification::ItemGuardianApprovalReviewCompleted(notification) => {
+                if notification.thread_id == self.thread_id.to_string() {
+                    self.record_guardian_completion(notification);
+                }
+            }
+            ServerNotification::HookStarted(notification) => {
+                if notification.thread_id == self.thread_id.to_string() {
+                    self.record_hook_activity(notification.run);
+                }
+            }
+            ServerNotification::HookCompleted(notification) => {
+                if notification.thread_id == self.thread_id.to_string() {
+                    self.record_hook_activity(notification.run);
+                }
+            }
+            ServerNotification::AuthRecoveryStarted(recovery)
+            | ServerNotification::AuthRecoveryCompleted(recovery) => {
+                if recovery.thread_id == self.thread_id.to_string() {
+                    self.push_status(recovery.message);
+                }
+            }
+            ServerNotification::StrictReviewRequired(review) => {
+                if review.thread_id == self.thread_id.to_string() {
+                    self.push_status("Waiting for required review".to_string());
+                }
+            }
+            ServerNotification::EnvironmentConnected(_)
+            | ServerNotification::EnvironmentDisconnected(_)
+            | ServerNotification::GatewayOAuthChanged(_)
+            | ServerNotification::McpServerEventStream(_)
+            | ServerNotification::ProjectChanged(_)
+            | ServerNotification::ThreadAttachmentUpdated(_)
+            | ServerNotification::ThreadPredictionUpdated(_)
+            | ServerNotification::ThreadProjectUpdated(_)
+            | ServerNotification::ThreadRealtimeItemCompleted(_)
+            | ServerNotification::ThreadRealtimeItemStarted(_)
+            | ServerNotification::ThreadRealtimeItemTranscriptDelta(_)
+            | ServerNotification::ProcessOutputDelta(_)
             | ServerNotification::ThreadReverted(_)
             | ServerNotification::ProcessExited(_)
             | ServerNotification::FileChangeOutputDelta(_)
-            | ServerNotification::HookStarted(_)
-            | ServerNotification::HookCompleted(_)
             | ServerNotification::SkillsChanged(_)
-            | ServerNotification::ItemGuardianApprovalReviewStarted(_)
-            | ServerNotification::ItemGuardianApprovalReviewCompleted(_)
             | ServerNotification::RawResponseItemCompleted(_)
             | ServerNotification::RawResponseCompleted(_)
             | ServerNotification::TerminalInteraction(_)
@@ -731,6 +845,7 @@ pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) 
     match item {
         codex_app_server_protocol::ThreadItem::UserMessage { .. }
         | codex_app_server_protocol::ThreadItem::HookPrompt { .. }
+        | codex_app_server_protocol::ThreadItem::FunctionCallOutput { .. }
         | codex_app_server_protocol::ThreadItem::AgentMessage { .. }
         | codex_app_server_protocol::ThreadItem::Plan { .. }
         | codex_app_server_protocol::ThreadItem::Reasoning { .. }
@@ -764,7 +879,8 @@ pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) 
         codex_app_server_protocol::ThreadItem::ImageView { path, .. } => {
             Some(format!("view image: {path}"))
         }
-        codex_app_server_protocol::ThreadItem::Sleep { duration_ms, .. } => {
+        codex_app_server_protocol::ThreadItem::Sleep(item) => {
+            let duration_ms = item.duration_ms;
             Some(format!("sleep {duration_ms}ms"))
         }
         codex_app_server_protocol::ThreadItem::ImageGeneration(_) => {

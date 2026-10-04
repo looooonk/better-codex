@@ -42,12 +42,12 @@ fn stack(codex_home: &TempDir, user: &str, session: &str) -> ConfigLayerStack {
 }
 
 fn path_toggle_config(path: &std::path::Path, enabled: bool) -> String {
+    let path = toml::Value::String(path.display().to_string());
     format!(
         r#"[[skills.config]]
-path = "{}"
+path = {path}
 enabled = {enabled}
-"#,
-        path.display()
+"#
     )
 }
 
@@ -83,7 +83,6 @@ fn malformed_bundled_skills_config_defaults_to_enabled() {
     )));
 }
 
-#[cfg_attr(windows, ignore)]
 #[test]
 fn session_flags_can_reenable_user_disabled_path() {
     let codex_home = TempDir::new().expect("temp dir");
@@ -104,7 +103,6 @@ fn session_flags_can_reenable_user_disabled_path() {
     );
 }
 
-#[cfg_attr(windows, ignore)]
 #[test]
 fn session_flags_can_disable_user_enabled_path() {
     let codex_home = TempDir::new().expect("temp dir");
@@ -148,7 +146,6 @@ enabled = false
     );
 }
 
-#[cfg_attr(windows, ignore)]
 #[test]
 fn preserves_order_across_path_and_name_selectors() {
     let codex_home = TempDir::new().expect("temp dir");

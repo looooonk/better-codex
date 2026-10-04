@@ -1,0 +1,25 @@
+---
+source: tui/src/app_shell/daemon_recovery_tests.rs
+assertion_line: 30
+expression: screen
+---
+
+
+
+              ╭──────────────────────────────────────────────────────────────────────╮
+              │◆ BACKGROUND SERVER                                                   │
+              │Background server has incompatible feature settings                   │
+              │This session requires auth_elicitation to be disabled                 │
+              │                                                                      │
+              │Restart will use these shared feature settings:                       │
+              │  auth_elicitation = false                                            │
+              │These settings persist for other clients. Restart may interrupt active│
+              │or queued work.                                                       │
+              │                                                                      │
+              │  1. Run without daemon this time                                     │
+              │  2. Restart with these settings                                      │
+              │> 3. Cancel                                                           │
+              │                                                                      │
+              │Select 2, then press Enter to confirm a shared restart. Esc cancels.  │
+              │                                                                      │
+              ╰──────────────────────────────────────────────────────────────────────╯

@@ -1,33 +1,49 @@
 use codex_app_server_protocol::ThreadHistoryChangeSet;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::TurnStatus;
-use codex_protocol::RolloutId;
+use codex_protocol::ThreadId;
 use codex_protocol::models::MessagePhase;
-use codex_protocol::protocol::TurnAbortReason;
+use codex_protocol::realtime::RealtimeItem;
 
 use super::LocalThreadStore;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
 mod read;
+mod realtime;
 mod search;
+mod segment_paging;
 mod turn_lookup;
-
-const MAX_THREAD_HISTORY_PAGE_SIZE: usize = 100;
-const MAX_THREAD_OCCURRENCE_PAGE_SIZE: usize = 250;
-const MAX_THREAD_HISTORY_INPUT_BYTES: usize = 64 * 1024;
 
 pub(super) use read::list_items;
 pub(super) use read::list_turns;
+pub(super) use realtime::list_timeline;
 pub(super) use search::search_thread_occurrences;
 pub(super) use turn_lookup::find_source_turn;
+pub(super) use turn_lookup::find_visible_turn;
 
+/// A valid complete rollout line with its absolute byte span in durable JSONL.
+///
+/// `start_byte_offset..end_byte_offset` includes the terminating newline.
 pub(super) struct ProjectedRolloutLine {
     pub ordinal: u64,
     pub start_byte_offset: u64,
     pub end_byte_offset: u64,
-    pub created_at_ms: i64,
+    pub fallback_created_at_ms: Option<i64>,
     pub changes: ThreadHistoryChangeSet,
+    pub realtime_item: Option<RealtimeItem>,
+}
+
+/// One ordered update to apply while advancing a rollout projection checkpoint.
+///
+/// Skipped ordinal ranges keep the byte and ordinal checkpoints describing the same durable
+/// prefix even when a complete rollout line cannot be projected.
+pub(super) enum RolloutProjectionStep {
+    Line(Box<ProjectedRolloutLine>),
+    SkippedOrdinalRange {
+        start_ordinal: u64,
+        end_ordinal_exclusive: u64,
+    },
 }
 
 pub(super) struct RolloutProjectionState {
@@ -37,9 +53,12 @@ pub(super) struct RolloutProjectionState {
 
 pub(super) async fn projection_state(
     store: &LocalThreadStore,
-    rollout_id: RolloutId,
+    thread_id: ThreadId,
 ) -> ThreadStoreResult<Option<RolloutProjectionState>> {
-    let db_path = codex_state::thread_history_db_path(store.config.sqlite_home.as_path());
+    if store.state_db.is_none() {
+        return Ok(None);
+    }
+    let db_path = store.config.sqlite.thread_history_db_path();
     if !tokio::fs::try_exists(db_path.as_path())
         .await
         .map_err(thread_history_error)?
@@ -48,52 +67,31 @@ pub(super) async fn projection_state(
     }
 
     let pool = store.thread_history_db().await?;
-    let mut transaction = pool
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .map_err(thread_history_error)?;
-    let rollout_id = rollout_id.to_string();
-    // Return only a checkpoint that remains valid after compatibility repair.
-    sqlx::query(
+    let state = sqlx::query_as::<_, (i64, i64)>(
         r#"
-DELETE FROM thread_history_projection_state
+SELECT next_rollout_byte_offset, next_rollout_ordinal
+FROM thread_history_projection_state
 WHERE thread_id = ?
-  AND EXISTS (
-    SELECT 1
-    FROM thread_turns
-    WHERE thread_id = ?
-      AND status = 'interrupted'
-      AND abort_reason IS NULL
-  )
         "#,
     )
-    .bind(rollout_id.as_str())
-    .bind(rollout_id.as_str())
-    .execute(&mut *transaction)
+    .bind(thread_id.to_string())
+    .fetch_optional(pool)
     .await
     .map_err(thread_history_error)?;
-    let state = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT next_rollout_byte_offset, next_rollout_ordinal FROM thread_history_projection_state WHERE thread_id = ?",
-    )
-    .bind(rollout_id.as_str())
-    .fetch_optional(&mut *transaction)
-    .await
-    .map_err(thread_history_error)?;
-    transaction.commit().await.map_err(thread_history_error)?;
     state
         .map(|(next_byte_offset, next_ordinal)| {
             Ok(RolloutProjectionState {
                 next_byte_offset: u64::try_from(next_byte_offset).map_err(|_| {
                     ThreadStoreError::Internal {
                         message: format!(
-                            "rollout history projection for {rollout_id} has a negative byte offset"
+                            "thread history projection for {thread_id} has a negative byte offset"
                         ),
                     }
                 })?,
                 next_ordinal: u64::try_from(next_ordinal).map_err(|_| {
                     ThreadStoreError::Internal {
                         message: format!(
-                            "rollout history projection for {rollout_id} has a negative ordinal"
+                            "thread history projection for {thread_id} has a negative ordinal"
                         ),
                     }
                 })?,
@@ -104,11 +102,11 @@ WHERE thread_id = ?
 
 pub(super) async fn apply_projection(
     store: &LocalThreadStore,
-    rollout_id: RolloutId,
+    thread_id: ThreadId,
     start_offset: u64,
     next_offset: u64,
     initial_ordinal: u64,
-    projections: Vec<ProjectedRolloutLine>,
+    projections: Vec<RolloutProjectionStep>,
 ) -> ThreadStoreResult<()> {
     let pool = store.thread_history_db().await?;
     // Write the projected rows and advance the JSONL offset and ordinal in one transaction. If
@@ -118,7 +116,7 @@ pub(super) async fn apply_projection(
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(thread_history_error)?;
-    let rollout_id = rollout_id.to_string();
+    let thread_id = thread_id.to_string();
     let projection_state = sqlx::query_as::<_, (i64, i64)>(
         r#"
 SELECT next_rollout_byte_offset, next_rollout_ordinal
@@ -126,50 +124,100 @@ FROM thread_history_projection_state
 WHERE thread_id = ?
         "#,
     )
-    .bind(rollout_id.as_str())
+    .bind(thread_id.as_str())
     .fetch_optional(&mut *transaction)
     .await
     .map_err(thread_history_error)?;
     let (expected_offset, mut next_ordinal) =
         projection_state.unwrap_or((0, sqlite_integer(initial_ordinal, "rollout ordinal")?));
     let start_offset = sqlite_integer(start_offset, "rollout byte offset")?;
-    let next_offset = sqlite_integer(next_offset, "rollout byte offset")?;
     if expected_offset != start_offset {
-        if expected_offset >= next_offset {
-            transaction.rollback().await.map_err(thread_history_error)?;
-            return Ok(());
-        }
         return Err(ThreadStoreError::Internal {
-            message: format!(
-                "rollout history projection for {rollout_id} is behind durable rollout"
-            ),
+            message: format!("thread history projection for {thread_id} is behind durable rollout"),
         });
     }
 
     for projection in projections {
-        let ordinal = sqlite_integer(projection.ordinal, "rollout ordinal")?;
-        if ordinal != next_ordinal {
-            return Err(ThreadStoreError::Internal {
-                message: format!(
-                    "rollout history projection for {rollout_id} expected ordinal {next_ordinal}, got {ordinal}"
-                ),
-            });
+        match projection {
+            RolloutProjectionStep::Line(projection) => {
+                let ordinal = sqlite_integer(projection.ordinal, "rollout ordinal")?;
+                if ordinal != next_ordinal {
+                    return Err(ThreadStoreError::Internal {
+                        message: format!(
+                            "thread history projection for {thread_id} expected ordinal {next_ordinal}, got {ordinal}"
+                        ),
+                    });
+                }
+                apply_change_set(
+                    &mut transaction,
+                    thread_id.as_str(),
+                    ordinal,
+                    sqlite_integer(projection.start_byte_offset, "rollout byte offset")?,
+                    sqlite_integer(projection.end_byte_offset, "rollout byte offset")?,
+                    projection.fallback_created_at_ms,
+                    projection.changes,
+                )
+                .await?;
+                if let Some(item) = projection.realtime_item {
+                    let item_json = serde_json::to_string(&item).map_err(thread_history_error)?;
+                    sqlx::query(
+                        r#"
+INSERT INTO thread_realtime_items (
+    thread_id,
+    item_id,
+    rollout_ordinal,
+    created_at_ms,
+    item_type,
+    item_json
+) VALUES (?, ?, ?, ?, json_extract(?, '$.type'), ?)
+ON CONFLICT(thread_id, item_id) DO NOTHING
+                        "#,
+                    )
+                    .bind(thread_id.as_str())
+                    .bind(item.id.as_str())
+                    .bind(ordinal)
+                    .bind(projection.fallback_created_at_ms.ok_or_else(|| {
+                        ThreadStoreError::Internal {
+                            message: "realtime rollout item is missing its timestamp".to_string(),
+                        }
+                    })?)
+                    .bind(item_json.as_str())
+                    .bind(item_json.as_str())
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(thread_history_error)?;
+                }
+                next_ordinal =
+                    next_ordinal
+                        .checked_add(1)
+                        .ok_or_else(|| ThreadStoreError::Internal {
+                            message: "rollout ordinal exceeds SQLite integer range".to_string(),
+                        })?;
+            }
+            RolloutProjectionStep::SkippedOrdinalRange {
+                start_ordinal,
+                end_ordinal_exclusive,
+            } => {
+                let start_ordinal = sqlite_integer(start_ordinal, "rollout ordinal")?;
+                if start_ordinal != next_ordinal {
+                    return Err(ThreadStoreError::Internal {
+                        message: format!(
+                            "thread history projection for {thread_id} expected ordinal {next_ordinal}, got {start_ordinal}"
+                        ),
+                    });
+                }
+                let end_ordinal_exclusive =
+                    sqlite_integer(end_ordinal_exclusive, "rollout ordinal")?;
+                if end_ordinal_exclusive <= start_ordinal {
+                    return Err(ThreadStoreError::Internal {
+                        message: format!(
+                            "thread history projection for {thread_id} has an empty skipped ordinal range"
+                        ),
+                    });
+                }
+                next_ordinal = end_ordinal_exclusive;
+            }
         }
-        apply_change_set(
-            &mut transaction,
-            rollout_id.as_str(),
-            ordinal,
-            sqlite_integer(projection.start_byte_offset, "rollout byte offset")?,
-            sqlite_integer(projection.end_byte_offset, "rollout byte offset")?,
-            projection.created_at_ms,
-            projection.changes,
-        )
-        .await?;
-        next_ordinal = next_ordinal
-            .checked_add(1)
-            .ok_or_else(|| ThreadStoreError::Internal {
-                message: "rollout ordinal exceeds SQLite integer range".to_string(),
-            })?;
     }
 
     sqlx::query(
@@ -184,8 +232,8 @@ ON CONFLICT(thread_id) DO UPDATE SET
     next_rollout_ordinal = excluded.next_rollout_ordinal
         "#,
     )
-    .bind(rollout_id.as_str())
-    .bind(next_offset)
+    .bind(thread_id.as_str())
+    .bind(sqlite_integer(next_offset, "rollout byte offset")?)
     .bind(next_ordinal)
     .execute(&mut *transaction)
     .await
@@ -195,9 +243,9 @@ ON CONFLICT(thread_id) DO UPDATE SET
 
 pub(super) async fn delete_thread(
     store: &LocalThreadStore,
-    rollout_id: RolloutId,
+    thread_id: ThreadId,
 ) -> ThreadStoreResult<()> {
-    let db_path = codex_state::thread_history_db_path(store.config.sqlite_home.as_path());
+    let db_path = store.config.sqlite.thread_history_db_path();
     if !tokio::fs::try_exists(db_path.as_path())
         .await
         .map_err(thread_history_delete_error)?
@@ -210,19 +258,24 @@ pub(super) async fn delete_thread(
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(thread_history_delete_error)?;
-    let rollout_id = rollout_id.to_string();
+    let thread_id = thread_id.to_string();
     sqlx::query("DELETE FROM thread_items WHERE thread_id = ?")
-        .bind(rollout_id.as_str())
+        .bind(thread_id.as_str())
+        .execute(&mut *transaction)
+        .await
+        .map_err(thread_history_delete_error)?;
+    sqlx::query("DELETE FROM thread_realtime_items WHERE thread_id = ?")
+        .bind(thread_id.as_str())
         .execute(&mut *transaction)
         .await
         .map_err(thread_history_delete_error)?;
     sqlx::query("DELETE FROM thread_turns WHERE thread_id = ?")
-        .bind(rollout_id.as_str())
+        .bind(thread_id.as_str())
         .execute(&mut *transaction)
         .await
         .map_err(thread_history_delete_error)?;
     sqlx::query("DELETE FROM thread_history_projection_state WHERE thread_id = ?")
-        .bind(rollout_id.as_str())
+        .bind(thread_id.as_str())
         .execute(&mut *transaction)
         .await
         .map_err(thread_history_delete_error)?;
@@ -238,7 +291,7 @@ async fn apply_change_set(
     rollout_ordinal: i64,
     rollout_byte_offset: i64,
     rollout_end_byte_offset: i64,
-    created_at_ms: i64,
+    fallback_created_at_ms: Option<i64>,
     changes: ThreadHistoryChangeSet,
 ) -> ThreadStoreResult<()> {
     for turn in changes.changed_turns {
@@ -249,7 +302,6 @@ async fn apply_change_set(
             .map(serde_json::to_string)
             .transpose()
             .map_err(thread_history_error)?;
-        let abort_reason = turn.abort_reason.as_ref().map(turn_abort_reason);
         let (terminal_ordinal, terminal_byte_offset) = match &turn.status {
             TurnStatus::Completed | TurnStatus::Interrupted | TurnStatus::Failed => {
                 (Some(rollout_ordinal), Some(rollout_end_byte_offset))
@@ -269,30 +321,21 @@ INSERT INTO thread_turns (
     rollout_end_ordinal,
     rollout_end_byte_offset,
     status,
-    abort_reason,
     error_json,
     started_at,
     completed_at,
     duration_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(thread_id, turn_id) DO UPDATE SET
     rollout_end_ordinal = excluded.rollout_end_ordinal,
     rollout_end_byte_offset = excluded.rollout_end_byte_offset,
     status = excluded.status,
-    abort_reason = excluded.abort_reason,
     error_json = excluded.error_json,
     started_at = excluded.started_at,
     completed_at = excluded.completed_at,
     duration_ms = excluded.duration_ms
-WHERE (
-    thread_turns.rollout_end_ordinal IS NULL
-    AND thread_turns.status = 'inProgress'
-) OR (
-    thread_turns.status = 'interrupted'
-    AND thread_turns.abort_reason IS NULL
-    AND excluded.status = 'interrupted'
-    AND excluded.abort_reason IS NOT NULL
-)
+WHERE thread_turns.rollout_end_ordinal IS NULL
+  AND thread_turns.status = 'inProgress'
             "#,
         )
         .bind(thread_id)
@@ -302,7 +345,6 @@ WHERE (
         .bind(terminal_ordinal)
         .bind(terminal_byte_offset)
         .bind(turn_status(&turn.status))
-        .bind(abort_reason)
         .bind(error_json)
         .bind(turn.started_at)
         .bind(turn.completed_at)
@@ -324,7 +366,10 @@ SET
             FROM thread_items
             WHERE thread_id = ?
               AND turn_id = ?
-              AND json_extract(item_json, '$.type') = 'userMessage'
+              AND (
+                item_type = 'userMessage'
+                OR (item_type = '' AND json_extract(item_json, '$.type') = 'userMessage')
+              )
             ORDER BY rollout_ordinal
             LIMIT 1
         )
@@ -335,7 +380,10 @@ SET
             FROM thread_items
             WHERE thread_id = ?
               AND turn_id = ?
-              AND json_extract(item_json, '$.type') = 'agentMessage'
+              AND (
+                item_type = 'agentMessage'
+                OR (item_type = '' AND json_extract(item_json, '$.type') = 'agentMessage')
+              )
               AND json_extract(item_json, '$.phase') = 'final_answer'
             ORDER BY rollout_ordinal DESC
             LIMIT 1
@@ -346,7 +394,10 @@ SET
                 FROM thread_items
                 WHERE thread_id = ?
                   AND turn_id = ?
-                  AND json_extract(item_json, '$.type') = 'agentMessage'
+                  AND (
+                    item_type = 'agentMessage'
+                    OR (item_type = '' AND json_extract(item_json, '$.type') = 'agentMessage')
+                  )
                   AND json_extract(item_json, '$.phase') IS NULL
                 ORDER BY rollout_ordinal DESC
                 LIMIT 1
@@ -354,7 +405,12 @@ SET
         END,
         final_agent_item_id
     )
-WHERE thread_id = ? AND turn_id = ?
+WHERE thread_id = ?
+  AND turn_id = ?
+  AND (
+    rollout_end_ordinal = ?
+    OR status = 'inProgress'
+  )
             "#,
         )
         .bind(thread_id)
@@ -365,17 +421,26 @@ WHERE thread_id = ? AND turn_id = ?
         .bind(turn_id.as_str())
         .bind(thread_id)
         .bind(turn_id.as_str())
+        .bind(rollout_ordinal)
         .execute(&mut **transaction)
         .await
         .map_err(thread_history_error)?;
     }
 
     for item in changes.changed_items {
+        let created_at_ms =
+            item.started_at_ms
+                .or(fallback_created_at_ms)
+                .ok_or_else(|| ThreadStoreError::Internal {
+                    message: format!(
+                        "thread history projection for {thread_id} is missing an item creation timestamp"
+                    ),
+                })?;
         let item_id = item.item.id().to_string();
         let item_json = serde_json::to_string(&item.item).map_err(thread_history_error)?;
-        // The same item can appear again with a newer snapshot. Replace its JSON, but keep the
-        // ordinal and creation timestamp from the first record so item ordering and age stay
-        // stable.
+        // Completed items are immutable: local producers emit ItemCompleted exactly once per
+        // item. Tolerate an unexpected duplicate defensively so it cannot poison materialization,
+        // preserving the original creation ordinal and timestamp while updating its snapshot.
         sqlx::query(
             r#"
 INSERT INTO thread_items (
@@ -383,11 +448,17 @@ INSERT INTO thread_items (
     turn_id,
     item_id,
     rollout_ordinal,
+    updated_at_ordinal,
     created_at_ms,
+    started_at_ms,
+    completed_at_ms,
     item_type,
     item_json
-) VALUES (?, ?, ?, ?, ?, json_extract(?, '$.type'), ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, json_extract(?, '$.type'), ?)
 ON CONFLICT(thread_id, turn_id, item_id) DO UPDATE SET
+    updated_at_ordinal = excluded.updated_at_ordinal,
+    started_at_ms = COALESCE(thread_items.started_at_ms, excluded.started_at_ms),
+    completed_at_ms = COALESCE(thread_items.completed_at_ms, excluded.completed_at_ms),
     item_type = excluded.item_type,
     item_json = excluded.item_json
             "#,
@@ -396,7 +467,10 @@ ON CONFLICT(thread_id, turn_id, item_id) DO UPDATE SET
         .bind(item.turn_id.as_str())
         .bind(item_id.as_str())
         .bind(rollout_ordinal)
+        .bind(rollout_ordinal)
         .bind(created_at_ms)
+        .bind(item.started_at_ms)
+        .bind(item.completed_at_ms)
         .bind(item_json.as_str())
         .bind(item_json)
         .execute(&mut **transaction)
@@ -411,7 +485,10 @@ ON CONFLICT(thread_id, turn_id, item_id) DO UPDATE SET
                     r#"
 UPDATE thread_turns
 SET first_user_item_id = COALESCE(first_user_item_id, ?)
-WHERE thread_id = ? AND turn_id = ?
+WHERE thread_id = ?
+  AND turn_id = ?
+  AND rollout_end_ordinal IS NULL
+  AND status = 'inProgress'
                     "#,
                 )
                 .bind(item_id.as_str())
@@ -429,7 +506,10 @@ WHERE thread_id = ? AND turn_id = ?
                     r#"
 UPDATE thread_turns
 SET final_agent_item_id = ?
-WHERE thread_id = ? AND turn_id = ?
+WHERE thread_id = ?
+  AND turn_id = ?
+  AND rollout_end_ordinal IS NULL
+  AND status = 'inProgress'
                     "#,
                 )
                 .bind(item_id.as_str())
@@ -444,6 +524,7 @@ WHERE thread_id = ? AND turn_id = ?
                 ..
             }
             | ThreadItem::HookPrompt { .. }
+            | ThreadItem::FunctionCallOutput { .. }
             | ThreadItem::Plan { .. }
             | ThreadItem::Reasoning { .. }
             | ThreadItem::CommandExecution { .. }
@@ -454,7 +535,7 @@ WHERE thread_id = ? AND turn_id = ?
             | ThreadItem::SubAgentActivity { .. }
             | ThreadItem::WebSearch(_)
             | ThreadItem::ImageView { .. }
-            | ThreadItem::Sleep { .. }
+            | ThreadItem::Sleep(_)
             | ThreadItem::ImageGeneration(_)
             | ThreadItem::EnteredReviewMode { .. }
             | ThreadItem::ExitedReviewMode { .. }
@@ -470,15 +551,6 @@ fn turn_status(status: &TurnStatus) -> &'static str {
         TurnStatus::Interrupted => "interrupted",
         TurnStatus::Failed => "failed",
         TurnStatus::InProgress => "inProgress",
-    }
-}
-
-fn turn_abort_reason(reason: &TurnAbortReason) -> &'static str {
-    match reason {
-        TurnAbortReason::Interrupted => "interrupted",
-        TurnAbortReason::Replaced => "replaced",
-        TurnAbortReason::ReviewEnded => "review_ended",
-        TurnAbortReason::BudgetLimited => "budget_limited",
     }
 }
 

@@ -10,18 +10,7 @@ use std::collections::VecDeque;
 
 impl ComposerState {
     pub(in crate::app_shell) fn restore_failed_queued_submission(&mut self, submission: &str) {
-        let Some(draft) = self.queued_index.and(self.draft_before_queue.as_mut()) else {
-            self.restore_failed_submission(submission);
-            return;
-        };
-        let text = draft.input.text().to_string();
-        draft.input.set_text(if text.is_empty() {
-            submission.to_string()
-        } else {
-            format!("{submission}\n\n{text}")
-        });
-        draft.history_index = None;
-        draft.draft_before_history.clear();
+        self.restore_failed_submission(submission);
     }
 
     pub(in crate::app_shell) fn clone_without_queue(&self) -> Self {
@@ -44,15 +33,17 @@ impl ComposerState {
             return self.finish_queued_message_edit();
         }
         let message = self.submission_text();
-        if message.trim().is_empty() {
+        if message.trim().is_empty() && self.images.is_empty() {
             return false;
         }
 
         self.queued.push_back(QueuedMessage {
             id: None,
             client_user_message_id,
-            text: message,
-            editable: true,
+            text: super::super::format_user_inputs(&self.submission_items(&message)),
+            prompt: message,
+            editable: self.images.is_empty(),
+            images: self.images.clone(),
         });
         self.clear();
         true
@@ -82,6 +73,18 @@ impl ComposerState {
                 id: Some(submission.id),
                 client_user_message_id: submission.client_user_message_id,
                 text: super::super::format_user_inputs(&submission.input),
+                prompt: submission
+                    .input
+                    .iter()
+                    .filter_map(|input| match input {
+                        UserInput::Text { text, .. } => {
+                            Some(crate::ide_context::visible_request(text))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                images: Vec::new(),
                 editable: matches!(
                     submission.input.as_slice(),
                     [UserInput::Text { text_elements, .. }] if text_elements.is_empty()
@@ -105,7 +108,11 @@ impl ComposerState {
     pub(in crate::app_shell) fn remove_queued_submission_for_client(
         &mut self,
         client_id: &str,
-    ) -> Option<(String, bool)> {
+    ) -> Option<(
+        String,
+        bool,
+        Vec<super::super::attachments::ImageAttachment>,
+    )> {
         if let Some(index) = self
             .queued
             .iter()
@@ -115,10 +122,15 @@ impl ComposerState {
             let text = if self.queued_index == Some(index) {
                 self.submission_text()
             } else {
-                self.queued[index].text.clone()
+                self.queued[index].prompt.clone()
             };
+            let images = self.queued[index].images.clone();
             self.remove_queued_submission_at(index);
-            return (!text.trim().is_empty()).then_some((text, was_selected));
+            return (!text.trim().is_empty() || !images.is_empty()).then_some((
+                text,
+                was_selected,
+                images,
+            ));
         }
         None
     }
@@ -169,6 +181,7 @@ impl ComposerState {
             None => {
                 self.draft_before_queue = Some(ComposerDraft {
                     input: self.input.clone(),
+                    images: self.images.clone(),
                     history_index: self.history_index,
                     draft_before_history: self.draft_before_history.clone(),
                 });
@@ -206,6 +219,7 @@ impl ComposerState {
             };
             self.draft_before_queue = Some(ComposerDraft {
                 input: self.input.clone(),
+                images: self.images.clone(),
                 history_index: self.history_index,
                 draft_before_history: self.draft_before_history.clone(),
             });
@@ -291,12 +305,14 @@ impl ComposerState {
         self.queued_index = None;
         let draft = self.draft_before_queue.take().unwrap_or_default();
         self.input = draft.input;
+        self.images = draft.images;
         self.history_index = draft.history_index;
         self.draft_before_history = draft.draft_before_history;
     }
 
     fn select_queued_message(&mut self, index: usize) {
         self.queued_index = Some(index);
+        self.images.clear();
         if let Some(message) = self.queued.get(index) {
             self.set_text(message.text.clone());
         }
@@ -321,6 +337,7 @@ impl ComposerState {
             && queued.text != message
         {
             queued.text = message.clone();
+            queued.prompt = message.clone();
             self.queue_edits.push_back(QueueEdit::Update {
                 id: queued.id.clone(),
                 client_user_message_id: queued.client_user_message_id.clone(),

@@ -46,7 +46,7 @@ impl ShellState {
             return;
         }
         self.composer.remember_submission(&prompt);
-        self.composer.clear();
+        self.composer.clear_text();
         if command.is_empty() {
             self.push_error("shell command cannot be empty");
             return;

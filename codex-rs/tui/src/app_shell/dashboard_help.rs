@@ -62,6 +62,12 @@ pub(super) fn key_hint_lines(
     panel_width: usize,
     panel_height: usize,
 ) -> Vec<Line<'static>> {
+    if shell.keybindings.has_overrides() {
+        return crate::wrapping::word_wrap_lines(
+            shell.keybinding_help_lines(),
+            crate::wrapping::RtOptions::new(panel_width),
+        );
+    }
     let text_width = panel_width.saturating_sub(usize::from(!uses_dense_layout(panel_width)));
     let column_width = text_width
         .saturating_sub(UnicodeWidthStr::width(HELP_COLUMN_GAP))

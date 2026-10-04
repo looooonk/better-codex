@@ -18,6 +18,7 @@ use tokio_stream::StreamExt;
 
 use crate::app_server_session::AppServerSession;
 use crate::app_theme;
+use crate::app_theme::TuiAppTheme;
 use crate::config_update::format_config_error;
 use crate::hooks_rpc::HookTrustUpdate;
 use crate::hooks_rpc::fetch_hooks_list;
@@ -29,7 +30,6 @@ use crate::tui::Tui;
 use crate::tui::TuiEvent;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::HooksListEntry;
-use codex_config::types::TuiAppTheme;
 use std::path::PathBuf;
 
 pub(crate) enum StartupHooksReviewOutcome {
@@ -145,7 +145,7 @@ pub(crate) async fn maybe_run_startup_hooks_review(
         return Ok(StartupHooksReviewOutcome::Continue);
     }
 
-    run_startup_hooks_review_app(app_server, tui, entry, config.tui_app_theme).await
+    run_startup_hooks_review_app(app_server, tui, entry, crate::app_theme::configured(config)).await
 }
 
 async fn run_startup_hooks_review_app(

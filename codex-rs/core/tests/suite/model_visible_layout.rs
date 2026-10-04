@@ -1,44 +1,103 @@
 use core_test_support::test_codex::local_selections;
 use std::fs;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use anyhow::Result;
 use codex_config::types::Personality;
+use codex_core::TurnInputRequest;
+use codex_core::config::Config;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
+use codex_extension_api::ContextualUserFragment;
+use codex_extension_api::ExtensionData;
+use codex_extension_api::ExtensionFuture;
+use codex_extension_api::ExtensionMetrics;
+use codex_extension_api::ExtensionRegistry;
+use codex_extension_api::ExtensionRegistryBuilder;
+use codex_extension_api::TurnInputContext;
+use codex_extension_api::TurnInputContributor;
 use codex_features::Feature;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ModeKind;
+use codex_protocol::config_types::Settings;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::EnvironmentConfigState;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::Op;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::user_input::UserInput;
+use codex_skills_extension::SkillsExtensionConfig;
+use codex_skills_extension::install;
 use codex_utils_path_uri::PathUri;
-use codex_utils_string::approx_token_count;
 use core_test_support::PathBufExt;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
-use core_test_support::context_snapshot::ContextSnapshotRenderMode;
+use core_test_support::context_snapshot::SnapshotEntry;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_sequence;
-use core_test_support::responses::namespace_child_tool;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::turn_permission_fields;
 use core_test_support::wait_for_event;
+use pretty_assertions::assert_eq;
 use serde_json::json;
 
 const PRETURN_CONTEXT_DIFF_CWD: &str = "PRETURN_CONTEXT_DIFF_CWD";
 
+struct RecordingTurnInputContributor(Arc<Mutex<Vec<RecordedTurnInputEnvironment>>>);
+
+impl TurnInputContributor for RecordingTurnInputContributor {
+    fn contribute<'a>(
+        &'a self,
+        input: TurnInputContext<'a>,
+        _extension_metrics: Option<Arc<dyn ExtensionMetrics>>,
+        _session_store: &'a ExtensionData,
+        _thread_store: &'a ExtensionData,
+        _turn_store: &'a ExtensionData,
+    ) -> ExtensionFuture<'a, Vec<Box<dyn ContextualUserFragment + Send>>> {
+        Box::pin(async move {
+            let mut recorded_environments = self.0.lock().expect("recorded environments lock");
+            for environment in input.environments {
+                recorded_environments.push(RecordedTurnInputEnvironment {
+                    environment_id: environment.environment_id,
+                    cwd: environment.cwd,
+                    is_primary: environment.is_primary,
+                });
+            }
+            Vec::new()
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RecordedTurnInputEnvironment {
+    environment_id: String,
+    cwd: PathUri,
+    is_primary: bool,
+}
+
+fn skills_extensions() -> Arc<ExtensionRegistry<Config>> {
+    let mut extensions = ExtensionRegistryBuilder::<Config>::new();
+    install(&mut extensions, |config: &Config| SkillsExtensionConfig {
+        include_instructions: config.include_skill_instructions,
+        max_context_tokens: config.skill_max_context_tokens,
+        bundled_skills_enabled: config.bundled_skills_enabled(),
+        cloud_skill_enabled: config.cloud_skill_enabled,
+        shadow_selection_enabled: config.features.enabled(Feature::SkillSearch),
+    });
+    Arc::new(extensions.build())
+}
+
 fn context_snapshot_options() -> ContextSnapshotOptions {
-    ContextSnapshotOptions::default()
-        .render_mode(ContextSnapshotRenderMode::KindWithTextPrefix { max_chars: 96 })
+    ContextSnapshotOptions::default().rewrite_known_segments()
 }
 
 fn format_labeled_requests_snapshot(
@@ -81,7 +140,65 @@ fn format_environment_context_subagents_snapshot(subagents: &[&str]) -> String {
             ),
         }],
     })];
-    context_snapshot::format_response_items_snapshot(items.as_slice(), &context_snapshot_options())
+    context_snapshot::format_context_snapshot(
+        "Environment context with subagents",
+        &[SnapshotEntry::items(&items)],
+        &context_snapshot_options(),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn turn_input_contributors_receive_foreign_environment_cwds() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response_mock = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let recorded_environments = Arc::new(Mutex::new(Vec::new()));
+    let mut extensions = ExtensionRegistryBuilder::<Config>::new();
+    extensions.turn_input_contributor(Arc::new(RecordingTurnInputContributor(Arc::clone(
+        &recorded_environments,
+    ))));
+    let mut builder = test_codex()
+        .with_extensions(Arc::new(extensions.build()))
+        .with_config(|config| config.project_doc_max_bytes = 0);
+    let test = builder.build_with_auto_env(&server).await?;
+    let mut selection = test.executor_environment().selection().clone();
+    let environment_id = selection.environment_id.clone();
+    let cwd = PathUri::parse(if cfg!(windows) {
+        "file:///workspace"
+    } else {
+        "file:///C:/workspace"
+    })?;
+    assert!(cwd.to_abs_path().is_err());
+    selection.cwd = cwd.clone();
+    selection.workspace_roots = Vec::new();
+
+    test.submit_turn_with_environments("inspect the foreign environment", Some(vec![selection]))
+        .await?;
+
+    let _request = response_mock.single_request();
+    let recorded_environments = recorded_environments
+        .lock()
+        .expect("recorded environments lock")
+        .clone();
+    assert_eq!(
+        recorded_environments,
+        vec![RecordedTurnInputEnvironment {
+            environment_id,
+            cwd,
+            is_primary: true,
+        }]
+    );
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -98,30 +215,29 @@ async fn model_visible_environment_context_preserves_foreign_workspace_roots() -
         ]),
     )
     .await;
-    let test = test_codex().build_with_auto_env(&server).await?;
+    let test = test_codex().build(&server).await?;
     let foreign_root = PathUri::parse("file:///C:/workspace")?;
 
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "inspect the workspace".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
+                permission_profile: Some(PermissionProfile::workspace_write()),
                 environments: Some(TurnEnvironmentSelections::new(
                     test.config.cwd.clone(),
                     vec![TurnEnvironmentSelection {
                         environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
                         cwd: PathUri::from_abs_path(&test.config.cwd),
                         workspace_roots: vec![foreign_root],
+                        config: EnvironmentConfigState::FromThread,
                     }],
                 )),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -138,134 +254,10 @@ async fn model_visible_environment_context_preserves_foreign_workspace_roots() -
         environment_context.contains("<workspace_roots><root>C:\\workspace</root>"),
         "foreign workspace root should remain visible to the model: {environment_context}"
     );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn environment_context_is_aggregate_bounded() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-    let response = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-1"),
-            ev_assistant_message("msg-1", "bounded"),
-            ev_completed("resp-1"),
-        ]),
-    )
-    .await;
-    let mut builder = test_codex().with_config(|config| {
-        let workspace_roots = (0..100)
-            .map(|index| {
-                config
-                    .cwd
-                    .join(format!("root-{index}-<&-{}", "x".repeat(2_000)))
-            })
-            .collect::<Vec<_>>();
-        config.workspace_roots = workspace_roots.clone();
-        config.permissions.set_workspace_roots(workspace_roots);
-    });
-    let test = builder.build(&server).await?;
-
-    test.submit_turn("bound environment context").await?;
-
-    let environment_context = response
-        .single_request()
-        .message_input_texts("user")
-        .into_iter()
-        .find(|text| text.starts_with("<environment_context>"))
-        .expect("environment context should be model visible");
-    assert!(approx_token_count(&environment_context) <= 8_000);
-    assert!(environment_context.contains("&lt;&amp;-"));
-    assert!(environment_context.contains("<omitted count=\"92\" />"));
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn configured_developer_instructions_are_individually_bounded() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-    let response = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-1"),
-            ev_assistant_message("msg-1", "bounded"),
-            ev_completed("resp-1"),
-        ]),
-    )
-    .await;
-    let oversized = |label: &str| format!("{label}-prefix\n{}\n{label}-suffix", "x".repeat(50_000));
-    let collaboration_instructions = oversized("collaboration");
-    let mut builder = test_codex()
-        .with_model("gpt-5.4")
-        .with_config(move |config| {
-            config.developer_instructions = Some(oversized("thread"));
-            config
-                .features
-                .enable(Feature::MultiAgentV2)
-                .expect("test config should allow feature update");
-            config.multi_agent_v2.non_code_mode_only = false;
-            config.multi_agent_v2.root_agent_usage_hint_text = Some(oversized("root-usage"));
-            config.multi_agent_v2.multi_agent_mode_hint_text = Some(oversized("multi-agent-mode"));
-            config.multi_agent_v2.usage_hint_text = Some(oversized("tool-usage"));
-        });
-    let test = builder.build(&server).await?;
-
-    test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "bound configured developer instructions".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
-                environments: Some(local_selections(test.config.cwd.clone())),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
-                        model: test.session_configured.model.clone(),
-                        reasoning_effort: test.config.model_reasoning_effort.clone(),
-                        developer_instructions: Some(collaboration_instructions),
-                    },
-                }),
-                ..Default::default()
-            },
-        })
-        .await?;
-    wait_for_event(&test.codex, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
-
-    let request = response.single_request();
-    let configured_fragments = request
-        .message_input_texts("developer")
-        .into_iter()
-        .filter(|text| {
-            ["thread", "collaboration", "root-usage", "multi-agent-mode"]
-                .iter()
-                .any(|label| text.contains(&format!("{label}-prefix")))
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(configured_fragments.len(), 4);
-    for fragment in configured_fragments {
-        assert!(approx_token_count(&fragment) <= 1_000);
-        assert!(fragment.contains("-suffix"));
-    }
-
-    let body = request.body_json();
-    let spawn_agent_description = namespace_child_tool(&body, "agents", "spawn_agent")
-        .and_then(|tool| tool["description"].as_str())
-        .expect("spawn_agent tool description");
-    assert!(approx_token_count(spawn_agent_description) <= 1_500);
-    assert!(spawn_agent_description.contains("tool-usage-prefix"));
-    assert!(spawn_agent_description.contains("tool-usage-suffix"));
+    assert!(
+        environment_context.contains("<entry access=\"write\"><path>C:\\workspace</path>"),
+        "foreign workspace root should retain its permissions: {environment_context}"
+    );
 
     Ok(())
 }
@@ -292,13 +284,12 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_model("gpt-5.4").with_config(|config| {
-        config
-            .features
-            .enable(Feature::Personality)
-            .expect("test config should allow feature update");
-        config.personality = Some(Personality::Pragmatic);
-    });
+    let mut builder = test_codex()
+        .with_extensions(skills_extensions())
+        .with_model("gpt-5.5")
+        .with_config(|config| {
+            config.update_plan_enabled = true;
+        });
     let test = builder.build(&server).await?;
     let preturn_context_diff_cwd = test.cwd_path().join(PRETURN_CONTEXT_DIFF_CWD);
     fs::create_dir_all(&preturn_context_diff_cwd)?;
@@ -308,30 +299,27 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
         turn_permission_fields(PermissionProfile::read_only(), first_turn_cwd.as_path());
 
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "first turn".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(first_turn_cwd)),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(first_sandbox_policy),
                 permission_profile: first_permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: test.config.model_reasoning_effort.clone(),
                         developer_instructions: None,
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -343,31 +331,27 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
         preturn_context_diff_cwd.as_path(),
     );
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "second turn with context updates".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(preturn_context_diff_cwd)),
                 approval_policy: Some(AskForApproval::OnRequest),
                 sandbox_policy: Some(second_sandbox_policy),
                 permission_profile: second_permission_profile,
-                personality: Some(Personality::Friendly),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: test.config.model_reasoning_effort.clone(),
                         developer_instructions: None,
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -379,7 +363,7 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
     insta::assert_snapshot!(
         "model_visible_layout_turn_overrides",
         format_labeled_requests_snapshot(
-            "Second turn changes cwd, approval policy, and personality while keeping model constant.",
+            "Second turn changes cwd and approval policy while keeping model constant.",
             &[
                 ("First Request (Baseline)", &requests[0]),
                 ("Second Request (Turn Overrides)", &requests[1]),
@@ -412,7 +396,10 @@ async fn snapshot_model_visible_layout_cwd_change_refreshes_agents() -> Result<(
     )
     .await;
 
-    let mut builder = test_codex().with_model("gpt-5.4");
+    let mut builder = test_codex()
+        .with_config(|config| config.update_plan_enabled = true)
+        .with_extensions(skills_extensions())
+        .with_model("gpt-5.5");
     let test = builder.build(&server).await?;
     let cwd_one = test.cwd_path().join("agents_one");
     let cwd_two = test.cwd_path().join("agents_two");
@@ -432,30 +419,27 @@ async fn snapshot_model_visible_layout_cwd_change_refreshes_agents() -> Result<(
         turn_permission_fields(PermissionProfile::read_only(), cwd_one.as_path());
 
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "first turn in agents_one".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(cwd_one.clone())),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(first_sandbox_policy),
                 permission_profile: first_permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: test.config.model_reasoning_effort.clone(),
                         developer_instructions: None,
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -465,30 +449,27 @@ async fn snapshot_model_visible_layout_cwd_change_refreshes_agents() -> Result<(
     let (second_sandbox_policy, second_permission_profile) =
         turn_permission_fields(PermissionProfile::read_only(), cwd_two.as_path());
     test.codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "second turn in agents_two".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(cwd_two)),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(second_sandbox_policy),
                 permission_profile: second_permission_profile,
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
                         model: test.session_configured.model.clone(),
                         reasoning_effort: test.config.model_reasoning_effort.clone(),
                         developer_instructions: None,
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -500,27 +481,17 @@ async fn snapshot_model_visible_layout_cwd_change_refreshes_agents() -> Result<(
     assert_eq!(
         user_instructions_wrapper_count(&requests[0]),
         1,
-        "expected first request to load project instructions created after session init"
+        "expected first request to include AGENTS.md from its selected cwd"
     );
     assert_eq!(
         user_instructions_wrapper_count(&requests[1]),
         2,
-        "expected second request to append replacement instructions after the cwd change"
+        "expected second request to retain the original AGENTS.md item and append its replacement"
     );
-    assert!(
-        requests[0]
-            .message_input_texts("user")
-            .iter()
-            .any(|text| text.contains("Turn one agents instructions."))
-    );
-    assert!(requests[1].message_input_texts("user").iter().any(|text| {
-        text.contains("replace all previously provided AGENTS.md instructions")
-            && text.contains("Turn two agents instructions.")
-    }));
     insta::assert_snapshot!(
         "model_visible_layout_cwd_change_refreshes_agents",
         format_labeled_requests_snapshot(
-            "Second turn changes cwd to a directory with different AGENTS.md and appends replacement instructions.",
+            "Second turn changes cwd to a directory with different AGENTS.md and refreshes the model-visible instructions.",
             &[
                 ("First Request (agents_one)", &requests[0]),
                 ("Second Request (agents_two cwd)", &requests[1]),
@@ -536,17 +507,14 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut initial_builder = test_codex().with_config(|config| {
-        config.model = Some("gpt-5.2".to_string());
-    });
+    let mut initial_builder = test_codex()
+        .with_extensions(skills_extensions())
+        .with_config(|config| {
+            config.update_plan_enabled = true;
+            config.model = Some("gpt-5.5".to_string());
+        });
     let initial = initial_builder.build(&server).await?;
     let codex = Arc::clone(&initial.codex);
-    let home = initial.home.clone();
-    let rollout_path = initial
-        .session_configured
-        .rollout_path
-        .clone()
-        .expect("rollout path");
 
     let initial_mock = mount_sse_once(
         &server,
@@ -558,20 +526,13 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
     )
     .await;
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "seed resume history".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "seed resume history".into(),
+            text_elements: Vec::new(),
+        }]))
         .await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
     let initial_request = initial_mock.single_request();
-    codex.shutdown_and_wait().await?;
 
     let resumed_mock = mount_sse_once(
         &server,
@@ -583,15 +544,14 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
     )
     .await;
 
-    let mut resume_builder = test_codex().with_config(|config| {
-        config.model = Some("gpt-5.4".to_string());
-        config
-            .features
-            .enable(Feature::Personality)
-            .expect("test config should allow feature update");
-        config.personality = Some(Personality::Pragmatic);
-    });
-    let resumed = resume_builder.resume(&server, home, rollout_path).await?;
+    let mut resume_builder = test_codex()
+        .with_extensions(skills_extensions())
+        .with_model_info_override("gpt-5.4", |_| {})
+        .with_config(|config| {
+            config.update_plan_enabled = true;
+            config.personality = Some(Personality::Pragmatic);
+        });
+    let resumed = resume_builder.restart(&server, &initial).await?;
     let resume_override_cwd = resumed.cwd_path().join(PRETURN_CONTEXT_DIFF_CWD);
     fs::create_dir_all(&resume_override_cwd)?;
     let resume_override_cwd = resume_override_cwd.abs();
@@ -601,31 +561,28 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
     );
     resumed
         .codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "resume and change personality".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(resume_override_cwd)),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
                 personality: Some(Personality::Friendly),
-                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
-                    mode: codex_protocol::config_types::ModeKind::Default,
-                    settings: codex_protocol::config_types::Settings {
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: Settings {
                         model: resumed.session_configured.model.clone(),
                         reasoning_effort: resumed.config.model_reasoning_effort.clone(),
                         developer_instructions: None,
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
     wait_for_event(&resumed.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -633,6 +590,12 @@ async fn snapshot_model_visible_layout_resume_with_personality_change() -> Resul
     .await;
 
     let resumed_request = resumed_mock.single_request();
+    assert!(
+        resumed_request
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text.contains(&format!("{PRETURN_CONTEXT_DIFF_CWD}</cwd>")))
+    );
     insta::assert_snapshot!(
         "model_visible_layout_resume_with_personality_change",
         format_labeled_requests_snapshot(
@@ -652,17 +615,14 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut initial_builder = test_codex().with_config(|config| {
-        config.model = Some("gpt-5.2".to_string());
-    });
+    let mut initial_builder = test_codex()
+        .with_extensions(skills_extensions())
+        .with_config(|config| {
+            config.update_plan_enabled = true;
+            config.model = Some("gpt-5.2".to_string());
+        });
     let initial = initial_builder.build(&server).await?;
     let codex = Arc::clone(&initial.codex);
-    let home = initial.home.clone();
-    let rollout_path = initial
-        .session_configured
-        .rollout_path
-        .clone()
-        .expect("rollout path");
 
     let initial_mock = mount_sse_once(
         &server,
@@ -674,20 +634,13 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
     )
     .await;
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "seed resume history".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "seed resume history".into(),
+            text_elements: Vec::new(),
+        }]))
         .await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
     let initial_request = initial_mock.single_request();
-    codex.shutdown_and_wait().await?;
 
     let resumed_mock = mount_sse_once(
         &server,
@@ -699,16 +652,19 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
     )
     .await;
 
-    let mut resume_builder = test_codex().with_config(|config| {
-        config.model = Some("gpt-5.4".to_string());
-    });
-    let resumed = resume_builder.resume(&server, home, rollout_path).await?;
+    let mut resume_builder = test_codex()
+        .with_extensions(skills_extensions())
+        .with_model_info_override("gpt-5.4", |_| {})
+        .with_config(|config| {
+            config.update_plan_enabled = true;
+        });
+    let resumed = resume_builder.restart(&server, &initial).await?;
     let resume_override_cwd = resumed.cwd_path().join(PRETURN_CONTEXT_DIFF_CWD);
     fs::create_dir_all(&resume_override_cwd)?;
     let resume_override_cwd = resume_override_cwd.abs();
     core_test_support::submit_thread_settings(
         &resumed.codex,
-        codex_protocol::protocol::ThreadSettingsOverrides {
+        ThreadSettingsOverrides {
             environments: Some(local_selections(resume_override_cwd)),
             model: Some("gpt-5.2".to_string()),
             ..Default::default()
@@ -717,16 +673,10 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
     .await?;
     resumed
         .codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
-                text: "first resumed turn after model override".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: Default::default(),
-        })
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "first resumed turn after model override".into(),
+            text_elements: Vec::new(),
+        }]))
         .await?;
     wait_for_event(&resumed.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -734,6 +684,12 @@ async fn snapshot_model_visible_layout_resume_override_matches_rollout_model() -
     .await;
 
     let resumed_request = resumed_mock.single_request();
+    assert!(
+        resumed_request
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text.contains(&format!("{PRETURN_CONTEXT_DIFF_CWD}</cwd>")))
+    );
     insta::assert_snapshot!(
         "model_visible_layout_resume_override_matches_rollout_model",
         format_labeled_requests_snapshot(

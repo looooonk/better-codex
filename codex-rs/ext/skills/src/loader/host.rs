@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use codex_exec_server::ExecutorFileSystem;
+use codex_exec_server::FileSystemEnvironmentAccessor;
+use codex_exec_server::GetMetadataOptions;
+use codex_exec_server::ReadFileOptions;
 use codex_protocol::protocol::SkillScope;
 use codex_skills::ParsedSkillFrontmatter;
 use codex_skills::SkillError;
@@ -9,6 +12,7 @@ use codex_skills::SkillMetadata;
 use codex_skills::parse_skill_frontmatter_metadata;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use codex_utils_plugins::PluginIdentity;
 use codex_utils_plugins::PluginSkillRoot;
 use codex_utils_plugins::SkillDiscoveryMode;
 use futures::StreamExt;
@@ -40,7 +44,7 @@ pub(crate) struct HostSkillRoot {
 }
 
 struct PluginSkillRootContext {
-    id: String,
+    identity: PluginIdentity,
     namespace: String,
     root: AbsolutePathBuf,
     discovery_mode: SkillDiscoveryMode,
@@ -66,7 +70,7 @@ impl HostSkillRoot {
             scope: SkillScope::User,
             file_system,
             plugin: Some(PluginSkillRootContext {
-                id: root.plugin_id,
+                identity: root.plugin_identity,
                 namespace: root.plugin_namespace,
                 root: root.plugin_root,
                 discovery_mode: root.discovery_mode,
@@ -74,8 +78,9 @@ impl HostSkillRoot {
         }
     }
 
-    pub(crate) fn plugin_id(&self) -> Option<&str> {
-        self.plugin.as_ref().map(|plugin| plugin.id.as_str())
+    /// Returns the owning plugin identity when this root belongs to a plugin.
+    pub(crate) fn plugin_identity(&self) -> Option<&PluginIdentity> {
+        self.plugin.as_ref().map(|plugin| &plugin.identity)
     }
 
     pub(crate) fn plugin_namespace(&self) -> Option<&str> {
@@ -89,7 +94,7 @@ impl HostSkillRoot {
     pub(crate) fn plugin_skill_root(&self) -> Option<PluginSkillRoot> {
         self.plugin.as_ref().map(|plugin| PluginSkillRoot {
             path: self.path.clone(),
-            plugin_id: plugin.id.clone(),
+            plugin_identity: plugin.identity.clone(),
             plugin_namespace: plugin.namespace.clone(),
             plugin_root: plugin.root.clone(),
             discovery_mode: plugin.discovery_mode,
@@ -147,7 +152,10 @@ async fn load_skills_under_root(
     Vec<SkillError>,
 ) {
     let file_system = skill_root.file_system.as_ref();
-    let plugin_id = skill_root.plugin_id();
+    // TODO(anp): Bind discovery to turn permissions when host skill roots accept an accessor;
+    // until then, keep using the same unrestricted filesystem that supplied the root.
+    let discovery_access = FileSystemEnvironmentAccessor::unrestricted(&skill_root.file_system);
+    let plugin_identity = skill_root.plugin_identity();
     let plugin_root = match skill_root.plugin_root() {
         Some(plugin_root) => Some(canonicalize_for_skill_identity(file_system, plugin_root).await),
         None => None,
@@ -163,7 +171,7 @@ async fn load_skills_under_root(
         mut namespace_roots,
         warnings,
     } = discover_skills(
-        file_system,
+        &discovery_access,
         &PathUri::from_abs_path(root),
         SkillDiscoveryOptions {
             directory_symlinks,
@@ -217,7 +225,14 @@ async fn load_skills_under_root(
                     );
                     return None;
                 }
-                match file_system.get_metadata(&path_uri, /*sandbox*/ None).await {
+                match file_system
+                    .get_metadata(
+                        &path_uri,
+                        GetMetadataOptions::default(),
+                        /*sandbox*/ None,
+                    )
+                    .await
+                {
                     Ok(metadata) if metadata.is_file => {}
                     Ok(_) => {
                         error!(
@@ -259,7 +274,7 @@ async fn load_skills_under_root(
             Some(namespace) => SkillNamespaceResolver::with_provided_namespace(namespace),
             None => {
                 SkillNamespaceResolver::discover(
-                    file_system,
+                    &discovery_access,
                     &root_uri,
                     &skill_paths,
                     plugin_roots,
@@ -284,7 +299,7 @@ async fn load_skills_under_root(
                     &skill.path,
                     &skill.path_uri,
                     skill_root.scope,
-                    plugin_id,
+                    plugin_identity,
                     plugin_root,
                 )
                 .await;
@@ -332,7 +347,7 @@ async fn parse_skill_file(
     path: &AbsolutePathBuf,
     path_uri: &PathUri,
     scope: SkillScope,
-    plugin_id: Option<&str>,
+    plugin_identity: Option<&PluginIdentity>,
     plugin_root: Option<&AbsolutePathBuf>,
 ) -> Result<SkillMetadata, String> {
     let metadata_path = path_uri
@@ -346,7 +361,7 @@ async fn parse_skill_file(
     }
     .unwrap_or(SkillMetadataDiscovery::Absent);
     let (contents, loaded_metadata) = tokio::join!(
-        file_system.read_file_text(path_uri, /*sandbox*/ None),
+        file_system.read_file_text(path_uri, ReadFileOptions::default(), /*sandbox*/ None,),
         load_host_skill_metadata(file_system, path, &metadata, plugin_root),
     );
     let contents = contents.map_err(|error| format!("failed to read file: {error}"))?;
@@ -371,7 +386,8 @@ async fn parse_skill_file(
         policy,
         path_to_skills_md: path.clone(),
         scope,
-        plugin_id: plugin_id.map(str::to_string),
+        plugin_id: plugin_identity.map(|identity| identity.plugin_id.clone()),
+        remote_plugin_id: plugin_identity.and_then(|identity| identity.remote_plugin_id.clone()),
     })
 }
 
@@ -402,3 +418,7 @@ async fn canonicalize_for_skill_identity(
 #[cfg(test)]
 #[path = "host_tests.rs"]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "host_io_tests.rs"]
+mod io_tests;

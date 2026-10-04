@@ -1,0 +1,5 @@
+---
+source: tui/src/app_shell/bedrock_tests.rs
+expression: render_visible(&state)
+---
+Checking for AWS GovCloud...

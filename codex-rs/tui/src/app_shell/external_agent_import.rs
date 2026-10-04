@@ -177,6 +177,10 @@ impl ShellState {
         let cwd = PathBuf::from(&self.cwd);
         match app_server
             .external_agent_config_detect(ExternalAgentConfigDetectParams {
+                max_session_age_days: None,
+                max_sessions: None,
+                migration_source: None,
+                source: None,
                 include_home: true,
                 cwds: Some(vec![cwd]),
             })

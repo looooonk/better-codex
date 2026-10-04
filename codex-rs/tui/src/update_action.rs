@@ -8,6 +8,8 @@ use codex_install_context::StandalonePlatform;
 /// Update action the CLI should perform after the TUI exits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAction {
+    /// Update the background server after restoring the terminal.
+    Daemon(DaemonUpdateSource),
     /// Update via the Better Codex standalone installer.
     StandaloneUnix,
 }
@@ -22,6 +24,7 @@ impl UpdateAction {
             },
             InstallMethod::Npm
             | InstallMethod::Bun
+            | InstallMethod::VitePlus
             | InstallMethod::Pnpm
             | InstallMethod::Brew
             | InstallMethod::Other => None,
@@ -31,6 +34,7 @@ impl UpdateAction {
     /// Returns the list of command-line arguments for invoking the update.
     pub fn command_args(self) -> (&'static str, &'static [&'static str]) {
         match self {
+            UpdateAction::Daemon(source) => ("better-codex", source.command_args()),
             UpdateAction::StandaloneUnix => (
                 "sh",
                 &[
@@ -137,5 +141,21 @@ mod tests {
                 ][..],
             )
         );
+    }
+}
+
+/// Package source explicitly selected by the user in the daemon menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonUpdateSource {
+    PublicStable,
+    ThisCli,
+}
+
+impl DaemonUpdateSource {
+    pub fn command_args(self) -> &'static [&'static str] {
+        match self {
+            Self::PublicStable => &["app-server", "daemon", "update"],
+            Self::ThisCli => &["app-server", "daemon", "update", "--from-cli", "--yes"],
+        }
     }
 }

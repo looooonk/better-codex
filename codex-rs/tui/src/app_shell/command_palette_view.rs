@@ -102,12 +102,25 @@ pub(super) fn render(shell: &ShellState, area: Rect, buf: &mut Buffer) {
         Line::from(""),
     ];
     palette_lines.extend(lines);
-    palette_lines.push(palette_footer(
-        state.selected(),
-        entries.len(),
-        &visible_range,
-        content.width,
-    ));
+    if shell.keybindings.has_overrides() {
+        palette_lines.push(
+            format!(
+                "{} / {} move  {} select  {} close",
+                shell.keybindings.hint("list", "move_up", "up"),
+                shell.keybindings.hint("list", "move_down", "down"),
+                shell.keybindings.hint("list", "accept", "Enter"),
+                shell.keybindings.hint("list", "cancel", "Esc")
+            )
+            .into(),
+        );
+    } else {
+        palette_lines.push(palette_footer(
+            state.selected(),
+            entries.len(),
+            &visible_range,
+            content.width,
+        ));
+    }
     Paragraph::new(palette_lines)
         .style(pane_style(palette::elevated()))
         .render(content, buf);

@@ -17,6 +17,10 @@ use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum ActionGroup {
+    StatusMetadata,
+    IdeStatus,
+    TurnSteer,
+    Workspace,
     Approval,
     Compaction,
     ConversationBranch,
@@ -26,6 +30,7 @@ pub(super) enum ActionGroup {
     Settings,
     TurnStart,
     UserInput,
+    UserVerification,
     QueueHydration,
     QueueMutation,
 }
@@ -38,6 +43,55 @@ pub(super) enum TurnSubmission {
 
 #[derive(Debug)]
 pub(super) enum BackendActionResult {
+    StatusSurface {
+        change: super::status_surfaces::SurfaceChange,
+        selector: Option<super::selector::SelectorState<super::selector::SelectorValue>>,
+        result: Result<super::status_surfaces::Preferences>,
+    },
+    StatusMetadata {
+        thread_id: ThreadId,
+        cwd: String,
+        result: Option<super::status_surface_metadata::StatusMetadata>,
+    },
+    IdeStatus {
+        cwd: String,
+        result: Result<crate::ide_context::IdeContext, String>,
+    },
+    IdeQueuePrepared {
+        thread_id: ThreadId,
+        mutation: QueueMutation,
+        result: Result<crate::ide_context::IdeContext, String>,
+    },
+    IdeSteerPrepared {
+        params: super::backend::AppShellTurnSteer,
+        prompt: String,
+        result: Result<crate::ide_context::IdeContext, String>,
+    },
+    IdeSteerSubmitted {
+        params: super::backend::AppShellTurnSteer,
+        prompt: String,
+        result: Result<codex_app_server_protocol::TurnSteerResponse>,
+    },
+    IdeTurnPrepared {
+        params: AppShellTurnStart,
+        prompt: String,
+        submission: TurnSubmission,
+        result: Result<crate::ide_context::IdeContext, String>,
+    },
+    SideFork {
+        parent_id: ThreadId,
+        question: String,
+        result: Result<AppServerStartedThread>,
+    },
+    UserVerification {
+        request_id: RequestId,
+        attempt_id: RequestId,
+        result: Result<codex_app_server_protocol::UserVerificationVerifyResponse>,
+    },
+    Workspace {
+        thread_id: ThreadId,
+        result: Result<super::workspace_requests::WorkspaceResponse>,
+    },
     Approval {
         request_id: RequestId,
         edit_prompt: Option<String>,
@@ -188,6 +242,17 @@ impl ShellState {
     where
         F: Future<Output = BackendActionResult> + Send + 'static,
     {
+        if group == ActionGroup::Workspace
+            && (self.pending_worktree.is_some()
+                || self.has_pending_backend_action(ActionGroup::Settings)
+                || self.has_pending_backend_action(ActionGroup::SessionSwitch)
+                || self.has_pending_backend_action(ActionGroup::ConversationBranch))
+        {
+            self.push_status(
+                "wait for settings or the session transition before running workspace commands",
+            );
+            return false;
+        }
         if self.backend_actions.start(Some(group), future) {
             self.status = description.to_string();
             true
@@ -198,7 +263,12 @@ impl ShellState {
     }
 
     pub(super) fn has_pending_backend_actions(&self) -> bool {
-        self.backend_actions.is_pending()
+        self.recap.has_work()
+            || self.backend_actions.is_pending()
+            || self
+                .side_parent
+                .as_ref()
+                .is_some_and(|parent| parent.has_pending_backend_actions())
     }
 
     pub(super) fn has_pending_backend_action(&self, group: ActionGroup) -> bool {
@@ -209,7 +279,12 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        let mut changed = false;
+        let mut changed = if let Some(parent) = self.side_parent.as_mut() {
+            Box::pin(parent.poll_backend_actions(app_server)).await
+        } else {
+            false
+        };
+        changed |= self.poll_recap().await;
         while let Some(completion) = self.backend_actions.try_next() {
             changed = true;
             match completion {
@@ -228,6 +303,54 @@ impl ShellState {
         S: AppShellBackend,
     {
         match action {
+            BackendActionResult::StatusSurface {
+                change,
+                selector,
+                result,
+            } => self.complete_status_surface(change, selector, result),
+            BackendActionResult::StatusMetadata {
+                thread_id,
+                cwd,
+                result,
+            } => self.complete_status_metadata(thread_id, cwd, result),
+            BackendActionResult::IdeStatus { cwd, result } => self.complete_ide_status(cwd, result),
+            BackendActionResult::IdeQueuePrepared {
+                thread_id,
+                mutation,
+                result,
+            } => self.complete_ide_queue(app_server, thread_id, mutation, result),
+            BackendActionResult::IdeSteerPrepared {
+                params,
+                prompt,
+                result,
+            } => self.complete_ide_steer(app_server, params, prompt, result),
+            BackendActionResult::IdeSteerSubmitted {
+                params,
+                prompt,
+                result,
+            } => self.complete_ide_steer_submission(params, prompt, result),
+            BackendActionResult::IdeTurnPrepared {
+                params,
+                prompt,
+                submission,
+                result,
+            } => self.complete_ide_turn(app_server, params, prompt, submission, result),
+            BackendActionResult::SideFork {
+                parent_id,
+                question,
+                result,
+            } => self.complete_side_fork(app_server, parent_id, question, result),
+            BackendActionResult::UserVerification {
+                request_id,
+                attempt_id,
+                result,
+            } => {
+                self.complete_user_verification(app_server, request_id, attempt_id, result)
+                    .await
+            }
+            BackendActionResult::Workspace { thread_id, result } => {
+                self.complete_workspace_request(thread_id, result);
+            }
             BackendActionResult::TurnStart {
                 params,
                 prompt,

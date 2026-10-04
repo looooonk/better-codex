@@ -3,36 +3,31 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
-use std::future::Future;
 use std::hash::Hash;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::Weak;
 
-use codex_code_mode::InProcessCodeModeSession;
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+use codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
+use codex_code_mode_runtime::InProcessCodeModeSession;
 use serde_json::Value as JsonValue;
 use tokio::sync::Notify;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
 use tonic::Status;
 use uuid::Uuid;
 
 use super::GrpcStream;
-use super::delegate::GrpcDelegate;
 use super::events::EventSender;
-use super::events::MAX_HOST_EVENT_BYTES;
-use super::events::MAX_SESSION_EVENT_BYTES;
-use super::principal::GrpcPrincipal;
 use super::validation;
 use super::waits::ActiveWait;
 use crate::HostLimits;
@@ -41,91 +36,52 @@ use crate::MAX_IN_FLIGHT_REQUESTS;
 use crate::MAX_RECENT_REQUEST_IDS;
 use crate::OUTGOING_CHANNEL_CAPACITY;
 
-pub(crate) const MAX_OPEN_GRPC_SESSIONS: usize = 6;
-pub(crate) const MAX_HOST_TOOL_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES * 8;
-const MAX_SESSION_TOOL_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES * 2;
-pub(crate) const MAX_GRPC_PENDING_DELEGATE_CALLS: usize = 8;
-
 pub(super) struct GrpcHostState {
     sessions: Mutex<HashMap<Uuid, Arc<GrpcSession>>>,
     limits: HostLimits,
     delegate_permits: Arc<Semaphore>,
     control_permits: Arc<Semaphore>,
-    event_byte_permits: Arc<Semaphore>,
-    tool_byte_permits: Arc<Semaphore>,
 }
 
 pub(super) struct GrpcSession {
     pub(super) id: Uuid,
-    principal: GrpcPrincipal,
     pub(super) runtime: Arc<InProcessCodeModeSession>,
     pub(super) closed: CancellationToken,
     pub(super) state: Mutex<SessionState>,
     events: EventSender,
     cells_changed: Notify,
     delegate_permits: Arc<Semaphore>,
-    session_tool_byte_permits: Arc<Semaphore>,
-    host_tool_byte_permits: Arc<Semaphore>,
-    tasks: TaskTracker,
 }
 
 #[derive(Default)]
 pub(super) struct SessionState {
-    shutdown_started: bool,
     pub(super) cells: HashMap<String, ExecutionState>,
     pending_executions: HashSet<String>,
     pending_closures: HashSet<String>,
-    seen_executions: BoundedIds,
+    pub(super) seen_executions: BoundedIds,
+    pub(super) execution_yields: HashMap<String, CancellationToken>,
+    pub(super) yielded_executions: BoundedIds,
     pub(super) subscriptions: Vec<ToolSubscription>,
     pub(super) next_subscription: usize,
     pub(super) pending_invocations: HashMap<Uuid, PendingInvocation>,
     pub(super) seen_invocations: BoundedIds<Uuid>,
-    pub(super) pending_notifications: HashMap<Uuid, oneshot::Sender<()>>,
-    seen_notifications: BoundedIds<Uuid>,
     pub(super) waits: HashMap<String, ActiveWait>,
     pub(super) seen_waits: BoundedIds,
     pub(super) cancelled_waits: BoundedIds,
+    pub(super) yielded_waits: BoundedIds,
 }
 
 pub(super) struct ExecutionState {
     pub(super) execution_id: String,
+    pub(super) traceparent: Option<String>,
     pub(super) tool_call_sequence: u64,
-    pub(super) runtime_closed: bool,
-    pub(super) terminal_observed: bool,
     permit: OwnedSemaphorePermit,
 }
 
 pub(super) struct ToolSubscription {
     pub(super) id: Uuid,
     pub(super) filters: Vec<proto::ToolName>,
-    pub(super) sender: mpsc::Sender<BufferedToolCall>,
-}
-
-pub(super) struct BufferedToolCall {
-    pub(super) message: proto::ToolCall,
-    _reservation: ToolByteReservation,
-}
-
-pub(super) struct ToolByteReservation {
-    _session: OwnedSemaphorePermit,
-    _host: OwnedSemaphorePermit,
-}
-
-impl ToolByteReservation {
-    pub(super) fn retain(mut self, bytes: usize) -> Result<Self, String> {
-        let session = self
-            ._session
-            .split(bytes)
-            .ok_or_else(|| "code-mode session tool-call reservation was too small".to_string())?;
-        let host = self
-            ._host
-            .split(bytes)
-            .ok_or_else(|| "code-mode host tool-call reservation was too small".to_string())?;
-        Ok(Self {
-            _session: session,
-            _host: host,
-        })
-    }
+    pub(super) sender: mpsc::Sender<Result<proto::ToolCall, Status>>,
 }
 
 pub(super) struct PendingInvocation {
@@ -144,50 +100,34 @@ impl GrpcHostState {
         Self {
             sessions: Mutex::new(HashMap::new()),
             limits: HostLimits::new(),
-            delegate_permits: Arc::new(Semaphore::new(MAX_GRPC_PENDING_DELEGATE_CALLS)),
+            delegate_permits: Arc::new(Semaphore::new(MAX_PENDING_DELEGATE_CALLS)),
             control_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
-            event_byte_permits: Arc::new(Semaphore::new(MAX_HOST_EVENT_BYTES)),
-            tool_byte_permits: Arc::new(Semaphore::new(MAX_HOST_TOOL_BYTES)),
         }
     }
 
     pub(super) fn open_session(
         self: &Arc<Self>,
         limits: CodeModeSessionCellExecutionLimits,
-        principal: GrpcPrincipal,
     ) -> Result<GrpcStream<proto::SessionEvent>, Status> {
-        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-        if sessions.len() >= MAX_OPEN_GRPC_SESSIONS {
-            return Err(Status::resource_exhausted(
-                "code-mode host has too many open sessions",
-            ));
-        }
         let id = Uuid::new_v4();
         let (events, receiver) = mpsc::channel(OUTGOING_CHANNEL_CAPACITY);
         let closed = CancellationToken::new();
-        let event_sender = EventSender::new(
-            events.clone(),
-            closed.clone(),
-            Arc::new(Semaphore::new(MAX_SESSION_EVENT_BYTES)),
-            Arc::clone(&self.event_byte_permits),
-        );
+        let event_sender = EventSender::new(events.clone(), closed.clone());
         let session = GrpcSession::new(
             id,
-            principal,
             event_sender,
             closed,
             Arc::clone(&self.delegate_permits),
-            Arc::clone(&self.tool_byte_permits),
             limits,
         );
-        session
-            .send_event_now(
-                proto::session_event::Event::Opened(proto::SessionOpened {
+        events
+            .try_send(Ok(proto::SessionEvent {
+                event: Some(proto::session_event::Event::Opened(proto::SessionOpened {
                     session_id: id.to_string(),
-                }),
-                /*cell_permit*/ None,
-            )
-            .map_err(Status::internal)?;
+                })),
+            }))
+            .map_err(|_| Status::internal("failed to publish the opened code-mode session"))?;
+        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         sessions.insert(id, Arc::clone(&session));
         drop(sessions);
 
@@ -204,31 +144,9 @@ impl GrpcHostState {
             }
         });
 
-        Ok(super::events::event_stream(receiver))
+        Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 
-    pub(super) fn session_for_principal(
-        &self,
-        id: &str,
-        principal: GrpcPrincipal,
-    ) -> Result<Arc<GrpcSession>, Status> {
-        let session_id = validation::uuid(id, "session ID")?;
-        let session = self
-            .sessions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&session_id)
-            .cloned()
-            .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
-        if session.principal != principal {
-            return Err(Status::permission_denied(
-                "code-mode session belongs to another caller",
-            ));
-        }
-        Ok(session)
-    }
-
-    #[cfg(test)]
     pub(super) fn session(&self, id: &str) -> Result<Arc<GrpcSession>, Status> {
         let session_id = validation::uuid(id, "session ID")?;
         self.sessions
@@ -239,24 +157,15 @@ impl GrpcHostState {
             .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))
     }
 
-    pub(super) fn take_session_for_close(
-        &self,
-        id: &str,
-        principal: GrpcPrincipal,
-    ) -> Result<Arc<GrpcSession>, Status> {
+    pub(super) async fn close_session(&self, id: &str) -> Result<(), Status> {
         let session_id = validation::uuid(id, "session ID")?;
-        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
-        if session.principal != principal {
-            return Err(Status::permission_denied(
-                "code-mode session belongs to another caller",
-            ));
-        }
-        Ok(sessions
+        let session = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .remove(&session_id)
-            .expect("session was checked above"))
+            .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
+        session.shutdown().await
     }
 
     async fn close_lease(&self, id: Uuid, expected: &Arc<GrpcSession>) {
@@ -300,15 +209,12 @@ impl GrpcHostState {
 impl GrpcSession {
     fn new(
         id: Uuid,
-        principal: GrpcPrincipal,
         events: EventSender,
         closed: CancellationToken,
         delegate_permits: Arc<Semaphore>,
-        host_tool_byte_permits: Arc<Semaphore>,
         limits: CodeModeSessionCellExecutionLimits,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak: &Weak<Self>| {
-            let delegate = Arc::new(GrpcDelegate::new(weak.clone()));
             let failure_session = weak.clone();
             let failure_handler = Arc::new(move |reason: String| {
                 if let Some(session) = failure_session.upgrade() {
@@ -318,79 +224,37 @@ impl GrpcSession {
             });
             Self {
                 id,
-                principal,
-                runtime: Arc::new(
-                    InProcessCodeModeSession::with_delegate_and_task_failure_handler(
-                        delegate,
-                        failure_handler,
-                        limits,
-                    ),
-                ),
+                runtime: Arc::new(InProcessCodeModeSession::with_task_failure_handler(
+                    failure_handler,
+                    limits,
+                )),
                 closed,
                 state: Mutex::new(SessionState::default()),
                 events,
                 cells_changed: Notify::new(),
                 delegate_permits,
-                session_tool_byte_permits: Arc::new(Semaphore::new(MAX_SESSION_TOOL_BYTES)),
-                host_tool_byte_permits,
-                tasks: TaskTracker::new(),
             }
         })
     }
 
-    pub(super) async fn shutdown(&self) -> Result<(), Status> {
-        self.shutdown_with_deadline(tokio::time::Instant::now() + crate::SHUTDOWN_TIMEOUT)
-            .await
-    }
-
-    pub(super) async fn shutdown_with_deadline(
-        &self,
-        deadline: tokio::time::Instant,
-    ) -> Result<(), Status> {
+    async fn shutdown(&self) -> Result<(), Status> {
         self.closed.cancel();
         {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if state.shutdown_started {
-                return Ok(());
-            }
-            state.shutdown_started = true;
-            self.tasks.close();
             for wait in state.waits.values() {
                 wait.cancellation.cancel();
             }
             state.pending_invocations.clear();
-            state.pending_notifications.clear();
             state.subscriptions.clear();
         }
-        let shutdown = async {
-            let (runtime, (), ()) = tokio::join!(
-                self.runtime.shutdown(),
-                self.events.shutdown(),
-                self.tasks.wait(),
-            );
-            runtime.map_err(Status::internal)
-        };
-        let result = tokio::time::timeout_at(deadline, shutdown)
-            .await
-            .unwrap_or_else(|_| {
-                Err(Status::deadline_exceeded(
-                    "timed out shutting down code-mode gRPC session",
-                ))
-            });
-        *self.state.lock().unwrap_or_else(PoisonError::into_inner) = SessionState {
-            shutdown_started: true,
-            ..SessionState::default()
-        };
+        let result = self.runtime.shutdown().await.map_err(Status::internal);
+        self.events.shutdown().await;
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .cells
+            .clear();
         result
-    }
-
-    pub(super) fn spawn_task(&self, task: impl Future<Output = ()> + Send + 'static) -> bool {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.shutdown_started || self.closed.is_cancelled() {
-            return false;
-        }
-        self.tasks.spawn(task);
-        true
     }
 
     pub(super) async fn terminate(&self, cell_id: CellId) -> Result<WaitOutcome, Status> {
@@ -405,7 +269,10 @@ impl GrpcSession {
         }
     }
 
-    pub(super) fn reserve_execution(&self, execution_id: &str) -> Result<(), Status> {
+    pub(super) fn reserve_execution(
+        &self,
+        execution_id: &str,
+    ) -> Result<CancellationToken, Status> {
         validation::identifier(execution_id, "execution ID")?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if self.closed.is_cancelled() {
@@ -423,7 +290,14 @@ impl GrpcSession {
             )));
         }
         state.pending_executions.insert(execution_id.to_string());
-        Ok(())
+        let yield_signal = CancellationToken::new();
+        if state.yielded_executions.remove(execution_id) {
+            yield_signal.cancel();
+        }
+        state
+            .execution_yields
+            .insert(execution_id.to_string(), yield_signal.clone());
+        Ok(yield_signal)
     }
 
     pub(super) fn admit_execution(
@@ -431,56 +305,47 @@ impl GrpcSession {
         execution_id: String,
         cell_id: String,
         permit: OwnedSemaphorePermit,
+        traceparent: Option<String>,
     ) -> Result<(), Status> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if self.closed.is_cancelled() {
-            return Err(Status::cancelled("code-mode session is closed"));
-        }
         if !state.pending_executions.remove(&execution_id) {
             return Err(Status::cancelled("code-mode execution was abandoned"));
         }
-        let runtime_closed = state.pending_closures.remove(&cell_id);
-        let Entry::Vacant(entry) = state.cells.entry(cell_id) else {
+        let Entry::Vacant(entry) = state.cells.entry(cell_id.clone()) else {
             return Err(Status::internal(
                 "code-mode runtime reused an active cell ID",
             ));
         };
         entry.insert(ExecutionState {
             execution_id,
+            traceparent,
             tool_call_sequence: 0,
-            runtime_closed,
-            terminal_observed: false,
             permit,
         });
+        let closed = state.pending_closures.remove(&cell_id);
+        let closed_execution = closed.then(|| state.cells.remove(&cell_id)).flatten();
         drop(state);
         self.cells_changed.notify_waiters();
+        if let Some(execution) = closed_execution {
+            self.send_cell_closed(&cell_id, execution);
+        }
         Ok(())
     }
 
     pub(super) fn abandon_execution(self: &Arc<Self>, execution_id: &str) {
-        let (cell_id, closed_execution) = {
+        let cell_id = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.pending_executions.remove(execution_id);
-            let cell_id = state
+            state.execution_yields.remove(execution_id);
+            state
                 .cells
                 .iter()
                 .find(|(_, execution)| execution.execution_id == execution_id)
-                .map(|(cell_id, _)| cell_id.clone());
-            let closed_execution = cell_id.as_ref().and_then(|cell_id| {
-                let should_remove = state.cells.get_mut(cell_id).is_some_and(|execution| {
-                    execution.terminal_observed = true;
-                    execution.runtime_closed
-                });
-                should_remove.then(|| state.cells.remove(cell_id)).flatten()
-            });
-            (cell_id, closed_execution)
+                .map(|(cell_id, _)| cell_id.clone())
         };
-        if let (Some(cell_id), Some(execution)) = (&cell_id, closed_execution) {
-            self.send_cell_closed(cell_id, execution);
-        }
         if let Some(cell_id) = cell_id {
             let session = Arc::clone(self);
-            self.spawn_task(async move {
+            tokio::spawn(async move {
                 let _ = session.terminate(CellId::new(cell_id)).await;
             });
         }
@@ -518,14 +383,9 @@ impl GrpcSession {
     pub(super) fn close_cell(&self, cell_id: &str) {
         let execution = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            let can_queue_closure = state.pending_closures.len() < MAX_ACTIVE_CELLS;
-            match state.cells.get_mut(cell_id) {
-                Some(execution) => {
-                    execution.runtime_closed = true;
-                    let should_remove = execution.terminal_observed;
-                    should_remove.then(|| state.cells.remove(cell_id)).flatten()
-                }
-                None if can_queue_closure => {
+            match state.cells.remove(cell_id) {
+                Some(execution) => Some(execution),
+                None if state.pending_closures.len() < MAX_ACTIVE_CELLS => {
                     state.pending_closures.insert(cell_id.to_string());
                     None
                 }
@@ -534,21 +394,6 @@ impl GrpcSession {
                     None
                 }
             }
-        };
-        if let Some(execution) = execution {
-            self.send_cell_closed(cell_id, execution);
-        }
-    }
-
-    pub(super) fn terminal_outcome_observed(&self, cell_id: &str) {
-        let execution = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            let Some(execution) = state.cells.get_mut(cell_id) else {
-                return;
-            };
-            execution.terminal_observed = true;
-            let should_remove = execution.runtime_closed;
-            should_remove.then(|| state.cells.remove(cell_id)).flatten()
         };
         if let Some(execution) = execution {
             self.send_cell_closed(cell_id, execution);
@@ -572,35 +417,6 @@ impl GrpcSession {
             .map_err(|_| "code-mode host has too many pending delegate calls".to_string())
     }
 
-    pub(super) fn reserve_tool_bytes(&self, bytes: usize) -> Result<ToolByteReservation, String> {
-        if bytes == 0 || bytes > MAX_APPLICATION_MESSAGE_BYTES {
-            return Err("invalid code-mode tool-call byte reservation".to_string());
-        }
-        let bytes = u32::try_from(bytes)
-            .map_err(|_| "code-mode tool-call budget exceeds this platform".to_string())?;
-        let session = Arc::clone(&self.session_tool_byte_permits)
-            .try_acquire_many_owned(bytes)
-            .map_err(|_| "code-mode session tool-call budget is exhausted".to_string())?;
-        let host = Arc::clone(&self.host_tool_byte_permits)
-            .try_acquire_many_owned(bytes)
-            .map_err(|_| "code-mode host tool-call budget is exhausted".to_string())?;
-        Ok(ToolByteReservation {
-            _session: session,
-            _host: host,
-        })
-    }
-
-    pub(super) fn buffered_tool_call(
-        &self,
-        message: proto::ToolCall,
-        reservation: ToolByteReservation,
-    ) -> BufferedToolCall {
-        BufferedToolCall {
-            message,
-            _reservation: reservation,
-        }
-    }
-
     pub(super) async fn send_event(
         &self,
         event: proto::session_event::Event,
@@ -615,75 +431,6 @@ impl GrpcSession {
         cell_permit: Option<OwnedSemaphorePermit>,
     ) -> Result<(), String> {
         self.events.send_now(event, cell_permit)
-    }
-
-    pub(super) fn register_notification(
-        &self,
-        notification_id: Uuid,
-        acknowledgement: oneshot::Sender<()>,
-    ) -> Result<(), String> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if self.closed.is_cancelled() {
-            return Err("code-mode session is closed".to_string());
-        }
-        if state.pending_notifications.contains_key(&notification_id)
-            || !state.seen_notifications.remember(notification_id)
-        {
-            return Err("code-mode notification ID was reused".to_string());
-        }
-        state
-            .pending_notifications
-            .insert(notification_id, acknowledgement);
-        Ok(())
-    }
-
-    pub(super) fn acknowledge_notification(&self, notification_id: Uuid) -> Result<(), Status> {
-        let acknowledgement = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if self.closed.is_cancelled() {
-                return Err(Status::cancelled("code-mode session is closed"));
-            }
-            match state.pending_notifications.remove(&notification_id) {
-                Some(acknowledgement) => acknowledgement,
-                None if state.seen_notifications.contains(&notification_id) => {
-                    return Err(Status::already_exists(format!(
-                        "code-mode notification {notification_id} was already retired"
-                    )));
-                }
-                None => {
-                    return Err(Status::not_found(format!(
-                        "unknown code-mode notification {notification_id}"
-                    )));
-                }
-            }
-        };
-        let _ = acknowledgement.send(());
-        Ok(())
-    }
-
-    pub(super) fn cancel_notification(&self, notification_id: Uuid) {
-        let pending = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pending_notifications
-            .remove(&notification_id);
-        if pending.is_some() {
-            let _ = self.send_event_now(
-                proto::session_event::Event::NotificationCancelled(proto::NotificationCancelled {
-                    notification_id: notification_id.to_string(),
-                }),
-                /*cell_permit*/ None,
-            );
-        }
-    }
-
-    pub(super) fn discard_notification(&self, notification_id: Uuid) {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pending_notifications
-            .remove(&notification_id);
     }
 }
 
@@ -717,11 +464,6 @@ where
         T: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        if !self.ids.remove(id) {
-            return false;
-        }
-        self.order
-            .retain(|queued| <T as Borrow<Q>>::borrow(queued) != id);
-        true
+        self.ids.remove(id)
     }
 }

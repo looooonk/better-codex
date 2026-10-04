@@ -56,6 +56,7 @@ jobs:
         working-directory: codex-rs
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      STABLE_GIT_COMMIT: ${{ github.sha }}
       CARGO_PROFILE_RELEASE_DEBUG: "none"
       CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
     strategy:
@@ -100,31 +101,10 @@ jobs:
           target_no_jitter="AWS_LC_SYS_NO_JITTER_ENTROPY_${{ matrix.target }}"
           echo "${target_no_jitter//-/_}=1" >>"$GITHUB_ENV"
 
-      - name: Configure rusty_v8
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          version="$(python3 "${GITHUB_WORKSPACE}/.github/scripts/rusty_v8_bazel.py" resolved-v8-crate-version)"
-          base_url="https://github.com/openai/codex/releases/download/rusty-v8-v${version}"
-          binding_dir="${RUNNER_TEMP}/rusty_v8"
-          archive_path="${binding_dir}/librusty_v8_release_${TARGET}.a.gz"
-          binding_path="${binding_dir}/src_binding_release_${TARGET}.rs"
-          checksums_path="${binding_dir}/rusty_v8_release_${TARGET}.sha256"
-          mkdir -p "$binding_dir"
-          curl -fsSL "${base_url}/librusty_v8_release_${TARGET}.a.gz" -o "$archive_path"
-          curl -fsSL "${base_url}/src_binding_release_${TARGET}.rs" -o "$binding_path"
-          curl -fsSL "${base_url}/rusty_v8_release_${TARGET}.sha256" -o "$checksums_path"
-          [[ "$(wc -l <"$checksums_path")" -eq 2 ]] \
-            || { echo "Unexpected rusty_v8 checksum manifest" >&2; exit 1; }
-          if command -v sha256sum >/dev/null 2>&1; then
-            (cd "$binding_dir" && sha256sum -c "$checksums_path")
-          else
-            (cd "$binding_dir" && shasum -a 256 -c "$checksums_path")
-          fi
-          echo "RUSTY_V8_ARCHIVE=${archive_path}" >>"$GITHUB_ENV"
-          echo "RUSTY_V8_SRC_BINDING_PATH=${binding_path}" >>"$GITHUB_ENV"
+      - name: Configure sandboxed rusty_v8
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: ${{ matrix.target }}
 
       - if: ${{ runner.os == 'Linux' }}
         name: Build bubblewrap
@@ -158,6 +138,38 @@ jobs:
               "$release_dir/codex-code-mode-host"
           fi
 
+      - name: Set up Bazel for native voice
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-version: 1.28.1
+
+      - name: Build native voice helper and runtime
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          voice_target="${TARGET/-linux-musl/-linux-gnu}"
+          case "$voice_target" in
+            aarch64-apple-darwin) prefix=macos_aarch64 ;;
+            x86_64-apple-darwin) prefix=macos_x86_64 ;;
+            aarch64-unknown-linux-gnu) prefix=linux_aarch64 ;;
+            x86_64-unknown-linux-gnu) prefix=linux_x86_64 ;;
+            *) exit 1 ;;
+          esac
+          bazel build -c opt //codex-rs/voice-host:codex-voice-host //third_party/voice:native_runtime
+          output="${RUNNER_TEMP}/better-codex-voice"
+          mkdir -p "$output"
+          python3 third_party/voice/release_runtime.py stage \
+            --target "$voice_target" \
+            --source "bazel-bin/third_party/voice/native_runtime_${prefix}" \
+            --output "$output/runtime"
+          cp bazel-bin/codex-rs/voice-host/codex-voice-host "$output/codex-voice-host"
+          chmod 0755 "$output/codex-voice-host"
+          python3 third_party/voice/release_runtime.py seal \
+            --target "$voice_target" --output "$output/runtime"
+
       - name: Build release archive
         shell: bash
         env:
@@ -172,6 +184,9 @@ jobs:
             --version "$VERSION"
             --codex-bin "target/${TARGET}/release/codex"
             --code-mode-host-bin "target/${TARGET}/release/codex-code-mode-host"
+            --voice-host-bin "${RUNNER_TEMP}/better-codex-voice/codex-voice-host"
+            --voice-runtime-dir "${RUNNER_TEMP}/better-codex-voice/runtime"
+            --build-commit "$STABLE_GIT_COMMIT"
             --output "dist/${asset}"
           )
           if [[ "$TARGET" == *linux* ]]; then
@@ -194,6 +209,9 @@ jobs:
           "$smoke_dir/bin/codex" --version | grep -F "$VERSION"
           test -x "$smoke_dir/bin/codex-code-mode-host"
           test -x "$smoke_dir/codex-path/rg"
+          test -x "$smoke_dir/codex-resources/voice/bin/codex-voice-host"
+          test "$("$smoke_dir/codex-resources/voice/bin/codex-voice-host" --build-commit)" = "$STABLE_GIT_COMMIT"
+          test -f "$smoke_dir/codex-resources/voice/manifest.json"
           if [[ "$TARGET" == *linux* ]]; then
             test -x "$smoke_dir/codex-resources/bwrap"
           fi

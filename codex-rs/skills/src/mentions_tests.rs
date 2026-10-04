@@ -31,30 +31,44 @@ fn skips_common_env_vars() {
 }
 
 #[test]
-fn distinguishes_tool_resource_kinds() {
-    assert_eq!(
-        [
-            tool_kind_for_path("app://calendar"),
-            tool_kind_for_path("mcp://server"),
-            tool_kind_for_path("plugin://demo"),
-            tool_kind_for_path("skill://demo/SKILL.md"),
-            tool_kind_for_path("/tmp/demo/SKILL.md"),
-        ],
-        [
-            ToolMentionKind::App,
-            ToolMentionKind::Mcp,
-            ToolMentionKind::Plugin,
-            ToolMentionKind::Skill,
-            ToolMentionKind::Skill,
-        ]
+fn requires_link_syntax() {
+    assert_mentions("[beta](/tmp/beta)", &[], &[]);
+    assert_mentions("[$beta] /tmp/beta", &["beta"], &[]);
+    assert_mentions("[$beta]()", &["beta"], &[]);
+}
+
+#[test]
+fn trims_linked_paths_and_allows_spacing() {
+    assert_mentions("use [$beta]   ( /tmp/beta )", &["beta"], &["/tmp/beta"]);
+}
+
+#[test]
+fn stops_at_non_name_chars() {
+    assert_mentions(
+        "use $alpha.skill and $beta_extra",
+        &["alpha", "beta_extra"],
+        &[],
     );
 }
 
 #[test]
-fn keeps_namespaces_and_stops_at_non_name_chars() {
+fn keeps_plugin_skill_namespaces() {
     assert_mentions(
-        "use $slack:search, $alpha.skill and $beta_extra",
-        &["alpha", "beta_extra", "slack:search"],
+        "use $slack:search and $alpha",
+        &["alpha", "slack:search"],
+        &[],
+    );
+}
+
+#[test]
+fn requires_exact_name_boundaries() {
+    assert_mentions(
+        "use $notion-research-doc but not $notion-research-docs or $notion-research-doc_extra",
+        &[
+            "notion-research-doc",
+            "notion-research-docs",
+            "notion-research-doc_extra",
+        ],
         &[],
     );
 }
@@ -63,4 +77,29 @@ fn keeps_namespaces_and_stops_at_non_name_chars() {
 fn handles_many_sigils_without_looping() {
     let prefix = "$".repeat(256);
     assert_mentions(&format!("{prefix} not-a-mention"), &[], &[]);
+}
+
+#[test]
+fn plugin_config_names_ignore_mention_query_parameters() {
+    let paths = [
+        "plugin://sample@test",
+        "plugin://sample@test?app=com.example.editor",
+        "plugin://sample@test?browserFamily=chrome",
+    ];
+
+    assert_eq!(
+        paths.map(plugin_config_name_from_path),
+        [Some("sample@test"); 3],
+    );
+}
+
+#[test]
+fn plugin_config_names_require_a_plugin_identity() {
+    let paths = [
+        "plugin://",
+        "plugin://?app=com.example.editor",
+        "app://sample@test?app=com.example.editor",
+    ];
+
+    assert_eq!(paths.map(plugin_config_name_from_path), [None; 3]);
 }

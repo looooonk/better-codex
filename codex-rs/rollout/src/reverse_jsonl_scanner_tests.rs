@@ -69,6 +69,21 @@ not-json
 }
 
 #[test]
+fn skips_records_over_the_configured_limit() -> std::io::Result<()> {
+    let oversized = record(&"x".repeat(128));
+    let input = format!(
+        "{}\n{}\n{}\n",
+        serde_json::to_string(&record("first"))?,
+        serde_json::to_string(&oversized)?,
+        serde_json::to_string(&record("third"))?
+    );
+    let mut scanner = ReverseJsonlScanner::new(Cursor::new(input.into_bytes()))?
+        .with_max_record_bytes(/*max_record_bytes*/ 32);
+
+    assert_records(&mut scanner, &["third", "first"])
+}
+
+#[test]
 fn accepts_valid_json_at_eof() -> std::io::Result<()> {
     let input = b"{\"value\":\"first\"}\n{\"value\":\"second\"}";
 
@@ -79,16 +94,15 @@ fn accepts_valid_json_at_eof() -> std::io::Result<()> {
 }
 
 #[test]
-fn scans_only_the_prefix_before_an_explicit_end() -> std::io::Result<()> {
-    let first = b"{\"value\":\"first\"}\n";
-    let second = b"{\"value\":\"second\"}\n";
-    let input = [first.as_slice(), second.as_slice()].concat();
-    let mut scanner = ReverseJsonlScanner::new_at(
-        Cursor::new(input),
-        u64::try_from(first.len()).expect("prefix length"),
-    )?;
+fn scans_from_a_frozen_prefix_end() -> std::io::Result<()> {
+    let prefix = b"{\"value\":\"first\"}\n{\"value\":\"second\"}\n";
+    let mut input = prefix.to_vec();
+    input.extend_from_slice(b"{\"value\":\"later\"}\n");
 
-    assert_records(&mut scanner, &["first"])
+    assert_records(
+        &mut ReverseJsonlScanner::new_at(Cursor::new(input), prefix.len() as u64)?,
+        &["second", "first"],
+    )
 }
 
 #[test]

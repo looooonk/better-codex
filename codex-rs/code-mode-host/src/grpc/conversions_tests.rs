@@ -1,17 +1,18 @@
+use std::time::Duration;
+
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
 use codex_code_mode_protocol::ImageDetail;
+use codex_code_mode_protocol::MissingCodeModeHostDuration;
 use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use pretty_assertions::assert_eq;
 use tonic::Code;
 
 use super::execute_request;
 use super::execution_outcome;
-use crate::grpc::validation::MAX_TOOL_DEFINITIONS;
-use crate::grpc::validation::MAX_TOOL_DESCRIPTION_BYTES;
+use super::wait_response;
 
 #[test]
 fn rejects_missing_names_unknown_tool_kinds_and_invalid_json_schemas() {
@@ -67,8 +68,9 @@ fn rejects_missing_names_unknown_tool_kinds_and_invalid_json_schemas() {
 }
 
 #[test]
-fn maps_text_image_and_terminal_error_without_losing_details() {
+fn maps_text_image_audio_and_terminal_error_without_losing_details() {
     let outcome = execution_outcome(RuntimeResponse::Result {
+        code_mode_host_duration: Some(Duration::from_nanos(/*nanos*/ 123_456_789)),
         cell_id: CellId::new("cell".to_string()),
         content_items: vec![
             FunctionCallOutputContentItem::InputText {
@@ -78,14 +80,17 @@ fn maps_text_image_and_terminal_error_without_losing_details() {
                 image_url: "data:image/png;base64,YQ==".to_string(),
                 detail: Some(ImageDetail::Original),
             },
+            FunctionCallOutputContentItem::InputAudio {
+                audio_url: "data:audio/wav;base64,YQ==".to_string(),
+            },
         ],
         error_text: Some("failed".to_string()),
-    })
-    .expect("bounded execution outcome");
+    });
 
     assert_eq!(
         outcome,
-        proto::ExecutionOutcome {
+        Ok(proto::ExecutionOutcome {
+            code_mode_host_duration_ns: 123_456_789,
             cell_id: "cell".to_string(),
             content_items: vec![
                 proto::ContentItem {
@@ -99,97 +104,38 @@ fn maps_text_image_and_terminal_error_without_losing_details() {
                         detail: Some(proto::ImageDetail::Original as i32),
                     })),
                 },
+                proto::ContentItem {
+                    item: Some(proto::content_item::Item::Audio(proto::AudioContent {
+                        audio_url: "data:audio/wav;base64,YQ==".to_string(),
+                    })),
+                },
             ],
             outcome: Some(proto::execution_outcome::Outcome::Completed(
                 proto::ExecutionCompleted {
                     error_text: Some("failed".to_string()),
                 },
             )),
-        }
+        })
     );
 }
 
+/// Encoding must not turn a missing request measurement into measured zero,
+/// including when no live cell remains to supply output.
 #[test]
-fn rejects_oversized_text_and_image_outcomes_for_streams_and_unary_responses() {
-    let response = |item| RuntimeResponse::Result {
+fn grpc_encoding_rejects_untimed_runtime_output() {
+    let response = RuntimeResponse::Terminated {
         cell_id: CellId::new("cell".to_string()),
-        content_items: vec![item],
-        error_text: None,
+        content_items: Vec::new(),
+        code_mode_host_duration: None,
     };
-
-    let text = "x".repeat(MAX_APPLICATION_MESSAGE_BYTES);
     assert_eq!(
-        super::execute_event(response(FunctionCallOutputContentItem::InputText { text }))
-            .expect_err("oversized execution event")
-            .code(),
-        Code::ResourceExhausted
+        execution_outcome(response.clone()),
+        Err(MissingCodeModeHostDuration)
     );
-
-    let image_url = format!(
-        "data:image/png;base64,{}",
-        "A".repeat(MAX_APPLICATION_MESSAGE_BYTES)
-    );
-    assert_eq!(
-        super::wait_response(WaitOutcome::LiveCell(response(
-            FunctionCallOutputContentItem::InputImage {
-                image_url,
-                detail: Some(ImageDetail::Low),
-            },
-        )))
-        .expect_err("oversized wait response")
-        .code(),
-        Code::ResourceExhausted
-    );
-}
-
-#[test]
-fn enforces_tool_count_and_description_bounds() {
-    let definition = proto::ToolDefinition {
-        name: "echo".to_string(),
-        tool_name: Some(proto::ToolName {
-            name: "echo".to_string(),
-            namespace: None,
-        }),
-        description: "x".repeat(MAX_TOOL_DESCRIPTION_BYTES),
-        kind: proto::ToolKind::Function as i32,
-        input_schema_json: None,
-        output_schema_json: None,
-    };
-    let request = |enabled_tools| proto::ExecuteRequest {
-        session_id: "session".to_string(),
-        execution_id: "execution".to_string(),
-        tool_call_id: "call".to_string(),
-        source: String::new(),
-        enabled_tools,
-        yield_time_ms: None,
-        max_output_tokens: None,
-    };
-
-    let count_definition = proto::ToolDefinition {
-        description: String::new(),
-        ..definition.clone()
-    };
-    assert!(
-        execute_request(request(vec![
-            count_definition.clone();
-            MAX_TOOL_DEFINITIONS
-        ]))
-        .is_ok()
-    );
-    assert_eq!(
-        execute_request(request(vec![count_definition; MAX_TOOL_DEFINITIONS + 1]))
-            .unwrap_err()
-            .code(),
-        Code::InvalidArgument
-    );
-    assert!(execute_request(request(vec![definition.clone()])).is_ok());
-    assert_eq!(
-        execute_request(request(vec![proto::ToolDefinition {
-            description: "x".repeat(MAX_TOOL_DESCRIPTION_BYTES + 1),
-            ..definition
-        }]))
-        .unwrap_err()
-        .code(),
-        Code::InvalidArgument
-    );
+    for outcome in [
+        WaitOutcome::LiveCell(response.clone()),
+        WaitOutcome::MissingCell(response),
+    ] {
+        assert_eq!(wait_response(outcome), Err(MissingCodeModeHostDuration));
+    }
 }

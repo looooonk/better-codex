@@ -10,6 +10,10 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::PoisonError;
+use std::time::Duration;
+use std::time::Instant;
 
 use bytes::Bytes;
 use codex_api::SharedAuthProvider;
@@ -19,16 +23,17 @@ use codex_exec_server::HttpHeader;
 use codex_exec_server::HttpRedirectPolicy;
 use codex_exec_server::HttpRequestParams;
 use codex_exec_server::HttpResponseBodyStream;
-use codex_secrets::redact_secrets;
 use futures::StreamExt;
 use futures::stream;
 use futures::stream::BoxStream;
-use reqwest::StatusCode;
-use reqwest::header::ACCEPT;
-use reqwest::header::AUTHORIZATION;
-use reqwest::header::CONTENT_TYPE;
-use reqwest::header::HeaderMap;
-use reqwest::header::HeaderName;
+use http::HeaderMap;
+use http::HeaderName;
+use http::HeaderValue;
+use http::StatusCode;
+use http::header::ACCEPT;
+use http::header::AUTHORIZATION;
+use http::header::CONTENT_TYPE;
+use http::header::WWW_AUTHENTICATE;
 use rmcp::model::ClientJsonRpcMessage;
 use rmcp::model::ClientNotification;
 use rmcp::model::ConstString;
@@ -37,7 +42,9 @@ use rmcp::model::ErrorCode;
 use rmcp::model::ErrorData;
 use rmcp::model::JsonRpcMessage;
 use rmcp::model::ProtocolVersion;
+use rmcp::model::RequestId;
 use rmcp::model::ServerJsonRpcMessage;
+use rmcp::model::ServerResult;
 use rmcp::transport::common::http_header::HEADER_MCP_PROTOCOL_VERSION;
 use rmcp::transport::streamable_http_client::AuthRequiredError;
 use rmcp::transport::streamable_http_client::InsufficientScopeError;
@@ -46,27 +53,51 @@ use rmcp::transport::streamable_http_client::StreamableHttpError;
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
 use sse_stream::Sse;
 use sse_stream::SseStream;
+use tokio::sync::oneshot;
+use tracing::Instrument;
 
-mod www_authenticate;
+use crate::bounded_stdio_transport::MAX_MCP_STDIO_LINE_BYTES;
+use crate::event_notification_transport::MAX_EVENT_NOTIFICATION_BYTES;
+use crate::http_client_redirect::SameOriginRedirectHttpClient;
 
-use self::www_authenticate::insufficient_scope_challenge;
-use crate::http_discovery::correlated_discovery_response;
-use crate::http_discovery::mcp_redirect_policy;
-use crate::http_response_limits::MAX_MCP_HTTP_RESPONSE_BYTES;
-use crate::http_response_limits::SseEventSizeLimit;
-use crate::incoming_jsonrpc::deserialize_incoming_jsonrpc_message;
-use crate::incoming_jsonrpc::normalize_sse_jsonrpc_message;
+use crate::www_authenticate::insufficient_scope_challenge;
 
 const EVENT_STREAM_MIME_TYPE: &str = "text/event-stream";
 const JSON_MIME_TYPE: &str = "application/json";
 const HEADER_SESSION_ID: &str = "Mcp-Session-Id";
 const NON_JSON_RESPONSE_BODY_PREVIEW_BYTES: usize = 8_192;
+const LEGACY_HTTP_PREVALIDATION_ERROR_CODE: ErrorCode = ErrorCode(-32000);
+const EVENT_STREAM_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StreamableHttpRedirectMode {
+    Legacy,
+    AgentPluginV1,
+}
 
 #[derive(Clone)]
 pub(crate) struct StreamableHttpClientAdapter {
     http_client: Arc<dyn HttpClient>,
     default_headers: HeaderMap,
     auth_provider: Option<SharedAuthProvider>,
+    event_stream_cancellations: Arc<Mutex<HashMap<RequestId, oneshot::Sender<()>>>>,
+    has_configured_headers: bool,
+    redirect_mode: StreamableHttpRedirectMode,
+    initialize_deadline: Arc<Mutex<Option<Instant>>>,
+}
+
+struct EventStreamCancellation {
+    request_id: RequestId,
+    cancellations: Arc<Mutex<HashMap<RequestId, oneshot::Sender<()>>>>,
+}
+
+impl Drop for EventStreamCancellation {
+    fn drop(&mut self) {
+        self.cancellations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.request_id);
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -86,12 +117,23 @@ impl StreamableHttpClientAdapter {
         http_client: Arc<dyn HttpClient>,
         default_headers: HeaderMap,
         auth_provider: Option<SharedAuthProvider>,
+        has_configured_headers: bool,
+        redirect_mode: StreamableHttpRedirectMode,
+        initialize_deadline: Arc<Mutex<Option<Instant>>>,
     ) -> Self {
         Self {
-            http_client,
+            http_client: Arc::new(SameOriginRedirectHttpClient::new(http_client)),
             default_headers,
             auth_provider,
+            event_stream_cancellations: Arc::default(),
+            has_configured_headers,
+            redirect_mode,
+            initialize_deadline,
         }
+    }
+
+    fn redirect_policy(&self, headers: &HeaderMap) -> HttpRedirectPolicy {
+        mcp_redirect_policy(self.redirect_mode, headers, self.has_configured_headers)
     }
 }
 
@@ -104,7 +146,7 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
         message: ClientJsonRpcMessage,
         session_id: Option<Arc<str>>,
         auth_token: Option<String>,
-        custom_headers: HashMap<HeaderName, reqwest::header::HeaderValue>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> std::result::Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
         let (mcp_method, mcp_request_id) = client_jsonrpc_message_fields(&message);
         let has_session_id = session_id.is_some();
@@ -141,33 +183,83 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
         }
 
         let is_discovery_request = mcp_method.as_deref() == Some(DiscoverRequestMethod::VALUE);
+        let is_event_stream_request = mcp_method.as_deref() == Some("events/stream");
         let uses_modern_protocol = headers
             .get(HEADER_MCP_PROTOCOL_VERSION)
             .and_then(|value| value.to_str().ok())
             == Some(ProtocolVersion::V_2026_07_28.as_str());
-        let maximum_response_bytes =
-            (is_discovery_request || uses_modern_protocol).then_some(MAX_MCP_HTTP_RESPONSE_BYTES);
-        let redirect_policy = if is_discovery_request || uses_modern_protocol {
+        let maximum_response_bytes = if is_event_stream_request {
+            Some(MAX_EVENT_NOTIFICATION_BYTES)
+        } else {
+            (is_discovery_request || uses_modern_protocol).then_some(MAX_MCP_STDIO_LINE_BYTES)
+        };
+        let redirect_policy = if is_discovery_request {
             HttpRedirectPolicy::Stop
         } else {
-            HttpRedirectPolicy::Follow
+            self.redirect_policy(&headers)
+        };
+        let timeout_ms = if matches!(
+            mcp_method.as_deref(),
+            Some("initialize" | "notifications/initialized")
+        ) || mcp_method.as_deref() == Some(DiscoverRequestMethod::VALUE)
+        {
+            self.initialize_deadline
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .map(|deadline| {
+                    u64::try_from(
+                        deadline
+                            .saturating_duration_since(Instant::now())
+                            .as_millis(),
+                    )
+                    .unwrap_or(u64::MAX)
+                    .max(1)
+                })
+        } else {
+            None
         };
 
-        let body = serde_json::to_vec(&message).map_err(StreamableHttpError::Deserialize)?;
+        let body = serde_json::to_value(&message).map_err(StreamableHttpError::Deserialize)?;
+        let request_span = crate::trace_context::request_span(&body);
+        let body = serde_json::to_vec(&body).map_err(StreamableHttpError::Deserialize)?;
         let has_authorization_header = headers.contains_key(AUTHORIZATION);
-        let response = self
+        if let JsonRpcMessage::Notification(notification) = &message
+            && let ClientNotification::CancelledNotification(cancelled) = &notification.notification
+            && let Some(request_id) = cancelled.params.request_id.as_ref()
+            && let Some(cancellation) = self
+                .event_stream_cancellations
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(request_id)
+        {
+            let _ = cancellation.send(());
+            return Ok(StreamableHttpPostResponse::Accepted);
+        }
+
+        let request = self
             .http_client
             .http_request_stream(HttpRequestParams {
                 method: "POST".to_string(),
                 url: uri.to_string(),
                 headers: protocol_headers(&headers),
                 body: Some(body.into()),
-                timeout_ms: None,
+                timeout_ms,
                 redirect_policy,
                 request_id: "buffered-request".to_string(),
                 stream_response: true,
             })
-            .await;
+            .instrument(request_span);
+        let response = if is_event_stream_request {
+            tokio::time::timeout(EVENT_STREAM_RESPONSE_TIMEOUT, request)
+                .await
+                .map_err(|_| {
+                    StreamableHttpError::UnexpectedServerResponse(
+                        "timed out waiting for MCP event stream response headers".into(),
+                    )
+                })?
+        } else {
+            request.await
+        };
         let (response, mut body_stream) = match response {
             Ok(response) => response,
             Err(error) => {
@@ -189,13 +281,19 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
                 StreamableHttpClientAdapterError::SessionExpired404,
             ));
         }
-        if response.status == StatusCode::UNAUTHORIZED.as_u16()
-            && let Some(header) =
-                response_header(&response.headers, reqwest::header::WWW_AUTHENTICATE)
-        {
-            return Err(StreamableHttpError::AuthRequired(AuthRequiredError::new(
-                header,
-            )));
+        if response.status == StatusCode::UNAUTHORIZED.as_u16() {
+            let challenges = response
+                .headers
+                .iter()
+                .filter(|header| header.name.eq_ignore_ascii_case(WWW_AUTHENTICATE.as_str()))
+                .map(|header| header.value.as_str())
+                .collect::<Vec<_>>();
+            if !challenges.is_empty() {
+                // RFC 9110 allows combining these list-based fields; keep challenges after the first.
+                return Err(StreamableHttpError::AuthRequired(AuthRequiredError::new(
+                    challenges.join(", "),
+                )));
+            }
         }
         if response.status == StatusCode::FORBIDDEN.as_u16()
             && let Some(challenge) = insufficient_scope_challenge(&response.headers)
@@ -222,22 +320,21 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
                 && (content_type
                     .as_deref()
                     .is_some_and(|content_type| content_type.starts_with(JSON_MIME_TYPE))
-                    || (is_discovery_request
+                    || (mcp_method.as_deref() == Some(DiscoverRequestMethod::VALUE)
                         && response.status == StatusCode::BAD_REQUEST.as_u16()
                         && !has_session_id))
                 && let Some(response_message) = parse_json_rpc_error(&body)
-                && let Some(response_message) = correlated_discovery_response(
-                    &message,
-                    response_message,
-                    response.status == StatusCode::BAD_REQUEST.as_u16() && !has_session_id,
-                )
             {
                 return Ok(StreamableHttpPostResponse::Json(
-                    response_message,
+                    legacy_discovery_fallback_response(
+                        &message,
+                        response_message,
+                        response.status == StatusCode::BAD_REQUEST.as_u16() && !has_session_id,
+                    ),
                     session_id,
                 ));
             }
-            if is_discovery_request
+            if mcp_method.as_deref() == Some(DiscoverRequestMethod::VALUE)
                 && !has_session_id
                 && matches!(
                     StatusCode::from_u16(response.status).ok(),
@@ -270,31 +367,77 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
         match content_type.as_deref() {
             Some(content_type) if content_type.starts_with(EVENT_STREAM_MIME_TYPE) => {
                 let mut event_stream = sse_stream_from_body(body_stream, maximum_response_bytes);
-                if is_discovery_request {
-                    let response =
-                        next_correlated_discovery_response(&message, &mut event_stream).await?;
-                    return Ok(StreamableHttpPostResponse::Json(response, session_id));
+                if mcp_method.as_deref() == Some(DiscoverRequestMethod::VALUE) {
+                    while let Some(event) = event_stream.next().await {
+                        let event = event.map_err(StreamableHttpError::Sse)?;
+                        if !matches!(event.event.as_deref(), None | Some("") | Some("message")) {
+                            continue;
+                        }
+                        let Some(data) = event.data.as_deref() else {
+                            continue;
+                        };
+                        if data.trim().is_empty() {
+                            continue;
+                        }
+
+                        let response = serde_json::from_slice(data.as_bytes())
+                            .map_err(StreamableHttpError::Deserialize)?;
+                        let response = legacy_discovery_fallback_response(
+                            &message, response, /*allow_uncorrelated_http_rejection*/ false,
+                        );
+                        if matches!(
+                            &response,
+                            JsonRpcMessage::Response(_) | JsonRpcMessage::Error(_)
+                        ) {
+                            return Ok(StreamableHttpPostResponse::Json(response, session_id));
+                        }
+                    }
+
+                    return Err(StreamableHttpError::UnexpectedServerResponse(
+                        "empty sse stream".into(),
+                    ));
                 }
-                let event_stream = normalize_sse_stream(event_stream, uses_modern_protocol);
+                if is_event_stream_request && let JsonRpcMessage::Request(request) = &message {
+                    let (cancel, cancelled) = oneshot::channel();
+                    let cancellation = EventStreamCancellation {
+                        request_id: request.id.clone(),
+                        cancellations: Arc::clone(&self.event_stream_cancellations),
+                    };
+                    cancellation
+                        .cancellations
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(cancellation.request_id.clone(), cancel);
+
+                    event_stream = stream::unfold(
+                        Some((event_stream, cancelled, cancellation)),
+                        |state| async move {
+                            let (mut event_stream, mut cancelled, cancellation) = state?;
+
+                            tokio::select! {
+                                biased;
+
+                                _ = &mut cancelled => None,
+                                event = event_stream.next() => event.map(|event| {
+                                    (event, Some((event_stream, cancelled, cancellation)))
+                                }),
+                            }
+                        },
+                    )
+                    .boxed();
+                }
                 Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
             }
             Some(content_type) if content_type.starts_with(JSON_MIME_TYPE) => {
                 let body = collect_body(&mut body_stream, maximum_response_bytes).await?;
                 let response_message =
-                    deserialize_incoming_jsonrpc_message(&body, uses_modern_protocol)
-                        .map_err(StreamableHttpError::Deserialize)?;
-                let response_message = correlated_discovery_response(
-                    &message,
-                    response_message,
-                    /*allow_idless_http_prevalidation*/ false,
-                )
-                .ok_or_else(|| {
-                    StreamableHttpError::UnexpectedServerResponse(
-                        "server/discover response ID did not match request ID".into(),
-                    )
-                })?;
+                    serde_json::from_slice(&body).map_err(StreamableHttpError::Deserialize)?;
                 Ok(StreamableHttpPostResponse::Json(
-                    response_message,
+                    legacy_discovery_fallback_response(
+                        &message,
+                        response_message,
+                        /*allow_uncorrelated_http_rejection*/ false,
+                    ),
                     session_id,
                 ))
             }
@@ -314,7 +457,7 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
         uri: Arc<str>,
         session: Arc<str>,
         auth_token: Option<String>,
-        custom_headers: HashMap<HeaderName, reqwest::header::HeaderValue>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> std::result::Result<(), StreamableHttpError<Self::Error>> {
         let mut headers = self.default_headers.clone();
         headers.extend(custom_headers);
@@ -333,7 +476,7 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
             session.to_string(),
             StreamableHttpClientAdapterError::Header,
         )?;
-        let redirect_policy = mcp_redirect_policy(&headers);
+        let redirect_policy = self.redirect_policy(&headers);
 
         let response = self
             .http_client
@@ -368,7 +511,7 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
         session_id: Option<Arc<str>>,
         last_event_id: Option<String>,
         auth_token: Option<String>,
-        custom_headers: HashMap<HeaderName, reqwest::header::HeaderValue>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> std::result::Result<
         BoxStream<'static, std::result::Result<Sse, sse_stream::Error>>,
         StreamableHttpError<Self::Error>,
@@ -406,7 +549,7 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
                 StreamableHttpClientAdapterError::Header,
             )?;
         }
-        let redirect_policy = mcp_redirect_policy(&headers);
+        let redirect_policy = self.redirect_policy(&headers);
 
         let (response, body_stream) = self
             .http_client
@@ -453,12 +596,9 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
         let uses_modern_protocol = headers
             .get(HEADER_MCP_PROTOCOL_VERSION)
             .and_then(|value| value.to_str().ok())
-            == Some(ProtocolVersion::V_2026_07_28.as_str());
-        let maximum_response_bytes = uses_modern_protocol.then_some(MAX_MCP_HTTP_RESPONSE_BYTES);
-        Ok(normalize_sse_stream(
-            sse_stream_from_body(body_stream, maximum_response_bytes),
-            uses_modern_protocol,
-        ))
+            .is_some_and(|version| version == ProtocolVersion::V_2026_07_28.as_str());
+        let maximum_response_bytes = uses_modern_protocol.then_some(MAX_MCP_STDIO_LINE_BYTES);
+        Ok(sse_stream_from_body(body_stream, maximum_response_bytes))
     }
 }
 
@@ -471,7 +611,7 @@ impl StreamableHttpClientAdapter {
 }
 
 fn body_preview(body: impl Into<String>) -> String {
-    let mut body_preview = redact_secrets(body.into());
+    let mut body_preview = body.into();
     let body_len = body_preview.len();
     if body_len > NON_JSON_RESPONSE_BODY_PREVIEW_BYTES {
         let mut boundary = NON_JSON_RESPONSE_BODY_PREVIEW_BYTES;
@@ -485,56 +625,6 @@ fn body_preview(body: impl Into<String>) -> String {
         ));
     }
     body_preview
-}
-
-fn normalize_sse_stream(
-    stream: BoxStream<'static, std::result::Result<Sse, sse_stream::Error>>,
-    modern_session: bool,
-) -> BoxStream<'static, std::result::Result<Sse, sse_stream::Error>> {
-    stream
-        .map(move |event| {
-            let mut event = event?;
-            if let Some(payload) = event.data.as_deref() {
-                match normalize_sse_jsonrpc_message(payload, modern_session) {
-                    Ok(Some(normalized)) => event.data = Some(normalized),
-                    Ok(None) => {}
-                    Err(error) => return Err(sse_stream::Error::Body(Box::new(error))),
-                }
-            }
-            Ok(event)
-        })
-        .boxed()
-}
-
-async fn next_correlated_discovery_response(
-    request: &ClientJsonRpcMessage,
-    event_stream: &mut BoxStream<'static, std::result::Result<Sse, sse_stream::Error>>,
-) -> std::result::Result<ServerJsonRpcMessage, StreamableHttpError<StreamableHttpClientAdapterError>>
-{
-    while let Some(event) = event_stream.next().await {
-        let event = event.map_err(StreamableHttpError::Sse)?;
-        if !matches!(event.event.as_deref(), None | Some("") | Some("message")) {
-            continue;
-        }
-        let Some(payload) = event.data.as_deref() else {
-            continue;
-        };
-        if payload.trim().is_empty() {
-            continue;
-        }
-
-        let response = serde_json::from_str::<ServerJsonRpcMessage>(payload)
-            .map_err(StreamableHttpError::Deserialize)?;
-        if let Some(response) = correlated_discovery_response(
-            request, response, /*allow_idless_http_prevalidation*/ false,
-        ) {
-            return Ok(response);
-        }
-    }
-
-    Err(StreamableHttpError::UnexpectedServerResponse(
-        "SSE stream ended before a correlated server/discover response".into(),
-    ))
 }
 
 fn client_jsonrpc_message_fields(
@@ -578,19 +668,19 @@ fn log_post_message_http_error(
     has_session_id: bool,
     has_authorization_header: bool,
 ) {
-    let parsed_url = reqwest::Url::parse(uri).ok();
+    let parsed_url = url::Url::parse(uri).ok();
     tracing::warn!(
         endpoint_scheme = parsed_url
             .as_ref()
-            .map(reqwest::Url::scheme)
+            .map(url::Url::scheme)
             .unwrap_or("<invalid>"),
         endpoint_host = parsed_url
             .as_ref()
-            .and_then(reqwest::Url::host_str)
+            .and_then(url::Url::host_str)
             .unwrap_or("<invalid>"),
         endpoint_path = parsed_url
             .as_ref()
-            .map(reqwest::Url::path)
+            .map(url::Url::path)
             .unwrap_or("<invalid>"),
         endpoint_has_query = parsed_url.as_ref().is_some_and(|url| url.query().is_some()),
         mcp_method = mcp_method.unwrap_or("<none>"),
@@ -610,7 +700,7 @@ fn insert_header<Error>(
 where
     Error: std::error::Error + Send + Sync + 'static,
 {
-    let value = reqwest::header::HeaderValue::from_str(&value)
+    let value = HeaderValue::from_str(&value)
         .map_err(|error| StreamableHttpError::Client(map_error(error.to_string())))?;
     headers.insert(name, value);
     Ok(())
@@ -632,6 +722,7 @@ fn protocol_headers(headers: &HeaderMap) -> Vec<HttpHeader> {
             Some(HttpHeader {
                 name: name.as_str().to_string(),
                 value: std::str::from_utf8(value.as_bytes()).ok()?.to_string(),
+                value_env_var: None,
             })
         })
         .collect()
@@ -684,6 +775,169 @@ fn parse_json_rpc_error(body: &[u8]) -> Option<ServerJsonRpcMessage> {
     }
 }
 
+fn mcp_redirect_policy(
+    mode: StreamableHttpRedirectMode,
+    headers: &HeaderMap,
+    has_configured_headers: bool,
+) -> HttpRedirectPolicy {
+    if headers
+        .get(HEADER_MCP_PROTOCOL_VERSION)
+        .and_then(|value| value.to_str().ok())
+        == Some(ProtocolVersion::V_2026_07_28.as_str())
+        || (mode == StreamableHttpRedirectMode::AgentPluginV1
+            && (has_configured_headers || headers.contains_key(AUTHORIZATION)))
+    {
+        HttpRedirectPolicy::Stop
+    } else {
+        HttpRedirectPolicy::Follow
+    }
+}
+
+// rmcp's automatic lifecycle does not yet recognize deployed legacy discovery
+// rejection shapes. Remove this compatibility shim once the SDK does:
+// https://github.com/modelcontextprotocol/rust-sdk/issues/1040
+pub(super) fn legacy_discovery_fallback_response(
+    request: &ClientJsonRpcMessage,
+    response: ServerJsonRpcMessage,
+    allow_uncorrelated_http_rejection: bool,
+) -> ServerJsonRpcMessage {
+    let JsonRpcMessage::Request(request) = request else {
+        return response;
+    };
+    if request.request.method() != DiscoverRequestMethod::VALUE {
+        return response;
+    }
+
+    if let JsonRpcMessage::Error(error) = &response
+        && error.error.code == ErrorCode::METHOD_NOT_FOUND
+        && error.id.as_ref() != Some(&request.id)
+    {
+        return ServerJsonRpcMessage::error(
+            ErrorData::new(
+                ErrorCode::HEADER_MISMATCH,
+                "server/discover method-not-found response did not match its request ID",
+                None,
+            ),
+            Some(request.id.clone()),
+        );
+    }
+
+    let requires_legacy_initialization = match &response {
+        JsonRpcMessage::Response(response) if response.id == request.id => match &response.result {
+            ServerResult::DiscoverResult(result) => {
+                only_known_legacy_protocol_versions(&result.supported_versions)
+            }
+            _ => false,
+        },
+        JsonRpcMessage::Error(error) if error.id.as_ref() == Some(&request.id) => {
+            (error.error.code == ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+                && error
+                    .error
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("supported"))
+                    .and_then(|supported| {
+                        serde_json::from_value::<Vec<ProtocolVersion>>(supported.clone()).ok()
+                    })
+                    .is_some_and(|supported| only_known_legacy_protocol_versions(&supported)))
+                || matches!(
+                    error.error.code,
+                    ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+                        | ErrorCode::INVALID_REQUEST
+                        | ErrorCode::INVALID_PARAMS
+                ) && explicitly_rejects_modern_protocol_version(&error.error.message)
+        }
+        JsonRpcMessage::Error(error)
+            if allow_uncorrelated_http_rejection
+                && error.id.is_none()
+                && error.error.code == LEGACY_HTTP_PREVALIDATION_ERROR_CODE =>
+        {
+            has_legacy_fallback_evidence(&error.error.message)
+        }
+        _ => false,
+    };
+
+    if requires_legacy_initialization {
+        ServerJsonRpcMessage::error(
+            ErrorData::new(
+                ErrorCode::METHOD_NOT_FOUND,
+                "MCP discovery requires legacy initialization",
+                None,
+            ),
+            Some(request.id.clone()),
+        )
+    } else {
+        let mut response = response;
+        if let JsonRpcMessage::Error(error) = &mut response
+            && !matches!(
+                error.error.code,
+                ErrorCode::METHOD_NOT_FOUND
+                    | ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+                    | ErrorCode::HEADER_MISMATCH
+                    | ErrorCode::MISSING_REQUIRED_CLIENT_CAPABILITY
+            )
+        {
+            // rmcp 3.1.3 falls back on other discovery errors, so mark unproven
+            // rejections as modern failures while preserving their diagnostics.
+            error.error.code = ErrorCode::HEADER_MISMATCH;
+        }
+        response
+    }
+}
+
+fn only_known_legacy_protocol_versions(versions: &[ProtocolVersion]) -> bool {
+    !versions.is_empty()
+        && versions.iter().all(|version| {
+            ProtocolVersion::KNOWN_VERSIONS.contains(version)
+                && version < &ProtocolVersion::V_2026_07_28
+        })
+}
+
+fn explicitly_rejects_modern_protocol_version(message: &str) -> bool {
+    message
+        .trim()
+        .eq_ignore_ascii_case("unsupported protocol version: 2026-07-28")
+}
+
+// Some legacy servers reject `server/discover` before assigning a JSON-RPC ID.
+// A null-ID HTTP 400/-32000 does not, by itself, justify a downgrade.
+// Retry `initialize` only for the exact missing-session error or a list of
+// exclusively legacy versions that includes a version rmcp supports.
+// These are compatibility hints, not proof of server identity; `initialize`
+// negotiates the actual version, and 2025-06-18 is only our initial proposal.
+fn has_legacy_fallback_evidence(message: &str) -> bool {
+    if message == "Bad Request: No valid session ID provided" {
+        return true;
+    }
+
+    let Some(supported) = message
+        .strip_prefix("Bad Request: Unsupported protocol version: 2026-07-28 (supported versions: ")
+        .or_else(|| {
+            message.strip_prefix("Bad Request: Unsupported protocol version (supported versions: ")
+        })
+        .and_then(|supported| supported.strip_suffix(')'))
+    else {
+        return false;
+    };
+
+    let versions = supported.split(',').map(str::trim).collect::<Vec<_>>();
+    !versions.is_empty()
+        && ProtocolVersion::KNOWN_VERSIONS
+            .iter()
+            .any(|known| versions.contains(&known.as_str()))
+        && versions.iter().all(|version| {
+            let bytes = version.as_bytes();
+            bytes.len() == 10
+                && bytes[4] == b'-'
+                && bytes[7] == b'-'
+                && bytes
+                    .iter()
+                    .enumerate()
+                    .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+                && *version < "2026-07-28"
+        })
+}
+
 async fn collect_body(
     body_stream: &mut HttpResponseBodyStream,
     maximum_bytes: Option<usize>,
@@ -728,6 +982,92 @@ fn sse_stream_from_body(
         },
     ))
     .boxed()
+}
+
+struct SseEventSizeLimit {
+    maximum_bytes: Option<usize>,
+    retained_bytes: usize,
+    line_bytes: usize,
+    line_is_comment: bool,
+    previous_was_carriage_return: bool,
+    failed: bool,
+}
+
+impl SseEventSizeLimit {
+    fn new(maximum_bytes: Option<usize>) -> Self {
+        Self {
+            maximum_bytes,
+            retained_bytes: 0,
+            line_bytes: 0,
+            line_is_comment: false,
+            previous_was_carriage_return: false,
+            failed: false,
+        }
+    }
+
+    fn observe(&mut self, bytes: &[u8]) -> io::Result<()> {
+        if self.failed {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "oversized MCP SSE event was already rejected",
+            ));
+        }
+        let Some(maximum_bytes) = self.maximum_bytes else {
+            return Ok(());
+        };
+
+        for &byte in bytes {
+            if self.previous_was_carriage_return {
+                self.previous_was_carriage_return = false;
+                if byte == b'\n' {
+                    continue;
+                }
+            }
+
+            match byte {
+                b'\r' => {
+                    self.finish_line(maximum_bytes)?;
+                    self.previous_was_carriage_return = true;
+                }
+                b'\n' => self.finish_line(maximum_bytes)?,
+                _ => {
+                    if self.line_bytes == 0 {
+                        self.line_is_comment = byte == b':';
+                    }
+                    self.line_bytes = self.line_bytes.saturating_add(1);
+                    self.check_limit(maximum_bytes)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn finish_line(&mut self, maximum_bytes: usize) -> io::Result<()> {
+        if self.line_bytes == 0 {
+            self.retained_bytes = 0;
+        } else if !self.line_is_comment {
+            // The SSE parser inserts a newline when joining multiple data fields.
+            self.retained_bytes = self
+                .retained_bytes
+                .saturating_add(self.line_bytes)
+                .saturating_add(1);
+        }
+
+        self.line_bytes = 0;
+        self.line_is_comment = false;
+        self.check_limit(maximum_bytes)
+    }
+
+    fn check_limit(&mut self, maximum_bytes: usize) -> io::Result<()> {
+        if self.retained_bytes.saturating_add(self.line_bytes) > maximum_bytes {
+            self.failed = true;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("MCP response body exceeds {maximum_bytes} bytes"),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

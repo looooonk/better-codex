@@ -1,17 +1,17 @@
 use codex_protocol::config_types::ModeKind;
-use codex_protocol::request_user_input::RequestUserInputArgs;
+use codex_protocol::request_user_input::RequestUserInputQuestion;
 use codex_tools::JsonSchema;
 use codex_tools::ResponsesApiTool;
 use codex_tools::ToolSpec;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 
 pub const REQUEST_USER_INPUT_TOOL_NAME: &str = "request_user_input";
-pub const MIN_AUTO_RESOLUTION_MS: u64 = 60_000;
-pub const MAX_AUTO_RESOLUTION_MS: u64 = 240_000;
-const MIN_QUESTIONS: usize = 1;
-const MAX_QUESTIONS: usize = 3;
-const MIN_OPTIONS: usize = 2;
-const MAX_OPTIONS: usize = 3;
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub(crate) struct RequestUserInputToolArgs {
+    pub questions: Vec<RequestUserInputQuestion>,
+}
 
 pub fn create_request_user_input_tool(description: String) -> ToolSpec {
     let option_props = BTreeMap::from([
@@ -34,9 +34,7 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
         ), Some(
             "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically."
                 .to_string(),
-        ))
-        .with_min_items(MIN_OPTIONS)
-        .with_max_items(MAX_OPTIONS);
+        ));
 
     let question_props = BTreeMap::from([
         (
@@ -72,18 +70,9 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
             Some(false.into()),
         ),
         Some("Questions to show the user. Prefer 1 and do not exceed 3".to_string()),
-    )
-    .with_min_items(MIN_QUESTIONS)
-    .with_max_items(MAX_QUESTIONS);
+    );
 
-    let auto_resolution_ms_schema = JsonSchema::number(Some(format!(
-        "Optional auto-resolution window in milliseconds, from {MIN_AUTO_RESOLUTION_MS} to {MAX_AUTO_RESOLUTION_MS}. Include this only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required before continuing. Use {MIN_AUTO_RESOLUTION_MS} for lightly helpful context and up to {MAX_AUTO_RESOLUTION_MS} when the answer would materially unblock better work."
-    )));
-
-    let properties = BTreeMap::from([
-        ("questions".to_string(), questions_schema),
-        ("autoResolutionMs".to_string(), auto_resolution_ms_schema),
-    ]);
+    let properties = BTreeMap::from([("questions".to_string(), questions_schema)]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: REQUEST_USER_INPUT_TOOL_NAME.to_string(),
@@ -113,41 +102,19 @@ pub fn request_user_input_unavailable_message(
     }
 }
 
-pub fn normalize_request_user_input_args(
-    mut args: RequestUserInputArgs,
-) -> Result<RequestUserInputArgs, String> {
-    let question_count = args.questions.len();
-    if !(MIN_QUESTIONS..=MAX_QUESTIONS).contains(&question_count) {
-        return Err(format!(
-            "request_user_input requires {MIN_QUESTIONS} to {MAX_QUESTIONS} questions ({question_count} provided)"
-        ));
-    }
-
-    for (index, question) in args.questions.iter().enumerate() {
-        let option_count = question.options.as_ref().map_or(/*default*/ 0, Vec::len);
-        if !(MIN_OPTIONS..=MAX_OPTIONS).contains(&option_count) {
-            let question_number = index + 1;
-            return Err(format!(
-                "request_user_input question {question_number} requires {MIN_OPTIONS} to {MAX_OPTIONS} options ({option_count} provided)"
-            ));
-        }
+pub(crate) fn normalize_request_user_input_tool_args(
+    mut args: RequestUserInputToolArgs,
+) -> Result<RequestUserInputToolArgs, String> {
+    let missing_options = args
+        .questions
+        .iter()
+        .any(|question| question.options.as_ref().is_none_or(Vec::is_empty));
+    if missing_options {
+        return Err("request_user_input requires non-empty options for every question".to_string());
     }
 
     for question in &mut args.questions {
         question.is_other = true;
-    }
-
-    if let Some(auto_resolution_ms) = args.auto_resolution_ms {
-        let clamped_auto_resolution_ms =
-            auto_resolution_ms.clamp(MIN_AUTO_RESOLUTION_MS, MAX_AUTO_RESOLUTION_MS);
-        if clamped_auto_resolution_ms != auto_resolution_ms {
-            tracing::warn!(
-                auto_resolution_ms,
-                clamped_auto_resolution_ms,
-                "clamped request_user_input autoResolutionMs to supported range"
-            );
-            args.auto_resolution_ms = Some(clamped_auto_resolution_ms);
-        }
     }
 
     Ok(args)
@@ -156,7 +123,7 @@ pub fn normalize_request_user_input_args(
 pub fn request_user_input_tool_description(available_modes: &[ModeKind]) -> String {
     let allowed_modes = format_allowed_modes(available_modes);
     format!(
-        "Request user input for one to three short questions and wait for the response. Set autoResolutionMs, from {MIN_AUTO_RESOLUTION_MS} to {MAX_AUTO_RESOLUTION_MS} milliseconds, only when the question is useful but non-blocking and continuing with best judgment is acceptable if the user does not answer; omit it when explicit user input is required. This tool is only available in {allowed_modes}."
+        "Request user input for one to three short questions and wait for the response. This tool is only available in {allowed_modes}."
     )
 }
 

@@ -1,14 +1,15 @@
 //! Skill-related configuration types shared across crates.
 
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
 
 use crate::ConfigLayerSource;
 use crate::ConfigLayerStack;
-use crate::ConfigLayerStackOrdering;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
+use tracing::warn;
 
 const fn default_enabled() -> bool {
     true
@@ -35,6 +36,11 @@ pub struct SkillsConfig {
     /// Whether turns receive the automatic skills instructions block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_instructions: Option<bool>,
+
+    /// Maximum tokens used by the available-skills catalog. Defaults to 2% of
+    /// the model context window and is capped at 10,000 tokens when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_context_tokens: Option<NonZeroUsize>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<SkillConfig>,
@@ -128,23 +134,22 @@ pub fn bundled_skills_enabled_from_stack(config_layer_stack: &ConfigLayerStack) 
     else {
         return true;
     };
+
     let skills: SkillsConfig = match skills_value.clone().try_into() {
         Ok(skills) => skills,
         Err(err) => {
-            tracing::warn!("invalid skills config: {err}");
+            warn!("invalid skills config: {err}");
             return true;
         }
     };
+
     skills.bundled.unwrap_or_default().enabled
 }
 
 /// Resolves skill enablement rules from user and session configuration layers.
 pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> SkillConfigRules {
     let mut entries = Vec::new();
-    for layer in config_layer_stack.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ true,
-    ) {
+    for layer in config_layer_stack.all_layers_low_to_high() {
         if !matches!(
             layer.name,
             ConfigLayerSource::User { .. } | ConfigLayerSource::SessionFlags
@@ -158,7 +163,7 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
         let skills: SkillsConfig = match skills_value.clone().try_into() {
             Ok(skills) => skills,
             Err(err) => {
-                tracing::warn!("invalid skills config: {err}");
+                warn!("invalid skills config: {err}");
                 continue;
             }
         };
@@ -167,7 +172,8 @@ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> S
             let Some(selector) = skill_config_rule_selector(&entry) else {
                 continue;
             };
-            // Preserve layer order so later selectors override earlier selectors for a skill.
+            // Preserve layer order so a later name selector can override an earlier path selector
+            // for the same loaded skill.
             entries.retain(|entry: &SkillConfigRule| entry.selector != selector);
             entries.push(SkillConfigRule {
                 selector,
@@ -187,18 +193,18 @@ fn skill_config_rule_selector(entry: &SkillConfig) -> Option<SkillConfigRuleSele
         (None, Some(name)) => {
             let name = name.trim();
             if name.is_empty() {
-                tracing::warn!("ignoring empty skills.config name override");
+                warn!("ignoring empty skills.config name override");
                 None
             } else {
                 Some(SkillConfigRuleSelector::Name(name.to_string()))
             }
         }
         (Some(_), Some(_)) => {
-            tracing::warn!("ignoring skills.config entry with both path and name selectors");
+            warn!("ignoring skills.config entry with both path and name selectors");
             None
         }
         (None, None) => {
-            tracing::warn!("ignoring skills.config entry without a path or name selector");
+            warn!("ignoring skills.config entry without a path or name selector");
             None
         }
     }

@@ -1,0 +1,35 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 18
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
+---
+                                                  │
+  Dashboard  ◆ BC        gpt-6.1-sol ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Bette╭ Select model ────────────────────────────────────────────────────╮ions
+ ▎ YOU  Create a│   1 ○ GPT-6-Astra                                                │
+                │       gpt-6-astra - Frontier intelligence for the most demanding │
+ ▎ CODEX  Starte│ › 2 ● GPT-6.1-Sol  current                                       │
+          by app│       gpt-6.1-sol - Latest workhorse model for coding and        │
+ ▎ PLAN  1. Buil│   3 ○ GPT-6-Sol                                                  │
+         2. Wire│       gpt-6-sol - Previous generation workhorse model.           │0000001
+         3. Rend│   4 ○ GPT-6-Luna                                                 │ session list
+                │       gpt-6-luna - Fast and affordable model for easier tasks.   │
+ ▌ tool exec jus│   5 ○ GPT-5.6-Sol                                                │
+                │       gpt-5.6-sol - Older generation workhorse model.            │
+ ▌ edited 3 file│   6 ○ GPT-5.6-Terra                                              │
+                │       gpt-5.6-terra - Older balanced model for straightforward   │
+ ▎ CODEX  The ne│   7 ○ GPT-5.6-Luna                                               │
+          surfac│       gpt-5.6-luna - Older fast and efficient model.             │
+                │   8 ○ GPT-5.5                                                    │
+                │       gpt-5.5 - Legacy coding model.                             │
+                │  wheel / j k  Enter select  Esc cancel  2/8                      │
+                ╰──────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

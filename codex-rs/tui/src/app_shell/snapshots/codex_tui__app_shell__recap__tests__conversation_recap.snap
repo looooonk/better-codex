@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/recap_tests.rs
+assertion_line: 52
+expression: screen
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  Recap
+
+           The updated interface supports the current model catalog and keeps existing
+           conversations available. Validation is still running.
+
+           Next: Review the remaining test failures before publishing.
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

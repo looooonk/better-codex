@@ -31,6 +31,12 @@ pub(in crate::app_shell) async fn persist_settings_update<F>(
 where
     F: Future<Output = Result<()>> + Send,
 {
+    if edits.is_empty() {
+        return match thread_update {
+            Some(thread_update) => thread_update.await,
+            None => Ok(()),
+        };
+    }
     let Some(thread_update) = thread_update else {
         write_config_batch(request_handle, edits).await?;
         return Ok(());

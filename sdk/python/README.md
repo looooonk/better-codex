@@ -1,11 +1,7 @@
-# OpenAI Codex Python SDK (Beta)
+# OpenAI Codex Python SDK
 
 Build Python applications that start Codex threads, run turns, stream progress,
 and control workspace access.
-
-> **Repository note:** Better Codex retains this upstream-derived SDK as a
-> backend integration surface. Its package and import names remain unchanged;
-> the primary Better Codex distribution is the full-screen terminal app.
 
 ## Install
 
@@ -69,9 +65,11 @@ Use Python's standard `help(openai_codex)`, `help(Codex)`, or
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md)
-- [API reference](docs/api-reference.md)
-- [FAQ](docs/faq.md)
-- [Examples](examples/README.md)
+- [Getting started](https://github.com/openai/codex/blob/main/sdk/python/docs/getting-started.md)
+- [API reference](https://github.com/openai/codex/blob/main/sdk/python/docs/api-reference.md)
+- [Untrusted external messages](https://github.com/openai/codex/blob/main/sdk/python/docs/api-reference.md#externalmessage)
+- [FAQ](https://github.com/openai/codex/blob/main/sdk/python/docs/faq.md)
+- [Examples](https://github.com/openai/codex/blob/main/sdk/python/examples/README.md)
 
-The package is licensed under the [repository Apache License 2.0](../../LICENSE).
+The package is licensed under the
+[repository Apache License 2.0](https://github.com/openai/codex/blob/main/LICENSE).

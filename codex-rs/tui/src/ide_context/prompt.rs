@@ -6,9 +6,12 @@ use codex_app_server_protocol::UserInput;
 
 use super::IdeContext;
 
-const MAX_ACTIVE_SELECTION_CHARS: usize = 40_000;
-const MAX_OPEN_TABS: usize = 100;
-const MAX_OPEN_TABS_CHARS: usize = 20_000;
+const MAX_PREFIX_BYTES: usize = 8_192;
+const MAX_PATH_BYTES: usize = 2_048;
+const MAX_SELECTION_RANGES: usize = 32;
+const MAX_ACTIVE_SELECTION_CHARS: usize = 4_096;
+const MAX_OPEN_TABS: usize = 20;
+const MAX_OPEN_TABS_CHARS: usize = 2_048;
 // Match the desktop app and IDE extension delimiter exactly. IDE context is serialized into the
 // raw prompt before this marker, then transcript rendering strips back to the request after the last
 // marker. Keeping the same marker and stripping semantics lets threads created with IDE context in
@@ -23,7 +26,18 @@ pub(crate) fn apply_ide_context_to_user_input(
         return false;
     };
 
-    let prefix = format!("{context_text}\n{PROMPT_REQUEST_BEGIN}\n");
+    let suffix = format!("\n{PROMPT_REQUEST_BEGIN}\n");
+    let truncation = "\n[IDE context truncated.]";
+    let available = MAX_PREFIX_BYTES - suffix.len();
+    let context_text = if context_text.len() > available {
+        format!(
+            "{}{truncation}",
+            utf8_prefix(&context_text, available - truncation.len())
+        )
+    } else {
+        context_text
+    };
+    let prefix = format!("{context_text}{suffix}");
     if let Some(text_index) = items
         .iter()
         .position(|item| matches!(item, UserInput::Text { .. }))
@@ -73,6 +87,14 @@ pub(crate) fn extract_prompt_request_with_offset(message: &str) -> (&str, usize)
     (trimmed_request, request_start + leading_trimmed_len)
 }
 
+fn utf8_prefix(text: &str, max_bytes: usize) -> &str {
+    let mut end = text.len().min(max_bytes);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 fn prefixed_text_input(prefix: String, text: String, text_elements: Vec<TextElement>) -> UserInput {
     let prefix_len = prefix.len();
     UserInput::Text {
@@ -99,7 +121,7 @@ fn render_prompt_context(context: &IdeContext) -> Option<String> {
     if let Some(active_file) = &context.active_file {
         ide_context_section.push_str(&format!(
             "\n## Active file: {}\n",
-            active_file.descriptor.path
+            utf8_prefix(&active_file.descriptor.path, MAX_PATH_BYTES)
         ));
     }
 
@@ -111,6 +133,7 @@ fn render_prompt_context(context: &IdeContext) -> Option<String> {
         }
         .iter()
         .filter(|range| range.start != range.end)
+        .take(MAX_SELECTION_RANGES)
         .collect::<Vec<_>>();
 
         if !selected_ranges.is_empty()
@@ -123,13 +146,13 @@ fn render_prompt_context(context: &IdeContext) -> Option<String> {
             }
             for range in selected_ranges {
                 // Render ranges as 1-based positions for the prompt.
-                let start_line = range.start.line + 1;
-                let start_column = range.start.character + 1;
-                let end_line = range.end.line + 1;
-                let end_column = range.end.character + 1;
+                let start_line = range.start.line.saturating_add(1);
+                let start_column = range.start.character.saturating_add(1);
+                let end_line = range.end.line.saturating_add(1);
+                let end_column = range.end.character.saturating_add(1);
                 ide_context_section.push_str(&format!(
                     "- {}: line {start_line}, column {start_column} to line {end_line}, column {end_column}\n",
-                    active_file.descriptor.path
+                    utf8_prefix(&active_file.descriptor.path, MAX_PATH_BYTES)
                 ));
             }
         }
@@ -159,7 +182,11 @@ fn render_prompt_context(context: &IdeContext) -> Option<String> {
                 break;
             }
 
-            let tab_line = format!("- {}: {}\n", tab.label, tab.path);
+            let tab_line = format!(
+                "- {}: {}\n",
+                utf8_prefix(&tab.label, MAX_PATH_BYTES),
+                utf8_prefix(&tab.path, MAX_PATH_BYTES)
+            );
             if rendered_tab_chars + tab_line.len() > MAX_OPEN_TABS_CHARS {
                 break;
             }
@@ -185,219 +212,5 @@ fn render_prompt_context(context: &IdeContext) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::ActiveFile;
-    use super::super::FileDescriptor;
-    use super::super::IdeContext;
-    use super::super::Position;
-    use super::super::Range;
-    use super::*;
-    use pretty_assertions::assert_eq;
-    use std::path::PathBuf;
-
-    fn descriptor(label: &str, path: &str) -> FileDescriptor {
-        FileDescriptor {
-            label: label.to_string(),
-            path: path.to_string(),
-        }
-    }
-
-    #[test]
-    fn render_prompt_context_matches_app_format() {
-        let context = IdeContext {
-            active_file: Some(ActiveFile {
-                descriptor: descriptor("lib.rs", "src/lib.rs"),
-                selection: Range {
-                    start: Position {
-                        line: 4,
-                        character: 0,
-                    },
-                    end: Position {
-                        line: 6,
-                        character: 1,
-                    },
-                },
-                active_selection_content: "fn selected() {}".to_string(),
-                selections: Vec::new(),
-            }),
-            open_tabs: vec![
-                descriptor("lib.rs", "src/lib.rs"),
-                descriptor("main.rs", "src/main.rs"),
-            ],
-        };
-
-        assert_eq!(
-            render_prompt_context(&context),
-            Some(
-                "# Context from my IDE setup:\n\n## Active file: src/lib.rs\n\n## Active selection of the file:\nfn selected() {}\n## Open tabs:\n- lib.rs: src/lib.rs\n- main.rs: src/main.rs\n"
-                    .to_string()
-            )
-        );
-    }
-
-    #[test]
-    fn render_prompt_context_omits_empty_context() {
-        let context = IdeContext {
-            active_file: None,
-            open_tabs: Vec::new(),
-        };
-
-        assert_eq!(render_prompt_context(&context), None);
-    }
-
-    #[test]
-    fn apply_ide_context_uses_desktop_prompt_request_delimiter() {
-        let context = IdeContext {
-            active_file: Some(ActiveFile {
-                descriptor: descriptor("lib.rs", "src/lib.rs"),
-                selection: Range {
-                    start: Position {
-                        line: 0,
-                        character: 0,
-                    },
-                    end: Position {
-                        line: 0,
-                        character: 0,
-                    },
-                },
-                active_selection_content: String::new(),
-                selections: Vec::new(),
-            }),
-            open_tabs: Vec::new(),
-        };
-        let text = "Ask $figma".to_string();
-        let mut items = vec![
-            UserInput::LocalImage {
-                path: PathBuf::from("/tmp/screenshot.png"),
-                detail: None,
-            },
-            UserInput::Text {
-                text,
-                text_elements: vec![TextElement::new(
-                    ByteRange { start: 4, end: 10 },
-                    Some("$figma".to_string()),
-                )],
-            },
-        ];
-
-        assert!(apply_ide_context_to_user_input(&context, &mut items));
-
-        let expected_prefix = "# Context from my IDE setup:\n\n## Active file: src/lib.rs\n\n## My request for Codex:\n";
-        let prefix_len = expected_prefix.len();
-        assert_eq!(
-            items,
-            vec![
-                UserInput::LocalImage {
-                    path: PathBuf::from("/tmp/screenshot.png"),
-                    detail: None,
-                },
-                UserInput::Text {
-                    text: format!("{expected_prefix}Ask $figma"),
-                    text_elements: vec![TextElement::new(
-                        ByteRange {
-                            start: prefix_len + 4,
-                            end: prefix_len + 10,
-                        },
-                        Some("$figma".to_string()),
-                    )],
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn extract_prompt_request_returns_text_after_last_delimiter() {
-        let message =
-            "# Context\n## My request for Codex:\nFirst\n## My request for Codex:\n  Second\n";
-
-        assert_eq!(
-            extract_prompt_request_with_offset(message),
-            ("Second", message.find("Second").expect("request offset"))
-        );
-    }
-
-    #[test]
-    fn render_prompt_context_includes_selection_ranges_without_content() {
-        let first_range = Range {
-            start: Position {
-                line: 1,
-                character: 2,
-            },
-            end: Position {
-                line: 1,
-                character: 5,
-            },
-        };
-        let second_range = Range {
-            start: Position {
-                line: 3,
-                character: 0,
-            },
-            end: Position {
-                line: 4,
-                character: 1,
-            },
-        };
-        let context = IdeContext {
-            active_file: Some(ActiveFile {
-                descriptor: descriptor("lib.rs", "src/lib.rs"),
-                selection: first_range.clone(),
-                active_selection_content: String::new(),
-                selections: vec![first_range, second_range],
-            }),
-            open_tabs: Vec::new(),
-        };
-
-        assert_eq!(
-            render_prompt_context(&context),
-            Some(
-                "# Context from my IDE setup:\n\n## Active file: src/lib.rs\n\n## Active selection ranges:\n- src/lib.rs: line 2, column 3 to line 2, column 6\n- src/lib.rs: line 4, column 1 to line 5, column 2\n"
-                    .to_string()
-            )
-        );
-    }
-
-    #[test]
-    fn render_prompt_context_truncates_large_selection() {
-        let context = IdeContext {
-            active_file: Some(ActiveFile {
-                descriptor: descriptor("large.txt", "large.txt"),
-                selection: Range {
-                    start: Position {
-                        line: 0,
-                        character: 0,
-                    },
-                    end: Position {
-                        line: 0,
-                        character: 1,
-                    },
-                },
-                active_selection_content: format!("{}tail", "a".repeat(MAX_ACTIVE_SELECTION_CHARS)),
-                selections: Vec::new(),
-            }),
-            open_tabs: Vec::new(),
-        };
-
-        let rendered = render_prompt_context(&context).expect("rendered IDE context");
-        assert!(rendered.contains(&format!(
-            "[Selection truncated to {MAX_ACTIVE_SELECTION_CHARS} characters.]"
-        )));
-        assert!(!rendered.contains("tail"));
-    }
-
-    #[test]
-    fn render_prompt_context_omits_excess_open_tabs() {
-        let open_tabs = (0..MAX_OPEN_TABS + 2)
-            .map(|index| descriptor(&format!("file-{index}.rs"), &format!("src/file-{index}.rs")))
-            .collect::<Vec<_>>();
-        let context = IdeContext {
-            active_file: None,
-            open_tabs,
-        };
-
-        let rendered = render_prompt_context(&context).expect("rendered IDE context");
-        assert!(rendered.contains("- file-99.rs: src/file-99.rs\n"));
-        assert!(!rendered.contains("- file-100.rs: src/file-100.rs\n"));
-        assert!(rendered.contains("[2 open tabs omitted.]\n"));
-    }
-}
+#[path = "prompt_tests.rs"]
+mod tests;

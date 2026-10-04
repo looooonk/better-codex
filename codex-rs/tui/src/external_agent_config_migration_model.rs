@@ -5,6 +5,7 @@ pub(crate) fn external_agent_config_migration_item_label(
     item: &ExternalAgentConfigMigrationItem,
 ) -> &'static str {
     match item.item_type {
+        ExternalAgentConfigMigrationItemType::Memory => "Memories",
         ExternalAgentConfigMigrationItemType::AgentsMd => "Instructions (CLAUDE.md -> AGENTS.md)",
         ExternalAgentConfigMigrationItemType::Config => "Settings (settings.json -> config.toml)",
         ExternalAgentConfigMigrationItemType::Skills => "Skills",
@@ -21,6 +22,7 @@ pub(crate) fn external_agent_config_migration_type_label(
     item_type: ExternalAgentConfigMigrationItemType,
 ) -> &'static str {
     match item_type {
+        ExternalAgentConfigMigrationItemType::Memory => "Memories",
         ExternalAgentConfigMigrationItemType::AgentsMd => "Instructions",
         ExternalAgentConfigMigrationItemType::Config => "Settings",
         ExternalAgentConfigMigrationItemType::Skills => "Skills",
@@ -103,6 +105,7 @@ pub(crate) fn external_agent_config_migration_item_count(
             .as_ref()
             .map_or(1, |details| details.skills.len()),
         ExternalAgentConfigMigrationItemType::AgentsMd
+        | ExternalAgentConfigMigrationItemType::Memory
         | ExternalAgentConfigMigrationItemType::Config => 1,
     }
 }
@@ -150,6 +153,7 @@ pub(crate) fn external_agent_config_migration_item_detail(
                 .filter_map(|session| session.title.as_deref()),
         )),
         ExternalAgentConfigMigrationItemType::AgentsMd
+        | ExternalAgentConfigMigrationItemType::Memory
         | ExternalAgentConfigMigrationItemType::Config => None,
     }
 }

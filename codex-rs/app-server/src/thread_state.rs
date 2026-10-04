@@ -1,21 +1,24 @@
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::ConnectionRequestId;
-use crate::thread_state_pending_user_input::PendingUserInputSubmissions;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadHistoryBuilder;
+use codex_app_server_protocol::ThreadHistoryTurnMetadata;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadSettings;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnError;
+use codex_app_server_protocol::TurnItemsView;
 use codex_core::CodexThread;
 use codex_core::ThreadConfigSnapshot;
 use codex_file_watcher::WatchRegistration;
 use codex_protocol::ThreadId;
 #[cfg(test)]
 use codex_protocol::config_types::MultiAgentMode;
+use codex_protocol::items::AgentMessageContent as CoreAgentMessageContent;
+use codex_protocol::items::TurnItem as CoreTurnItem;
+use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::TurnAbortReason;
 use codex_rollout::RolloutItem;
 use codex_rollout::state_db::StateDbHandle;
 use codex_utils_path_uri::LegacyAppPathString;
@@ -32,55 +35,11 @@ use tracing::error;
 
 type PendingInterruptQueue = Vec<ConnectionRequestId>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ThreadTerminalEvent {
-    Completed {
-        turn_id: String,
-        has_error: bool,
-    },
-    Aborted {
-        turn_id: String,
-        reason: TurnAbortReason,
-    },
-}
-
-impl ThreadTerminalEvent {
-    pub(crate) fn from_event(event: &EventMsg) -> Option<Self> {
-        match event {
-            EventMsg::TurnComplete(event) => Some(Self::Completed {
-                turn_id: event.turn_id.clone(),
-                has_error: event.error.is_some(),
-            }),
-            EventMsg::TurnAborted(event) => Some(Self::Aborted {
-                turn_id: event.turn_id.clone()?,
-                reason: event.reason.clone(),
-            }),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn turn_id(&self) -> &str {
-        match self {
-            Self::Completed { turn_id, .. } | Self::Aborted { turn_id, .. } => turn_id,
-        }
-    }
-}
-
-struct TranslatedTerminalEvent {
-    tx: watch::Sender<Option<ThreadTerminalEvent>>,
-}
-
-impl Default for TranslatedTerminalEvent {
-    fn default() -> Self {
-        Self {
-            tx: watch::channel(None).0,
-        }
-    }
-}
-
 pub(crate) struct PendingThreadResumeRequest {
     pub(crate) request_id: ConnectionRequestId,
     pub(crate) history_items: Vec<RolloutItem>,
+    /// Usage attribution already resolved while cold-loading a paginated child.
+    pub(crate) cold_resume_token_usage_turn_id: Option<String>,
     pub(crate) config_snapshot: ThreadConfigSnapshot,
     pub(crate) instruction_sources: Vec<LegacyAppPathString>,
     pub(crate) thread_summary: codex_app_server_protocol::Thread,
@@ -100,11 +59,20 @@ pub(crate) struct PendingThreadResumeRequest {
 // ThreadListenerCommand is used to perform operations in the context of the thread listener, for serialization purposes.
 pub(crate) enum ThreadListenerCommand {
     // SendThreadResumeResponse is used to resume an already running thread by sending the thread's history to the client and atomically subscribing for new updates.
-    SendThreadResumeResponse(Box<PendingThreadResumeRequest>),
+    SendThreadResumeResponse {
+        request: Box<PendingThreadResumeRequest>,
+        completion_tx: oneshot::Sender<()>,
+    },
     // EmitThreadGoalUpdated is used to order goal updates with running-thread resume responses and goal clears.
     EmitThreadGoalUpdated {
         turn_id: Option<String>,
         goal: ThreadGoal,
+    },
+    // EmitThreadQueueChanged orders durable queue updates with thread notifications.
+    EmitThreadQueueChanged,
+    // EmitWarning is used to order extension warnings with other thread notifications.
+    EmitWarning {
+        message: String,
     },
     // EmitThreadGoalCleared is used to order app-server goal clears with running-thread resume responses.
     EmitThreadGoalCleared,
@@ -112,8 +80,6 @@ pub(crate) enum ThreadListenerCommand {
     EmitThreadGoalSnapshot {
         state_db: StateDbHandle,
     },
-    // Queue notifications share the listener FIFO with subscribed thread events.
-    EmitThreadQueueChanged,
     // ResolveServerRequest is used to notify the client that the request has been resolved.
     // It is executed in the thread listener's context to ensure that the resolved notification is ordered with regard to the request itself.
     ResolveServerRequest {
@@ -127,22 +93,18 @@ pub(crate) enum ThreadListenerCommand {
 pub(crate) struct TurnSummary {
     pub(crate) started_at: Option<i64>,
     pub(crate) command_execution_started: HashSet<String>,
-    pub(crate) command_execution_completed_early: HashSet<String>,
-    pub(crate) pending_command_execution_items: HashMap<String, ThreadItem>,
     pub(crate) last_error: Option<TurnError>,
+    pub(crate) last_agent_message: Option<ThreadItem>,
 }
 
 #[derive(Default)]
 pub(crate) struct ThreadState {
+    goal_resume_lock: Arc<Mutex<()>>,
     pub(crate) pending_interrupts: PendingInterruptQueue,
-    pub(crate) pending_rollbacks: Option<ConnectionRequestId>,
     pub(crate) turn_summary: TurnSummary,
     pub(crate) last_terminal_turn_id: Option<String>,
-    last_terminal_listener_generation: Option<u64>,
-    translated_terminal_event: TranslatedTerminalEvent,
-    pending_user_input_submissions: PendingUserInputSubmissions,
-    queued_turn_awaiting_terminal: Option<(String, u64)>,
-    queued_turn_ambiguous_recovery_failed: Option<String>,
+    /// Lets an internal runtime replacement wait until the old listener has processed Core's
+    /// `ShutdownComplete` event before that listener is superseded.
     shutdown_drain_waiter: Option<oneshot::Sender<()>>,
     pub(crate) cancel_tx: Option<oneshot::Sender<()>>,
     pub(crate) experimental_raw_events: bool,
@@ -173,9 +135,6 @@ impl ThreadState {
             let _ = previous.send(());
         }
         self.listener_generation = self.listener_generation.wrapping_add(1);
-        self.translated_terminal_event.tx.send_replace(None);
-        self.pending_user_input_submissions.clear();
-        self.queued_turn_awaiting_terminal = None;
         self.last_thread_settings = Some(thread_settings_baseline);
         let (listener_command_tx, listener_command_rx) = mpsc::unbounded_channel();
         self.listener_command_tx = Some(listener_command_tx);
@@ -192,9 +151,6 @@ impl ThreadState {
         self.listener_command_tx = None;
         self.current_turn_history.reset();
         self.listener_thread = None;
-        self.translated_terminal_event.tx.send_replace(None);
-        self.pending_user_input_submissions.clear();
-        self.queued_turn_awaiting_terminal = None;
         self.watch_registration = WatchRegistration::default();
     }
 
@@ -212,6 +168,23 @@ impl ThreadState {
         self.current_turn_history.active_turn_snapshot()
     }
 
+    /// Returns the same turn ID as `active_turn_snapshot` without cloning its items.
+    pub(crate) fn active_turn_id(&self) -> Option<&str> {
+        self.current_turn_history.active_turn_id()
+    }
+
+    pub(crate) fn active_turn_snapshot_with_items_view(
+        &self,
+        items_view: TurnItemsView,
+    ) -> Option<Turn> {
+        self.current_turn_history
+            .active_turn_snapshot_with_items_view(items_view)
+    }
+
+    pub(crate) fn active_turn_metadata_snapshot(&self) -> Option<ThreadHistoryTurnMetadata> {
+        self.current_turn_history.active_turn_metadata_snapshot()
+    }
+
     pub(crate) fn register_shutdown_drain_waiter(&mut self) -> oneshot::Receiver<()> {
         let (completion_tx, completion_rx) = oneshot::channel();
         self.shutdown_drain_waiter = Some(completion_tx);
@@ -226,91 +199,23 @@ impl ThreadState {
         if let EventMsg::TurnStarted(payload) = event {
             self.turn_summary.started_at = payload.started_at;
         }
-        self.pending_user_input_submissions
-            .observe(event_turn_id, event);
+        if let EventMsg::ItemCompleted(payload) = event
+            && let CoreTurnItem::AgentMessage(item) = &payload.item
+            && matches!(item.phase, Some(MessagePhase::FinalAnswer) | None)
+            && item.content.iter().any(|content| {
+                matches!(content, CoreAgentMessageContent::Text { text } if !text.trim().is_empty())
+            })
+        {
+            self.turn_summary.last_agent_message =
+                Some(ThreadItem::from(CoreTurnItem::AgentMessage(item.clone())));
+        }
         self.current_turn_history.handle_event(event);
-        if matches!(event, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
-            && !self.current_turn_history.has_active_turn()
-        {
+        if matches!(event, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_)) {
             self.last_terminal_turn_id = Some(event_turn_id.to_string());
-            self.last_terminal_listener_generation = Some(self.listener_generation);
-            self.current_turn_history.reset();
+            if !self.current_turn_history.has_active_turn() {
+                self.current_turn_history.reset();
+            }
         }
-    }
-
-    pub(crate) fn mark_user_input_submission_pending(&mut self, turn_id: String) {
-        self.pending_user_input_submissions.mark(turn_id);
-    }
-
-    pub(crate) fn has_pending_user_input_submission(&self) -> bool {
-        self.pending_user_input_submissions.is_pending()
-    }
-
-    pub(crate) fn note_terminal_event_translated(&mut self, event: &EventMsg) {
-        if let Some(event) = ThreadTerminalEvent::from_event(event) {
-            let turn_id = event.turn_id().to_string();
-            self.translated_terminal_event.tx.send_replace(Some(event));
-            self.clear_queued_turn_awaiting_terminal(&turn_id);
-        }
-    }
-
-    pub(crate) fn mark_queued_turn_awaiting_terminal(&mut self, turn_id: String) {
-        self.queued_turn_ambiguous_recovery_failed = None;
-        self.queued_turn_awaiting_terminal = Some((turn_id, self.listener_generation));
-    }
-
-    pub(crate) fn mark_queued_turn_ambiguous_recovery_failed(&mut self, turn_id: String) {
-        self.queued_turn_awaiting_terminal = None;
-        self.queued_turn_ambiguous_recovery_failed = Some(turn_id);
-    }
-
-    pub(crate) fn queued_turn_ambiguous_recovery_failed(&self, turn_id: &str) -> bool {
-        self.queued_turn_ambiguous_recovery_failed.as_deref() == Some(turn_id)
-    }
-
-    pub(crate) fn clear_queued_turn_awaiting_terminal(&mut self, turn_id: &str) {
-        if self
-            .queued_turn_awaiting_terminal
-            .as_ref()
-            .is_some_and(|(queued_turn_id, _)| queued_turn_id == turn_id)
-        {
-            self.queued_turn_awaiting_terminal = None;
-        }
-    }
-
-    pub(crate) fn clear_queued_turn_recovery_markers(&mut self, turn_id: &str) {
-        self.clear_queued_turn_awaiting_terminal(turn_id);
-        if self.queued_turn_ambiguous_recovery_failed.as_deref() == Some(turn_id) {
-            self.queued_turn_ambiguous_recovery_failed = None;
-        }
-    }
-
-    pub(crate) fn translated_terminal_event_receiver(
-        &self,
-    ) -> watch::Receiver<Option<ThreadTerminalEvent>> {
-        self.translated_terminal_event.tx.subscribe()
-    }
-
-    pub(crate) fn translated_terminal_event_matches(&self, turn_id: &str) -> bool {
-        self.translated_terminal_event
-            .tx
-            .borrow()
-            .as_ref()
-            .is_some_and(|event| event.turn_id() == turn_id)
-    }
-
-    pub(crate) fn terminal_event_pending(&self, turn_id: &str) -> bool {
-        self.translated_terminal_event_matches(turn_id)
-            || self.queued_turn_awaiting_terminal.as_ref().is_some_and(
-                |(queued_turn_id, listener_generation)| {
-                    queued_turn_id == turn_id && *listener_generation == self.listener_generation
-                },
-            )
-            || self
-                .active_turn_snapshot()
-                .is_some_and(|turn| turn.id == turn_id)
-            || (self.last_terminal_turn_id.as_deref() == Some(turn_id)
-                && self.last_terminal_listener_generation == Some(self.listener_generation))
     }
 
     pub(crate) fn note_thread_settings(&mut self, thread_settings: ThreadSettings) -> bool {
@@ -361,7 +266,6 @@ mod tests {
     use codex_protocol::config_types::CollaborationMode;
     use codex_protocol::config_types::ModeKind;
     use codex_protocol::config_types::Settings;
-    use codex_protocol::protocol::TurnAbortedEvent;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
 
@@ -381,67 +285,9 @@ mod tests {
         assert_eq!(results, vec![true, false, true, false]);
     }
 
-    #[test]
-    fn queued_terminal_marker_covers_fast_turns_and_preserves_abort_reason() {
-        let mut state = ThreadState {
-            listener_generation: 7,
-            ..Default::default()
-        };
-        state.mark_queued_turn_awaiting_terminal("turn-1".to_string());
-        let mut terminal_event_rx = state.translated_terminal_event_receiver();
-
-        assert!(state.terminal_event_pending("turn-1"));
-        state.note_terminal_event_translated(&EventMsg::TurnAborted(TurnAbortedEvent {
-            turn_id: Some("turn-1".to_string()),
-            reason: TurnAbortReason::BudgetLimited,
-            started_at: None,
-            completed_at: None,
-            duration_ms: None,
-        }));
-
-        assert_eq!(
-            terminal_event_rx.borrow_and_update().clone(),
-            Some(ThreadTerminalEvent::Aborted {
-                turn_id: "turn-1".to_string(),
-                reason: TurnAbortReason::BudgetLimited,
-            })
-        );
-        assert!(state.terminal_event_pending("turn-1"));
-        state.clear_listener();
-        assert_eq!(terminal_event_rx.borrow_and_update().clone(), None);
-    }
-
-    #[test]
-    fn queued_terminal_marker_is_listener_generation_bound() {
-        let mut state = ThreadState {
-            listener_generation: 7,
-            ..Default::default()
-        };
-        state.mark_queued_turn_awaiting_terminal("turn-1".to_string());
-        state.listener_generation = 8;
-
-        assert!(!state.terminal_event_pending("turn-1"));
-    }
-
-    #[test]
-    fn failed_ambiguous_recovery_does_not_wait_for_a_terminal_event() {
-        let mut state = ThreadState {
-            listener_generation: 7,
-            ..Default::default()
-        };
-        state.mark_queued_turn_awaiting_terminal("turn-1".to_string());
-        state.mark_queued_turn_ambiguous_recovery_failed("turn-1".to_string());
-
-        assert!(state.queued_turn_ambiguous_recovery_failed("turn-1"));
-        assert!(!state.terminal_event_pending("turn-1"));
-        state.clear_listener();
-        assert!(state.queued_turn_ambiguous_recovery_failed("turn-1"));
-        state.clear_queued_turn_recovery_markers("turn-1");
-        assert!(!state.queued_turn_ambiguous_recovery_failed("turn-1"));
-    }
-
     fn thread_settings(model: &str) -> ThreadSettings {
         ThreadSettings {
+            disabled_plugin_ids: Vec::new(),
             cwd: AbsolutePathBuf::from_absolute_path("/tmp").expect("absolute path"),
             approval_policy: AskForApproval::OnRequest,
             approvals_reviewer: ApprovalsReviewer::User,
@@ -516,6 +362,21 @@ pub(crate) struct ThreadStateManager {
 }
 
 impl ThreadStateManager {
+    /// Coordinates goal edits with cold/path-based resume for just this thread.
+    pub(crate) async fn lock_goal_resume(
+        &self,
+        thread_id: ThreadId,
+    ) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = self
+            .thread_state(thread_id)
+            .await
+            .lock()
+            .await
+            .goal_resume_lock
+            .clone();
+        lock.lock_owned().await
+    }
+
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -633,7 +494,7 @@ impl ThreadStateManager {
                 thread_id = %thread_id,
                 listener_generation = thread_state.listener_generation,
                 had_listener = thread_state.cancel_tx.is_some(),
-                had_active_turn = thread_state.active_turn_snapshot().is_some(),
+                had_active_turn = thread_state.active_turn_id().is_some(),
                 "clearing thread listener during thread-state teardown"
             );
             thread_state.clear_listener();
@@ -657,7 +518,7 @@ impl ThreadStateManager {
                 thread_id = %thread_id,
                 listener_generation = thread_state.listener_generation,
                 had_listener = thread_state.cancel_tx.is_some(),
-                had_active_turn = thread_state.active_turn_snapshot().is_some(),
+                had_active_turn = thread_state.active_turn_id().is_some(),
                 "clearing thread listener during app-server shutdown"
             );
             thread_state.clear_listener();

@@ -25,10 +25,14 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::layout::Rect;
 
+use super::keybindings::ResolvedKey;
+use crate::keymap::KeymapContext;
+use crate::keymap::KeymapContextSet;
+
 const HELP_PAGE_SCROLL_STEP: usize = 8;
 
 #[derive(Clone, Copy)]
-enum ActiveInputRoute {
+pub(super) enum ActiveInputRoute {
     DiffView,
     ToolOutput,
     AgentLog,
@@ -49,7 +53,7 @@ enum ActiveInputRoute {
 }
 
 impl ShellState {
-    fn active_input_route(&self) -> Option<ActiveInputRoute> {
+    pub(super) fn active_input_route(&self) -> Option<ActiveInputRoute> {
         if self.diff_view.is_some() {
             Some(ActiveInputRoute::DiffView)
         } else if self.tool_output.is_some() {
@@ -95,6 +99,56 @@ impl ShellState {
         }
     }
 
+    fn keybinding_contexts(&self) -> KeymapContextSet {
+        use KeymapContext::*;
+        match self.active_input_route() {
+            Some(
+                ActiveInputRoute::DiffView
+                | ActiveInputRoute::ToolOutput
+                | ActiveInputRoute::AgentLog,
+            ) => KeymapContextSet::new(Pager).with_copy(),
+            Some(ActiveInputRoute::Approval) => KeymapContextSet::new(Approval).with(List),
+            Some(ActiveInputRoute::Selector) if self.transcript_find.is_some() => {
+                KeymapContextSet::new(Editor).with(List)
+            }
+            Some(ActiveInputRoute::AccountAuth)
+                if self
+                    .pending_account_auth
+                    .as_ref()
+                    .is_some_and(super::account_auth::AccountAuthState::editing) =>
+            {
+                KeymapContextSet::new(Editor).with(List)
+            }
+            Some(ActiveInputRoute::McpManagement)
+                if self
+                    .pending_mcp_management
+                    .as_ref()
+                    .is_some_and(super::mcp_management::McpManagementState::editing) =>
+            {
+                KeymapContextSet::new(Editor).with(List)
+            }
+            Some(
+                ActiveInputRoute::ElicitationEditing
+                | ActiveInputRoute::UserInput
+                | ActiveInputRoute::RewindEditing,
+            ) => KeymapContextSet::new(Editor).with(List),
+            Some(_) => KeymapContextSet::new(List),
+            None if self.dashboard_focused() => {
+                if self.plain_text_repeat_enabled() {
+                    KeymapContextSet::new(Editor).with(List)
+                } else {
+                    KeymapContextSet::new(List)
+                }
+            }
+            None if self.transcript_selection.is_some() => KeymapContextSet::new(Pager).with_copy(),
+            None => KeymapContextSet::new(Global)
+                .with(Chat)
+                .with(Composer)
+                .with(Editor)
+                .with(Voice),
+        }
+    }
+
     pub(super) fn composer_owns_focus(&self) -> bool {
         self.active_input_route().is_none()
             && !self.dashboard_focused()
@@ -116,13 +170,18 @@ impl ShellState {
                 .pending_account_auth
                 .as_ref()
                 .is_some_and(super::account_auth::AccountAuthState::editing),
+            Some(ActiveInputRoute::Selector) => self.transcript_find.is_some(),
             Some(_) => false,
-            None if self.dashboard_route == DashboardRoute::Sessions
+            None if self.dashboard_visible
+                && self.dashboard_route == DashboardRoute::Sessions
                 && self.session_list.focused =>
             {
                 self.session_list.search_active() || self.session_list.renaming()
             }
-            None if self.dashboard_route == DashboardRoute::Status && self.settings.focused => {
+            None if self.dashboard_visible
+                && self.dashboard_route == DashboardRoute::Status
+                && self.settings.focused =>
+            {
                 self.settings.editing()
             }
             None => !self.dashboard_focused() && self.transcript_selection.is_none(),
@@ -305,6 +364,36 @@ impl ShellState {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return Ok(false);
         }
+        let contexts = self.keybinding_contexts();
+        let fixed_exit = key_hint::ctrl(KeyCode::Char('c')).is_press(key)
+            && (self.side_parent.is_some()
+                || self.active_turn_id.is_none() && !self.has_pending_shell_command());
+        let resolved = if fixed_exit {
+            ResolvedKey::Key(key)
+        } else {
+            self.keybindings.resolve(key, contexts)
+        };
+        let key = match resolved {
+            ResolvedKey::Navigation(key) if self.transcript_find.is_some() => {
+                if key.kind == KeyEventKind::Press
+                    || !matches!(key.code, KeyCode::Enter | KeyCode::Esc)
+                {
+                    self.handle_selector_navigation(key, app_server).await?;
+                }
+                return Ok(false);
+            }
+            ResolvedKey::Key(key) | ResolvedKey::Navigation(key) => key,
+            ResolvedKey::Consumed => return Ok(false),
+            ResolvedKey::Shortcut(action) => {
+                if key.kind == KeyEventKind::Press {
+                    self.dispatch_keybinding(action, config, app_server).await?;
+                }
+                return Ok(false);
+            }
+        };
+        if let Some(pending) = self.pending_user_input.as_mut() {
+            pending.snooze_auto_resolution();
+        }
         let is_plain_text_repeat = if key.kind == KeyEventKind::Repeat
             && let KeyCode::Char(ch) = key.code
             && !ch.is_control()
@@ -342,6 +431,10 @@ impl ShellState {
         }
         let is_ctrl_c =
             key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c'));
+        if is_ctrl_c && self.side_parent.is_some() {
+            self.return_from_side(app_server).await?;
+            return Ok(false);
+        }
         if is_ctrl_c {
             if self.active_turn_id.is_some() {
                 self.exit_confirmation_pending = false;
@@ -364,11 +457,22 @@ impl ShellState {
         if !matches!(key.code, KeyCode::Esc) {
             self.exit_confirmation_pending = false;
         }
+        if contexts.contains(KeymapContext::Pager)
+            && self.keybindings.configured("global", "copy")
+            && key_hint::ctrl(KeyCode::Char('o')).is_press(key)
+        {
+            self.copy_selected_transcript_with(copy_fn);
+            return Ok(false);
+        }
         if let Some(exit) = self
             .handle_active_input_route(key, config, app_server)
             .await?
         {
             return Ok(exit);
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('v')) {
+            self.paste_image().await;
+            return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('d')) {
             self.toggle_dashboard();
@@ -401,14 +505,15 @@ impl ShellState {
             }
             return Ok(false);
         }
-        let dashboard_text_input_focused = match self.dashboard_route {
-            DashboardRoute::Sessions => {
-                self.session_list.focused
-                    && (self.session_list.search_active() || self.session_list.renaming())
-            }
-            DashboardRoute::Status => self.settings.focused && self.settings.editing(),
-            DashboardRoute::Agents | DashboardRoute::Help => false,
-        };
+        let dashboard_text_input_focused = self.dashboard_visible
+            && match self.dashboard_route {
+                DashboardRoute::Sessions => {
+                    self.session_list.focused
+                        && (self.session_list.search_active() || self.session_list.renaming())
+                }
+                DashboardRoute::Status => self.settings.focused && self.settings.editing(),
+                DashboardRoute::Agents | DashboardRoute::Help => false,
+            };
         if self.composer.is_empty()
             && (self.dashboard_focused() && !dashboard_text_input_focused
                 || text_input_action_from_key(key).is_none())
@@ -471,7 +576,8 @@ impl ShellState {
             }
             return Ok(false);
         }
-        if self.dashboard_route == DashboardRoute::Sessions
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Sessions
             && self.session_list.focused
             && self
                 .handle_session_list_key(key, config, app_server)
@@ -479,7 +585,8 @@ impl ShellState {
         {
             return Ok(false);
         }
-        if self.dashboard_route == DashboardRoute::Status
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Status
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
         {
@@ -544,7 +651,7 @@ impl ShellState {
                     return Ok(false);
                 }
                 let prompt = self.composer.submission_text();
-                let prompt_is_empty = prompt.trim().is_empty();
+                let prompt_is_empty = prompt.trim().is_empty() && !self.composer.has_images();
                 if prompt_is_empty
                     && self.active_turn_id.is_none()
                     && self.composer.has_queued_messages()

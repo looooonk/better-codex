@@ -45,10 +45,6 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
-use crate::incoming_jsonrpc::StdioProtocolState;
-use crate::local_stdio_transport::MAX_MCP_STDIO_LINE_BYTES;
-use crate::protocol_mode::McpProtocolMode;
-
 static PROCESS_COUNTER: AtomicUsize = AtomicUsize::new(1);
 // Tool results can make valid MCP responses large, so keep the protocol
 // ceiling well above ordinary messages while still bounding hostile input.
@@ -180,9 +176,6 @@ pub(super) struct ExecutorProcessTransport {
     /// Human-readable program name used only in diagnostics.
     program_name: String,
 
-    /// Requested and negotiated protocol state for framing compatibility.
-    protocol_state: StdioProtocolState,
-
     /// Buffered child stdout bytes that have not yet formed a complete
     /// newline-delimited JSON-RPC message.
     stdout: LineBuffer,
@@ -207,11 +200,7 @@ pub(super) struct ExecutorProcessTransport {
 }
 
 impl ExecutorProcessTransport {
-    pub(super) fn new(
-        process: Arc<dyn ExecProcess>,
-        program_name: String,
-        protocol_mode: McpProtocolMode,
-    ) -> Self {
+    pub(super) fn new(process: Arc<dyn ExecProcess>, program_name: String) -> Self {
         // Subscribe before returning the transport to rmcp. Some test servers
         // can emit output or exit quickly after `process/start`, and the
         // process event log will replay anything that landed before this
@@ -222,7 +211,6 @@ impl ExecutorProcessTransport {
             stdin_write_semaphore: Arc::new(Semaphore::new(1)),
             events,
             program_name,
-            protocol_state: StdioProtocolState::new(protocol_mode),
             stdout: LineBuffer::default(),
             stderr: LineBuffer::new(MAX_MCP_STDERR_LINE_BYTES),
             closed: false,
@@ -249,7 +237,6 @@ impl Transport<RoleClient> for ExecutorProcessTransport {
     ) -> impl Future<Output = std::result::Result<(), Self::Error>> + Send + 'static {
         let process = Arc::clone(&self.process);
         let stdin_write_semaphore = Arc::clone(&self.stdin_write_semaphore);
-        let protocol_state = self.protocol_state.clone();
         async move {
             let _stdin_write_permit = stdin_write_semaphore
                 .acquire()
@@ -258,12 +245,6 @@ impl Transport<RoleClient> for ExecutorProcessTransport {
             // rmcp hands us a structured JSON-RPC message. Stdio transport on
             // the wire is JSON plus one newline delimiter.
             let mut bytes = to_vec(&item).map_err(io::Error::other)?;
-            if protocol_state.enforce_modern_bounds() && bytes.len() > MAX_MCP_STDIO_LINE_BYTES {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("MCP stdio message exceeds {MAX_MCP_STDIO_LINE_BYTES} bytes"),
-                ));
-            }
             bytes.push(b'\n');
             let response = process.write(bytes).await.map_err(io::Error::other)?;
             match response.status {
@@ -382,8 +363,9 @@ impl ExecutorProcessTransport {
                 return Ok(());
             }
         }
-        // Reads omit sequenced terminal events from `chunks`; subtract them
-        // before deciding whether retained process output has a gap.
+        // Process reads include output chunks but not the sequenced `Exited`
+        // and `Closed` events. Account for those terminal events without
+        // allowing an evicted output chunk to be silently spliced into MCP.
         let terminal_event_count = u64::from(response.exited) + u64::from(response.closed);
         let next_output_seq = response.next_seq.saturating_sub(terminal_event_count);
         let expected_seq = self.last_seq.saturating_add(1);
@@ -423,20 +405,20 @@ impl ExecutorProcessTransport {
     }
 
     fn push_process_output(&mut self, chunk: ProcessOutputChunk) {
-        let bytes = chunk.chunk.into_inner();
+        let bytes = chunk.chunk.as_ref();
         match chunk.stream {
             // MCP stdio uses stdout as the protocol stream. PTY output is
             // accepted defensively because the executor process API has a
             // unified stream enum, but remote MCP starts with `tty=false`.
             ExecOutputStream::Stdout | ExecOutputStream::Pty => {
-                if let Err(error) = self.stdout.extend_from_slice(&bytes) {
+                if let Err(error) = self.stdout.extend_from_slice(bytes) {
                     self.close_for_oversized_line("stdout", error);
                 }
             }
             // Stderr is intentionally out-of-band. It should help debug server
             // startup failures without entering rmcp framing.
             ExecOutputStream::Stderr => {
-                if let Err(error) = self.push_stderr(&bytes) {
+                if let Err(error) = self.push_stderr(bytes) {
                     self.stdout.clear();
                     self.close_for_oversized_line("stderr", error);
                 }
@@ -468,7 +450,7 @@ impl ExecutorProcessTransport {
                 None => return None,
             };
             let line = Self::trim_trailing_carriage_return(line);
-            match self.protocol_state.deserialize(&line) {
+            match serde_json::from_slice(&line) {
                 Ok(message) => return Some(message),
                 Err(error) => {
                     debug!(

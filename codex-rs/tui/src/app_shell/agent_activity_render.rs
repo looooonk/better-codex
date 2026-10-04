@@ -83,6 +83,27 @@ pub(super) fn agent_activity_inspector_lines(
     if lines.len() < line_budget {
         lines.push(inspector_header(selected, width));
     }
+    for (label, value) in [
+        ("Model", selected.model.as_deref().unwrap_or("Unknown")),
+        (
+            "Reasoning",
+            selected.reasoning_effort.as_ref().map_or(
+                "Unknown",
+                codex_protocol::openai_models::ReasoningEffort::as_str,
+            ),
+        ),
+    ] {
+        if lines.len() >= line_budget {
+            break;
+        }
+        lines.push(truncate_line_with_ellipsis_if_overflow(
+            Line::from(vec![
+                format!("{label}  ").fg(palette::cyan()).bold(),
+                value.to_string().fg(palette::purple()),
+            ]),
+            width,
+        ));
+    }
     append_field(
         &mut lines,
         "Path",
@@ -108,21 +129,6 @@ pub(super) fn agent_activity_inspector_lines(
             .task_summary
             .as_ref()
             .map_or(palette::muted(), |_| palette::text()),
-        line_budget,
-    );
-    let runtime = match (&selected.model, &selected.reasoning_effort) {
-        (Some(model), Some(effort)) => format!("{model} · {effort} reasoning"),
-        (Some(model), None) => model.clone(),
-        (None, Some(effort)) => format!("{effort} reasoning"),
-        (None, None) => "Default model and effort".to_string(),
-    };
-    append_field(
-        &mut lines,
-        "Runtime",
-        &runtime,
-        width,
-        MAX_FIELD_LINES,
-        palette::purple(),
         line_budget,
     );
     append_field(
@@ -228,7 +234,7 @@ fn agent_tree_line(agent: &AgentActivity, selected: bool, width: usize) -> Line<
 
 fn inspector_header(agent: &AgentActivity, width: usize) -> Line<'static> {
     let (glyph, color) = status_visual(agent.status);
-    let mut spans = vec![
+    let spans = vec![
         "Inspector  ".fg(palette::cyan()).bold(),
         agent.display_name().to_string().fg(palette::text()).bold(),
         "  ".into(),
@@ -236,14 +242,6 @@ fn inspector_header(agent: &AgentActivity, width: usize) -> Line<'static> {
         " ".into(),
         agent.status.label().to_string().fg(color),
     ];
-    if width >= 60
-        && let Some(latest_message) = &agent.latest_message
-    {
-        spans.extend([
-            "  · ".fg(palette::border()),
-            latest_message.clone().fg(palette::text()),
-        ]);
-    }
     truncate_line_with_ellipsis_if_overflow(Line::from(spans), width)
 }
 

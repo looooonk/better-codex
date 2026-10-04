@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 147
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  switched session                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ ERROR  Daybreak support for model gpt-5-       │▎+ New session  Ctrl+N
+          codex could not be confirmed by the     │▎loading sessions
+          connected server. Use /daybreak to turn │
+          it off, or choose a compatible model    │▎◆ THREAD
+          and server.                             │▎Daybreak work
+                                                  │▎id 11111111-1111-4111-8111-111111111111
+                                                  │▎resume, fork, archive, delete in session list
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                  ││
+│> Type a message, Shift+Enter for newline       ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
+use codex_core::TurnInputRequest;
 use core_test_support::test_codex::local_selections;
 use std::collections::HashMap;
 
@@ -11,6 +12,7 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_protocol::user_input::UserInput;
@@ -68,18 +70,10 @@ fn call_output_content_and_success(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_round_trip_resolves_pending() -> anyhow::Result<()> {
-    request_user_input_round_trip_for_mode(ModeKind::Plan, /*auto_resolution_ms*/ None).await
+    request_user_input_round_trip_for_mode(ModeKind::Plan).await
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn request_user_input_round_trip_emits_auto_resolution_ms() -> anyhow::Result<()> {
-    request_user_input_round_trip_for_mode(ModeKind::Plan, Some(60_000)).await
-}
-
-async fn request_user_input_round_trip_for_mode(
-    mode: ModeKind,
-    auto_resolution_ms: Option<u64>,
-) -> anyhow::Result<()> {
+async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -103,7 +97,8 @@ async fn request_user_input_round_trip_for_mode(
         .await?;
 
     let call_id = "user-input-call";
-    let mut request_args = json!({
+    let expected_is_blocking = mode == ModeKind::Plan;
+    let request_args = json!({
         "questions": [{
             "id": "confirm_path",
             "header": "Confirm",
@@ -117,12 +112,6 @@ async fn request_user_input_round_trip_for_mode(
             }]
         }]
     });
-    if let Some(auto_resolution_ms) = auto_resolution_ms {
-        let request_args = request_args
-            .as_object_mut()
-            .expect("request_user_input args should be a JSON object");
-        request_args.insert("autoResolutionMs".to_string(), json!(auto_resolution_ms));
-    }
     let request_args = request_args.to_string();
 
     let first_response = sse(vec![
@@ -143,15 +132,12 @@ async fn request_user_input_round_trip_for_mode(
         turn_permission_fields(PermissionProfile::Disabled, cwd.path());
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "please confirm".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(cwd.abs())),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
@@ -165,8 +151,8 @@ async fn request_user_input_round_trip_for_mode(
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
 
     let request = wait_for_event_match(&codex, |event| match event {
@@ -176,7 +162,8 @@ async fn request_user_input_round_trip_for_mode(
     .await;
     assert_eq!(request.call_id, call_id);
     assert_eq!(request.questions.len(), 1);
-    assert_eq!(request.auto_resolution_ms, auto_resolution_ms);
+    assert_eq!(request.is_blocking, expected_is_blocking);
+    assert_eq!(request.auto_resolution_ms, None);
     assert_eq!(request.questions[0].is_other, true);
     assert!(
         timeout(Duration::from_millis(200), async {
@@ -287,15 +274,12 @@ async fn request_user_input_interrupt_emits_deferred_token_count() -> anyhow::Re
     let (sandbox_policy, permission_profile) =
         turn_permission_fields(PermissionProfile::Disabled, cwd.path());
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "please confirm".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(cwd.abs())),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
@@ -309,8 +293,8 @@ async fn request_user_input_interrupt_emits_deferred_token_count() -> anyhow::Re
                     },
                 }),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
 
     let request = wait_for_event_match(&codex, |event| match event {
@@ -391,23 +375,20 @@ where
         turn_permission_fields(PermissionProfile::Disabled, cwd.path());
 
     codex
-        .submit(Op::UserInput {
-            items: vec![UserInput::Text {
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
                 text: "please confirm".into(),
                 text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            responsesapi_client_metadata: None,
-            additional_context: Default::default(),
-            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_selections(cwd.abs())),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
                 collaboration_mode: Some(collaboration_mode),
                 ..Default::default()
-            },
-        })
+            }),
+        )
         .await?;
 
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
@@ -421,15 +402,6 @@ where
     );
 
     Ok(())
-}
-
-#[test]
-fn legacy_request_user_input_mode_aliases_deserialize_to_default() {
-    for alias in ["execute", "pair_programming"] {
-        let mode = serde_json::from_value::<ModeKind>(json!(alias))
-            .expect("legacy collaboration mode alias should deserialize");
-        assert_eq!(mode, ModeKind::Default);
-    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -447,64 +419,5 @@ async fn request_user_input_rejected_in_default_mode_by_default() -> anyhow::Res
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_round_trip_in_default_mode_with_feature() -> anyhow::Result<()> {
-    request_user_input_round_trip_for_mode(ModeKind::Default, /*auto_resolution_ms*/ None).await
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn request_user_input_rejects_invalid_cardinality_before_ui() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-    let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::DefaultModeRequestUserInput)
-            .expect("test config should allow feature update");
-    });
-    let test = builder.build_with_auto_env(&server).await?;
-    let call_id = "user-input-too-many-options";
-    let request_args = json!({
-        "questions": [{
-            "id": "confirm_path",
-            "header": "Confirm",
-            "question": "Proceed with the plan?",
-            "options": [
-                { "label": "One", "description": "Choose one." },
-                { "label": "Two", "description": "Choose two." },
-                { "label": "Three", "description": "Choose three." },
-                { "label": "Four", "description": "Choose four." }
-            ]
-        }]
-    })
-    .to_string();
-    let response_mock = responses::mount_sse_sequence(
-        &server,
-        vec![
-            sse(vec![
-                ev_response_created("resp-cardinality-1"),
-                ev_function_call(call_id, "request_user_input", &request_args),
-                ev_completed("resp-cardinality-1"),
-            ]),
-            sse(vec![
-                ev_assistant_message("msg-cardinality", "corrected"),
-                ev_completed("resp-cardinality-2"),
-            ]),
-        ],
-    )
-    .await;
-
-    test.submit_turn("ask a question").await?;
-
-    let request = response_mock
-        .last_request()
-        .expect("function output request recorded");
-    assert_eq!(
-        call_output_content_and_success(&request, call_id),
-        (
-            "request_user_input question 1 requires 2 to 3 options (4 provided)".to_string(),
-            None,
-        )
-    );
-
-    Ok(())
+    request_user_input_round_trip_for_mode(ModeKind::Default).await
 }

@@ -234,8 +234,11 @@ impl ShellState {
         }
     }
 
-    fn start_subscription_cleanup<S>(&mut self, app_server: &S, thread_ids: Vec<ThreadId>)
-    where
+    pub(super) fn start_subscription_cleanup<S>(
+        &mut self,
+        app_server: &S,
+        thread_ids: Vec<ThreadId>,
+    ) where
         S: AppShellBackend,
     {
         if thread_ids.is_empty() {

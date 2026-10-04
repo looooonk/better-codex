@@ -630,7 +630,7 @@ async fn backend_actions_and_user_input_auto_resolution_run_while_vim_is_open() 
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     shell.pending_user_input = PendingUserInput::from_request(
-        &tool_user_input_request_with_auto_resolution(/*auto_resolution_ms*/ 60),
+        &tool_user_input_request_with_auto_resolution(/*auto_resolution_ms*/ 120_000),
     );
     assert!(shell.start_backend_action(
         ActionGroup::Compaction,
@@ -638,7 +638,7 @@ async fn backend_actions_and_user_input_auto_resolution_run_while_vim_is_open() 
         async { BackendActionResult::Compaction { result: Ok(()) } },
     ));
     let editor = async {
-        tokio::time::sleep(Duration::from_millis(/*millis*/ 170)).await;
+        tokio::time::sleep(Duration::from_secs(/*secs*/ 121)).await;
         Ok(VimInputOutcome::Cancelled)
     };
 

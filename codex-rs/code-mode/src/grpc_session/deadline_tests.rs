@@ -26,6 +26,7 @@ async fn stalled_transport_fails_after_its_deadline() {
             if message == "gRPC code-mode host timed out waiting for termination response"
     ));
 }
+
 #[tokio::test(start_paused = true)]
 async fn requested_runtime_duration_is_added_to_the_transport_deadline() {
     let task = tokio::spawn(enforce(

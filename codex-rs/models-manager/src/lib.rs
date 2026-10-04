@@ -1,4 +1,4 @@
-pub(crate) mod cache;
+pub mod cache;
 pub mod collaboration_mode_presets;
 pub(crate) mod config;
 pub mod manager;
@@ -15,7 +15,7 @@ pub fn bundled_models_response()
     serde_json::from_str(include_str!("../models.json"))
 }
 
-/// Return the model catalog version requested by this client and used for cache eligibility.
+/// Return the upstream catalog version supported by this backend.
 pub fn client_version_to_whole() -> String {
     codex_build_info::CODEX_MODEL_CATALOG_VERSION.to_string()
 }

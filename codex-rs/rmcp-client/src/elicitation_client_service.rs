@@ -1,4 +1,10 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::PoisonError;
+
+use codex_protocol::mcp::OPENAI_ELICITATION_EXTENSION_ID;
 
 use rmcp::RoleClient;
 use rmcp::model::ClientInfo;
@@ -9,6 +15,7 @@ use rmcp::model::ElicitResult;
 use rmcp::model::ElicitationAction;
 use rmcp::model::MetaObject;
 use rmcp::model::ProtocolVersion;
+use rmcp::model::RequestId;
 use rmcp::model::RequestMetaObject;
 use rmcp::model::RequestParamsMeta;
 use rmcp::model::ServerNotification;
@@ -20,18 +27,25 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Map;
 use serde_json::Value;
+use tokio::sync::oneshot;
 
 use crate::logging_client_handler::LoggingClientHandler;
 use crate::rmcp_client::Elicitation;
 use crate::rmcp_client::ElicitationPauseState;
 use crate::rmcp_client::ElicitationResponse;
 use crate::rmcp_client::SendElicitation;
-use crate::serialized_size::serialized_size_exceeds;
 
 const MCP_PROGRESS_TOKEN_META_KEY: &str = "progressToken";
 const MCP_ELICITATION_CREATE_METHOD: &str = "elicitation/create";
 const OPENAI_FORM_METHOD: &str = "openai/form";
-const MAX_MCP_MRTR_ELICITATION_FIELD_BYTES: usize = 4 * 1024;
+const OPENAI_ELICITATION_METHOD: &str = "openai/elicitation/create";
+
+#[derive(Deserialize)]
+#[serde(tag = "mode")]
+enum OpenAiElicitationRequestParams {
+    #[serde(rename = "form")]
+    Form(OpenAiFormRequestParams),
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,8 +60,37 @@ struct OpenAiFormRequestParams {
 pub(crate) struct ElicitationClientService {
     handler: LoggingClientHandler,
     supports_openai_form: bool,
+    supports_openai_elicitation_form: bool,
+    supports_user_verification: bool,
     send_elicitation: Arc<SendElicitation>,
     pause_state: ElicitationPauseState,
+    pending_verifications: Arc<Mutex<VerificationCancellations>>,
+}
+
+// A notification handler can run before its request handler. Never evict an early
+// cancellation: after saturation, cancel new elicitations for this connection.
+const MAX_EARLY_CANCELLATIONS: usize = 1024;
+
+#[derive(Default)]
+struct VerificationCancellations {
+    pending: HashMap<RequestId, oneshot::Sender<()>>,
+    early: HashSet<RequestId>,
+    saturated: bool,
+}
+
+struct PendingVerification {
+    request_id: RequestId,
+    cancellations: Arc<Mutex<VerificationCancellations>>,
+}
+
+impl Drop for PendingVerification {
+    fn drop(&mut self) {
+        self.cancellations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pending
+            .remove(&self.request_id);
+    }
 }
 
 impl ElicitationClientService {
@@ -61,15 +104,32 @@ impl ElicitationClientService {
             .extensions
             .as_ref()
             .is_some_and(|extensions| extensions.contains_key(OPENAI_FORM_METHOD));
+        let supports_openai_elicitation_form = client_info
+            .capabilities
+            .extensions
+            .as_ref()
+            .and_then(|extensions| extensions.get(OPENAI_ELICITATION_EXTENSION_ID))
+            .and_then(|settings| settings.get("form"))
+            .is_some_and(Value::is_object);
         let send_elicitation = Arc::new(send_elicitation);
+        let supports_user_verification = client_info
+            .capabilities
+            .extensions
+            .as_ref()
+            .and_then(|extensions| extensions.get(OPENAI_ELICITATION_EXTENSION_ID))
+            .and_then(|settings| settings.get("userVerification"))
+            .is_some_and(Value::is_object);
         Self {
             handler: LoggingClientHandler::new(
                 client_info,
                 clone_send_elicitation(Arc::clone(&send_elicitation)),
             ),
             supports_openai_form,
+            supports_openai_elicitation_form,
+            supports_user_verification,
             send_elicitation,
             pause_state,
+            pending_verifications: Arc::default(),
         }
     }
 
@@ -77,21 +137,54 @@ impl ElicitationClientService {
         &self,
         request: Elicitation,
         context: RequestContext<RoleClient>,
-        enforce_modern_bounds: bool,
     ) -> Result<ElicitationResponse, rmcp::ErrorData> {
-        let RequestContext { id, meta, .. } = context;
+        let RequestContext { id, meta, ct, .. } = context;
         let request = restore_context_meta(request, meta);
-        if enforce_modern_bounds {
-            validate_elicitation_request_bounds(&request)?;
-        }
+        let user_verification = matches!(&request, Elicitation::UserVerification { .. });
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        let _pending = {
+            let mut cancellations = self
+                .pending_verifications
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if cancellations.saturated || cancellations.early.remove(&id) {
+                return Ok(ElicitationResponse {
+                    action: ElicitationAction::Cancel,
+                    content: None,
+                    meta: None,
+                });
+            }
+            cancellations.pending.insert(id.clone(), cancel_tx);
+            PendingVerification {
+                request_id: id.clone(),
+                cancellations: Arc::clone(&self.pending_verifications),
+            }
+        };
         let _pause = self.pause_state.enter();
-        let response = (self.send_elicitation)(id, request)
-            .await
-            .map_err(|err| rmcp::ErrorData::internal_error(err.to_string(), None))?;
-        if enforce_modern_bounds {
-            validate_elicitation_response_bounds(&response)?;
+        let response = tokio::select! {
+            biased;
+            _ = ct.cancelled() => {
+                return Ok(ElicitationResponse {
+                    action: ElicitationAction::Cancel,
+                    content: None,
+                    meta: None,
+                });
+            }
+            _ = cancel_rx => {
+                return Ok(ElicitationResponse {
+                    action: ElicitationAction::Cancel,
+                    content: None,
+                    meta: None,
+                });
+            }
+            response = (self.send_elicitation)(id, request) => response,
         }
-        Ok(response)
+        .map_err(|err| rmcp::ErrorData::internal_error(err.to_string(), None))?;
+        Ok(if user_verification {
+            crate::user_verification::validate_response(response)
+        } else {
+            response
+        })
     }
 }
 
@@ -112,7 +205,7 @@ impl Service<RoleClient> for ElicitationClientService {
                     .peer_info()
                     .is_some_and(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28);
                 let response = self
-                    .create_elicitation(Elicitation::Mcp(request.params), context, modern_session)
+                    .create_elicitation(Elicitation::Mcp(request.params), context)
                     .await?;
                 if modern_session {
                     Ok(ClientResult::ElicitResult(typed_elicitation_result(
@@ -132,7 +225,7 @@ impl Service<RoleClient> for ElicitationClientService {
                     .peer_info()
                     .is_some_and(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28);
                 let response = self
-                    .create_elicitation(custom_mcp_elicitation(request)?, context, modern_session)
+                    .create_elicitation(custom_mcp_elicitation(request)?, context)
                     .await?;
                 if modern_session {
                     Ok(ClientResult::ElicitResult(typed_elicitation_result(
@@ -145,18 +238,51 @@ impl Service<RoleClient> for ElicitationClientService {
                 }
             }
             ServerRequest::CustomRequest(request)
-                if request.method == OPENAI_FORM_METHOD && self.supports_openai_form =>
+                if request.method == OPENAI_ELICITATION_METHOD
+                    && self.supports_user_verification
+                    && request
+                        .params
+                        .as_ref()
+                        .and_then(|params| params.get("mode"))
+                        .and_then(Value::as_str)
+                        == Some(crate::user_verification::MODE) =>
             {
                 let response = self
-                    .create_elicitation(
-                        openai_form_elicitation(request)?,
-                        context,
-                        /*enforce_modern_bounds*/ false,
-                    )
+                    .create_elicitation(crate::user_verification::parse_request(request)?, context)
                     .await?;
                 Ok(ClientResult::CustomResult(elicitation_response_result(
                     response,
                 )?))
+            }
+            ServerRequest::CustomRequest(request)
+                if request.method == OPENAI_FORM_METHOD && self.supports_openai_form =>
+            {
+                let response = self
+                    .create_elicitation(openai_form_elicitation(request)?, context)
+                    .await?;
+                Ok(ClientResult::CustomResult(elicitation_response_result(
+                    response,
+                )?))
+            }
+            ServerRequest::CustomRequest(request)
+                if request.method == OPENAI_ELICITATION_METHOD
+                    && self.supports_openai_elicitation_form =>
+            {
+                let response = self
+                    .create_elicitation(openai_elicitation_form(request)?, context)
+                    .await?;
+                Ok(ClientResult::CustomResult(elicitation_response_result(
+                    response,
+                )?))
+            }
+            ServerRequest::CustomRequest(request)
+                if request.method == OPENAI_ELICITATION_METHOD
+                    && self.supports_user_verification =>
+            {
+                Err(rmcp::ErrorData::invalid_params(
+                    "invalid elicitation mode",
+                    /*data*/ None,
+                ))
             }
             request => {
                 <LoggingClientHandler as Service<RoleClient>>::handle_request(
@@ -174,6 +300,27 @@ impl Service<RoleClient> for ElicitationClientService {
         notification: ServerNotification,
         context: NotificationContext<RoleClient>,
     ) -> Result<(), rmcp::ErrorData> {
+        if let ServerNotification::CancelledNotification(cancelled) = &notification
+            && let Some(request_id) = cancelled.params.request_id.as_ref()
+        {
+            let mut cancellations = self
+                .pending_verifications
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if let Some(cancel) = cancellations.pending.remove(request_id) {
+                let _ = cancel.send(());
+            } else if !cancellations.saturated && !cancellations.early.contains(request_id) {
+                // Bound both the number and size of retained request IDs.
+                if cancellations.early.len() == MAX_EARLY_CANCELLATIONS
+                    || matches!(request_id, RequestId::String(id) if id.len() > 1024)
+                {
+                    cancellations.saturated = true;
+                    cancellations.early.clear();
+                } else {
+                    cancellations.early.insert(request_id.clone());
+                }
+            }
+        }
         <LoggingClientHandler as Service<RoleClient>>::handle_notification(
             &self.handler,
             notification,
@@ -191,7 +338,7 @@ fn custom_mcp_elicitation(request: CustomRequest) -> Result<Elicitation, rmcp::E
     let raw_params = request
         .params
         .ok_or_else(|| rmcp::ErrorData::invalid_params("missing params", None))?;
-    let params = serde_json::from_value(raw_params)
+    let params: rmcp::model::ElicitRequestParams = serde_json::from_value(raw_params)
         .map_err(|err| rmcp::ErrorData::invalid_params(err.to_string(), None))?;
     Ok(Elicitation::Mcp(params))
 }
@@ -202,6 +349,21 @@ fn openai_form_elicitation(request: CustomRequest) -> Result<Elicitation, rmcp::
         .map_err(|err| rmcp::ErrorData::invalid_params(err.to_string(), None))?
         .ok_or_else(|| rmcp::ErrorData::invalid_params("missing params", None))?;
     Ok(Elicitation::OpenAiForm {
+        meta: params.meta,
+        message: params.message,
+        requested_schema: params.requested_schema,
+    })
+}
+
+pub(crate) fn openai_elicitation_form(
+    request: CustomRequest,
+) -> Result<Elicitation, rmcp::ErrorData> {
+    let params = request
+        .params_as::<OpenAiElicitationRequestParams>()
+        .map_err(|err| rmcp::ErrorData::invalid_params(err.to_string(), /*data*/ None))?
+        .ok_or_else(|| rmcp::ErrorData::invalid_params("missing params", /*data*/ None))?;
+    let OpenAiElicitationRequestParams::Form(params) = params;
+    Ok(Elicitation::OpenAiElicitationForm {
         meta: params.meta,
         message: params.message,
         requested_schema: params.requested_schema,
@@ -223,7 +385,9 @@ fn restore_context_meta(
             .meta_mut()
             .get_or_insert_with(RequestMetaObject::new)
             .extend(context_meta),
-        Elicitation::OpenAiForm { meta, .. } => {
+        Elicitation::OpenAiForm { meta, .. }
+        | Elicitation::OpenAiElicitationForm { meta, .. }
+        | Elicitation::UserVerification { meta, .. } => {
             let meta = meta
                 .get_or_insert_with(|| Value::Object(Map::new()))
                 .as_object_mut();
@@ -237,7 +401,7 @@ fn restore_context_meta(
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LegacyElicitationResultWithMeta {
+struct CreateElicitationResultWithMeta {
     action: ElicitationAction,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<Value>,
@@ -253,7 +417,7 @@ fn elicitation_response_result(
         content,
         meta,
     } = response;
-    let result = LegacyElicitationResultWithMeta {
+    let result = CreateElicitationResultWithMeta {
         action,
         content,
         meta,
@@ -287,40 +451,6 @@ fn typed_elicitation_result(
     Ok(result)
 }
 
-fn validate_elicitation_request_bounds(request: &Elicitation) -> Result<(), rmcp::ErrorData> {
-    if let Some(meta) = request.meta() {
-        validate_serialized_field_size("elicitation request _meta", meta)?;
-    }
-    Ok(())
-}
-
-fn validate_elicitation_response_bounds(
-    response: &ElicitationResponse,
-) -> Result<(), rmcp::ErrorData> {
-    if let Some(content) = response.content.as_ref() {
-        validate_serialized_field_size("elicitation response content", content)?;
-    }
-    if let Some(meta) = response.meta.as_ref() {
-        validate_serialized_field_size("elicitation response _meta", meta)?;
-    }
-    Ok(())
-}
-
-fn validate_serialized_field_size(
-    field: &str,
-    value: &impl Serialize,
-) -> Result<(), rmcp::ErrorData> {
-    if serialized_size_exceeds(value, MAX_MCP_MRTR_ELICITATION_FIELD_BYTES)
-        .map_err(|error| rmcp::ErrorData::invalid_params(error.to_string(), None))?
-    {
-        return Err(rmcp::ErrorData::invalid_params(
-            format!("MCP {field} exceeds {MAX_MCP_MRTR_ELICITATION_FIELD_BYTES} bytes"),
-            None,
-        ));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
@@ -348,6 +478,101 @@ mod tests {
             Elicitation::Mcp(form_request(Some(meta(json!({
                 "persist": ["session", "always"],
             })))))
+        );
+    }
+
+    #[test]
+    fn legacy_sep1034_elicitation_without_mode_preserves_schema_defaults() {
+        let request = json!({
+            "method": "elicitation/create",
+            "params": {
+                "message": "Confirm the default values",
+                "requestedSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "default": "John Doe"},
+                        "age": {"type": "integer", "default": 30},
+                        "score": {"type": "number", "default": 95.5},
+                        "status": {
+                            "type": "string",
+                            "enum": ["active", "inactive"],
+                            "default": "active",
+                        },
+                        "verified": {"type": "boolean", "default": true},
+                    },
+                    "required": [],
+                },
+            },
+        });
+
+        let request = serde_json::from_value::<ServerRequest>(request)
+            .expect("legacy form elicitations must deserialize without a mode");
+        let ServerRequest::ElicitRequest(request) = request else {
+            panic!("legacy elicitation/create must dispatch to the typed handler");
+        };
+        let ElicitRequestParams::FormElicitationParams {
+            requested_schema, ..
+        } = request.params
+        else {
+            panic!("an omitted legacy elicitation mode must default to form");
+        };
+
+        assert_eq!(
+            serde_json::to_value(requested_schema)
+                .expect("legacy schema defaults must remain serializable"),
+            json!({
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "default": "John Doe"},
+                    "age": {"type": "integer", "default": 30},
+                    "score": {"type": "number", "default": 95.5},
+                    "status": {
+                        "type": "string",
+                        "enum": ["active", "inactive"],
+                        "default": "active",
+                    },
+                    "verified": {"type": "boolean", "default": true},
+                },
+                "required": [],
+            })
+        );
+    }
+
+    #[test]
+    fn parses_legacy_custom_elicitation_without_mode() {
+        let request = CustomRequest::new(
+            MCP_ELICITATION_CREATE_METHOD,
+            Some(json!({
+                "message": "Confirm?",
+                "requestedSchema": {
+                    "type": "object",
+                    "properties": {
+                        "confirmed": {"type": "boolean"},
+                        "age": {"type": "integer", "minimum": 1, "maximum": 99, "default": 30},
+                    },
+                    "required": ["confirmed"],
+                },
+            })),
+        );
+        let Elicitation::Mcp(rmcp::model::ElicitRequestParams::FormElicitationParams {
+            requested_schema,
+            ..
+        }) = custom_mcp_elicitation(request)
+            .expect("legacy custom elicitation parameters must deserialize")
+        else {
+            panic!("omitted legacy elicitation mode must default to form");
+        };
+
+        assert_eq!(
+            serde_json::to_value(requested_schema).expect("schema must serialize"),
+            json!({
+                "type": "object",
+                "properties": {
+                    "confirmed": {"type": "boolean"},
+                    "age": {"type": "integer", "minimum": 1, "maximum": 99, "default": 30},
+                },
+                "required": ["confirmed"],
+            })
         );
     }
 
@@ -418,46 +643,33 @@ mod tests {
     }
 
     #[test]
-    fn modern_elicitation_request_metadata_is_bounded() {
-        let at_limit = form_request(Some(meta(json!({
-            "v": "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 8),
-        }))));
-        validate_elicitation_request_bounds(&Elicitation::Mcp(at_limit))
-            .expect("metadata at the serialized limit must be accepted");
+    fn typed_elicitation_result_preserves_response_meta() {
+        let result = typed_elicitation_result(ElicitationResponse {
+            action: ElicitationAction::Accept,
+            content: Some(json!({ "confirmed": true })),
+            meta: Some(json!({ "persist": "always" })),
+        })
+        .expect("modern elicitation response should serialize");
 
-        let oversized = form_request(Some(meta(json!({
-            "v": "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 7),
-        }))));
-        let error = validate_elicitation_request_bounds(&Elicitation::Mcp(oversized))
-            .expect_err("oversized metadata must be rejected");
-        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+        assert_eq!(
+            serde_json::to_value(result).expect("typed elicitation result should serialize"),
+            json!({
+                "action": "accept",
+                "content": { "confirmed": true },
+                "_meta": { "persist": "always" },
+            })
+        );
     }
 
     #[test]
-    fn modern_elicitation_response_fields_are_bounded() {
-        validate_elicitation_response_bounds(&ElicitationResponse {
+    fn typed_elicitation_result_rejects_non_object_meta() {
+        let error = typed_elicitation_result(ElicitationResponse {
             action: ElicitationAction::Accept,
-            content: Some(json!("x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 2))),
-            meta: Some(json!({})),
+            content: None,
+            meta: Some(json!(["invalid"])),
         })
-        .expect("content at the serialized limit must be accepted");
+        .expect_err("modern elicitation metadata must be an object");
 
-        let error = validate_elicitation_response_bounds(&ElicitationResponse {
-            action: ElicitationAction::Accept,
-            content: Some(json!("x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 1))),
-            meta: Some(json!({})),
-        })
-        .expect_err("oversized content must be rejected");
-        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
-
-        let error = validate_elicitation_response_bounds(&ElicitationResponse {
-            action: ElicitationAction::Accept,
-            content: Some(json!({})),
-            meta: Some(json!({
-                "v": "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 7),
-            })),
-        })
-        .expect_err("oversized response metadata must be rejected");
         assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
     }
 
@@ -482,3 +694,7 @@ mod tests {
         RequestMetaObject::from(map)
     }
 }
+
+#[cfg(test)]
+#[path = "user_verification_dispatch_tests.rs"]
+mod user_verification_dispatch_tests;

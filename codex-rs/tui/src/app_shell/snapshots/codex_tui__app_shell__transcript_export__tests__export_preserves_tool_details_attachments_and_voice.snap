@@ -1,0 +1,89 @@
+---
+source: tui/src/app_shell/transcript_export_tests.rs
+assertion_line: 139
+expression: "std::fs::read_to_string(path).unwrap()"
+---
+# Better Codex conversation
+
+## You
+
+Inspect this image
+
+[Image](</workspace/image one.png>)
+
+[Audio](<https://example.com/audio.wav>)
+
+## Tool: search/find (Completed)
+
+Arguments:
+
+```json
+{
+  "query": "complete result"
+}
+```
+
+Result:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "full tool response"
+    }
+  ],
+  "structuredContent": {
+    "count": 7
+  },
+  "_meta": null
+}
+```
+
+## File changes (Completed)
+
+### src/main.rs (Update { move_path: None })
+
+```diff
+-old
++new
+```
+
+## Command (Completed)
+
+Working directory: /workspace
+
+```sh
+cat README.md
+```
+
+````text
+# Heading
+```rust
+let value = 1;
+```
+````
+
+Exit code: 0
+
+## Tool: paint (Completed)
+
+Arguments:
+
+```json
+{
+  "color": "purple"
+}
+```
+
+```text
+painted
+```
+
+[Image](<https://example.com/image.png>)
+
+Success: true
+
+## Assistant (voice)
+
+Everything is ready.

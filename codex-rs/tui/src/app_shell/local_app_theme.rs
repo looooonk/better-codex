@@ -1,8 +1,8 @@
+use crate::app_theme::TuiAppTheme;
+use crate::app_theme::app_theme_edit;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::edit::ConfigEditsBuilder;
-use crate::legacy_core::config::edit::app_theme_edit;
 use codex_config::CONFIG_TOML_FILE;
-use codex_config::types::TuiAppTheme;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
 use color_eyre::eyre::eyre;

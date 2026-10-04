@@ -37,8 +37,8 @@ pub struct LoadedSkills {
 
 /// Caches parsed roots without assigning ownership of the cache to a loader.
 ///
-/// Implementations own storage and determine its lifetime. Loaders may reuse snapshots or publish
-/// new ones without learning about the caller's broader state.
+/// Implementations own storage and determine its lifetime; loaders may reuse an existing snapshot
+/// or publish a newly loaded one without learning about the caller's broader state.
 pub trait SkillRootSnapshotCache<Root>: Send + Sync {
     fn get(&self, root: &Root) -> Option<LoadedSkillRoot>;
 
@@ -47,8 +47,8 @@ pub trait SkillRootSnapshotCache<Root>: Send + Sync {
 
 /// Shared access to one owner-managed collection of parsed skill roots.
 ///
-/// Equality and hashing use the cache allocation's identity so callers can include this handle in
-/// their own cache keys without inspecting or owning its contents.
+/// Equality and hashing use the cache allocation's identity so callers can include the handle in
+/// their own cache keys without inspecting or taking ownership of its contents.
 pub struct SkillRootSnapshots<Root> {
     cache: Arc<dyn SkillRootSnapshotCache<Root>>,
 }
@@ -90,10 +90,8 @@ impl<Root> Hash for SkillRootSnapshots<Root> {
 }
 
 impl<Root> fmt::Debug for SkillRootSnapshots<Root> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("SkillRootSnapshots")
-            .finish_non_exhaustive()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SkillRootSnapshots").finish_non_exhaustive()
     }
 }
 
@@ -110,8 +108,8 @@ pub type SkillLoadFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Loads ordered skill roots without owning their source inventory or capability state.
 ///
-/// Implementations handle filesystem access, metadata parsing, root precedence, product
-/// filtering, and reuse of snapshots supplied in the request.
+/// Implementations are responsible for filesystem access, metadata parsing, root precedence,
+/// product filtering, and reuse of any snapshots supplied in the request.
 pub trait SkillRootLoader<Root>: Send + Sync {
     fn load_roots(&self, request: SkillRootLoadRequest<Root>) -> SkillLoadFuture<'_, LoadedSkills>;
 }

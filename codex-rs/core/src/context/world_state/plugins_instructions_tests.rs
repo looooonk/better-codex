@@ -1,43 +1,29 @@
 use super::*;
 use crate::context::ContextualUserFragment;
+use crate::context::world_state::PreviousSectionState;
+use crate::context::world_state::test_support::render_section_cases;
 use codex_protocol::models::ResponseItem;
 use pretty_assertions::assert_eq;
 
-fn render(
-    state: PluginsInstructionsState,
-    previous: PreviousSectionState<'_, bool>,
-) -> Vec<String> {
-    state
-        .render_diff(previous)
-        .into_iter()
-        .map(|fragment| fragment.render())
-        .collect()
-}
-
 #[test]
-fn renders_only_when_plugins_become_available() {
+fn snapshots() {
+    use PreviousSectionState::Absent;
+    use PreviousSectionState::Known;
+    use PreviousSectionState::Unknown;
+
     let unavailable = PluginsInstructionsState::new(/*available*/ false);
     let available = PluginsInstructionsState::new(/*available*/ true);
-    let false_snapshot = false;
-    let true_snapshot = true;
 
-    assert_eq!(
-        render(unavailable, PreviousSectionState::Absent),
-        Vec::<String>::new()
-    );
-    assert_eq!(render(available, PreviousSectionState::Absent).len(), 1);
-    assert_eq!(
-        render(available, PreviousSectionState::Known(&false_snapshot)).len(),
-        1
-    );
-    assert_eq!(
-        render(available, PreviousSectionState::Known(&true_snapshot)),
-        Vec::<String>::new()
-    );
-    assert_eq!(
-        render(unavailable, PreviousSectionState::Known(&true_snapshot)),
-        Vec::<String>::new()
-    );
+    insta::assert_snapshot!(render_section_cases(&[
+        (Absent, Absent),
+        (Absent, Known(&unavailable)),
+        (Absent, Known(&available)),
+        (Known(&unavailable), Known(&available)),
+        (Known(&available), Known(&available)),
+        (Known(&available), Known(&unavailable)),
+        (Unknown, Known(&unavailable)),
+        (Unknown, Known(&available)),
+    ]));
 }
 
 #[test]
@@ -48,7 +34,8 @@ fn legacy_guidance_is_not_injected_again() {
 
     assert!(
         world_state
-            .render_history_diff(/*previous*/ None, &[legacy])
+            .render_history_fragment_diff(/*previous*/ None, &[legacy])
+            .1
             .is_empty()
     );
 }
@@ -57,32 +44,20 @@ fn legacy_guidance_is_not_injected_again() {
 fn persisted_guidance_is_restored_only_when_missing_from_history() {
     let mut world_state = super::super::WorldState::default();
     world_state.add_section(PluginsInstructionsState::new(/*available*/ true));
-    let snapshot = world_state.snapshot();
+    let snapshot = world_state.render_full().0;
     let retained: ResponseItem = ContextualUserFragment::into(AvailablePluginsInstructions);
 
     assert_eq!(
-        world_state.render_history_diff(Some(&snapshot), &[]).len(),
+        world_state
+            .render_history_fragment_diff(Some(&snapshot), &[])
+            .1
+            .len(),
         1
     );
     assert!(
         world_state
-            .render_history_diff(Some(&snapshot), &[retained])
-            .is_empty()
-    );
-}
-
-#[test]
-fn retained_guidance_satisfies_reenabled_plugins() {
-    let mut unavailable = super::super::WorldState::default();
-    unavailable.add_section(PluginsInstructionsState::new(/*available*/ false));
-    let unavailable_snapshot = unavailable.snapshot();
-    let mut reenabled = super::super::WorldState::default();
-    reenabled.add_section(PluginsInstructionsState::new(/*available*/ true));
-    let retained: ResponseItem = ContextualUserFragment::into(AvailablePluginsInstructions);
-
-    assert!(
-        reenabled
-            .render_history_diff(Some(&unavailable_snapshot), &[retained])
+            .render_history_fragment_diff(Some(&snapshot), &[retained])
+            .1
             .is_empty()
     );
 }

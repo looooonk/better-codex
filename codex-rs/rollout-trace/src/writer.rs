@@ -14,7 +14,6 @@ use std::time::UNIX_EPOCH;
 
 use anyhow::Context;
 use anyhow::Result;
-use codex_rollout::redact_persisted_json;
 use serde::Serialize;
 
 use crate::bundle::MANIFEST_FILE_NAME;
@@ -98,29 +97,7 @@ impl TraceWriter {
         // Payload files are created before the event that references them. A
         // replay interrupted after an event is appended should never point at a
         // payload file that the writer planned but had not written yet.
-        write_redacted_json_file(&absolute_path, value)?;
-        Ok(RawPayloadRef {
-            raw_payload_id,
-            kind,
-            path: relative_path,
-        })
-    }
-
-    pub(crate) fn write_json_payload_bounded(
-        &self,
-        kind: RawPayloadKind,
-        value: &impl Serialize,
-        maximum_bytes: usize,
-    ) -> Result<RawPayloadRef> {
-        let bytes = redacted_json_bytes_bounded(value, maximum_bytes)?;
-        let mut inner = self.lock_inner();
-        let ordinal = inner.next_payload_ordinal;
-        inner.next_payload_ordinal += 1;
-        let raw_payload_id = format!("raw_payload:{ordinal}");
-        let relative_path = format!("{PAYLOADS_DIR_NAME}/{ordinal}.json");
-        let absolute_path = inner.payloads_dir.join(format!("{ordinal}.json"));
-        std::fs::write(&absolute_path, bytes)
-            .with_context(|| format!("write JSON {}", absolute_path.display()))?;
+        write_json_file(&absolute_path, value)?;
         Ok(RawPayloadRef {
             raw_payload_id,
             kind,
@@ -150,9 +127,7 @@ impl TraceWriter {
             payload,
         };
         inner.next_seq += 1;
-        let mut persisted_event = serde_json::to_value(&event)?;
-        redact_persisted_json(&mut persisted_event);
-        serde_json::to_writer(&mut inner.event_log, &persisted_event)?;
+        serde_json::to_writer(&mut inner.event_log, &event)?;
         inner.event_log.write_all(b"\n")?;
         inner.event_log.flush()?;
         Ok(event)
@@ -170,59 +145,6 @@ fn write_json_file(path: &Path, value: &impl Serialize) -> Result<()> {
     let file = File::create(path).with_context(|| format!("create {}", path.display()))?;
     serde_json::to_writer_pretty(file, value)
         .with_context(|| format!("write JSON {}", path.display()))
-}
-
-fn write_redacted_json_file(path: &Path, value: &impl Serialize) -> Result<()> {
-    let mut value = serde_json::to_value(value)?;
-    redact_persisted_json(&mut value);
-    write_json_file(path, &value)
-}
-
-fn redacted_json_bytes_bounded(value: &impl Serialize, maximum_bytes: usize) -> Result<Vec<u8>> {
-    let serialized = serialize_json_bounded(value, maximum_bytes)?;
-    let mut value = serde_json::from_slice(&serialized)?;
-    redact_persisted_json(&mut value);
-    serialize_json_bounded(&value, maximum_bytes)
-}
-
-fn serialize_json_bounded(value: &impl Serialize, maximum_bytes: usize) -> Result<Vec<u8>> {
-    let mut output = BoundedBuffer::new(maximum_bytes);
-    serde_json::to_writer(&mut output, value)?;
-    Ok(output.into_inner())
-}
-
-struct BoundedBuffer {
-    bytes: Vec<u8>,
-    maximum_bytes: usize,
-}
-
-impl BoundedBuffer {
-    fn new(maximum_bytes: usize) -> Self {
-        Self {
-            bytes: Vec::with_capacity(maximum_bytes.min(64 * 1_024)),
-            maximum_bytes,
-        }
-    }
-
-    fn into_inner(self) -> Vec<u8> {
-        self.bytes
-    }
-}
-
-impl Write for BoundedBuffer {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        if buffer.len() > self.maximum_bytes.saturating_sub(self.bytes.len()) {
-            return Err(std::io::Error::other(
-                "rollout trace payload exceeds its byte limit",
-            ));
-        }
-        self.bytes.extend_from_slice(buffer);
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
 }
 
 pub(crate) fn unix_time_ms() -> i64 {
@@ -341,7 +263,3 @@ mod tests {
         Ok(())
     }
 }
-
-#[cfg(test)]
-#[path = "writer_redaction_tests.rs"]
-mod redaction_tests;

@@ -4,12 +4,11 @@ use codex_app_server_protocol::PluginSearchResponse;
 use codex_app_server_protocol::PluginSearchResult;
 use codex_app_server_protocol::PluginSearchScope;
 use codex_core_plugins::OPENAI_BUNDLED_MARKETPLACE_NAME;
-use codex_core_plugins::remote::RemotePluginScope;
 use codex_core_plugins::remote::RemotePluginSearchRequest;
 use codex_core_plugins::remote::search_remote_plugins;
 
 const DEFAULT_PLUGIN_SEARCH_LIMIT: u32 = 16;
-const MAX_PLUGIN_SEARCH_LIMIT: u32 = 100;
+const MAX_PLUGIN_SEARCH_LIMIT: u32 = 1_000;
 const MAX_LOCAL_PLUGIN_SEARCH_RESULTS: usize = 100;
 const PLUGIN_SEARCH_NO_MATCH_RANK: usize = 6;
 
@@ -43,24 +42,16 @@ impl PluginRequestProcessor {
             return Ok(empty_response());
         }
 
-        let config = self.load_latest_config(/*fallback_cwd*/ None).await?;
+        let config = self
+            .load_catalog_config(cwds.as_deref().unwrap_or_default())
+            .await?;
         if !config.features.enabled(Feature::Plugins) {
             return Ok(empty_response());
         }
         let plugin_sharing_enabled = config.features.enabled(Feature::PluginSharing);
 
         let auth = self.auth_manager.auth().await;
-        if !self
-            .workspace_codex_plugins_enabled(&config, auth.as_ref())
-            .await
-        {
-            return Ok(empty_response());
-        }
-
         let auth_mode = auth.as_ref().map(CodexAuth::api_auth_mode);
-        self.thread_manager
-            .plugins_manager()
-            .set_auth_mode(auth_mode);
         let remote_plugin_enabled = config.features.enabled(Feature::RemotePlugin);
         let use_remote_global_catalog =
             remote_plugin_enabled && auth_mode.is_some_and(DomainAuthMode::uses_codex_backend);
@@ -86,11 +77,8 @@ impl PluginRequestProcessor {
         if auth_mode.is_some_and(DomainAuthMode::uses_codex_backend)
             && let Some(remote_scope) = remote_scope
         {
-            let service_config = RemotePluginServiceConfig {
-                chatgpt_base_url: config.chatgpt_base_url.clone(),
-            };
             let page = search_remote_plugins(
-                &service_config,
+                &remote_plugin_service_config(&config),
                 auth.as_ref(),
                 RemotePluginSearchRequest {
                     query: search_term,
@@ -110,6 +98,11 @@ impl PluginRequestProcessor {
                 let plugin_id = PluginId::parse(&plugin.id).map_err(|err| {
                     internal_error(format!("invalid remote plugin search result id: {err}"))
                 })?;
+
+                // NOTE: (brisebois) filter out plugins from the results that belong to "shared"
+                // marketplaces if plugin sharing is disabled. There is a chance that this filters
+                // out all results and returns an empty list to the client. Ideally this filtering
+                // would be done server-side to avoid this problem.
                 if !plugin_sharing_enabled
                     && matches!(
                         plugin_id.marketplace_name.as_str(),
@@ -128,6 +121,8 @@ impl PluginRequestProcessor {
             }
         }
 
+        // All local results are stitched into the first page; if
+        // we are not on the first page, don't even check local
         if cursor.is_some() {
             return Ok(PluginSearchResponse {
                 data: remote_results,
@@ -261,6 +256,8 @@ impl PluginRequestProcessor {
     }
 }
 
+/// Plugin discovery does not resolve effective activation, so all results explicitly report
+/// `enabled: false`, regardless of their source, installation state, or page.
 fn plugin_search_result(
     mut plugin: PluginSummary,
     marketplace_name: String,
@@ -350,7 +347,3 @@ fn plugin_search_match_rank(plugin: &PluginSummary, normalized_query: &str) -> O
     .iter()
     .position(|matches| *matches)
 }
-
-#[cfg(test)]
-#[path = "search_tests.rs"]
-mod tests;

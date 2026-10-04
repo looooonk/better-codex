@@ -1,12 +1,15 @@
+use crate::error_subtype::http_status_sub_error_type;
 use crate::plugin_bundle_archive::PluginBundleUnpackError;
 use crate::plugin_bundle_archive::unpack_plugin_bundle_tar_gz;
 use crate::remote::REMOTE_GLOBAL_MARKETPLACE_NAME;
+use crate::remote::RemotePluginServiceConfig;
 use crate::store::PluginInstallResult;
 use crate::store::PluginStore;
 use crate::store::PluginStoreError;
 use crate::store::error_context_sub_error_type;
 use crate::store::validate_plugin_version_segment;
-use codex_login::default_client::build_reqwest_client;
+use codex_http_client::HttpResponse;
+use codex_http_client::RouteAwareRequestError;
 use codex_plugin::PluginId;
 use codex_plugin::PluginIdError;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -14,8 +17,8 @@ use codex_utils_plugins::AGENT_PLUGIN_MANIFEST_RELATIVE_PATH;
 use codex_utils_plugins::AgentPluginSchemaStatus;
 use codex_utils_plugins::agent_plugin_schema_status;
 use codex_utils_plugins::find_plugin_manifest_path;
-use reqwest::Response;
-use reqwest::StatusCode;
+use http::Method;
+use http::StatusCode;
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::io;
@@ -26,9 +29,9 @@ use url::Host;
 use url::Url;
 
 const REMOTE_PLUGIN_BUNDLE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
-const REMOTE_PLUGIN_BUNDLE_MAX_DOWNLOAD_BYTES: u64 = 50 * 1024 * 1024;
+const REMOTE_PLUGIN_BUNDLE_MAX_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 const REMOTE_PLUGIN_BUNDLE_ERROR_BODY_MAX_BYTES: u64 = 8 * 1024;
-const REMOTE_PLUGIN_BUNDLE_MAX_EXTRACTED_BYTES: u64 = 250 * 1024 * 1024;
+const REMOTE_PLUGIN_BUNDLE_MAX_EXTRACTED_BYTES: u64 = 512 * 1024 * 1024;
 const REMOTE_PLUGIN_INSTALL_STAGING_DIR: &str = "plugins/.remote-plugin-install-staging";
 #[cfg(debug_assertions)]
 const TEST_ALLOW_LOOPBACK_HTTP_REMOTE_PLUGIN_BUNDLES_ENV: &str =
@@ -90,7 +93,7 @@ pub enum RemotePluginBundleInstallError {
     DownloadRequest {
         url: String,
         #[source]
-        source: reqwest::Error,
+        source: RouteAwareRequestError,
     },
 
     #[error("remote plugin bundle download from {url} failed with status {status}: {body}")]
@@ -104,7 +107,7 @@ pub enum RemotePluginBundleInstallError {
     DownloadBody {
         url: String,
         #[source]
-        source: reqwest::Error,
+        source: codex_http_client::HttpError,
     },
 
     #[error("remote plugin bundle download from {url} exceeded maximum size of {max_bytes} bytes")]
@@ -141,6 +144,9 @@ impl RemotePluginBundleInstallError {
         match self {
             Self::Io { context, .. } => Some(error_context_sub_error_type(context)),
             Self::Store(err) => err.sub_error_type(),
+            Self::DownloadStatus { status, .. } => {
+                Some(http_status_sub_error_type(*status).to_string())
+            }
             Self::MissingReleaseVersion { .. }
             | Self::InvalidReleaseVersion { .. }
             | Self::MissingBundleDownloadUrl { .. }
@@ -148,7 +154,6 @@ impl RemotePluginBundleInstallError {
             | Self::UnsupportedBundleDownloadUrlScheme { .. }
             | Self::InvalidPluginId { .. }
             | Self::DownloadRequest { .. }
-            | Self::DownloadStatus { .. }
             | Self::DownloadBody { .. }
             | Self::DownloadTooLarge { .. }
             | Self::UnsupportedBundleDownloadFinalUrl { .. }
@@ -250,14 +255,11 @@ fn is_loopback_url(url: &Url) -> bool {
 }
 
 pub async fn download_and_install_remote_plugin_bundle(
+    config: &RemotePluginServiceConfig,
     codex_home: PathBuf,
     bundle: ValidatedRemotePluginBundle,
 ) -> Result<PluginInstallResult, RemotePluginBundleInstallError> {
-    let bundle_bytes = download_remote_plugin_bundle_with_limit(
-        &bundle.bundle_download_url,
-        /*max_bytes*/ REMOTE_PLUGIN_BUNDLE_MAX_DOWNLOAD_BYTES,
-    )
-    .await?;
+    let bundle_bytes = download_remote_plugin_bundle(config, &bundle).await?;
     tokio::task::spawn_blocking(move || {
         install_remote_plugin_bundle(codex_home, bundle, bundle_bytes)
     })
@@ -270,14 +272,11 @@ pub async fn download_and_install_remote_plugin_bundle(
 }
 
 pub(crate) async fn download_and_extract_remote_plugin_bundle_to_path(
+    config: &RemotePluginServiceConfig,
     bundle: ValidatedRemotePluginBundle,
     destination: AbsolutePathBuf,
 ) -> Result<AbsolutePathBuf, RemotePluginBundleInstallError> {
-    let bundle_bytes = download_remote_plugin_bundle_with_limit(
-        &bundle.bundle_download_url,
-        /*max_bytes*/ REMOTE_PLUGIN_BUNDLE_MAX_DOWNLOAD_BYTES,
-    )
-    .await?;
+    let bundle_bytes = download_remote_plugin_bundle(config, &bundle).await?;
     tokio::task::spawn_blocking(move || {
         extract_remote_plugin_bundle_to_path(bundle, bundle_bytes, destination)
     })
@@ -289,13 +288,25 @@ pub(crate) async fn download_and_extract_remote_plugin_bundle_to_path(
     })?
 }
 
+pub(crate) async fn download_remote_plugin_bundle(
+    config: &RemotePluginServiceConfig,
+    bundle: &ValidatedRemotePluginBundle,
+) -> Result<Vec<u8>, RemotePluginBundleInstallError> {
+    download_remote_plugin_bundle_with_limit(
+        config,
+        &bundle.bundle_download_url,
+        /*max_bytes*/ REMOTE_PLUGIN_BUNDLE_MAX_DOWNLOAD_BYTES,
+    )
+    .await
+}
+
 async fn download_remote_plugin_bundle_with_limit(
+    config: &RemotePluginServiceConfig,
     bundle_download_url: &str,
     max_bytes: u64,
 ) -> Result<Vec<u8>, RemotePluginBundleInstallError> {
-    let client = build_reqwest_client();
-    let response = client
-        .get(bundle_download_url)
+    let response = config
+        .http_request(Method::GET, bundle_download_url)
         .timeout(REMOTE_PLUGIN_BUNDLE_DOWNLOAD_TIMEOUT)
         .send()
         .await
@@ -305,8 +316,8 @@ async fn download_remote_plugin_bundle_with_limit(
         })?;
 
     let final_url = response.url().clone();
-    // reqwest may already have followed redirects here. For backend-issued bundle URLs, keep the
-    // shared client policy and fail unsupported final schemes before caching.
+    // The shared client has already followed redirects here. Reject an unsupported final scheme
+    // before caching a backend-issued bundle.
     if !is_allowed_bundle_download_url(&final_url, allow_test_loopback_http_bundle_downloads()) {
         return Err(
             RemotePluginBundleInstallError::UnsupportedBundleDownloadFinalUrl {
@@ -357,7 +368,7 @@ async fn download_remote_plugin_bundle_with_limit(
 }
 
 async fn read_response_body_with_limit(
-    mut response: Response,
+    mut response: HttpResponse,
     url: &str,
     max_bytes: u64,
 ) -> Result<Vec<u8>, RemotePluginBundleInstallError> {
@@ -397,7 +408,7 @@ fn enforce_download_size_limit(
     Ok(())
 }
 
-fn install_remote_plugin_bundle(
+pub(crate) fn install_remote_plugin_bundle(
     codex_home: PathBuf,
     bundle: ValidatedRemotePluginBundle,
     bundle_bytes: Vec<u8>,
@@ -631,11 +642,18 @@ fn is_standard_plugin_root(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::recorded_http_client_urls;
+    use crate::test_support::recording_remote_plugin_service_config;
     use flate2::Compression;
     use flate2::write::GzEncoder;
     use pretty_assertions::assert_eq;
     use std::io::Write;
     use tempfile::tempdir;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
 
     const REMOTE_PLUGIN_ID: &str = "plugins~Plugin_00000000000000000000000000000000";
 
@@ -761,6 +779,34 @@ mod tests {
             err,
             RemotePluginBundleInstallError::DownloadTooLarge { .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn bundle_download_routes_the_backend_supplied_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/signed/plugin-bundle"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"bundle"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (config, selected_urls) =
+            recording_remote_plugin_service_config(format!("{}/backend-api", server.uri()));
+        let download_url = format!("{}/signed/plugin-bundle?sig=signed-token", server.uri());
+
+        let err =
+            download_remote_plugin_bundle_with_limit(&config, &download_url, /*max_bytes*/ 64)
+                .await
+                .expect_err("plain HTTP final URL should remain unsupported");
+
+        assert!(matches!(
+            err,
+            RemotePluginBundleInstallError::UnsupportedBundleDownloadFinalUrl { .. }
+        ));
+        assert_eq!(
+            recorded_http_client_urls(&selected_urls),
+            vec![download_url]
+        );
     }
 
     #[test]

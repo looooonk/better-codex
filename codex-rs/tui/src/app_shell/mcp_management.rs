@@ -165,6 +165,7 @@ impl ShellState {
         }
         let response = app_server
             .mcp_server_oauth_login(McpServerOauthLoginParams {
+                client_registration: None,
                 name: server.name.clone(),
                 thread_id: Some(self.thread_id.to_string()),
                 scopes: None,
@@ -455,6 +456,7 @@ impl McpEditState {
 
 fn auth_label(status: McpAuthStatus) -> &'static str {
     match status {
+        McpAuthStatus::Unknown => "checking",
         McpAuthStatus::Unsupported => "unsupported",
         McpAuthStatus::NotLoggedIn => "login",
         McpAuthStatus::BearerToken => "bearer",
@@ -466,6 +468,7 @@ fn action_hint(server: &McpServerStatus) -> &'static str {
     match server.auth_status {
         McpAuthStatus::NotLoggedIn => "press Enter or l to start oauth login",
         McpAuthStatus::OAuth => "press l to refresh oauth login",
+        McpAuthStatus::Unknown => "authentication status pending",
         McpAuthStatus::BearerToken | McpAuthStatus::Unsupported => {
             "press d to disable, x to remove, e to replace config"
         }

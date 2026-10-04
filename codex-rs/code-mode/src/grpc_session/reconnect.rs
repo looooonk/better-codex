@@ -28,9 +28,9 @@ use crate::remote_session::wait_for_watch;
 pub(super) struct ReconnectableSession {
     inner: Arc<ReconnectInner>,
 }
+
 struct ReconnectInner {
     provider: GrpcCodeModeSessionProvider,
-    delegate: Arc<dyn CodeModeSessionDelegate>,
     limits: CodeModeSessionCellExecutionLimits,
     binding: Mutex<Option<SessionBinding>>,
     opening_permit: Semaphore,
@@ -48,13 +48,11 @@ struct SessionBinding {
 impl ReconnectableSession {
     pub(super) fn new(
         provider: GrpcCodeModeSessionProvider,
-        delegate: Arc<dyn CodeModeSessionDelegate>,
         limits: CodeModeSessionCellExecutionLimits,
     ) -> Self {
         Self {
             inner: Arc::new(ReconnectInner {
                 provider,
-                delegate,
                 limits,
                 binding: Mutex::new(None),
                 opening_permit: Semaphore::new(/*permits*/ 1),
@@ -74,22 +72,32 @@ impl CodeModeSession for ReconnectableSession {
     fn execute<'a>(
         &'a self,
         request: ExecuteRequest,
+        delegate: Arc<dyn CodeModeSessionDelegate>,
+        preempt: Option<CancellationToken>,
     ) -> CodeModeSessionResultFuture<'a, StartedCell> {
         Box::pin(async move {
             let binding = self.inner.get_or_open_binding().await?;
-            let started = binding.session.execute(request).await?;
+            let delegate = Arc::new(GenerationDelegate {
+                delegate,
+                generation: binding.generation,
+            });
+            let started = binding.session.execute(request, delegate, preempt).await?;
             Ok(generation::public_started_cell(binding.generation, started))
         })
     }
 
-    fn wait<'a>(&'a self, request: WaitRequest) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
+    fn wait<'a>(
+        &'a self,
+        request: WaitRequest,
+        preempt: Option<CancellationToken>,
+    ) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
         Box::pin(async move {
             let binding = self.inner.get_or_open_binding().await?;
             let request = WaitRequest {
                 cell_id: generation::remote_cell_id(binding.generation, &request.cell_id)?,
                 yield_time_ms: request.yield_time_ms,
             };
-            let outcome = binding.session.wait(request).await?;
+            let outcome = binding.session.wait(request, preempt).await?;
             Ok(generation::public_wait_outcome(binding.generation, outcome))
         })
     }
@@ -150,16 +158,12 @@ impl ReconnectInner {
         }
 
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
-        let delegate = Arc::new(GenerationDelegate {
-            delegate: Arc::clone(&self.delegate),
-            generation,
-        });
         let session = tokio::select! {
             biased;
             _ = self.shutdown_requested.cancelled() => {
                 return Err(SHUTDOWN_ERROR.to_string());
             }
-            session = self.provider.open_binding(delegate, self.limits.clone()) => session?,
+            session = self.provider.open_binding(self.limits.clone()) => session?,
         };
         let binding = SessionBinding {
             session,

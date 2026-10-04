@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/keybindings_tests.rs
+assertion_line: 100
+expression: rendered
+---
+                                                            │
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+────────────────────────────────────────────────────────────│
+                                                            │CONFIGURED SHORTCUTS
+ ◆ CONVERSATION                                             │Use /keymap to change a binding; unbind disables
+ ▎ SYSTEM  Better Codex app shell                           │it.
+ ▎ YOU  Create a divergent standalone TUI.                  │f18  composer.submit
+                                                            │unbound  composer.queue
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │f19  editor.insert_newline
+          server turns.                                     │f20  list.accept
+ ▎ PLAN  1. Build shell                                     │
+         2. Wire transcript                                 │
+         3. Render dashboard                                │
+                                                            │
+ ▌ tool exec just test -p codex-tui                         │
+                                                            │
+ ▌ edited 3 files +128 -24                                  │
+                                                            │
+ ▎ CODEX  The new shell owns the fullscreen surface.        │
+                                                            │
+                                                            │
+                                                            │
+╭──────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                            ││
+│> Type a message, f19 for newline                         ││
+│                                                          ││
+│                                                          ││
+╰──────────────────────────────────────────────────────────╯│

@@ -77,10 +77,17 @@ pub(crate) fn thread_item_to_transcript_lines(
                     .map(codex_app_server_protocol::UserInput::into_core)
                     .collect(),
             };
-            prefixed_text("You", item.message(), ratatui::style::Color::Cyan)
+            prefixed_text(
+                "You",
+                crate::ide_context::visible_request(&item.message()).to_string(),
+                ratatui::style::Color::Cyan,
+            )
         }
-        ThreadItem::AgentMessage { text, .. } => {
-            let parsed = parse_assistant_markdown(text, &thread.cwd);
+        ThreadItem::AgentMessage {
+            text, questions, ..
+        } => {
+            let text = crate::assistant_message::with_questions(text, questions.as_deref());
+            let parsed = parse_assistant_markdown(&text, &thread.cwd);
             if parsed.visible_markdown.trim().is_empty() {
                 Vec::new()
             } else {
@@ -96,6 +103,11 @@ pub(crate) fn thread_item_to_transcript_lines(
                 lines
             }
         }
+        ThreadItem::FunctionCallOutput { name, output, .. } => prefixed_text(
+            name,
+            output.to_text().unwrap_or_default(),
+            ratatui::style::Color::DarkGray,
+        ),
         ThreadItem::Plan { text, .. } => {
             prefixed_text("Plan", text.clone(), ratatui::style::Color::Green)
         }
@@ -223,7 +235,8 @@ pub(crate) fn thread_item_to_transcript_lines(
             vec![vec!["review finished: ".dim(), review.clone().into()].into()]
         }
         ThreadItem::ContextCompaction { .. } => vec!["context compacted".dim().into()],
-        ThreadItem::Sleep { duration_ms, .. } => {
+        ThreadItem::Sleep(item) => {
+            let duration_ms = item.duration_ms;
             vec![format!("sleep: {duration_ms} ms").dim().into()]
         }
     }

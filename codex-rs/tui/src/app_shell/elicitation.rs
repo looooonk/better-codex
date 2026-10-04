@@ -1,5 +1,7 @@
 #[path = "elicitation_form.rs"]
 mod form;
+#[path = "elicitation_verification.rs"]
+mod verification;
 
 use super::ShellState;
 use super::backend::AppShellBackend;
@@ -43,6 +45,8 @@ pub(super) struct PendingElicitation {
     message: String,
     url: Option<String>,
     form: Option<ElicitationForm>,
+    verification: Option<codex_app_server_protocol::UserVerificationVerifyParams>,
+    verification_attempt: Option<verification::VerificationAttempt>,
     scroll_offset: Cell<usize>,
     scroll_max: Cell<usize>,
 }
@@ -52,7 +56,28 @@ impl PendingElicitation {
         let ServerRequest::McpServerElicitationRequest { request_id, params } = request else {
             return None;
         };
+        let verification = match &params.request {
+            McpServerElicitationRequest::UserVerification {
+                title,
+                description,
+                challenge,
+                ..
+            } => Some(codex_app_server_protocol::UserVerificationVerifyParams {
+                title: title.clone(),
+                description: description.clone(),
+                challenge: challenge.clone(),
+            }),
+            _ => None,
+        };
         let (summary, message, url, form) = match &params.request {
+            McpServerElicitationRequest::UserVerification {
+                title, description, ..
+            } => (
+                "device verification",
+                format!("{title}\n{description}"),
+                None,
+                None,
+            ),
             McpServerElicitationRequest::Url { message, url, .. } => {
                 ("URL request", message.clone(), Some(url.clone()), None)
             }
@@ -72,6 +97,11 @@ impl PendingElicitation {
                 message,
                 requested_schema,
                 ..
+            }
+            | McpServerElicitationRequest::OpenAiElicitationForm {
+                message,
+                requested_schema,
+                ..
             } => (
                 "OpenAI form request",
                 message.clone(),
@@ -85,6 +115,8 @@ impl PendingElicitation {
             message,
             url,
             form,
+            verification,
+            verification_attempt: None,
             scroll_offset: Cell::new(0),
             scroll_max: Cell::new(0),
         })
@@ -123,6 +155,12 @@ impl PendingElicitation {
     }
 
     pub(super) fn primary_action_label(&self) -> &'static str {
+        if self.verification_attempt.is_some() {
+            return "Verifying";
+        }
+        if self.verification.is_some() {
+            return "Verify";
+        }
         self.form
             .as_ref()
             .map_or("Accept", ElicitationForm::action_label)
@@ -153,6 +191,9 @@ impl PendingElicitation {
     }
 
     pub(super) fn result(&self, choice: ElicitationChoice) -> Result<Value, String> {
+        if choice == ElicitationChoice::Accept && self.verification.is_some() {
+            return Err("device verification must finish before accepting".to_string());
+        }
         if choice == ElicitationChoice::Accept && self.editing() {
             return Err("complete the current MCP form field before submitting".to_string());
         }
@@ -280,6 +321,35 @@ impl ShellState {
         };
         let request_id = pending.request_id();
         let title = pending.title().to_string();
+        if choice == ElicitationChoice::Accept
+            && let Some(params) = pending.verification.clone()
+        {
+            if pending.verification_attempt.is_none() {
+                let attempt = verification::VerificationAttempt::new();
+                let attempt_id = attempt.id.clone();
+                let response = app_server.verify_user_in_background(
+                    attempt_id.clone(),
+                    params,
+                    attempt.cancellation(),
+                );
+                self.pending_elicitation
+                    .as_mut()
+                    .expect("elicitation is present")
+                    .verification_attempt = Some(attempt);
+                self.start_backend_action(
+                    super::backend_actions::ActionGroup::UserVerification,
+                    "waiting for device verification",
+                    async move {
+                        super::backend_actions::BackendActionResult::UserVerification {
+                            request_id,
+                            attempt_id,
+                            result: response.await,
+                        }
+                    },
+                );
+            }
+            return Ok(());
+        }
         let result = match pending.result(choice) {
             Ok(result) => result,
             Err(message) => {
@@ -293,7 +363,7 @@ impl ShellState {
 
     async fn finish_pending_elicitation<S>(
         &mut self,
-        app_server: &mut S,
+        app_server: &S,
         choice: ElicitationChoice,
         request_id: RequestId,
         result: Value,

@@ -51,6 +51,8 @@ fn completion_only_updates_the_matching_login() {
     };
 
     state.receive_login_completed(AccountLoginCompletedNotification {
+        onboarding_entrypoint: None,
+
         login_id: Some("other".to_string()),
         success: true,
         error: None,
@@ -58,6 +60,8 @@ fn completion_only_updates_the_matching_login() {
     assert!(matches!(state.mode, AccountAuthMode::DeviceCode { .. }));
 
     state.receive_login_completed(AccountLoginCompletedNotification {
+        onboarding_entrypoint: None,
+
         login_id: Some("login-1".to_string()),
         success: true,
         error: None,

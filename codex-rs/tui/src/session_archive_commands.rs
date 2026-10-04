@@ -16,14 +16,12 @@ use crate::legacy_core::config::load_config_toml_with_layer_stack;
 use crate::legacy_core::config::resolve_oss_provider;
 use crate::legacy_core::config::resolve_profile_v2_config_path;
 use codex_app_server_protocol::Thread as AppServerThread;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadSortKey;
 use codex_arg0::Arg0DispatchPaths;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadOptions;
 use codex_config::LoaderOverrides;
 use codex_exec_server::EnvironmentManager;
-use codex_exec_server::ExecServerRuntimePaths;
+use codex_exec_server::ExecServerRuntimeOptions;
 use codex_protocol::ThreadId;
 use codex_utils_cli::CliConfigOverrides;
 use codex_utils_home_dir::find_codex_home;
@@ -33,6 +31,9 @@ use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::eyre;
 
 use super::RemoteAppServerEndpoint;
+
+#[path = "session_name_lookup.rs"]
+pub(crate) mod name_lookup;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeleteConfirmation {
@@ -81,6 +82,65 @@ pub async fn run_session_archive_command(
 ) -> Result<String> {
     let mut app_server = start_app_server_for_archive_command(options).await?;
     run_session_archive_action_with_app_server(&mut app_server, action, &target).await
+}
+
+pub async fn run_session_queue_command(
+    target: String,
+    message: String,
+    options: SessionArchiveCommandOptions,
+) -> Result<String> {
+    if options.cli.no_daemon && options.explicit_remote_endpoint.is_none() {
+        return Err(eyre!(
+            "Queuing requires the shared server; remove --no-daemon or use --remote."
+        ));
+    }
+    let explicit_remote = options.explicit_remote_endpoint.is_some();
+    let mut app_server = start_app_server_for_archive_command(options).await?;
+    if !explicit_remote && app_server.uses_embedded_app_server() {
+        let codex_home = find_codex_home().wrap_err("failed to find CODEX_HOME")?;
+        if super::maybe_probe_default_daemon_socket(codex_home.as_path())
+            .await
+            .is_some()
+        {
+            return Err(eyre!(
+                "cannot queue through an embedded app server while a local app-server daemon is running; remove configuration overrides or use --remote"
+            ));
+        }
+        return Err(eyre!(
+            "No shared server is available. Start better-codex app-server daemon start or use --remote before queuing a message."
+        ));
+    }
+    let resolved =
+        resolve_session_target(&mut app_server, SessionArchiveAction::Archive, &target).await?;
+    let response: codex_app_server_protocol::ThreadQueueAddResponse = app_server.request_handle()
+        .request_typed(codex_app_server_protocol::ClientRequest::ThreadQueueAdd {
+            request_id: codex_app_server_protocol::RequestId::String(uuid::Uuid::new_v4().to_string()),
+            params: codex_app_server_protocol::ThreadQueueAddParams {
+                thread_id: resolved.session_id.to_string(),
+                input: vec![codex_app_server_protocol::UserInput::Text {
+                    text: message,
+                    text_elements: Vec::new(),
+                }],
+                client_user_message_id: uuid::Uuid::new_v4().to_string(),
+            },
+        })
+        .await
+        .map_err(|error| {
+            let unsupported = matches!(&error, codex_app_server_client::TypedRequestError::Server { method, source }
+                if method == "thread/queue/add" && (source.code == -32601 || (source.code == -32600
+                    && (source.message == codex_app_server_protocol::experimental_required_message("thread/queue/add")
+                        || source.message.starts_with("Invalid request: unknown variant `thread/queue/add`")))));
+            if unsupported {
+                let server = if explicit_remote { "remote app server" } else { "local app-server daemon" };
+                eyre!(error).wrap_err(format!("the {server} does not support thread/queue/add; update or restart the {server}"))
+            } else {
+                eyre!(error).wrap_err("failed to queue session message")
+            }
+        })?;
+    Ok(format!(
+        "Queued message {} for thread {}.",
+        response.queued_submission.id, resolved.session_id
+    ))
 }
 
 async fn run_session_archive_action_with_app_server(
@@ -162,44 +222,7 @@ async fn lookup_session_by_exact_name(
     name: &str,
     archived: bool,
 ) -> Result<Option<AppServerThread>> {
-    // Search is the fast path, but some stores attach renamed titles after applying the filter.
-    for search_term in [Some(name), None] {
-        let mut cursor = None;
-        loop {
-            let response = app_server
-                .thread_list(ThreadListParams {
-                    cursor: cursor.clone(),
-                    limit: Some(100),
-                    sort_key: Some(ThreadSortKey::UpdatedAt),
-                    sort_direction: None,
-                    model_providers: None,
-                    source_kinds: Some(super::resume_source_kinds(
-                        /*include_non_interactive*/ false,
-                    )),
-                    archived: Some(archived),
-                    parent_thread_id: None,
-                    ancestor_thread_id: None,
-                    cwd: None,
-                    use_state_db_only: false,
-                    search_term: search_term.map(str::to_string),
-                })
-                .await
-                .wrap_err("failed to list sessions while resolving session name")?;
-
-            if let Some(thread) = response
-                .data
-                .into_iter()
-                .find(|thread| thread.name.as_deref() == Some(name))
-            {
-                return Ok(Some(thread));
-            }
-            let Some(next_cursor) = response.next_cursor else {
-                break;
-            };
-            cursor = Some(next_cursor);
-        }
-    }
-    Ok(None)
+    name_lookup::lookup(app_server.request_handle(), name, archived).await
 }
 
 fn session_target_from_app_server_thread(thread: AppServerThread) -> Result<ResolvedSessionTarget> {
@@ -272,11 +295,12 @@ async fn start_app_server_for_archive_command(
         strict_config,
         cli.bypass_hook_trust,
     );
-    let default_daemon = if explicit_remote_endpoint.is_none() && reuse_implicit_local_daemon {
-        super::maybe_probe_default_daemon_socket(codex_home.as_path()).await
-    } else {
-        None
-    };
+    let default_daemon =
+        if !cli.no_daemon && explicit_remote_endpoint.is_none() && reuse_implicit_local_daemon {
+            super::maybe_probe_default_daemon_socket(codex_home.as_path()).await
+        } else {
+            None
+        };
     let app_server_target = super::app_server_target_for_launch(
         explicit_remote_endpoint,
         default_daemon,
@@ -287,19 +311,20 @@ async fn start_app_server_for_archive_command(
         .clone()
         .filter(|_| app_server_target.uses_remote_workspace());
 
-    let local_runtime_paths = ExecServerRuntimePaths::from_optional_paths(
+    let local_runtime_paths = ExecServerRuntimeOptions::from_optional_paths(
         arg0_paths.codex_self_exe.clone(),
         arg0_paths.codex_linux_sandbox_exe.clone(),
     )
     .wrap_err("failed to resolve local runtime paths")?;
-    let environment_manager = EnvironmentManager::from_env(Some(local_runtime_paths))
+    let embedded_network_policy =
+        codex_app_server_client::EmbeddedNetworkPolicy::load(&launch_loader_overrides).await;
+    let prepared_environment_manager = EnvironmentManager::prepare_from_env()
         .await
-        .map(Arc::new)
         .wrap_err("failed to initialize environment manager")?;
     let config_cwd = super::config_cwd_for_app_server_target(
         cli.cwd.as_deref(),
         &app_server_target,
-        &environment_manager,
+        prepared_environment_manager.default_environment_is_remote(),
     )
     .wrap_err("failed to resolve config cwd")?;
 
@@ -328,6 +353,7 @@ async fn start_app_server_for_archive_command(
     let cloud_config_bundle = app_server_target
         .cloud_config_bundle_loader(|| {
             bootstrap_auth_config(codex_home.as_path(), &bootstrap_config)
+                .map(|auth| embedded_network_policy.bind_bootstrap_auth(auth))
         })
         .await?;
     let config_toml = &bootstrap_config.config_toml;
@@ -344,7 +370,7 @@ async fn start_app_server_for_archive_command(
             .map(ToOwned::to_owned)
     });
     let cwd = cli.cwd.clone();
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .cli_overrides(cli_kv_overrides.clone())
         .harness_overrides(ConfigOverrides {
             model,
@@ -367,6 +393,14 @@ async fn start_app_server_for_archive_command(
         .build()
         .await
         .wrap_err("failed to load configuration")?;
+    if matches!(app_server_target, super::AppServerTarget::Embedded) {
+        embedded_network_policy.activate(&mut config);
+    }
+    let environment_manager = Arc::new(
+        prepared_environment_manager
+            .build(Some(local_runtime_paths), config.http_client_factory())
+            .wrap_err("failed to connect execution environments")?,
+    );
     let state_db = super::init_state_db_for_app_server_target(&config, &app_server_target)
         .await
         .wrap_err("failed to initialize state database")?;
@@ -382,6 +416,7 @@ async fn start_app_server_for_archive_command(
         /*log_db*/ None,
         state_db,
         environment_manager,
+        embedded_network_policy,
     )
     .await?;
     Ok(

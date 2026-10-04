@@ -1,0 +1,26 @@
+---
+source: tui/src/app_shell/diagnostic_commands_tests.rs
+expression: text
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+         3. Render dashboard                                                                      │
+                                                                                                  │
+ ▌ tool exec just test -p codex-tui                                                               │
+                                                                                                  ┃
+ ▌ edited 3 files +128 -24                                                                        ┃
+ ▎ STATUS  Project configuration ignored                                                          ┃
+ ▎ SYSTEM  Project configuration ignored                                                          ┃
+           /workspace/.codex/config.toml                                                          ┃
+           Trust this workspace to load its settings.                                             ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

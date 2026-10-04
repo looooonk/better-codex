@@ -21,6 +21,12 @@
 use base64::Engine;
 use std::io::Write;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CopyFormat {
+    PlainText,
+    Markdown,
+}
+
 /// Maximum raw bytes we will base64-encode into an OSC 52 sequence.
 /// Large payloads are rejected before encoding to avoid overwhelming the terminal.
 const OSC52_MAX_RAW_BYTES: usize = 100_000;

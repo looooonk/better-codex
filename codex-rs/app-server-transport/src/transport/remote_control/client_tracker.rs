@@ -43,6 +43,7 @@ struct ClientState {
 }
 
 pub(crate) struct ClientTracker {
+    pub(super) auth: Option<crate::ConnectionAuth>,
     clients: HashMap<(ClientId, StreamId), ClientState>,
     legacy_stream_ids: HashMap<ClientId, StreamId>,
     join_set: JoinSet<(ClientId, StreamId)>,
@@ -58,6 +59,7 @@ impl ClientTracker {
         shutdown_token: &CancellationToken,
     ) -> Self {
         Self {
+            auth: None,
             clients: HashMap::new(),
             legacy_stream_ids: HashMap::new(),
             join_set: JoinSet::new(),
@@ -168,6 +170,7 @@ impl ClientTracker {
                 self.send_transport_event(TransportEvent::ConnectionOpened {
                     connection_id,
                     origin: ConnectionOrigin::RemoteControl,
+                    auth: self.auth.clone(),
                     writer: writer_tx,
                     disconnect_sender: Some(disconnect_token.clone()),
                 })
@@ -423,6 +426,7 @@ fn transport_event_name(event: &TransportEvent) -> &'static str {
         TransportEvent::ConnectionOpened { .. } => "connection_opened",
         TransportEvent::ConnectionClosed { .. } => "connection_closed",
         TransportEvent::IncomingMessage { .. } => "incoming_message",
+        TransportEvent::DaemonShutdown => "daemon_shutdown",
     }
 }
 
@@ -448,6 +452,7 @@ mod tests {
     use codex_app_server_protocol::JSONRPCRequest;
     use codex_app_server_protocol::RequestId;
     use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::ServerNotificationEnvelope;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use tokio::time::timeout;
@@ -588,14 +593,15 @@ mod tests {
 
         writer
             .send(QueuedOutgoingMessage::new(
-                OutgoingMessage::AppServerNotification(ServerNotification::ConfigWarning(
-                    ConfigWarningNotification {
+                OutgoingMessage::AppServerNotification(ServerNotificationEnvelope {
+                    notification: ServerNotification::ConfigWarning(ConfigWarningNotification {
                         summary: "test".to_string(),
                         details: None,
                         path: None,
                         range: None,
-                    },
-                )),
+                    }),
+                    emitted_at_ms: Some(1_234),
+                }),
             ))
             .await
             .expect("writer should accept queued message");

@@ -3,10 +3,10 @@ use super::design::palette;
 use super::design::selection_style;
 use super::integrations::McpInventorySummary;
 use super::integrations::PluginInventorySummary;
+use crate::app_theme::TuiAppTheme;
 use crate::text_input::EditableText;
 use crate::text_input::TextInputAction;
 use codex_app_server_protocol::AskForApproval;
-use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
@@ -420,6 +420,7 @@ pub(super) fn reasoning_effort_label(effort: &ReasoningEffort) -> String {
         ReasoningEffort::XHigh => "Extra high".to_string(),
         ReasoningEffort::Max => "Max".to_string(),
         ReasoningEffort::Ultra => "Ultra".to_string(),
+        ReasoningEffort::Persistent => "Persistent".to_string(),
         ReasoningEffort::Custom(effort) => effort.clone(),
     }
 }

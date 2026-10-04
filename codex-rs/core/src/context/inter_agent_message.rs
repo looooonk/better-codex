@@ -1,8 +1,7 @@
 use codex_protocol::AgentPath;
-use codex_utils_output_truncation::TruncationPolicy;
-use codex_utils_output_truncation::truncate_text;
 
 use super::ContextualUserFragment;
+use codex_protocol::models::ContentItemKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InterAgentMessageType {
@@ -44,6 +43,10 @@ impl InterAgentMessage {
 }
 
 impl ContextualUserFragment for InterAgentMessage {
+    fn content_kind(&self) -> ContentItemKind {
+        ContentItemKind("multi_agent.inter_agent_message".to_string())
+    }
+
     fn role(&self) -> &'static str {
         "assistant"
     }
@@ -57,17 +60,12 @@ impl ContextualUserFragment for InterAgentMessage {
     }
 
     fn body(&self) -> String {
-        let content = format!(
+        format!(
             "Message Type: {}\nTask name: {}\nSender: {}\nPayload:\n{}",
             self.message_type.as_str(),
             self.task_name,
             self.sender,
             self.payload,
-        );
-        truncate_text(&content, TruncationPolicy::Bytes(8_000))
+        )
     }
 }
-
-#[cfg(test)]
-#[path = "inter_agent_message_tests.rs"]
-mod tests;

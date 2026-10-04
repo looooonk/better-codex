@@ -75,6 +75,9 @@ pub(super) async fn count_descendants(
                 .request_typed(ClientRequest::ThreadList {
                     request_id: app_shell_request_id("app-shell-descendants"),
                     params: ThreadListParams {
+                        originators: None,
+                        project_id: None,
+                        section_id: None,
                         cursor,
                         limit: Some(DESCENDANT_PAGE_SIZE),
                         sort_key: None,
@@ -121,6 +124,8 @@ pub(super) async fn start_turn(
     request_handle: AppServerRequestHandle,
     params: AppShellTurnStart,
 ) -> Result<TurnStartResponse> {
+    let cyber_access_program =
+        super::daybreak::authorized_program(&request_handle, params.cyber_access_program).await?;
     let (sandbox_policy, permissions) =
         turn_permissions_overrides(params.permissions_override, params.cwd.as_path());
     request_handle
@@ -147,6 +152,11 @@ pub(super) async fn start_turn(
                 output_schema: params.output_schema,
                 collaboration_mode: params.collaboration_mode,
                 multi_agent_mode: None,
+                disabled_plugin_ids: None,
+                turn_trigger: None,
+                tool_output: None,
+                service_tier_for_turn: None,
+                cyber_access_program: cyber_access_program.map(Into::into),
             },
         })
         .await
@@ -264,7 +274,6 @@ fn all_thread_source_kinds() -> Vec<ThreadSourceKind> {
     vec![
         ThreadSourceKind::Cli,
         ThreadSourceKind::VsCode,
-        ThreadSourceKind::Custom,
         ThreadSourceKind::Exec,
         ThreadSourceKind::AppServer,
         ThreadSourceKind::SubAgent,

@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell/astra_tests.rs
+assertion_line: 15
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
@@ -8,23 +9,23 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Bette╭ Select model ────────────────────────────────────────────────────╮ions
- ▎ YOU  Create a│   1 ○ GPT-5.6-Sol                                                │
-                │       gpt-5.6-sol - Latest frontier agentic coding model.        │
- ▎ CODEX  Starte│ › 2 ● GPT-6-Astra  current                                       │
-          by app│       gpt-6-astra - Our most capable model for complex,          │
- ▎ PLAN  1. Buil│   3 ○ GPT-5.6-Terra                                              │
-         2. Wire│       gpt-5.6-terra - Balanced agentic coding model for everyday │0000001
-         3. Rend│   4 ○ GPT-5.6-Luna                                               │ session list
-                │       gpt-5.6-luna - Fast and affordable agentic coding model.   │
- ▌ tool exec jus│   5 ○ GPT-5.5                                                    │
-                │       gpt-5.5 - Frontier model for complex coding, research, and │
- ▌ edited 3 file│   6 ○ GPT-5.4                                                    │
-                │       gpt-5.4 - Strong model for everyday coding.                │
- ▎ CODEX  The ne│   7 ○ GPT-5.4-Mini                                               │
-          surfac│       gpt-5.4-mini - Small, fast, and cost-efficient model for   │
-                │   8 ○ GPT-5.2                                                    │
-                │       gpt-5.2 - Optimized for professional work and long-running │
-                │  wheel / j k  Enter select  Esc cancel  2/8                      │
+ ▎ YOU  Create a│ › 1 ● GPT-6-Astra  current                                       │
+                │       gpt-6-astra - Frontier intelligence for the most demanding │
+ ▎ CODEX  Starte│   2 ○ GPT-6.1-Sol                                                │
+          by app│       gpt-6.1-sol - Latest workhorse model for coding and        │
+ ▎ PLAN  1. Buil│   3 ○ GPT-6-Sol                                                  │
+         2. Wire│       gpt-6-sol - Previous generation workhorse model.           │0000001
+         3. Rend│   4 ○ GPT-6-Luna                                                 │ session list
+                │       gpt-6-luna - Fast and affordable model for easier tasks.   │
+ ▌ tool exec jus│   5 ○ GPT-5.6-Sol                                                │
+                │       gpt-5.6-sol - Older generation workhorse model.            │
+ ▌ edited 3 file│   6 ○ GPT-5.6-Terra                                              │
+                │       gpt-5.6-terra - Older balanced model for straightforward   │
+ ▎ CODEX  The ne│   7 ○ GPT-5.6-Luna                                               │
+          surfac│       gpt-5.6-luna - Older fast and efficient model.             │
+                │   8 ○ GPT-5.5                                                    │
+                │       gpt-5.5 - Legacy coding model.                             │
+                │  wheel / j k  Enter select  Esc cancel  1/8                      │
                 ╰──────────────────────────────────────────────────────────────────╯
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││

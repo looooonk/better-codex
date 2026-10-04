@@ -2,7 +2,6 @@ use crate::manifest::load_plugin_manifest;
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -11,9 +10,6 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use tar::Archive;
-
-const MAX_PLUGIN_BUNDLE_ENTRIES: usize = 10_000;
-const MAX_PLUGIN_BUNDLE_PATH_COMPONENTS: usize = 64;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum PluginBundlePackError {
@@ -75,8 +71,7 @@ pub(crate) fn pack_plugin_bundle_tar_gz(
 
     let encoder = GzEncoder::new(SizeLimitedBuffer::new(max_bytes), Compression::default());
     let mut archive = tar::Builder::new(encoder);
-    let mut entry_count = 0;
-    append_plugin_tree(&mut archive, plugin_path, plugin_path, &mut entry_count)?;
+    append_plugin_tree(&mut archive, plugin_path, plugin_path).map_err(archive_io_error)?;
     let encoder = archive.into_inner().map_err(archive_io_error)?;
     encoder
         .finish()
@@ -88,71 +83,29 @@ fn append_plugin_tree<W: Write>(
     archive: &mut tar::Builder<W>,
     plugin_root: &Path,
     current: &Path,
-    entry_count: &mut usize,
-) -> Result<(), PluginBundlePackError> {
-    let mut entries = fs::read_dir(current)
-        .map_err(|source| PluginBundlePackError::Io { source })?
-        .collect::<Result<Vec<_>, io::Error>>()
-        .map_err(|source| PluginBundlePackError::Io { source })?;
+) -> io::Result<()> {
+    let mut entries = fs::read_dir(current)?.collect::<Result<Vec<_>, io::Error>>()?;
     entries.sort_by_key(fs::DirEntry::file_name);
     for entry in entries {
         let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|source| PluginBundlePackError::Io { source })?;
-        if !file_type.is_dir() && !file_type.is_file() {
-            continue;
-        }
+        let file_type = entry.file_type()?;
         let relative_path = path.strip_prefix(plugin_root).map_err(|err| {
-            PluginBundlePackError::InvalidPluginPath {
-                path: path.clone(),
-                reason: format!("failed to compute plugin archive path: {err}"),
-            }
+            io::Error::other(format!(
+                "failed to compute plugin archive path for `{}`: {err}",
+                path.display()
+            ))
         })?;
-        enforce_packed_archive_path(relative_path)?;
-        *entry_count = entry_count.saturating_add(1);
-        enforce_packed_archive_entry_count(*entry_count, relative_path)?;
         if file_type.is_dir() {
-            archive
-                .append_dir(relative_path, &path)
-                .map_err(archive_io_error)?;
-            append_plugin_tree(archive, plugin_root, &path, entry_count)?;
+            archive.append_dir(relative_path, &path)?;
+            append_plugin_tree(archive, plugin_root, &path)?;
+        } else if file_type.is_file() {
+            archive.append_path_with_name(&path, relative_path)?;
         } else {
-            archive
-                .append_path_with_name(&path, relative_path)
-                .map_err(archive_io_error)?;
+            return Err(io::Error::other(format!(
+                "unsupported plugin archive entry type: {}",
+                path.display()
+            )));
         }
-    }
-    Ok(())
-}
-
-fn enforce_packed_archive_entry_count(
-    entry_count: usize,
-    path: &Path,
-) -> Result<(), PluginBundlePackError> {
-    if entry_count > MAX_PLUGIN_BUNDLE_ENTRIES {
-        return Err(PluginBundlePackError::InvalidPluginPath {
-            path: path.to_path_buf(),
-            reason: format!(
-                "plugin tree exceeds maximum archive entry count of {MAX_PLUGIN_BUNDLE_ENTRIES}"
-            ),
-        });
-    }
-    Ok(())
-}
-
-fn enforce_packed_archive_path(path: &Path) -> Result<(), PluginBundlePackError> {
-    let component_count = path
-        .components()
-        .filter(|component| matches!(component, std::path::Component::Normal(_)))
-        .count();
-    if component_count > MAX_PLUGIN_BUNDLE_PATH_COMPONENTS {
-        return Err(PluginBundlePackError::InvalidPluginPath {
-            path: path.to_path_buf(),
-            reason: format!(
-                "plugin archive path exceeds maximum depth of {MAX_PLUGIN_BUNDLE_PATH_COMPONENTS}"
-            ),
-        });
     }
     Ok(())
 }
@@ -194,14 +147,10 @@ fn unpack_plugin_bundle_tar<R: Read>(
     max_total_bytes: u64,
 ) -> Result<(), PluginBundleUnpackError> {
     let mut extracted_bytes = 0u64;
-    let mut entry_count = 0usize;
-    let mut seen_paths = HashSet::new();
     let entries = archive.entries().map_err(|source| {
         PluginBundleUnpackError::io("failed to read plugin bundle tar", source)
     })?;
     for entry in entries {
-        entry_count = entry_count.saturating_add(1);
-        enforce_archive_entry_count(entry_count)?;
         let mut entry = entry.map_err(|source| {
             PluginBundleUnpackError::io("failed to read plugin bundle tar entry", source)
         })?;
@@ -214,12 +163,6 @@ fn unpack_plugin_bundle_tar<R: Read>(
             })?
             .into_owned();
         let output_path = checked_tar_output_path(destination, &entry_path)?;
-        if !seen_paths.insert(output_path.clone()) {
-            return Err(PluginBundleUnpackError::InvalidBundle(format!(
-                "plugin bundle tar contains duplicate path `{}`",
-                entry_path.display()
-            )));
-        }
 
         if entry_type.is_dir() {
             fs::create_dir_all(&output_path).map_err(|source| {
@@ -267,17 +210,11 @@ fn checked_tar_output_path(
     entry_name: &Path,
 ) -> Result<PathBuf, PluginBundleUnpackError> {
     let mut output_path = destination.to_path_buf();
-    let mut component_count = 0usize;
+    let mut has_component = false;
     for component in entry_name.components() {
         match component {
             std::path::Component::Normal(component) => {
-                component_count = component_count.saturating_add(1);
-                if component_count > MAX_PLUGIN_BUNDLE_PATH_COMPONENTS {
-                    return Err(PluginBundleUnpackError::InvalidBundle(format!(
-                        "plugin bundle tar entry `{}` exceeds maximum path depth of {MAX_PLUGIN_BUNDLE_PATH_COMPONENTS}",
-                        entry_name.display()
-                    )));
-                }
+                has_component = true;
                 output_path.push(component);
             }
             std::path::Component::CurDir => {}
@@ -291,21 +228,12 @@ fn checked_tar_output_path(
             }
         }
     }
-    if component_count == 0 {
+    if !has_component {
         return Err(PluginBundleUnpackError::InvalidBundle(
             "plugin bundle tar entry has an empty path".to_string(),
         ));
     }
     Ok(output_path)
-}
-
-fn enforce_archive_entry_count(entry_count: usize) -> Result<(), PluginBundleUnpackError> {
-    if entry_count > MAX_PLUGIN_BUNDLE_ENTRIES {
-        return Err(PluginBundleUnpackError::InvalidBundle(format!(
-            "plugin bundle tar exceeds maximum entry count of {MAX_PLUGIN_BUNDLE_ENTRIES}"
-        )));
-    }
-    Ok(())
 }
 
 fn enforce_total_extracted_size(

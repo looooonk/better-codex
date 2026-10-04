@@ -1,5 +1,5 @@
 use super::ContextualUserFragment;
-use super::bound_developer_configuration_text;
+use codex_protocol::models::ContentItemKind;
 use codex_protocol::protocol::REALTIME_CONVERSATION_CLOSE_TAG;
 use codex_protocol::protocol::REALTIME_CONVERSATION_OPEN_TAG;
 
@@ -11,12 +11,16 @@ pub(crate) struct RealtimeStartWithInstructions {
 impl RealtimeStartWithInstructions {
     pub(crate) fn new(instructions: impl Into<String>) -> Self {
         Self {
-            instructions: bound_developer_configuration_text(&instructions.into()),
+            instructions: instructions.into(),
         }
     }
 }
 
 impl ContextualUserFragment for RealtimeStartWithInstructions {
+    fn content_kind(&self) -> ContentItemKind {
+        ContentItemKind("realtime_conversation.custom_start_instructions".to_string())
+    }
+
     fn role(&self) -> &'static str {
         "developer"
     }
@@ -33,6 +37,6 @@ impl ContextualUserFragment for RealtimeStartWithInstructions {
     }
 
     fn body(&self) -> String {
-        bound_developer_configuration_text(&format!("\n{}\n", self.instructions))
+        format!("\n{}\n", self.instructions)
     }
 }

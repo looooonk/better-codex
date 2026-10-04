@@ -1,6 +1,8 @@
 //! Small reusable multiline composer for non-chat TUI surfaces.
 
+use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use std::time::Duration;
+use std::time::Instant;
 
 use crate::text_input::EditableText;
 use crate::text_input::text_input_action_from_key;
@@ -30,6 +32,7 @@ pub enum ComposerAction {
 pub struct ComposerInput {
     input: EditableText,
     hint_items: Option<Vec<(String, String)>>,
+    validation_expires_at: Option<Instant>,
 }
 
 impl ComposerInput {
@@ -38,6 +41,7 @@ impl ComposerInput {
         Self {
             input: EditableText::default(),
             hint_items: None,
+            validation_expires_at: None,
         }
     }
 
@@ -64,6 +68,7 @@ impl ComposerInput {
     /// Clear the input text.
     pub fn clear(&mut self) {
         self.input.clear();
+        self.validation_expires_at = None;
     }
 
     /// Apply a modified text-editing shortcut if the event matches one.
@@ -91,6 +96,11 @@ impl ComposerInput {
             }
             KeyCode::Enter => {
                 let submitted = self.input.text().trim().to_string();
+                if submitted.chars().count() > MAX_USER_INPUT_TEXT_CHARS {
+                    self.validation_expires_at =
+                        Some(Instant::now() + Duration::from_secs(/*secs*/ 5));
+                    return ComposerAction::None;
+                }
                 if !submitted.is_empty() {
                     self.clear();
                     return ComposerAction::Submitted(submitted);
@@ -240,6 +250,12 @@ impl ComposerInput {
         false
     }
 
+    /// Delay until validation feedback expires and needs a redraw.
+    pub fn footer_flash_delay(&self) -> Option<Duration> {
+        self.validation_expires_at
+            .and_then(|expires| expires.checked_duration_since(Instant::now()))
+    }
+
     /// No deferred paste state is retained.
     pub fn flush_paste_burst_if_due(&mut self) -> bool {
         false
@@ -278,6 +294,11 @@ impl ComposerInput {
     }
 
     fn footer_line(&self) -> Line<'static> {
+        if self.footer_flash_delay().is_some() {
+            return format!("Message too long; limit {MAX_USER_INPUT_TEXT_CHARS} characters")
+                .red()
+                .into();
+        }
         let items = self.hint_items.clone().unwrap_or_else(|| {
             vec![
                 ("Enter".to_string(), "send".to_string()),

@@ -1,0 +1,14 @@
+---
+source: tui/src/app_shell/agent_activity_render_tests.rs
+assertion_line: 140
+expression: rendered
+---
+› ● running  review
+Inspector  review  ● running
+Model  Unknown
+Reasoning  Unknown
+Path  /root/review
+Task  No task summary
+Latest  No message yet
+Recent
+  • agent started

@@ -1,0 +1,30 @@
+---
+source: tui/src/app_shell/managed_worktree_tests.rs
+assertion_line: 41
+expression: "lines.join(\"\\n\")"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ ERROR  Creating a worktree requires an idle session without queued input, active voice, or pending
+          requests
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+
+
+
+
+
+
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                             │
+│> Summarize the new shell architecture                                                                      │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

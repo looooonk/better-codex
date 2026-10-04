@@ -379,7 +379,7 @@ impl ShellState {
 
     pub(in crate::app_shell) fn apply_app_theme<S>(
         &mut self,
-        app_theme: codex_config::types::TuiAppTheme,
+        app_theme: crate::app_theme::TuiAppTheme,
         app_server: &mut S,
     ) where
         S: AppShellBackend,
@@ -444,10 +444,15 @@ impl ShellState {
         self.schedule_settings_update(
             app_server,
             SettingsChange::ApprovalPolicy(policy),
-            vec![replace_config_value(
-                "approval_policy",
-                serde_json::to_value(policy)?,
-            )],
+            if policy == AskForApproval::UnlessTrusted {
+                // Native config rejects this runtime-only approval policy.
+                Vec::new()
+            } else {
+                vec![replace_config_value(
+                    "approval_policy",
+                    serde_json::to_value(policy)?,
+                )]
+            },
             Some(params),
         );
         Ok(())

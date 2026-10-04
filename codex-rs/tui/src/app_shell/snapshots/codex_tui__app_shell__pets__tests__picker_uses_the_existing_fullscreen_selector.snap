@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell/pets_tests.rs
+assertion_line: 53
+expression: rendered
+---
+
+
+           ╭ TERMINAL PETS ───────────────────────────────────────────────────╮
+           │ › 1 ● Hide terminal pet  current                                 │
+           │       Use the full workspace width                               │
+           │   2 ○ Codex                                                      │
+           │       The original Codex companion                               │
+           │   3 ○ Dewey                                                      │
+           │       A tidy duck for calm workspace days                        │
+           │   4 ○ Fireball                                                   │
+           │       Hot path energy for fast iteration                         │
+           │   5 ○ Rocky                                                      │
+           │       A steady rock when the diff gets large                     │
+           │   6 ○ Seedy                                                      │
+           │       Small green shoots for new ideas                           │
+           │   7 ○ Stacky                                                     │
+           │       A balanced stack for deep work                             │
+           │   8 ○ BSOD                                                       │
+           │       A tiny blue-screen gremlin                                 │
+           │   9 ○ Null Signal                                                │
+           │       Quiet signal from the void                                 │
+           │  wheel / j k  Enter select  Esc cancel  1/9                      │
+           ╰──────────────────────────────────────────────────────────────────╯

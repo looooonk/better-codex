@@ -1,27 +1,28 @@
 ---
 source: tui/src/app_shell/slash_command_popup_tests.rs
+assertion_line: 115
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
 
   Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
-
- ◆ CONVERSATION
- ▎ SYSTEM  Better Codex app shell
- ▎ YOU  Create a divergent standalone TUI.
-
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
- ▎ PLAN  1. Build shell
-         2. Wire transcript
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
-│▌ /clear  Clear the visible transcript                                │
-│  /copy   Copy response Markdown; accepts an optional 1-9 index       │
-│  /goal   Show or update the active goal                              │
-│  /login  Sign in to your OpenAI account                              │
-│  /logout Sign out of your OpenAI account                             │
-│  /vim    Edit the prompt in Vim or Neovim                            │
-│  /exit   Exit Better Codex                                           │
+│▌ /find          Search the text retained in this conversation        │
+│  /keymap        View, rebind, or disable keyboard shortcuts          │
+│  /statusline    Choose status items, in display order, or turn the e…│
+│  /title         Choose terminal title items, in display order, or tu…│
+│  /pets          Choose a terminal pet or hide it                     │
+│  /attach        Attach local images to your next message             │
+│  /detach        Remove an attached image by number, or all           │
+│  /ide           Include the IDE selection and open tabs in new messa…│
+│  /init          Create repository instructions in AGENTS.md          │
+│  /mention       Find a file to mention; accepts a search query       │
+│  /warnings      Show retained warnings and diagnostic details        │
+│  /debug-config  Inspect configuration layers and setting sources     │
+│  /rollout       Show the current session rollout path                │
+│  /approve       Inspect a denial or approve one retry by review ID   │
+│  /export        Export the conversation to a new local Markdown file │
 │↑↓ navigate   Tab complete   Enter run   Esc close                    │
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮

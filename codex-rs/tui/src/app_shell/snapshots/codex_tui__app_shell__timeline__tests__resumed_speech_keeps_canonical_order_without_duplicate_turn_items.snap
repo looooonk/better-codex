@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/timeline_tests.rs
+assertion_line: 58
+expression: "lines.join(\"\\n\")"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ YOU  Voice: Please fix the bug.
+
+ ▎ CODEX  The fix is ready.
+
+ ▎ CODEX  Voice: Ready to review.
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

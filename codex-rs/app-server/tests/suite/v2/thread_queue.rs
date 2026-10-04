@@ -1,34 +1,30 @@
-use std::path::Path;
 use std::time::Duration;
 
 use anyhow::Context;
 use anyhow::Result;
+use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
-use app_test_support::create_fake_paginated_rollout;
-use app_test_support::create_fake_rollout;
+use app_test_support::create_escalated_command_execution_sse_response;
 use app_test_support::create_final_assistant_message_sse_response;
-use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::create_mock_responses_server_sequence;
-use app_test_support::create_shell_command_sse_response;
-use app_test_support::rollout_path;
-use app_test_support::to_response;
-use app_test_support::write_models_cache;
+use app_test_support::create_mock_responses_server_sequence_unchecked;
 use codex_app_server_protocol::ClientInfo;
+use codex_app_server_protocol::ClientRequest;
+use codex_app_server_protocol::CommandExecutionApprovalDecision;
+use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::InitializeCapabilities;
-use codex_app_server_protocol::InitializeParams;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCError;
-use codex_app_server_protocol::JSONRPCMessage;
-use codex_app_server_protocol::JSONRPCNotification;
-use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::QueuedSubmission;
 use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ThreadGoalSetResponse;
-use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadLoadedListParams;
 use codex_app_server_protocol::ThreadLoadedListResponse;
 use codex_app_server_protocol::ThreadQueueAddParams;
 use codex_app_server_protocol::ThreadQueueAddResponse;
+use codex_app_server_protocol::ThreadQueueChangedNotification;
 use codex_app_server_protocol::ThreadQueueDeleteParams;
 use codex_app_server_protocol::ThreadQueueDeleteResponse;
 use codex_app_server_protocol::ThreadQueueListParams;
@@ -36,1168 +32,1035 @@ use codex_app_server_protocol::ThreadQueueListResponse;
 use codex_app_server_protocol::ThreadQueueReorderParams;
 use codex_app_server_protocol::ThreadQueueReorderResponse;
 use codex_app_server_protocol::ThreadQueueStartParams;
+use codex_app_server_protocol::ThreadQueueStartResponse;
 use codex_app_server_protocol::ThreadQueueUpdateParams;
 use codex_app_server_protocol::ThreadQueueUpdateResponse;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
-use codex_app_server_protocol::ThreadRevertParams;
-use codex_app_server_protocol::ThreadRevertResponse;
+use codex_app_server_protocol::ThreadSettingsUpdateParams;
+use codex_app_server_protocol::ThreadSettingsUpdateResponse;
+use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::TurnCompletedNotification;
+use codex_app_server_protocol::TurnInterruptParams;
+use codex_app_server_protocol::TurnInterruptResponse;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
-use codex_app_server_protocol::TurnStartedNotification;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
-use codex_protocol::ThreadId;
-use codex_protocol::items::TurnItem as CoreTurnItem;
-use codex_protocol::items::UserMessageItem;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::ItemCompletedEvent;
-use codex_protocol::protocol::TurnStartedEvent;
-use codex_protocol::user_input::UserInput as CoreUserInput;
-use codex_rollout::RolloutItem;
-use codex_rollout::append_rollout_item_to_path;
-use codex_state::QueueClaimResult;
-use codex_state::QueuedSubmissionState;
-use codex_state::StateRuntime;
-use core_test_support::responses;
+use codex_protocol::openai_models::ReasoningEffort;
+use core_test_support::skip_if_remote;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::time::sleep;
 use tokio::time::timeout;
+use wiremock::MockServer;
 
-use super::connection_handling_websocket::WsClient;
-use super::connection_handling_websocket::connect_websocket;
-use super::connection_handling_websocket::read_error_for_id;
-use super::connection_handling_websocket::read_response_for_id;
-use super::connection_handling_websocket::send_request;
-use super::connection_handling_websocket::spawn_websocket_server;
-
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
-const INVALID_REQUEST_ERROR_CODE: i64 = -32600;
+const READ_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
 
 #[tokio::test]
-async fn queue_crud_is_durable_for_an_unloaded_thread() -> Result<()> {
-    let server = create_mock_responses_server_repeating_assistant("Done").await;
-    let codex_home = TempDir::new()?;
-    write_config(codex_home.path(), &server.uri())?;
-    let thread_id = create_fake_rollout(
-        codex_home.path(),
-        "2025-01-06T08-30-00",
-        "2025-01-06T08:30:00Z",
-        "Stored thread preview",
-        Some("mock_provider"),
-        /*git_info*/ None,
-    )?;
-    let mut app = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
-        .await?;
-    timeout(DEFAULT_TIMEOUT, app.initialize()).await??;
+async fn queue_requires_experimental_handshake() -> Result<()> {
+    let (mut app, codex_home, _server) = queue_app(Vec::new()).await?;
+    let thread = app.start_thread(ThreadStartParams::default()).await?.thread;
+    let queue = list_queue(&mut app, &thread.id).await?;
+    assert!(queue.data.is_empty());
+    drop(app);
 
-    let first = add(&mut app, &thread_id, "first", "client-1").await?;
-    let repeated = add(&mut app, &thread_id, "first", "client-1").await?;
-    assert_eq!(repeated, first);
-    let second = add(&mut app, &thread_id, "second", "client-2").await?;
-
-    let update_id = app
-        .send_raw_request(
-            "thread/queue/update",
-            Some(serde_json::to_value(ThreadQueueUpdateParams {
-                thread_id: thread_id.clone(),
-                queued_submission_id: first.queued_submission.id.clone(),
-                input: text_input("first updated"),
-            })?),
-        )
-        .await?;
-    let update: ThreadQueueUpdateResponse = response(&mut app, update_id).await?;
-    assert_eq!(update.queued_submission.input, text_input("first updated"));
-
-    let reorder_id = app
-        .send_raw_request(
-            "thread/queue/reorder",
-            Some(serde_json::to_value(ThreadQueueReorderParams {
-                thread_id: thread_id.clone(),
-                queued_submission_ids: vec![
-                    second.queued_submission.id.clone(),
-                    first.queued_submission.id.clone(),
-                ],
-            })?),
-        )
-        .await?;
-    let _: ThreadQueueReorderResponse = response(&mut app, reorder_id).await?;
-
-    let list_id = app
-        .send_raw_request(
-            "thread/queue/list",
-            Some(serde_json::to_value(ThreadQueueListParams {
-                thread_id: thread_id.clone(),
-                cursor: None,
-                limit: Some(1),
-            })?),
-        )
-        .await?;
-    let first_page: ThreadQueueListResponse = response(&mut app, list_id).await?;
-    assert_eq!(first_page.data, vec![second.queued_submission.clone()]);
-    assert_eq!(first_page.next_cursor.as_deref(), Some("1"));
-
-    let delete_id = app
-        .send_raw_request(
-            "thread/queue/delete",
-            Some(serde_json::to_value(ThreadQueueDeleteParams {
-                thread_id,
-                queued_submission_id: second.queued_submission.id,
-            })?),
-        )
-        .await?;
-    let deleted: ThreadQueueDeleteResponse = response(&mut app, delete_id).await?;
-    assert!(deleted.deleted);
-    Ok(())
-}
-
-#[tokio::test]
-async fn cold_recovery_keeps_consumed_indeterminate_work_visible_until_delete() -> Result<()> {
-    const CLIENT_ID: &str = "client-indeterminate";
-    const OWNER_TEXT: &str = "indeterminate queued input";
-    const FOLLOWER_TEXT: &str = "queued after acknowledged recovery";
-    const TURN_ID: &str = "turn-indeterminate";
-
-    let server = create_mock_responses_server_repeating_assistant("Done").await;
-    let codex_home = TempDir::new()?;
-    write_config(codex_home.path(), &server.uri())?;
-    let filename_ts = "2025-01-06T09-30-00";
-    let thread_id = create_fake_paginated_rollout(
-        codex_home.path(),
-        filename_ts,
-        "2025-01-06T09:30:00Z",
-        "Stored thread preview",
-        Some("mock_provider"),
-        /*git_info*/ None,
-    )?;
-    let parsed_thread_id = ThreadId::from_string(&thread_id)?;
-    let path = rollout_path(codex_home.path(), filename_ts, &thread_id);
-    append_rollout_item_to_path(
-        &path,
-        &RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
-            turn_id: TURN_ID.to_string(),
-            trace_id: None,
-            started_at: None,
-            model_context_window: None,
-            collaboration_mode_kind: Default::default(),
-        })),
-    )
-    .await?;
-    append_rollout_item_to_path(
-        &path,
-        &RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
-            thread_id: parsed_thread_id,
-            turn_id: TURN_ID.to_string(),
-            item: CoreTurnItem::UserMessage(UserMessageItem {
-                id: "user-indeterminate".to_string(),
-                client_id: Some(CLIENT_ID.to_string()),
-                content: vec![CoreUserInput::Text {
-                    text: OWNER_TEXT.to_string(),
-                    text_elements: Vec::new(),
-                }],
-            }),
-            completed_at_ms: 1,
-        })),
-    )
-    .await?;
-
-    let state =
-        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".to_string()).await?;
-    let owner = state
-        .enqueue_queued_submission(
-            parsed_thread_id,
-            &serde_json::to_string(&vec![CoreUserInput::Text {
-                text: OWNER_TEXT.to_string(),
-                text_elements: Vec::new(),
-            }])?,
-            CLIENT_ID,
-        )
-        .await?;
-    let follower = state
-        .enqueue_queued_submission(
-            parsed_thread_id,
-            &serde_json::to_string(&vec![CoreUserInput::Text {
-                text: FOLLOWER_TEXT.to_string(),
-                text_elements: Vec::new(),
-            }])?,
-            "client-follower",
-        )
-        .await?;
-    assert!(matches!(
-        state
-            .claim_queued_submission(parsed_thread_id, Some(&owner.id), TURN_ID)
-            .await?,
-        QueueClaimResult::Claimed(_)
-    ));
-    assert!(
-        state
-            .mark_queued_submission_inflight(parsed_thread_id, TURN_ID)
-            .await?
-    );
-    state.close().await;
-
-    let mut app = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .build()
-        .await?;
-    timeout(DEFAULT_TIMEOUT, app.initialize()).await??;
-
-    let list_id = app
-        .send_raw_request(
-            "thread/queue/list",
-            Some(serde_json::to_value(ThreadQueueListParams {
-                thread_id: thread_id.clone(),
-                cursor: None,
-                limit: None,
-            })?),
-        )
-        .await?;
-    let listed: ThreadQueueListResponse = response(&mut app, list_id).await?;
-    assert_eq!(
-        listed.data,
-        vec![
-            codex_app_server_protocol::QueuedSubmission {
-                id: owner.id.clone(),
-                input: text_input(OWNER_TEXT),
-                client_user_message_id: CLIENT_ID.to_string(),
-            },
-            codex_app_server_protocol::QueuedSubmission {
-                id: follower.id.clone(),
-                input: text_input(FOLLOWER_TEXT),
-                client_user_message_id: "client-follower".to_string(),
-            },
-        ]
-    );
-    assert!(
-        server
-            .received_requests()
-            .await
-            .expect("response requests")
-            .is_empty()
-    );
-
-    let update_id = app
-        .send_raw_request(
-            "thread/queue/update",
-            Some(serde_json::to_value(ThreadQueueUpdateParams {
-                thread_id: thread_id.clone(),
-                queued_submission_id: owner.id.clone(),
-                input: text_input("replacement must be rejected"),
-            })?),
-        )
-        .await?;
-    let update_error: JSONRPCError = timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_error_message(RequestId::Integer(update_id)),
-    )
-    .await??;
-    assert_eq!(
-        update_error.error.message,
-        "queued input is already durable and the blocked submission can only be deleted"
-    );
-
-    let resume_id = app
-        .send_thread_resume_request(ThreadResumeParams {
-            thread_id: thread_id.clone(),
-            ..Default::default()
-        })
-        .await?;
-    let _: ThreadResumeResponse = response(&mut app, resume_id).await?;
-    sleep(Duration::from_millis(/*millis*/ 100)).await;
-    assert!(
-        server
-            .received_requests()
-            .await
-            .expect("response requests")
-            .is_empty()
-    );
-
-    let start_id = app
-        .send_raw_request(
-            "thread/queue/start",
-            Some(serde_json::to_value(ThreadQueueStartParams {
-                thread_id: thread_id.clone(),
-                queued_submission_id: None,
-            })?),
-        )
-        .await?;
-    let start_error: JSONRPCError = timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_error_message(RequestId::Integer(start_id)),
-    )
-    .await??;
-    assert_eq!(
-        start_error.error.message,
-        format!(
-            "queued submission {} is blocked because its input is already durable; delete it to acknowledge and discard it",
-            owner.id
-        )
-    );
-
-    let delete_id = app
-        .send_raw_request(
-            "thread/queue/delete",
-            Some(serde_json::to_value(ThreadQueueDeleteParams {
-                thread_id: thread_id.clone(),
-                queued_submission_id: owner.id,
-            })?),
-        )
-        .await?;
-    let deleted: ThreadQueueDeleteResponse = response(&mut app, delete_id).await?;
-    assert!(deleted.deleted);
-    timeout(DEFAULT_TIMEOUT, async {
-        loop {
-            if server.received_requests().await.is_some_and(|requests| {
-                requests
-                    .iter()
-                    .any(|request| request_body_contains(request, FOLLOWER_TEXT))
-            }) {
-                return;
-            }
-            sleep(Duration::from_millis(/*millis*/ 10)).await;
-        }
-    })
-    .await?;
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/completed"),
-    )
-    .await??;
-    let final_list_id = app
-        .send_raw_request(
-            "thread/queue/list",
-            Some(serde_json::to_value(ThreadQueueListParams {
-                thread_id,
-                cursor: None,
-                limit: None,
-            })?),
-        )
-        .await?;
-    let final_list: ThreadQueueListResponse = response(&mut app, final_list_id).await?;
-    assert!(final_list.data.is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn idle_thread_dispatches_a_durable_queued_submission() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    let release_path = codex_home.path().join("release-queued-turn");
-    let release_command = format!(
-        "while [ ! -f '{}' ]; do sleep 0.01; done",
-        release_path.display()
-    );
-    let server = create_mock_responses_server_sequence(vec![
-        create_shell_command_sse_response(
-            vec!["sh".to_string(), "-c".to_string(), release_command],
-            Some(codex_home.path()),
-            Some(30_000),
-            "hold-queued-turn",
-        )?,
-        create_final_assistant_message_sse_response("Done")?,
-    ])
-    .await;
-    write_config(codex_home.path(), &server.uri())?;
-    let mut app = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .build()
-        .await?;
-    timeout(DEFAULT_TIMEOUT, app.initialize()).await??;
-    let start_id = app
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
-            model: Some("mock-model".to_string()),
-            history_mode: Some(ThreadHistoryMode::Paginated),
-            ..Default::default()
-        })
-        .await?;
-    let started: ThreadStartResponse = response(&mut app, start_id).await?;
-
-    let queued = add(&mut app, &started.thread.id, "queued", "client-idle").await?;
-    assert_eq!(queued.queued_submission.input, text_input("queued"));
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("thread/queue/changed"),
-    )
-    .await??;
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("thread/queue/changed"),
-    )
-    .await??;
-
-    let thread_id = ThreadId::from_string(&started.thread.id)?;
-    let state =
-        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".to_string()).await?;
-    let active = state
-        .active_queued_submission(thread_id)
-        .await?
-        .expect("admitted queued submission should remain active");
-    assert_eq!(active.state, QueuedSubmissionState::Inflight);
-    assert_eq!(active.client_user_message_id, "client-idle");
-    state.close().await;
-
-    wait_for_command_start(&mut app).await?;
-    std::fs::write(release_path, "release")?;
-    timeout(
-        DEFAULT_TIMEOUT,
-        turn_completed_before_queue_changed(&mut app),
-    )
-    .await??;
-
-    let list_id = app
-        .send_raw_request(
-            "thread/queue/list",
-            Some(serde_json::to_value(ThreadQueueListParams {
-                thread_id: started.thread.id,
-                cursor: None,
-                limit: None,
-            })?),
-        )
-        .await?;
-    let listed: ThreadQueueListResponse = response(&mut app, list_id).await?;
-    assert_eq!(listed.data, Vec::new());
-    Ok(())
-}
-
-#[tokio::test]
-async fn queue_start_immediately_after_turn_start_preserves_pending_submission() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    let release_path = codex_home.path().join("release-direct-turn");
-    let release_command = format!(
-        "while [ ! -f '{}' ]; do sleep 0.01; done",
-        release_path.display()
-    );
-    let server = create_mock_responses_server_sequence(vec![
-        create_shell_command_sse_response(
-            vec!["sh".to_string(), "-c".to_string(), release_command],
-            Some(codex_home.path()),
-            Some(30_000),
-            "hold-direct-turn",
-        )?,
-        create_final_assistant_message_sse_response("Done")?,
-    ])
-    .await;
-    write_config(codex_home.path(), &server.uri())?;
-    let mut app = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .build()
-        .await?;
-    timeout(Duration::from_secs(/*secs*/ 30), app.initialize()).await??;
-    let start_id = app
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
-            model: Some("mock-model".to_string()),
-            ..Default::default()
-        })
-        .await?;
-    let started: ThreadStartResponse = response(&mut app, start_id).await?;
-    let thread_id = ThreadId::from_string(&started.thread.id)?;
-    let queued_payload = serde_json::to_string(&vec![CoreUserInput::Text {
-        text: "queued must remain pending".to_string(),
-        text_elements: Vec::new(),
-    }])?;
-    let state =
-        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".to_string()).await?;
-    let queued = state
-        .enqueue_queued_submission(thread_id, &queued_payload, "client-race")
-        .await?;
-    state.close().await;
-
-    let direct_id = app
-        .send_turn_start_request(TurnStartParams {
-            thread_id: started.thread.id.clone(),
-            input: text_input("direct turn"),
-            ..Default::default()
-        })
-        .await?;
-    let queue_id = app
-        .send_raw_request(
-            "thread/queue/start",
-            Some(serde_json::to_value(ThreadQueueStartParams {
-                thread_id: started.thread.id.clone(),
-                queued_submission_id: Some(queued.id.clone()),
-            })?),
-        )
-        .await?;
-    let _: TurnStartResponse = response(&mut app, direct_id).await?;
-    let queue_error: JSONRPCError = timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_error_message(RequestId::Integer(queue_id)),
-    )
-    .await??;
-    assert_eq!(queue_error.error.code, INVALID_REQUEST_ERROR_CODE);
-    assert_eq!(
-        queue_error.error.message,
-        "thread already has an active or pending turn"
-    );
-
-    let state =
-        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".to_string()).await?;
-    assert_eq!(
-        state.queued_submission(thread_id, &queued.id).await?,
-        Some(queued.clone())
-    );
-    state.close().await;
-
-    let delete_id = app
-        .send_raw_request(
-            "thread/queue/delete",
-            Some(serde_json::to_value(ThreadQueueDeleteParams {
-                thread_id: started.thread.id,
-                queued_submission_id: queued.id,
-            })?),
-        )
-        .await?;
-    let deleted: ThreadQueueDeleteResponse = response(&mut app, delete_id).await?;
-    assert!(deleted.deleted);
-    wait_for_command_start(&mut app).await?;
-    std::fs::write(release_path, "release")?;
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/completed"),
-    )
-    .await??;
-
-    let requests = server.received_requests().await.expect("response requests");
-    assert_eq!(requests.len(), 2);
-    assert!(requests.iter().all(|request| {
-        !String::from_utf8_lossy(&request.body).contains("queued must remain pending")
-    }));
-    Ok(())
-}
-
-#[tokio::test]
-async fn revert_dispatches_surviving_queue_follower_once_after_notification() -> Result<()> {
-    let server = create_mock_responses_server_sequence(vec![
-        create_shell_command_sse_response(
-            vec!["sleep".to_string(), "30".to_string()],
-            /*workdir*/ None,
-            Some(30_000),
-            "call_blocked",
-        )?,
-        create_final_assistant_message_sse_response("pending resumed")?,
-    ])
-    .await;
-    let codex_home = TempDir::new()?;
-    write_config(codex_home.path(), &server.uri())?;
-    let mut app = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .build()
-        .await?;
-    timeout(DEFAULT_TIMEOUT, app.initialize()).await??;
-    let start_id = app
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
-            model: Some("mock-model".to_string()),
-            history_mode: Some(ThreadHistoryMode::Paginated),
-            ..Default::default()
-        })
-        .await?;
-    let started_thread: ThreadStartResponse = response(&mut app, start_id).await?;
-
-    add(
-        &mut app,
-        &started_thread.thread.id,
-        "active queued",
-        "client-active",
-    )
-    .await?;
-    let started_notification: JSONRPCNotification = timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/started"),
-    )
-    .await??;
-    let started: TurnStartedNotification = serde_json::from_value(
-        started_notification
-            .params
-            .expect("turn/started params should be present"),
-    )?;
-    wait_for_command_start(&mut app).await?;
-    let goal_id = app
-        .send_raw_request(
-            "thread/goal/set",
-            Some(json!({
-                "threadId": started_thread.thread.id,
-                "objective": "do not restart after revert",
-                "status": "active",
-            })),
-        )
-        .await?;
-    let _: ThreadGoalSetResponse = response(&mut app, goal_id).await?;
-    let pending = add(
-        &mut app,
-        &started_thread.thread.id,
-        "pending queued",
-        "client-pending",
-    )
-    .await?;
-
-    let revert_id = app
-        .send_thread_revert_request(ThreadRevertParams {
-            thread_id: started_thread.thread.id.clone(),
-            before_turn_id: started.turn.id,
-        })
-        .await?;
-    let revert_response: JSONRPCResponse = timeout(
-        Duration::from_secs(/*secs*/ 2),
-        app.read_stream_until_response_message(RequestId::Integer(revert_id)),
-    )
-    .await??;
-    let _: ThreadRevertResponse = to_response(revert_response)?;
-    let completed_notification: JSONRPCNotification = timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/completed"),
-    )
-    .await??;
-    let completed: TurnCompletedNotification = serde_json::from_value(
-        completed_notification
-            .params
-            .expect("turn/completed params should be present"),
-    )?;
-    assert_eq!(completed.turn.status, TurnStatus::Interrupted);
-
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("thread/reverted"),
-    )
-    .await??;
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/started"),
-    )
-    .await??;
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/completed"),
-    )
-    .await??;
-    let list_id = app
-        .send_raw_request(
-            "thread/queue/list",
-            Some(serde_json::to_value(ThreadQueueListParams {
-                thread_id: started_thread.thread.id,
-                cursor: None,
-                limit: None,
-            })?),
-        )
-        .await?;
-    let listed: ThreadQueueListResponse = response(&mut app, list_id).await?;
-    assert_eq!(listed.data, Vec::new());
-    let requests = server.received_requests().await.expect("response requests");
-    assert_eq!(requests.len(), 2);
-    assert!(String::from_utf8(requests[1].body.clone())?.contains("pending queued"));
-    assert_eq!(
-        pending.queued_submission.input,
-        text_input("pending queued")
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn queued_user_input_reserves_idle_before_goal_continuation() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    let release_path = codex_home.path().join("release-active");
-    let release_command = format!(
-        "while [ ! -f '{}' ]; do sleep 0.01; done",
-        release_path.display()
-    );
-    let server = create_mock_responses_server_sequence(vec![
-        create_shell_command_sse_response(
-            vec!["sh".to_string(), "-c".to_string(), release_command],
-            Some(codex_home.path()),
-            Some(30_000),
-            "hold-active",
-        )?,
-        create_final_assistant_message_sse_response("active done")?,
-        create_shell_command_sse_response(
-            vec!["sleep".to_string(), "30".to_string()],
-            /*workdir*/ None,
-            Some(30_000),
-            "hold-priority",
-        )?,
-    ])
-    .await;
-    write_config(codex_home.path(), &server.uri())?;
     let mut app = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_managed_config()
         .build()
         .await?;
-    timeout(DEFAULT_TIMEOUT, app.initialize()).await??;
-    let start_id = app
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
-            model: Some("mock-model".to_string()),
-            ..Default::default()
-        })
-        .await?;
-    let started_thread: ThreadStartResponse = response(&mut app, start_id).await?;
-    let active_id = app
-        .send_turn_start_request(TurnStartParams {
-            thread_id: started_thread.thread.id.clone(),
-            input: text_input("active"),
-            ..Default::default()
-        })
-        .await?;
-    let _: TurnStartResponse = response(&mut app, active_id).await?;
-    wait_for_command_start(&mut app).await?;
-
-    let goal_id = app
-        .send_raw_request(
-            "thread/goal/set",
-            Some(json!({
-                "threadId": started_thread.thread.id,
-                "objective": "continue the goal after queued user work",
-                "status": "active",
-            })),
-        )
-        .await?;
-    let _: ThreadGoalSetResponse = response(&mut app, goal_id).await?;
-    add(
-        &mut app,
-        &started_thread.thread.id,
-        "queued priority",
-        "client-priority",
+    app.initialize_with_capabilities(
+        ClientInfo {
+            name: "queue-experimental-gate".to_string(),
+            title: None,
+            version: "0.1.0".to_string(),
+        },
+        Some(InitializeCapabilities::default()),
     )
     .await?;
-
-    std::fs::write(release_path, "release")?;
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/completed"),
+    let request_id = app
+        .send_raw_request("thread/start", Some(json!({})))
+        .await?;
+    let thread = timeout(
+        READ_TIMEOUT,
+        app.read_response::<ThreadStartResponse>(request_id),
+    )
+    .await??
+    .thread;
+    let request_id = app
+        .send_raw_request(
+            "thread/queue/list",
+            Some(serde_json::to_value(ThreadQueueListParams {
+                thread_id: thread.id,
+                cursor: None,
+                limit: None,
+            })?),
+        )
+        .await?;
+    let error: JSONRPCError = timeout(
+        READ_TIMEOUT,
+        app.read_stream_until_error_message(RequestId::Integer(request_id)),
     )
     .await??;
-    timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_notification_message("turn/started"),
+    assert!(error.error.message.contains("experimental"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn queue_crud_preserves_identity_order_and_notifications() -> Result<()> {
+    skip_if_remote!(
+        Ok(()),
+        "uses a host-local command and cwd fixture unavailable to remote executors"
+    );
+
+    let responses = vec![
+        blocked_turn_response()?,
+        create_final_assistant_message_sse_response("active done")?,
+        create_final_assistant_message_sse_response("queued done")?,
+    ];
+    let (mut app, _codex_home, _server) = queue_app(responses).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let (_, approval_id) = start_blocked_turn(&mut app, &thread_id).await?;
+    let first = queue_item(
+        &mut app,
+        ThreadQueueAddParams {
+            client_user_message_id: "first-client-message".to_string(),
+            ..submission(&thread_id, "first")
+        },
+    )
+    .await?;
+    let second = queue_item(&mut app, submission(&thread_id, "second")).await?;
+    let first_change: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    let second_change: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    assert_eq!(
+        first_change,
+        ThreadQueueChangedNotification {
+            thread_id: thread_id.clone(),
+        }
+    );
+    assert_eq!(
+        second_change,
+        ThreadQueueChangedNotification {
+            thread_id: thread_id.clone(),
+        }
+    );
+
+    let updated: ThreadQueueUpdateResponse = app
+        .request(|request_id| ClientRequest::ThreadQueueUpdate {
+            request_id,
+            params: ThreadQueueUpdateParams {
+                thread_id: thread_id.clone(),
+                queued_submission_id: first.id.clone(),
+                input: vec![text("first edited")],
+            },
+        })
+        .await?;
+    assert_eq!(updated.queued_submission.id, first.id);
+    assert_eq!(
+        updated.queued_submission.client_user_message_id,
+        first.client_user_message_id
+    );
+    assert_eq!(updated.queued_submission.input, vec![text("first edited")]);
+    let update_change: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    assert_eq!(
+        update_change,
+        ThreadQueueChangedNotification {
+            thread_id: thread_id.clone(),
+        }
+    );
+
+    let invalid_reorder = app
+        .send_raw_request(
+            "thread/queue/reorder",
+            Some(serde_json::to_value(ThreadQueueReorderParams {
+                thread_id: thread_id.clone(),
+                queued_submission_ids: vec![first.id.clone()],
+            })?),
+        )
+        .await?;
+    let error: JSONRPCError = timeout(
+        READ_TIMEOUT,
+        app.read_stream_until_error_message(RequestId::Integer(invalid_reorder)),
     )
     .await??;
-    wait_for_command_start(&mut app).await?;
+    assert_eq!(
+        error.error.message,
+        "queue reorder must include every queued submission exactly once"
+    );
 
-    let requests = server.received_requests().await.expect("response requests");
-    assert_eq!(requests.len(), 3);
-    let priority_body = String::from_utf8(requests[2].body.clone())?;
-    assert!(
-        priority_body.contains("queued priority"),
-        "queued user input should reserve the idle turn before goal continuation"
+    let _: ThreadQueueReorderResponse = app
+        .request(|request_id| ClientRequest::ThreadQueueReorder {
+            request_id,
+            params: ThreadQueueReorderParams {
+                thread_id: thread_id.clone(),
+                queued_submission_ids: vec![second.id.clone(), first.id.clone()],
+            },
+        })
+        .await?;
+    let reorder_change: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    assert_eq!(
+        reorder_change,
+        ThreadQueueChangedNotification {
+            thread_id: thread_id.clone(),
+        }
+    );
+    let deleted: ThreadQueueDeleteResponse = app
+        .request(|request_id| ClientRequest::ThreadQueueDelete {
+            request_id,
+            params: ThreadQueueDeleteParams {
+                thread_id: thread_id.clone(),
+                queued_submission_id: second.id,
+            },
+        })
+        .await?;
+    assert!(deleted.deleted);
+    let delete_change: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    assert_eq!(
+        delete_change,
+        ThreadQueueChangedNotification {
+            thread_id: thread_id.clone(),
+        }
+    );
+
+    decline_approval(&mut app, approval_id).await?;
+    for _ in 0..2 {
+        let _: TurnCompletedNotification =
+            timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+    }
+    let drain_change: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    assert_eq!(drain_change, ThreadQueueChangedNotification { thread_id });
+    Ok(())
+}
+
+#[tokio::test]
+async fn queue_list_returns_ordered_pages_and_lightweight_notifications() -> Result<()> {
+    skip_if_remote!(
+        Ok(()),
+        "uses a host-local command and cwd fixture unavailable to remote executors"
+    );
+
+    let (mut app, _codex_home, _server) = queue_app(vec![blocked_turn_response()?]).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let _blocked = start_blocked_turn(&mut app, &thread_id).await?;
+    let first = queue_item(
+        &mut app,
+        submission(&thread_id, "fitting queued submission"),
+    )
+    .await?;
+    let queued = queue_item(
+        &mut app,
+        ThreadQueueAddParams {
+            thread_id: thread_id.clone(),
+            input: vec![text(&"x".repeat(64 * 1024))],
+            client_user_message_id: "oversized-snapshot".to_string(),
+        },
+    )
+    .await?;
+    let initial_change: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    assert_eq!(
+        initial_change,
+        ThreadQueueChangedNotification {
+            thread_id: thread_id.clone(),
+        }
+    );
+    let changed: ThreadQueueChangedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("thread/queue/changed")).await??;
+    assert_eq!(
+        changed,
+        ThreadQueueChangedNotification {
+            thread_id: thread_id.clone(),
+        }
+    );
+    let first_page: ThreadQueueListResponse = app
+        .request(|request_id| ClientRequest::ThreadQueueList {
+            request_id,
+            params: ThreadQueueListParams {
+                thread_id: thread_id.clone(),
+                cursor: None,
+                limit: Some(1),
+            },
+        })
+        .await?;
+    assert_eq!(first_page.data, vec![first.clone()]);
+    assert_eq!(first_page.next_cursor, Some("1".to_string()));
+    let second_page: ThreadQueueListResponse = app
+        .request(|request_id| ClientRequest::ThreadQueueList {
+            request_id,
+            params: ThreadQueueListParams {
+                thread_id: thread_id.clone(),
+                cursor: first_page.next_cursor,
+                limit: Some(1),
+            },
+        })
+        .await?;
+    assert_eq!(second_page.data, vec![queued.clone()]);
+    assert_eq!(second_page.next_cursor, None);
+    assert_eq!(
+        list_queue(&mut app, &thread_id).await?.data,
+        vec![first, queued]
     );
     Ok(())
 }
 
 #[tokio::test]
-async fn loaded_v1_child_waits_for_listener_before_queue_claim() -> Result<()> {
-    const CHILD_PROMPT: &str = "child: finish setup";
-    const PARENT_PROMPT: &str = "spawn a child";
-    const QUEUED_PROMPT: &str = "queued after listener";
-    const SPAWN_CALL_ID: &str = "spawn-queue-child";
-
-    let server = responses::start_mock_server().await;
-    let spawn_args = serde_json::to_string(&json!({ "message": CHILD_PROMPT }))?;
-    let parent_turn = responses::mount_response_once_match(
-        &server,
-        |request: &wiremock::Request| request_body_contains(request, PARENT_PROMPT),
-        responses::sse_response(responses::sse(vec![
-            responses::ev_response_created("resp-parent-spawn"),
-            responses::ev_function_call_with_namespace(
-                SPAWN_CALL_ID,
-                "multi_agent_v1",
-                "spawn_agent",
-                &spawn_args,
-            ),
-            responses::ev_completed("resp-parent-spawn"),
-        ]))
-        .set_delay(Duration::from_secs(/*secs*/ 2)),
-    )
-    .await;
-    let child_turn = responses::mount_sse_once_match(
-        &server,
-        |request: &wiremock::Request| {
-            request_body_contains(request, CHILD_PROMPT)
-                && !request_body_contains(request, SPAWN_CALL_ID)
-        },
-        responses::sse(vec![
-            responses::ev_response_created("resp-child"),
-            responses::ev_assistant_message("msg-child", "child ready"),
-            responses::ev_completed("resp-child"),
-        ]),
-    )
-    .await;
-    let parent_follow_up = responses::mount_sse_once_match(
-        &server,
-        |request: &wiremock::Request| request_body_contains(request, SPAWN_CALL_ID),
-        responses::sse(vec![
-            responses::ev_response_created("resp-parent-finish"),
-            responses::ev_assistant_message("msg-parent", "parent done"),
-            responses::ev_completed("resp-parent-finish"),
-        ]),
-    )
-    .await;
-    let queued_child_turn = responses::mount_sse_once_match(
-        &server,
-        |request: &wiremock::Request| request_body_contains(request, QUEUED_PROMPT),
-        responses::sse(vec![
-            responses::ev_response_created("resp-child-queued"),
-            responses::ev_assistant_message("msg-child-queued", "queued done"),
-            responses::ev_completed("resp-child-queued"),
-        ]),
-    )
-    .await;
-
-    let codex_home = TempDir::new()?;
-    write_config(codex_home.path(), &server.uri())?;
-    write_models_cache(codex_home.path())?;
-    let (mut process, bind_addr) = spawn_websocket_server(codex_home.path()).await?;
-
-    let mut owner = connect_websocket(bind_addr).await?;
-    initialize_queue_websocket(&mut owner, /*id*/ 1, "queue_owner").await?;
-    send_request(
-        &mut owner,
-        "thread/start",
-        /*id*/ 2,
-        Some(serde_json::to_value(ThreadStartParams {
-            model: Some("mock-model".to_string()),
-            ..Default::default()
-        })?),
-    )
-    .await?;
-    let parent: ThreadStartResponse = websocket_response(&mut owner, /*id*/ 2).await?;
-    send_request(
-        &mut owner,
-        "turn/start",
-        /*id*/ 3,
-        Some(serde_json::to_value(TurnStartParams {
-            thread_id: parent.thread.id.clone(),
-            input: text_input(PARENT_PROMPT),
-            ..Default::default()
-        })?),
-    )
-    .await?;
-    let _: TurnStartResponse = websocket_response(&mut owner, /*id*/ 3).await?;
-    timeout(DEFAULT_TIMEOUT, async {
-        while parent_turn.requests().is_empty() {
-            sleep(Duration::from_millis(/*millis*/ 10)).await;
-        }
-    })
-    .await?;
-    owner
-        .close(None)
-        .await
-        .context("failed to close owner websocket")?;
-    drop(owner);
-    sleep(Duration::from_millis(/*millis*/ 100)).await;
-
-    timeout(DEFAULT_TIMEOUT, async {
-        while child_turn.requests().is_empty() || parent_follow_up.requests().is_empty() {
-            sleep(Duration::from_millis(/*millis*/ 10)).await;
-        }
-    })
-    .await?;
-    assert_eq!(parent_turn.requests().len(), 1);
-    assert_eq!(child_turn.requests().len(), 1);
-    assert_eq!(parent_follow_up.requests().len(), 1);
-    // Keep the server connectionless while it consumes the child-created event.
-    sleep(Duration::from_millis(/*millis*/ 100)).await;
-
-    let mut client = connect_websocket(bind_addr).await?;
-    initialize_queue_websocket(&mut client, /*id*/ 1, "queue_client").await?;
-    let mut request_id = 2;
-    let child_thread_id = timeout(DEFAULT_TIMEOUT, async {
-        loop {
-            send_request(
-                &mut client,
-                "thread/loaded/list",
-                request_id,
-                Some(serde_json::to_value(ThreadLoadedListParams::default())?),
-            )
-            .await?;
-            let loaded: ThreadLoadedListResponse =
-                websocket_response(&mut client, request_id).await?;
-            request_id += 1;
-            if loaded.data.len() == 2 {
-                return loaded
-                    .data
-                    .into_iter()
-                    .find(|thread_id| thread_id != &parent.thread.id)
-                    .ok_or_else(|| anyhow::anyhow!("spawn should return a child thread"));
-            }
-            sleep(Duration::from_millis(/*millis*/ 10)).await;
-        }
-    })
-    .await??;
-    timeout(DEFAULT_TIMEOUT, async {
-        loop {
-            send_request(
-                &mut client,
-                "thread/read",
-                request_id,
-                Some(serde_json::to_value(ThreadReadParams {
-                    thread_id: child_thread_id.clone(),
-                    include_turns: false,
-                })?),
-            )
-            .await?;
-            let read: ThreadReadResponse = websocket_response(&mut client, request_id).await?;
-            request_id += 1;
-            if read.thread.status == ThreadStatus::Idle {
-                return Ok::<(), anyhow::Error>(());
-            }
-            sleep(Duration::from_millis(/*millis*/ 10)).await;
-        }
-    })
-    .await??;
-
-    send_request(
-        &mut client,
-        "thread/queue/add",
-        request_id,
-        Some(serde_json::to_value(ThreadQueueAddParams {
-            thread_id: child_thread_id.clone(),
-            input: text_input(QUEUED_PROMPT),
-            client_user_message_id: "client-child".to_string(),
-        })?),
-    )
-    .await?;
-    let queued: ThreadQueueAddResponse = websocket_response(&mut client, request_id).await?;
-    request_id += 1;
-    assert_eq!(
-        websocket_list(&mut client, request_id, &child_thread_id)
-            .await?
-            .data,
-        vec![queued.queued_submission.clone()]
+async fn queue_rejects_messages_after_reaching_its_capacity() -> Result<()> {
+    skip_if_remote!(
+        Ok(()),
+        "uses a host-local command and cwd fixture unavailable to remote executors"
     );
-    assert!(queued_child_turn.requests().is_empty());
-    request_id += 1;
-    send_request(
-        &mut client,
-        "thread/queue/start",
-        request_id,
-        Some(serde_json::to_value(ThreadQueueStartParams {
-            thread_id: child_thread_id.clone(),
-            queued_submission_id: Some(queued.queued_submission.id.clone()),
-        })?),
-    )
-    .await?;
-    let explicit_error: JSONRPCError =
-        timeout(DEFAULT_TIMEOUT, read_error_for_id(&mut client, request_id)).await??;
-    request_id += 1;
-    assert_eq!(explicit_error.error.code, INVALID_REQUEST_ERROR_CODE);
-    assert_eq!(
-        explicit_error.error.message,
-        "resume/subscribe the thread before starting a queued message"
-    );
-    assert_eq!(
-        websocket_list(&mut client, request_id, &child_thread_id)
-            .await?
-            .data,
-        vec![queued.queued_submission.clone()]
-    );
-    assert!(queued_child_turn.requests().is_empty());
-    request_id += 1;
 
-    send_request(
-        &mut client,
-        "thread/resume",
-        request_id,
-        Some(serde_json::to_value(ThreadResumeParams {
-            thread_id: child_thread_id.clone(),
-            ..Default::default()
-        })?),
-    )
-    .await?;
-    let _: ThreadResumeResponse = websocket_response(&mut client, request_id).await?;
-    request_id += 1;
-    timeout(DEFAULT_TIMEOUT, async {
-        while queued_child_turn.requests().is_empty() {
-            sleep(Duration::from_millis(/*millis*/ 10)).await;
-        }
-    })
-    .await?;
-    assert_eq!(queued_child_turn.requests().len(), 1);
-    timeout(DEFAULT_TIMEOUT, async {
-        loop {
-            let listed = websocket_list(&mut client, request_id, &child_thread_id).await?;
-            request_id += 1;
-            if listed.data.is_empty() {
-                return Ok::<(), anyhow::Error>(());
-            }
-            sleep(Duration::from_millis(/*millis*/ 10)).await;
-        }
-    })
-    .await??;
+    let (mut app, _codex_home, _server) = queue_app(vec![blocked_turn_response()?]).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let _blocked = start_blocked_turn(&mut app, &thread_id).await?;
 
-    process
-        .kill()
-        .await
-        .context("failed to stop websocket app-server process")?;
-    Ok(())
-}
+    for index in 0..100 {
+        queue_item(&mut app, submission(&thread_id, &format!("queued {index}"))).await?;
+    }
+    assert_eq!(list_queue(&mut app, &thread_id).await?.data.len(), 100);
 
-async fn initialize_queue_websocket(
-    stream: &mut WsClient,
-    id: i64,
-    client_name: &str,
-) -> Result<()> {
-    send_request(
-        stream,
-        "initialize",
-        id,
-        Some(serde_json::to_value(InitializeParams {
-            client_info: ClientInfo {
-                name: client_name.to_string(),
-                title: Some("Queue Test Client".to_string()),
-                version: "0.1.0".to_string(),
-            },
-            capabilities: Some(InitializeCapabilities {
-                experimental_api: true,
-                ..Default::default()
-            }),
-        })?),
-    )
-    .await?;
-    read_response_for_id(stream, id).await?;
-    Ok(())
-}
-
-async fn websocket_response<T: serde::de::DeserializeOwned>(
-    stream: &mut WsClient,
-    id: i64,
-) -> Result<T> {
-    to_response(read_response_for_id(stream, id).await?)
-}
-
-async fn websocket_list(
-    stream: &mut WsClient,
-    id: i64,
-    thread_id: &str,
-) -> Result<ThreadQueueListResponse> {
-    send_request(
-        stream,
-        "thread/queue/list",
-        id,
-        Some(serde_json::to_value(ThreadQueueListParams {
-            thread_id: thread_id.to_string(),
-            cursor: None,
-            limit: None,
-        })?),
-    )
-    .await?;
-    websocket_response(stream, id).await
-}
-
-pub(super) async fn add(
-    app: &mut TestAppServer,
-    thread_id: &str,
-    text: &str,
-    client_user_message_id: &str,
-) -> Result<ThreadQueueAddResponse> {
     let request_id = app
         .send_raw_request(
             "thread/queue/add",
-            Some(serde_json::to_value(ThreadQueueAddParams {
-                thread_id: thread_id.to_string(),
-                input: text_input(text),
-                client_user_message_id: client_user_message_id.to_string(),
-            })?),
+            Some(serde_json::to_value(submission(
+                &thread_id,
+                "one too many",
+            ))?),
         )
         .await?;
-    response(app, request_id).await
-}
-
-pub(super) async fn response<T: serde::de::DeserializeOwned>(
-    app: &mut TestAppServer,
-    request_id: i64,
-) -> Result<T> {
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_TIMEOUT,
-        app.read_stream_until_response_message(RequestId::Integer(request_id)),
+    let error: JSONRPCError = timeout(
+        READ_TIMEOUT,
+        app.read_stream_until_error_message(RequestId::Integer(request_id)),
     )
     .await??;
-    to_response(response)
-}
-
-pub(super) fn text_input(text: &str) -> Vec<UserInput> {
-    vec![UserInput::Text {
-        text: text.to_string(),
-        text_elements: Vec::new(),
-    }]
-}
-
-pub(super) async fn wait_for_command_start(app: &mut TestAppServer) -> Result<()> {
-    timeout(DEFAULT_TIMEOUT, async {
-        loop {
-            let notification = app
-                .read_stream_until_notification_message("item/started")
-                .await?;
-            let started: ItemStartedNotification = serde_json::from_value(
-                notification
-                    .params
-                    .expect("item/started params should be present"),
-            )?;
-            if matches!(started.item, ThreadItem::CommandExecution { .. }) {
-                return Ok::<(), anyhow::Error>(());
-            }
-        }
-    })
-    .await??;
+    assert_eq!(
+        error.error.message,
+        "queue cannot contain more than 100 submissions"
+    );
     Ok(())
 }
 
-async fn turn_completed_before_queue_changed(app: &mut TestAppServer) -> Result<()> {
-    let mut turn_completed = false;
+#[tokio::test]
+async fn idle_queue_dispatch_preserves_client_id() -> Result<()> {
+    let responses = vec![create_final_assistant_message_sse_response("queued done")?];
+    let (mut app, _codex_home, server) = queue_app(responses).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let queued_submission = ThreadQueueAddParams {
+        thread_id: thread_id.clone(),
+        input: vec![text("durable queued message")],
+        client_user_message_id: "stable-queued-client-id".to_string(),
+    };
+    let queued = queue_item(&mut app, queued_submission.clone()).await?;
+    assert_eq!(
+        queued.client_user_message_id,
+        queued_submission.client_user_message_id
+    );
+    let started: ItemStartedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("item/started")).await??;
+    let ThreadItem::UserMessage {
+        client_id, content, ..
+    } = started.item
+    else {
+        anyhow::bail!("queued turn did not begin with its user message");
+    };
+    assert_eq!(client_id.as_deref(), Some("stable-queued-client-id"));
+    assert_eq!(content, queued_submission.input);
+    let completed: TurnCompletedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(completed.thread_id, thread_id);
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    assert!(list_queue(&mut app, &thread_id).await?.data.is_empty());
+
+    let requests = server
+        .received_requests()
+        .await
+        .context("mock request capture unavailable")?;
+    let request = requests
+        .iter()
+        .find(|request| request.url.path().ends_with("/responses"))
+        .context("queued turn did not reach the model")?;
+    let body = request.body_json::<Value>()?;
+    assert!(body["input"].to_string().contains("durable queued message"));
+    let metadata_header = request
+        .headers
+        .get("x-codex-turn-metadata")
+        .context("queued model request is missing its x-codex-turn-metadata header")?
+        .to_str()
+        .context("queued turn metadata header is not valid ASCII")?;
+    let metadata: Value = serde_json::from_str(metadata_header)?;
+    assert_eq!(metadata["thread_id"].as_str(), Some(thread_id.as_str()));
+    assert_eq!(
+        metadata["turn_id"].as_str(),
+        Some(completed.turn.id.as_str())
+    );
+    assert_eq!(metadata["turn_trigger"].as_str(), Some("queue"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn cold_thread_resume_dispatches_a_persisted_queued_submission() -> Result<()> {
+    let responses = vec![
+        create_final_assistant_message_sse_response("materialized thread")?,
+        create_final_assistant_message_sse_response("cold-resumed queued message")?,
+    ];
+    let (mut first, codex_home, _server) = queue_app(responses).await?;
+    let thread_id = first
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let _: TurnStartResponse = first
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread_id.clone(),
+                input: vec![text("materialize the thread before restarting")],
+                ..Default::default()
+            },
+        })
+        .await?;
+    let _: TurnCompletedNotification =
+        timeout(READ_TIMEOUT, first.read_notification("turn/completed")).await??;
+    let update_id = first
+        .send_thread_settings_update_request(ThreadSettingsUpdateParams {
+            thread_id: thread_id.clone(),
+            model: Some("gpt-5.2".to_string()),
+            effort: Some(ReasoningEffort::High),
+            ..Default::default()
+        })
+        .await?;
+    let _: ThreadSettingsUpdateResponse =
+        timeout(READ_TIMEOUT, first.read_response(update_id)).await??;
+    let _: ThreadSettingsUpdatedNotification = timeout(
+        READ_TIMEOUT,
+        first.read_notification("thread/settings/updated"),
+    )
+    .await??;
+    drop(first);
+
+    let mut resumed = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_managed_config()
+        .build_initialized()
+        .await?;
+    let queued = queue_item(
+        &mut resumed,
+        ThreadQueueAddParams {
+            client_user_message_id: "cold-resumed-queue-item".to_string(),
+            ..submission(&thread_id, "dispatch this after a cold thread resume")
+        },
+    )
+    .await?;
+    let read_id = resumed
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: thread_id.clone(),
+            include_turns: false,
+        })
+        .await?;
+    let read: ThreadReadResponse = timeout(READ_TIMEOUT, resumed.read_response(read_id)).await??;
+    assert_eq!(
+        (read.thread.model.as_deref(), read.thread.reasoning_effort),
+        (Some("gpt-5.2"), Some(ReasoningEffort::High))
+    );
+    assert_eq!(read.thread.status, ThreadStatus::NotLoaded);
+    for use_state_db_only in [false, true] {
+        let list_id = resumed
+            .send_raw_request(
+                "thread/list",
+                Some(json!({ "useStateDbOnly": use_state_db_only })),
+            )
+            .await?;
+        let listed: ThreadListResponse =
+            timeout(READ_TIMEOUT, resumed.read_response(list_id)).await??;
+        let listed = listed
+            .data
+            .iter()
+            .find(|listed| listed.id == thread_id)
+            .expect("persisted thread should be listed");
+        assert_eq!(
+            (listed.model.as_deref(), listed.reasoning_effort.clone()),
+            (Some("gpt-5.2"), Some(ReasoningEffort::High))
+        );
+        assert_eq!(listed.status, ThreadStatus::NotLoaded);
+    }
+    let loaded_id = resumed
+        .send_thread_loaded_list_request(ThreadLoadedListParams::default())
+        .await?;
+    let loaded: ThreadLoadedListResponse =
+        timeout(READ_TIMEOUT, resumed.read_response(loaded_id)).await??;
+    assert!(
+        loaded.data.is_empty(),
+        "metadata reads must not resume threads"
+    );
+    assert_eq!(
+        list_queue(&mut resumed, &thread_id).await?.data,
+        vec![queued]
+    );
+
+    let request_id = resumed
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: thread_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let response: ThreadResumeResponse =
+        timeout(READ_TIMEOUT, resumed.read_response(request_id)).await??;
+    assert_eq!(thread_id, response.thread.id);
+
+    let started: ItemStartedNotification =
+        timeout(READ_TIMEOUT, resumed.read_notification("item/started")).await??;
+    let ThreadItem::UserMessage {
+        client_id, content, ..
+    } = started.item
+    else {
+        anyhow::bail!("cold resume did not start the persisted queued user message");
+    };
+    assert_eq!(client_id.as_deref(), Some("cold-resumed-queue-item"));
+    assert_eq!(
+        content,
+        vec![text("dispatch this after a cold thread resume")]
+    );
+    let completed: TurnCompletedNotification =
+        timeout(READ_TIMEOUT, resumed.read_notification("turn/completed")).await??;
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    assert!(list_queue(&mut resumed, &thread_id).await?.data.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn interrupt_preserves_queue_and_queue_start_can_resume_a_non_head_item() -> Result<()> {
+    skip_if_remote!(
+        Ok(()),
+        "uses a host-local command and cwd fixture unavailable to remote executors"
+    );
+
+    let responses = vec![
+        blocked_turn_response()?,
+        create_final_assistant_message_sse_response("first queued message done")?,
+        create_final_assistant_message_sse_response("second queued message done")?,
+        create_final_assistant_message_sse_response("message added after interruption done")?,
+        create_final_assistant_message_sse_response("message added after cold resume done")?,
+    ];
+    let (mut app, codex_home, _server) = queue_app(responses).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let (active_turn_id, _approval_id) = start_blocked_turn(&mut app, &thread_id).await?;
+
+    let first = queue_item(&mut app, submission(&thread_id, "first queued message")).await?;
+    let second = queue_item(
+        &mut app,
+        ThreadQueueAddParams {
+            client_user_message_id: "second-queued-client-id".to_string(),
+            ..submission(&thread_id, "second queued message")
+        },
+    )
+    .await?;
+
+    let _: TurnInterruptResponse = app
+        .request(|request_id| ClientRequest::TurnInterrupt {
+            request_id,
+            params: TurnInterruptParams {
+                thread_id: thread_id.clone(),
+                turn_id: active_turn_id,
+            },
+        })
+        .await?;
+    let interrupted: TurnCompletedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(interrupted.turn.status, TurnStatus::Interrupted);
+    assert_eq!(
+        vec![first.clone(), second.clone()],
+        list_queue(&mut app, &thread_id).await?.data
+    );
+
+    let added_after_interrupt = queue_item(
+        &mut app,
+        submission(&thread_id, "message added after interruption"),
+    )
+    .await?;
+    assert_eq!(
+        vec![first.clone(), second.clone(), added_after_interrupt.clone(),],
+        list_queue(&mut app, &thread_id).await?.data
+    );
+
+    let metadata_resume_request_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: thread_id.clone(),
+            exclude_turns: true,
+            ..Default::default()
+        })
+        .await?;
+    let metadata_resumed: ThreadResumeResponse =
+        timeout(READ_TIMEOUT, app.read_response(metadata_resume_request_id)).await??;
+    assert_eq!(metadata_resumed.thread.id, thread_id);
+    assert_eq!(
+        vec![first.clone(), second.clone(), added_after_interrupt.clone(),],
+        list_queue(&mut app, &thread_id).await?.data
+    );
+
+    let resume_request_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: thread_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let resumed: ThreadResumeResponse =
+        timeout(READ_TIMEOUT, app.read_response(resume_request_id)).await??;
+    assert_eq!(resumed.thread.id, thread_id);
+    assert_eq!(
+        vec![first.clone(), second.clone(), added_after_interrupt.clone(),],
+        list_queue(&mut app, &thread_id).await?.data
+    );
+
+    drop(app);
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_managed_config()
+        .build_initialized()
+        .await?;
+    let cold_resume_request_id = app
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: thread_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let cold_resumed: ThreadResumeResponse =
+        timeout(READ_TIMEOUT, app.read_response(cold_resume_request_id)).await??;
+    assert_eq!(cold_resumed.thread.id, thread_id);
+
+    let added_after_cold_resume = queue_item(
+        &mut app,
+        submission(&thread_id, "message added after cold resume"),
+    )
+    .await?;
+    assert_eq!(
+        vec![
+            first,
+            second.clone(),
+            added_after_interrupt,
+            added_after_cold_resume
+        ],
+        list_queue(&mut app, &thread_id).await?.data
+    );
+
+    let started: ThreadQueueStartResponse = app
+        .request(|request_id| ClientRequest::ThreadQueueStart {
+            request_id,
+            params: ThreadQueueStartParams {
+                thread_id: thread_id.clone(),
+                queued_submission_id: Some(second.id),
+            },
+        })
+        .await?;
+    for index in 0..4 {
+        let completed: TurnCompletedNotification =
+            timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+        if index == 0 {
+            assert_eq!(completed.turn.id, started.turn.id);
+        }
+        assert_eq!(completed.turn.status, TurnStatus::Completed);
+    }
+    assert!(list_queue(&mut app, &thread_id).await?.data.is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn queue_start_while_active_returns_busy_and_preserves_the_queue() -> Result<()> {
+    skip_if_remote!(
+        Ok(()),
+        "uses a host-local command and cwd fixture unavailable to remote executors"
+    );
+
+    let server = create_mock_responses_server_sequence_unchecked(vec![
+        blocked_turn_response()?,
+        create_final_assistant_message_sse_response("active turn done")?,
+        create_final_assistant_message_sse_response("queued message done")?,
+    ])
+    .await;
+    let (mut app, _codex_home, _server) = queue_app_with_server(server).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let (_, approval_id) = start_blocked_turn(&mut app, &thread_id).await?;
+    let queued = queue_item(
+        &mut app,
+        ThreadQueueAddParams {
+            client_user_message_id: "active-queued-client-id".to_string(),
+            ..submission(&thread_id, "send this queued message now")
+        },
+    )
+    .await?;
+    assert_eq!(queued.client_user_message_id, "active-queued-client-id");
+
+    let start_request_id = app
+        .send_raw_request("thread/queue/start", Some(json!({ "threadId": thread_id })))
+        .await?;
+    let error: JSONRPCError = timeout(
+        READ_TIMEOUT,
+        app.read_stream_until_error_message(RequestId::Integer(start_request_id)),
+    )
+    .await??;
+    assert_eq!(error.error.code, -32600);
+    assert_eq!(
+        error.error.message,
+        "thread already has an active or pending turn"
+    );
+    assert_eq!(list_queue(&mut app, &thread_id).await?.data, vec![queued]);
+    decline_approval(&mut app, approval_id).await?;
+
+    let started_item = loop {
+        let started_item: ItemStartedNotification =
+            timeout(READ_TIMEOUT, app.read_notification("item/started")).await??;
+        if matches!(
+            &started_item.item,
+            ThreadItem::UserMessage { client_id, .. }
+                if client_id.as_deref() == Some("active-queued-client-id")
+        ) {
+            break started_item;
+        }
+    };
+    let ThreadItem::UserMessage { client_id, .. } = started_item.item else {
+        anyhow::bail!("queued message did not start after the active turn completed");
+    };
+    assert_eq!(client_id.as_deref(), Some("active-queued-client-id"));
+
+    let completed = loop {
+        let completed: TurnCompletedNotification =
+            timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+        if completed.turn.id == started_item.turn_id {
+            break completed;
+        }
+    };
+    assert_eq!(completed.turn.status, TurnStatus::Completed);
+    assert!(list_queue(&mut app, &thread_id).await?.data.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn queue_start_without_id_starts_the_head_when_idle() -> Result<()> {
+    skip_if_remote!(
+        Ok(()),
+        "uses a host-local command and cwd fixture unavailable to remote executors"
+    );
+
+    let responses = vec![
+        blocked_turn_response()?,
+        create_final_assistant_message_sse_response("first queued message done")?,
+        create_final_assistant_message_sse_response("second queued message done")?,
+    ];
+    let (mut app, _codex_home, server) = queue_app(responses).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let (active_turn_id, _approval_id) = start_blocked_turn(&mut app, &thread_id).await?;
+    let first = queue_item(&mut app, submission(&thread_id, "first queued message")).await?;
+    let second = queue_item(&mut app, submission(&thread_id, "second queued message")).await?;
+
+    let _: TurnInterruptResponse = app
+        .request(|request_id| ClientRequest::TurnInterrupt {
+            request_id,
+            params: TurnInterruptParams {
+                thread_id: thread_id.clone(),
+                turn_id: active_turn_id,
+            },
+        })
+        .await?;
+    let interrupted: TurnCompletedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(interrupted.turn.status, TurnStatus::Interrupted);
+    assert_eq!(
+        list_queue(&mut app, &thread_id).await?.data,
+        vec![first.clone(), second]
+    );
+
+    let start_request_id = app
+        .send_raw_request("thread/queue/start", Some(json!({ "threadId": thread_id })))
+        .await?;
+    let started: ThreadQueueStartResponse =
+        timeout(READ_TIMEOUT, app.read_response(start_request_id)).await??;
+    let started_item = loop {
+        let started_item: ItemStartedNotification =
+            timeout(READ_TIMEOUT, app.read_notification("item/started")).await??;
+        if matches!(
+            &started_item.item,
+            ThreadItem::UserMessage { client_id, .. }
+                if client_id.as_deref() == Some(first.client_user_message_id.as_str())
+        ) {
+            break started_item;
+        }
+    };
+    assert_eq!(started_item.turn_id, started.turn.id);
+    for _ in 0..2 {
+        let completed: TurnCompletedNotification =
+            timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+        assert_eq!(completed.turn.status, TurnStatus::Completed);
+    }
+    assert!(list_queue(&mut app, &thread_id).await?.data.is_empty());
+
+    let requests = server
+        .received_requests()
+        .await
+        .context("mock request capture unavailable")?;
+    let response_requests = requests
+        .iter()
+        .filter(|request| request.url.path().ends_with("/responses"))
+        .collect::<Vec<_>>();
+    assert_eq!(response_requests.len(), 3);
+    for request in &response_requests[1..] {
+        let metadata_header = request
+            .headers
+            .get("x-codex-turn-metadata")
+            .context("queued model request is missing its x-codex-turn-metadata header")?
+            .to_str()
+            .context("queued turn metadata header is not valid ASCII")?;
+        let metadata: Value = serde_json::from_str(metadata_header)?;
+        assert_eq!(metadata["turn_trigger"].as_str(), Some("queue"));
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_new_turn_preserves_queued_messages_until_it_completes() -> Result<()> {
+    skip_if_remote!(
+        Ok(()),
+        "uses a host-local command and cwd fixture unavailable to remote executors"
+    );
+
+    let responses = vec![
+        blocked_turn_response()?,
+        blocked_turn_response()?,
+        create_final_assistant_message_sse_response("new turn done")?,
+        create_final_assistant_message_sse_response("first queued message done")?,
+        create_final_assistant_message_sse_response("second queued message done")?,
+    ];
+    let (mut app, _codex_home, _server) = queue_app(responses).await?;
+    let thread_id = app
+        .start_thread(ThreadStartParams::default())
+        .await?
+        .thread
+        .id;
+    let (active_turn_id, _approval_id) = start_blocked_turn(&mut app, &thread_id).await?;
+
+    let first = queue_item(
+        &mut app,
+        ThreadQueueAddParams {
+            client_user_message_id: "first-queued-client-id".to_string(),
+            ..submission(&thread_id, "first queued message")
+        },
+    )
+    .await?;
+    let second = queue_item(
+        &mut app,
+        ThreadQueueAddParams {
+            client_user_message_id: "second-queued-client-id".to_string(),
+            ..submission(&thread_id, "second queued message")
+        },
+    )
+    .await?;
+
+    let _: TurnInterruptResponse = app
+        .request(|request_id| ClientRequest::TurnInterrupt {
+            request_id,
+            params: TurnInterruptParams {
+                thread_id: thread_id.clone(),
+                turn_id: active_turn_id,
+            },
+        })
+        .await?;
+    let interrupted: TurnCompletedNotification =
+        timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+    assert_eq!(interrupted.turn.status, TurnStatus::Interrupted);
+
+    let _: TurnStartResponse = app
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread_id.clone(),
+                input: first.input.clone(),
+                client_user_message_id: Some(first.client_user_message_id.clone()),
+                ..Default::default()
+            },
+        })
+        .await?;
+    let approval = timeout(READ_TIMEOUT, app.read_stream_until_request_message()).await??;
+    let ServerRequest::CommandExecutionRequestApproval {
+        request_id: new_approval_id,
+        ..
+    } = approval
+    else {
+        anyhow::bail!("matching ordinary turn did not request command approval");
+    };
+    assert_eq!(
+        vec![first, second],
+        list_queue(&mut app, &thread_id).await?.data
+    );
+
+    decline_approval(&mut app, new_approval_id).await?;
+    for _ in 0..3 {
+        let completed: TurnCompletedNotification =
+            timeout(READ_TIMEOUT, app.read_notification("turn/completed")).await??;
+        assert_eq!(completed.turn.status, TurnStatus::Completed);
+    }
+    assert!(list_queue(&mut app, &thread_id).await?.data.is_empty());
+
+    Ok(())
+}
+
+async fn queue_app(responses: Vec<String>) -> Result<(TestAppServer, TempDir, MockServer)> {
+    let server = create_mock_responses_server_sequence(responses).await;
+    queue_app_with_server(server).await
+}
+
+async fn queue_app_with_server(server: MockServer) -> Result<(TestAppServer, TempDir, MockServer)> {
+    let codex_home = TempDir::new()?;
+    let config = MockResponsesConfig::new(&server.uri())
+        .with_approval_policy("on-request")
+        .with_root_config(r#"approvals_reviewer = "user""#);
+    config.write(codex_home.path())?;
+    let app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_managed_config()
+        .build_initialized()
+        .await?;
+    Ok((app, codex_home, server))
+}
+
+fn blocked_turn_response() -> Result<String> {
+    #[cfg(target_os = "windows")]
+    let shell_command = vec![
+        "powershell".to_string(),
+        "-Command".to_string(),
+        "Start-Sleep -Seconds 10".to_string(),
+    ];
+    #[cfg(not(target_os = "windows"))]
+    let shell_command = vec![
+        "python3".to_string(),
+        "-c".to_string(),
+        "import time; time.sleep(10)".to_string(),
+    ];
+
+    create_escalated_command_execution_sse_response(
+        shell_command,
+        /*workdir*/ None,
+        /*timeout_ms*/ Some(10_000),
+        "queue-blocked-command",
+    )
+}
+
+async fn start_blocked_turn(
+    app: &mut TestAppServer,
+    thread_id: &str,
+) -> Result<(String, RequestId)> {
+    let started: TurnStartResponse = app
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread_id.to_string(),
+                input: vec![text("start an approval-blocked turn")],
+                ..Default::default()
+            },
+        })
+        .await?;
+    let approval = timeout(READ_TIMEOUT, app.read_stream_until_request_message()).await??;
+    let ServerRequest::CommandExecutionRequestApproval { request_id, .. } = approval else {
+        anyhow::bail!("active turn did not request command approval");
+    };
+    Ok((started.turn.id, request_id))
+}
+
+async fn queue_item(
+    app: &mut TestAppServer,
+    params: ThreadQueueAddParams,
+) -> Result<QueuedSubmission> {
+    let response: ThreadQueueAddResponse = app
+        .request(|request_id| ClientRequest::ThreadQueueAdd { request_id, params })
+        .await?;
+    Ok(response.queued_submission)
+}
+
+async fn list_queue(app: &mut TestAppServer, thread_id: &str) -> Result<ThreadQueueListResponse> {
+    let mut data = Vec::new();
+    let mut cursor = None;
     loop {
-        let JSONRPCMessage::Notification(notification) = app.read_next_message().await? else {
-            continue;
-        };
-        match notification.method.as_str() {
-            "turn/completed" => turn_completed = true,
-            "thread/queue/changed" => {
-                anyhow::ensure!(
-                    turn_completed,
-                    "thread/queue/changed arrived before turn/completed"
-                );
-                return Ok(());
-            }
-            _ => {}
+        let page: ThreadQueueListResponse = app
+            .request(|request_id| ClientRequest::ThreadQueueList {
+                request_id,
+                params: ThreadQueueListParams {
+                    thread_id: thread_id.to_string(),
+                    cursor,
+                    limit: None,
+                },
+            })
+            .await?;
+        data.extend(page.data);
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            return Ok(ThreadQueueListResponse {
+                data,
+                next_cursor: None,
+            });
         }
     }
 }
 
-fn request_body_contains(request: &wiremock::Request, text: &str) -> bool {
-    String::from_utf8(request.body.clone())
-        .ok()
-        .is_some_and(|body| body.contains(text))
+async fn decline_approval(app: &mut TestAppServer, request_id: RequestId) -> Result<()> {
+    app.send_response(
+        request_id,
+        serde_json::to_value(CommandExecutionRequestApprovalResponse {
+            decision: CommandExecutionApprovalDecision::Decline,
+        })?,
+    )
+    .await
 }
 
-pub(super) fn write_config(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    std::fs::write(
-        codex_home.join("config.toml"),
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "never"
-sandbox_mode = "read-only"
-model_provider = "mock_provider"
-suppress_unstable_features_warning = true
+fn submission(thread_id: &str, value: &str) -> ThreadQueueAddParams {
+    ThreadQueueAddParams {
+        thread_id: thread_id.to_string(),
+        input: vec![text(value)],
+        client_user_message_id: format!("queued-{value}"),
+    }
+}
 
-[features]
-sqlite = true
-goals = true
-
-[model_providers.mock_provider]
-name = "Mock provider"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
+fn text(value: &str) -> UserInput {
+    UserInput::Text {
+        text: value.to_string(),
+        text_elements: Vec::new(),
+    }
 }

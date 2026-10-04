@@ -93,8 +93,37 @@ pub struct DefaultColors {
     bg: (u8, u8, u8),
 }
 
+#[cfg(test)]
+thread_local! {
+    static TEST_DEFAULT_COLORS: std::cell::Cell<Option<DefaultColors>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
 pub fn default_colors() -> Option<DefaultColors> {
+    #[cfg(test)]
+    if let Some(colors) = TEST_DEFAULT_COLORS.with(std::cell::Cell::get) {
+        return Some(colors);
+    }
     imp::default_colors()
+}
+
+#[cfg(test)]
+pub(crate) fn with_test_default_colors<T>(
+    colors: crate::terminal_probe::DefaultColors,
+    render: impl FnOnce() -> T,
+) -> T {
+    struct Restore(Option<DefaultColors>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            TEST_DEFAULT_COLORS.set(self.0);
+        }
+    }
+    let _restore = Restore(TEST_DEFAULT_COLORS.replace(Some(DefaultColors {
+        fg: colors.fg,
+        bg: colors.bg,
+    })));
+    render()
 }
 
 pub fn default_fg() -> Option<(u8, u8, u8)> {

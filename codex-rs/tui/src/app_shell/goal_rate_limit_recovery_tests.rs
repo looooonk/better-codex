@@ -7,6 +7,9 @@ use std::collections::HashMap;
 
 fn available_limits() -> RateLimitSnapshot {
     RateLimitSnapshot {
+        normal_model_slug: None,
+        spend_control_reached: None,
+
         limit_id: Some("codex".to_string()),
         limit_name: Some("Codex".to_string()),
         primary: Some(RateLimitWindow {
@@ -37,6 +40,10 @@ fn available_limits() -> RateLimitSnapshot {
 
 fn available_response() -> GetAccountRateLimitsResponse {
     GetAccountRateLimitsResponse {
+        account_id: None,
+        ordinary_usage_allowed: None,
+        rate_limit_upsell: None,
+
         rate_limits: available_limits(),
         rate_limits_by_limit_id: None,
         rate_limit_reset_credits: None,

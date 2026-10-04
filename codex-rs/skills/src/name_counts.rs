@@ -10,8 +10,8 @@ pub fn build_skill_name_counts(
     skills: &[SkillMetadata],
     disabled_paths: &HashSet<AbsolutePathBuf>,
 ) -> (HashMap<String, usize>, HashMap<String, usize>) {
-    let mut exact_counts = HashMap::new();
-    let mut lower_counts = HashMap::new();
+    let mut exact_counts: HashMap<String, usize> = HashMap::new();
+    let mut lower_counts: HashMap<String, usize> = HashMap::new();
     for skill in skills {
         if disabled_paths.contains(&skill.path_to_skills_md) {
             continue;

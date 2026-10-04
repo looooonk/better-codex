@@ -1,6 +1,7 @@
-use codex_skills::SkillMetadata;
+use std::collections::HashMap;
 
 use crate::SkillLoadOutcome;
+use codex_skills::SkillMetadata;
 
 use crate::catalog::SkillAuthority;
 use crate::catalog::SkillCatalog;
@@ -14,6 +15,7 @@ use crate::catalog::SkillSourceKind;
 use crate::provider::SkillListQuery;
 use crate::provider::SkillProvider;
 use crate::provider::SkillProviderFuture;
+use crate::provider::SkillReadContext;
 use crate::provider::SkillReadRequest;
 use crate::provider::SkillSearchRequest;
 
@@ -45,9 +47,15 @@ impl SkillProvider for HostSkillProvider {
         })
     }
 
-    fn read(&self, request: SkillReadRequest) -> SkillProviderFuture<'_, SkillReadResult> {
+    fn read<'a>(
+        &'a self,
+        request: SkillReadRequest<'a>,
+    ) -> SkillProviderFuture<'a, SkillReadResult> {
         Box::pin(async move {
-            let Some(host_snapshot) = request.host_snapshot else {
+            let SkillReadContext::Host {
+                host_snapshot: Some(host_snapshot),
+            } = request.context
+            else {
                 return Err(SkillProviderError::new(
                     "host skill provider requires a host skills snapshot",
                 ));
@@ -82,12 +90,12 @@ impl SkillProvider for HostSkillProvider {
     }
 }
 
-pub(crate) fn catalog_from_outcome(outcome: &SkillLoadOutcome) -> SkillCatalog {
+fn catalog_from_outcome(outcome: &SkillLoadOutcome) -> SkillCatalog {
     let root_order_by_path = outcome
         .skill_roots_in_discovery_order()
         .enumerate()
         .map(|(index, root)| (root.as_path(), index))
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<HashMap<_, _>>();
     let mut catalog = SkillCatalog {
         entries: Vec::new(),
         warnings: outcome

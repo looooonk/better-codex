@@ -10,13 +10,11 @@ use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
 use codex_analytics::CompactionTrigger;
-use codex_history::ResponseItemEnvelope;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::TurnStartedEvent;
+use tokio_util::sync::CancellationToken;
 
 /// Runs token-budget manual compaction as a normal compaction lifecycle.
 ///
@@ -27,26 +25,14 @@ pub(crate) async fn run_manual_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
 ) -> CodexResult<()> {
-    let start_event = EventMsg::TurnStarted(TurnStartedEvent {
-        turn_id: turn_context.sub_id.clone(),
-        trace_id: turn_context.trace_id.clone(),
-        started_at: turn_context.turn_timing_state.started_at_unix_secs().await,
-        model_context_window: turn_context.model_context_window(),
-        collaboration_mode_kind: turn_context.collaboration_mode.mode,
-    });
-    sess.send_event(&turn_context, start_event).await;
+    sess.emit_turn_started(&turn_context).await;
 
     // Manual compaction runs outside run_turn, so it captures its own current step.
-    let step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
-    let world_state = Arc::new(sess.build_world_state_for_step(&step_context).await);
-    run_compact_task_inner(
-        &sess,
-        step_context,
-        world_state,
-        Vec::new(),
-        CompactionTrigger::Manual,
-    )
-    .await
+    let step_context = sess
+        .capture_step_context(Arc::clone(&turn_context), &CancellationToken::new())
+        .await?;
+    let world_state = Arc::new(sess.build_world_state_for_step(&step_context).await?);
+    run_compact_task_inner(&sess, &step_context, world_state, CompactionTrigger::Manual).await
 }
 
 /// Runs token-budget inline auto-compaction as a normal compaction lifecycle.
@@ -59,35 +45,19 @@ pub(crate) async fn run_inline_auto_compact_task(
     step_context: Arc<StepContext>,
     initial_context_injection: InitialContextInjection,
 ) -> CodexResult<()> {
-    let (step_context, world_state, preserved_turn_items) = match initial_context_injection {
-        InitialContextInjection::BeforeLastUserMessage(world_state) => {
-            (step_context, world_state, Vec::new())
-        }
-        InitialContextInjection::AfterSummary {
-            step_context,
-            world_state,
-            turn_items,
-        } => (step_context, world_state, turn_items),
+    let world_state = match initial_context_injection {
+        InitialContextInjection::BeforeLastUserMessage { world_state, .. } => world_state,
         InitialContextInjection::DoNotInject => {
-            let world_state = Arc::new(sess.build_world_state_for_step(&step_context).await);
-            (step_context, world_state, Vec::new())
+            Arc::new(sess.build_world_state_for_step(&step_context).await?)
         }
     };
-    run_compact_task_inner(
-        &sess,
-        step_context,
-        world_state,
-        preserved_turn_items,
-        CompactionTrigger::Auto,
-    )
-    .await
+    run_compact_task_inner(&sess, &step_context, world_state, CompactionTrigger::Auto).await
 }
 
 async fn run_compact_task_inner(
     sess: &Arc<Session>,
-    step_context: Arc<StepContext>,
+    step_context: &Arc<StepContext>,
     world_state: Arc<WorldState>,
-    preserved_turn_items: Vec<ResponseItemEnvelope>,
     trigger: CompactionTrigger,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
@@ -100,7 +70,7 @@ async fn run_compact_task_inner(
     let compaction_item = TurnItem::ContextCompaction(ContextCompactionItem::new());
     sess.emit_turn_item_started(turn_context, &compaction_item)
         .await;
-    sess.start_new_context_window(&step_context, world_state, preserved_turn_items)
+    sess.start_new_context_window(step_context, world_state)
         .await;
     sess.emit_turn_item_completed(turn_context, compaction_item)
         .await;

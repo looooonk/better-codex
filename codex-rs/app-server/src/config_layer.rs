@@ -5,14 +5,17 @@ use codex_config::ConfigLayer;
 use codex_config::ConfigLayerMetadata;
 use codex_config::ConfigLayerSource;
 
-/// Converts a config-layer source into the public app-server wire type.
+/// Converts a config-layer source owned by `codex-config` into the app-server wire type owned by
+/// `codex-app-server-protocol`.
 ///
-/// Packaged defaults are internal and are omitted from public responses.
-pub(crate) fn config_layer_source_to_api(
-    source: ConfigLayerSource,
-) -> Option<ApiConfigLayerSource> {
-    Some(match source {
-        ConfigLayerSource::PackagedDefaults { .. } => return None,
+/// The types stay separate so app-server protocol ownership does not leak into the config domain
+/// crate. Because this crate owns neither type, Rust's orphan rules require an explicit conversion
+/// function instead of a `From` implementation.
+pub(crate) fn config_layer_source_to_api(source: ConfigLayerSource) -> ApiConfigLayerSource {
+    match source {
+        ConfigLayerSource::PackagedDefaults { file } => {
+            ApiConfigLayerSource::PackagedDefaults { file }
+        }
         ConfigLayerSource::Mdm { domain, key } => ApiConfigLayerSource::Mdm { domain, key },
         ConfigLayerSource::System { file } => ApiConfigLayerSource::System { file },
         ConfigLayerSource::EnterpriseManaged { id, name } => {
@@ -29,25 +32,35 @@ pub(crate) fn config_layer_source_to_api(
         ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
             ApiConfigLayerSource::LegacyManagedConfigTomlFromMdm
         }
-    })
+    }
 }
 
-/// Converts public config-layer metadata, omitting internal packaged defaults.
+/// Converts config-layer metadata owned by `codex-config` into the app-server wire type owned by
+/// `codex-app-server-protocol`.
+///
+/// The types stay separate so app-server protocol ownership does not leak into the config domain
+/// crate. Because this crate owns neither type, Rust's orphan rules require an explicit conversion
+/// function instead of a `From` implementation.
 pub(crate) fn config_layer_metadata_to_api(
     metadata: ConfigLayerMetadata,
-) -> Option<ApiConfigLayerMetadata> {
-    Some(ApiConfigLayerMetadata {
-        name: config_layer_source_to_api(metadata.name)?,
+) -> ApiConfigLayerMetadata {
+    ApiConfigLayerMetadata {
+        name: config_layer_source_to_api(metadata.name),
         version: metadata.version,
-    })
+    }
 }
 
-/// Converts a public config layer, omitting internal packaged defaults.
-pub(crate) fn config_layer_to_api(layer: ConfigLayer) -> Option<ApiConfigLayer> {
-    Some(ApiConfigLayer {
-        name: config_layer_source_to_api(layer.name)?,
+/// Converts a config layer owned by `codex-config` into the app-server wire type owned by
+/// `codex-app-server-protocol`.
+///
+/// The types stay separate so app-server protocol ownership does not leak into the config domain
+/// crate. Because this crate owns neither type, Rust's orphan rules require an explicit conversion
+/// function instead of a `From` implementation.
+pub(crate) fn config_layer_to_api(layer: ConfigLayer) -> ApiConfigLayer {
+    ApiConfigLayer {
+        name: config_layer_source_to_api(layer.name),
         version: layer.version,
         config: layer.config,
         disabled_reason: layer.disabled_reason,
-    })
+    }
 }

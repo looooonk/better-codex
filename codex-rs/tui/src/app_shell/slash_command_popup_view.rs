@@ -40,6 +40,13 @@ pub(super) fn render(shell: &ShellState, transcript: Rect, input: Rect, buf: &mu
     let content = pane_content_rect(area);
     let visible = usize::from(content.height.saturating_sub(2));
     let range = visible_range(suggestions.selected(), suggestions.entries().len(), visible);
+    let command_width = suggestions
+        .entries()
+        .iter()
+        .map(|definition| definition.name().len())
+        .max()
+        .unwrap_or_default()
+        .saturating_add(2);
 
     Clear.render(area, buf);
     fill_rect(buf, area, palette::surface());
@@ -74,7 +81,7 @@ pub(super) fn render(shell: &ShellState, transcript: Rect, input: Rect, buf: &mu
                 let line = vec![
                     marker,
                     " ".into(),
-                    format!("{:<8}", definition.name())
+                    format!("{:<command_width$}", definition.name())
                         .fg(palette::cyan())
                         .bold(),
                     definition.description().fg(palette::muted()),

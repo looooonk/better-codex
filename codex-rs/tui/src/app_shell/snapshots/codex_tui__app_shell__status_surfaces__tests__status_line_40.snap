@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/status_surfaces_tests.rs
+assertion_line: 26
+expression: rendered
+---
+
+  Dashboard  ◆ BC        gpt-5-codex ▾
+────────────────────────────────────────
+ Display controls | gpt-5-codex | Contex
+
+ ◆ CONVERSATION
+          turns.                      │
+ ▎ PLAN  1. Build shell               │
+         2. Wire transcript           │
+         3. Render dashboard          ┃
+                                      ┃
+ ▌ tool exec just test -p codex-tui   ┃
+                                      ┃
+ ▌ edited 3 files +128 -24            ┃
+                                      ┃
+ ▎ CODEX  The new shell owns the      ┃
+          fullscreen surface.         ┃
+
+╭──────────────────────────────────────╮
+│◆ MESSAGE  1:37                       │
+│> Summarize the new shell architecture│
+│                                      │
+│                                      │
+╰──────────────────────────────────────╯

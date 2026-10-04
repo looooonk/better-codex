@@ -7,7 +7,9 @@ use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::ToolExecutor;
 use codex_protocol::items::AgentMessageContent;
+use codex_protocol::items::AgentMessageDelivery;
 use codex_protocol::items::AgentMessageItem;
+use codex_protocol::items::AsyncUserInputQuestion;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::MessagePhase;
 use codex_tools::JsonSchema;
@@ -18,21 +20,16 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 const TOOL_NAME: &str = "request_user_input_async";
-const MAX_ARGUMENT_BYTES: usize = 3_000;
 
-pub struct RequestUserInputAsyncHandler;
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Questions {
-    questions: Vec<Question>,
+pub struct RequestUserInputAsyncHandler {
+    pub description: String,
+    pub parameters: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Question {
-    title: String,
-    options: Option<Vec<String>>,
+struct RequestUserInputAsyncArgs {
+    questions: Vec<AsyncUserInputQuestion>,
 }
 
 impl ToolExecutor<ToolInvocation> for RequestUserInputAsyncHandler {
@@ -41,41 +38,58 @@ impl ToolExecutor<ToolInvocation> for RequestUserInputAsyncHandler {
     }
 
     fn spec(&self) -> ToolSpec {
-        let mut title = JsonSchema::string(Some(
-            "A self-contained question, up to 500 characters.".to_string(),
-        ));
-        title.max_length = Some(500);
-        let mut option = JsonSchema::string(Some(
-            "A suggested answer, up to 150 characters.".to_string(),
-        ));
-        option.max_length = Some(150);
-        let mut options = JsonSchema::array(option, Some("Optional suggested answers, recommended answer first. Users can always reply with their own text; no answer is submitted automatically.".to_string()));
+        let mut options = JsonSchema::array(
+            JsonSchema::string(/*description*/ None),
+            Some("Suggested answers, in display order. Put the recommended answer first; the first option is preselected by default. The user can select one option or enter a free-text answer. Do not include an Other option or a free-text placeholder; the UI provides free-text input automatically. Omit options for a free-text-only question.".to_string()),
+        );
         options.min_items = Some(1);
-        options.max_items = Some(8);
+        let question = JsonSchema::object(
+            BTreeMap::from([
+                ("title".to_string(), JsonSchema::string(Some("The complete question shown to the user, including any context needed to answer it.".to_string()))),
+                ("options".to_string(), options),
+            ]),
+            Some(vec!["title".to_string()]),
+            /*additional_properties*/ Some(false.into()),
+        );
         let mut questions = JsonSchema::array(
-            JsonSchema::object(
-                BTreeMap::from([
-                    ("title".to_string(), title),
-                    ("options".to_string(), options),
-                ]),
-                Some(vec!["title".to_string()]),
-                Some(false.into()),
+            question,
+            Some(
+                "One or more self-contained questions to present together, in display order."
+                    .to_string(),
             ),
-            None,
         );
         questions.min_items = Some(1);
-        questions.max_items = Some(3);
+        let properties = BTreeMap::from([("questions".to_string(), questions)]);
+        let mut parameters = JsonSchema::object(
+            properties,
+            Some(vec!["questions".to_string()]),
+            /*additional_properties*/ Some(false.into()),
+        );
+        if let Some(parameters_override) = &self.parameters {
+            match crate::tools::catalog_parameters::parse(parameters_override) {
+                Ok(schema) => parameters = schema,
+                Err(reason) => tracing::warn!(
+                    tool = TOOL_NAME,
+                    reason,
+                    "Invalid catalog tool parameters; using bundled parameters"
+                ),
+            }
+        }
+
         ToolSpec::Function(ResponsesApiTool {
             name: TOOL_NAME.to_string(),
-            description: "Ask up to three concise questions to request missing information, preferences, clarification, or approval. Questions and suggested answers appear in the conversation. This tool returns immediately; the user replies through the composer as a new user message while you continue independent work. An unanswered question is not approval. Keep the entire JSON argument under 3000 bytes.".to_string(),
+            description: self.description.clone(),
             strict: false,
             defer_loading: None,
-            parameters: JsonSchema::object(BTreeMap::from([("questions".to_string(), questions)]), Some(vec!["questions".to_string()]), Some(false.into())),
+            parameters,
             output_schema: None,
         })
     }
 
-    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+    fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
+    where
+        ToolInvocation: 'a,
+    {
         Box::pin(async move {
             let ToolInvocation {
                 session,
@@ -84,68 +98,59 @@ impl ToolExecutor<ToolInvocation> for RequestUserInputAsyncHandler {
                 payload,
                 ..
             } = invocation;
-            if turn.session_source.is_non_root_agent() {
-                return Err(FunctionCallError::RespondToModel(
-                    "Only the root thread can ask the user questions".to_string(),
-                ));
-            }
             let ToolPayload::Function { arguments } = payload else {
-                return Err(FunctionCallError::RespondToModel(
-                    "Expected function arguments".to_string(),
-                ));
+                return Err(FunctionCallError::RespondToModel(format!(
+                    "{TOOL_NAME} handler received unsupported payload"
+                )));
             };
-            if arguments.len() > MAX_ARGUMENT_BYTES {
+            let args: RequestUserInputAsyncArgs = parse_arguments(&arguments)?;
+            if args.questions.is_empty() {
                 return Err(FunctionCallError::RespondToModel(
-                    "Questions must fit within 3000 bytes of JSON".to_string(),
+                    "questions must not be empty".to_string(),
                 ));
             }
-            let args: Questions = parse_arguments(&arguments)?;
-            if !(1..=3).contains(&args.questions.len())
-                || args.questions.iter().any(|question| {
-                    question.title.trim().is_empty()
-                        || question.title.chars().count() > 500
-                        || question.options.as_ref().is_some_and(|options| {
-                            !(1..=8).contains(&options.len())
-                                || options.iter().any(|option| {
-                                    option.trim().is_empty() || option.chars().count() > 150
-                                })
-                        })
-                })
-            {
-                return Err(FunctionCallError::RespondToModel("Provide 1-3 non-empty questions (up to 500 characters each), with 1-8 non-empty options (up to 150 characters each) when options are included".to_string()));
+            let mut messages = Vec::with_capacity(args.questions.len());
+            for question in &args.questions {
+                if question.title.trim().is_empty() {
+                    return Err(FunctionCallError::RespondToModel(
+                        "question titles must not be empty".to_string(),
+                    ));
+                }
+                let mut lines = vec![question.title.clone()];
+                if let Some(options) = &question.options {
+                    if options.is_empty() || options.iter().any(|option| option.trim().is_empty()) {
+                        return Err(FunctionCallError::RespondToModel(
+                            "options must contain at least one non-empty answer".to_string(),
+                        ));
+                    }
+                    lines.extend(options.iter().map(|option| format!("- {option}")));
+                }
+                messages.push(lines.join("\n"));
             }
-            let text = args
-                .questions
-                .into_iter()
-                .map(|question| {
-                    let mut lines = vec![question.title];
-                    lines.extend(
-                        question
-                            .options
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|option| format!("- {option}")),
-                    );
-                    lines.join("\n")
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n");
+
             let item = TurnItem::AgentMessage(AgentMessageItem {
                 id: call_id,
-                content: vec![AgentMessageContent::Text { text }],
-                phase: Some(MessagePhase::Commentary),
+                content: vec![AgentMessageContent::Text {
+                    text: messages.join("\n\n"),
+                }],
+                phase: Some(MessagePhase::FinalAnswer),
                 memory_citation: None,
+                delivery: Some(AgentMessageDelivery::Async),
+                questions: Some(args.questions),
             });
-            turn.turn_metadata_state
-                .mark_user_input_requested_during_turn();
-            session.emit_turn_item_started(&turn, &item).await;
-            session.emit_turn_item_completed(&turn, item).await;
+            session.emit_turn_item_started(turn.as_ref(), &item).await;
+            session.emit_turn_item_completed(turn.as_ref(), item).await;
+
             Ok(boxed_tool_output(FunctionToolOutput::from_text(
                 r#"{"accepted":true}"#.to_string(),
-                Some(true),
+                /*success*/ Some(true),
             )))
         })
     }
 }
 
-impl CoreToolRuntime for RequestUserInputAsyncHandler {}
+impl CoreToolRuntime for RequestUserInputAsyncHandler {
+    fn is_builtin_control_tool(&self) -> bool {
+        true
+    }
+}

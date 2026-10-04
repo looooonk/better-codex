@@ -1,48 +1,32 @@
+use super::AGENT_FINAL_MESSAGE_PREFIX;
+use super::HANDOFF_STREAM_TRUNCATION_MARKER;
 use super::RealtimeHandoffState;
+use super::RealtimeInputTaskExit;
+use super::RealtimeOutbound;
+use super::RealtimePendingOutbound;
 use super::RealtimeSessionKind;
-use super::ensure_realtime_api_login_allowed;
+use super::RealtimeStreamedItem;
+use super::classify_realtime_input_error;
+use super::classify_realtime_input_error_with_pending;
 use super::realtime_delegation_from_handoff;
 use super::realtime_request_headers;
 use super::realtime_text_from_handoff_request;
 use super::wrap_realtime_delegation_input;
+use crate::context::RealtimeDelegationSource;
 use async_channel::bounded;
-use codex_config::ManagedAuthPolicy;
-use codex_config::config_toml::RealtimeWsVersion;
-use codex_config::types::AuthCredentialsStoreMode;
-use codex_login::AuthConfig;
-use codex_login::AuthKeyringBackendKind;
-use codex_login::AuthManager;
-use codex_protocol::config_types::ForcedLoginMethod;
-use codex_protocol::error::CodexErr;
+use codex_api::ApiError;
+use codex_api::RealtimeEventParser;
+use codex_protocol::models::MessagePhase;
+use codex_protocol::protocol::CodexResponseHandoffMode;
+use codex_protocol::protocol::ConversationTextParams;
+use codex_protocol::protocol::ConversationTextRole;
 use codex_protocol::protocol::RealtimeHandoffRequested;
 use codex_protocol::protocol::RealtimeTranscriptEntry;
 use pretty_assertions::assert_eq;
-
-#[tokio::test]
-async fn realtime_rejects_chatgpt_only_policy_before_credential_selection() {
-    let codex_home = tempfile::tempdir().expect("tempdir");
-    let manager = AuthManager::shared_from_stored_auth_config(AuthConfig {
-        codex_home: codex_home.path().to_path_buf(),
-        auth_credentials_store_mode: AuthCredentialsStoreMode::Ephemeral,
-        keyring_backend_kind: AuthKeyringBackendKind::default(),
-        forced_login_method: None,
-        chatgpt_base_url: None,
-        forced_chatgpt_workspace_id: None,
-        managed_auth_policy: ManagedAuthPolicy::default()
-            .restrict_login_methods_to([ForcedLoginMethod::Chatgpt]),
-        auth_route_config: None,
-    })
-    .await;
-
-    let err = ensure_realtime_api_login_allowed(&manager)
-        .expect_err("ChatGPT-only policy should reject realtime startup");
-
-    assert!(matches!(err, CodexErr::InvalidRequest(_)));
-    assert_eq!(
-        err.to_string(),
-        "realtime conversation requires API key login, which is disabled by authentication policy"
-    );
-}
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::Mutex;
 
 #[test]
 fn prefers_handoff_input_transcript_over_active_transcript() {
@@ -138,7 +122,11 @@ fn ignores_empty_handoff_request_input_transcript() {
 #[test]
 fn wraps_realtime_delegation_input() {
     assert_eq!(
-        wrap_realtime_delegation_input("hello", /*transcript_delta*/ None),
+        wrap_realtime_delegation_input(
+            "hello",
+            /*transcript_delta*/ None,
+            RealtimeDelegationSource::Handoff,
+        ),
         "<realtime_delegation>\n  <input>hello</input>\n</realtime_delegation>"
     );
 }
@@ -146,7 +134,11 @@ fn wraps_realtime_delegation_input() {
 #[test]
 fn wraps_realtime_delegation_input_with_xml_escaping() {
     assert_eq!(
-        wrap_realtime_delegation_input("use a < b && c > d", Some("saw <that>")),
+        wrap_realtime_delegation_input(
+            "use a < b && c > d",
+            Some("saw <that>"),
+            RealtimeDelegationSource::Handoff,
+        ),
         "<realtime_delegation>\n  <input>use a &lt; b &amp;&amp; c &gt; d</input>\n  <transcript_delta>saw &lt;that&gt;</transcript_delta>\n</realtime_delegation>"
     );
 }
@@ -154,31 +146,138 @@ fn wraps_realtime_delegation_input_with_xml_escaping() {
 #[test]
 fn wraps_realtime_delegation_input_with_xml_escaping_without_transcript() {
     assert_eq!(
-        wrap_realtime_delegation_input("use a < b && c > d", /*transcript_delta*/ None),
+        wrap_realtime_delegation_input(
+            "use a < b && c > d",
+            /*transcript_delta*/ None,
+            RealtimeDelegationSource::Handoff,
+        ),
         "<realtime_delegation>\n  <input>use a &lt; b &amp;&amp; c &gt; d</input>\n</realtime_delegation>"
     );
+}
+
+#[test]
+fn bounds_realtime_delegation_fields_and_keeps_latest_transcript() {
+    let input = format!("start{}input-end", "x".repeat(8 * 1024));
+    let transcript = format!("transcript-start{}latest", "y".repeat(8 * 1024));
+    let rendered = wrap_realtime_delegation_input(
+        &input,
+        Some(&transcript),
+        RealtimeDelegationSource::Handoff,
+    );
+
+    assert!(rendered.len() < 9 * 1024);
+    assert!(rendered.contains("<input>start"));
+    assert!(!rendered.contains("input-end"));
+    assert!(!rendered.contains("transcript-start"));
+    assert!(rendered.contains("latest</transcript_delta>"));
+}
+
+#[test]
+fn classifies_outbound_api_failures_as_transport_loss() {
+    for pending_outbound in [
+        RealtimePendingOutbound::Text(ConversationTextParams {
+            text: "retry me".to_string(),
+            role: ConversationTextRole::User,
+        }),
+        RealtimePendingOutbound::Handoff(RealtimeOutbound::StandaloneHandoff {
+            text: "retry this handoff".to_string(),
+            phase: Some(MessagePhase::FinalAnswer),
+        }),
+    ] {
+        let exit = classify_realtime_input_error_with_pending(
+            ApiError::Stream("failed to send realtime request".to_string()).into(),
+            Some(Box::new(pending_outbound.clone())),
+        );
+        let RealtimeInputTaskExit::TransportLost {
+            err: ApiError::Stream(_),
+            pending_outbound: Some(actual_pending_outbound),
+        } = exit
+        else {
+            panic!("outbound API failure should preserve pending output for reconnect");
+        };
+        assert_eq!(*actual_pending_outbound, pending_outbound);
+    }
+
+    assert!(matches!(
+        classify_realtime_input_error(anyhow::anyhow!("input channel closed")),
+        RealtimeInputTaskExit::Terminal
+    ));
 }
 
 #[tokio::test]
 async fn clears_active_handoff_explicitly() {
     let (tx, _rx) = bounded(1);
-    let state = RealtimeHandoffState::new(
-        tx,
-        /*client_managed_handoffs*/ false,
-        /*codex_responses_as_items*/ false,
-        /*codex_response_item_prefix*/ None,
-        /*codex_response_handoff_prefix*/ None,
-        RealtimeSessionKind::V1,
-    );
+    let state = RealtimeHandoffState {
+        output_tx: tx,
+        last_output: Arc::new(Mutex::new(None)),
+        stream: Arc::new(Mutex::new(Default::default())),
+        client_managed_handoffs: false,
+        codex_responses_as_items: false,
+        codex_response_item_prefix: None,
+        backend_reasoning_status: false,
+        codex_response_handoff_mode: CodexResponseHandoffMode::Thinking,
+        codex_response_handoff_channel_prefixes: Arc::new(BTreeMap::new()),
+        session_kind: RealtimeSessionKind::V1,
+        event_parser: RealtimeEventParser::V1,
+    };
 
-    *state.active_handoff.lock().await = Some("handoff_1".to_string());
+    state.stream.lock().await.active_handoff = Some("handoff_1".to_string());
     assert_eq!(
-        state.active_handoff.lock().await.clone(),
+        state.stream.lock().await.active_handoff.clone(),
         Some("handoff_1".to_string())
     );
 
-    *state.active_handoff.lock().await = None;
-    assert_eq!(state.active_handoff.lock().await.clone(), None);
+    state.stream.lock().await.active_handoff = None;
+    assert_eq!(state.stream.lock().await.active_handoff.clone(), None);
+}
+
+#[test]
+fn streamed_handoff_preserves_a_bounded_final_tail() {
+    let mut item = RealtimeStreamedItem {
+        handoff_id: "handoff_1".to_string(),
+        phase: Some(MessagePhase::FinalAnswer),
+        bem_channel_parser: None,
+        prefix_final_message: true,
+        sent_bytes: 0,
+        buffered_text: String::new(),
+        tail_text: String::new(),
+        truncated: false,
+        last_flush_at: Instant::now(),
+        flush_scheduled: false,
+    };
+    item.push_text(&format!("HEAD{}TAIL", "x".repeat(/*n*/ 5_000)));
+
+    let first = item
+        .drain_stream_chunk()
+        .expect("oversized output should retain a streamable head");
+    let final_chunk = item
+        .drain_final_chunk()
+        .expect("oversized output should retain a final tail");
+    let output = format!("{first}{final_chunk}");
+
+    assert!(output.len() <= 4_000);
+    assert!(output.starts_with(&format!("{AGENT_FINAL_MESSAGE_PREFIX}HEAD")));
+    assert!(output.contains(HANDOFF_STREAM_TRUNCATION_MARKER));
+    assert!(output.ends_with("TAIL"));
+}
+
+#[test]
+fn streamed_v3_handoff_omits_the_final_message_prefix() {
+    let mut item = RealtimeStreamedItem {
+        handoff_id: "handoff_1".to_string(),
+        phase: Some(MessagePhase::FinalAnswer),
+        bem_channel_parser: None,
+        prefix_final_message: false,
+        sent_bytes: 0,
+        buffered_text: String::new(),
+        tail_text: String::new(),
+        truncated: false,
+        last_flush_at: Instant::now(),
+        flush_scheduled: false,
+    };
+    item.push_text("done");
+
+    assert_eq!(item.drain_final_chunk(), Some("done".to_string()));
 }
 
 #[test]
@@ -186,7 +285,7 @@ fn uses_quicksilver_alpha_header_for_realtime_v1() {
     let headers = realtime_request_headers(
         Some("session_1"),
         Some("sk-test"),
-        RealtimeWsVersion::V1,
+        RealtimeEventParser::V1,
         "codex_work_desktop",
     )
     .expect("headers")
@@ -205,13 +304,32 @@ fn omits_quicksilver_alpha_header_for_realtime_v2() {
     let headers = realtime_request_headers(
         Some("session_1"),
         Some("sk-test"),
-        RealtimeWsVersion::V2,
+        RealtimeEventParser::RealtimeV2,
         "codex_work_desktop",
     )
     .expect("headers")
     .expect("headers");
 
     assert!(headers.get("openai-alpha").is_none());
+}
+
+#[test]
+fn uses_frameless_alpha_header_for_realtime_v3() {
+    let headers = realtime_request_headers(
+        Some("session_1"),
+        Some("sk-test"),
+        RealtimeEventParser::FramelessBidi,
+        "codex_work_desktop",
+    )
+    .expect("headers")
+    .expect("headers");
+
+    assert_eq!(
+        headers
+            .get("openai-alpha")
+            .and_then(|value| value.to_str().ok()),
+        Some("quicksilver=v2")
+    );
 }
 
 #[test]
@@ -224,7 +342,7 @@ fn realtime_headers_include_only_non_default_originator() {
         let headers = realtime_request_headers(
             Some("session_1"),
             Some("sk-test"),
-            RealtimeWsVersion::V2,
+            RealtimeEventParser::RealtimeV2,
             originator,
         )
         .expect("headers")

@@ -1,5 +1,6 @@
 use super::AppServerArgs;
 use clap::Parser;
+use codex_app_server::AppServerTransport;
 use pretty_assertions::assert_eq;
 use toml::Value as TomlValue;
 use url::Url;
@@ -38,42 +39,47 @@ fn app_server_accepts_cli_config_overrides() {
 }
 
 #[test]
-fn app_server_accepts_process_scoped_code_mode_host() {
+fn app_server_accepts_process_scoped_grpc_code_mode_host() {
     let args = AppServerArgs::try_parse_from([
         "codex-app-server",
         "--code-mode-host",
-        "http://127.0.0.1:45123",
-        "--code-mode-host-token-env",
-        "CODE_MODE_TOKEN",
+        "https://example.test",
         "--listen",
         "off",
     ])
-    .expect("parse app-server args");
+    .expect("parse gRPC app-server args");
 
     assert_eq!(
         args.code_mode_host.code_mode_host,
-        Some(Url::parse("http://127.0.0.1:45123").expect("test endpoint should parse"))
+        Some(Url::parse("https://example.test").expect("test endpoint should parse"))
     );
-    assert_eq!(
-        args.code_mode_host.code_mode_host_token_env.as_deref(),
-        Some("CODE_MODE_TOKEN")
-    );
+    assert_eq!(args.listen, AppServerTransport::Off);
 }
 
 #[test]
-fn app_server_rejects_untrusted_code_mode_hosts_without_disclosing_secrets() {
+fn app_server_rejects_invalid_code_mode_host() {
     for endpoint in [
-        "http://example.test:45123",
-        "http://alice:super-secret@127.0.0.1:45123",
-        "https://example.test/super-secret",
-        "https://example.test?token=super-secret",
+        "ftp://127.0.0.1:8765",
+        "ws://",
+        "ws://127.0.0.1:8765",
+        "wss://example.test/code-mode",
+        "ws://alice:secret@example.test/code-mode",
+        "wss://alice:secret@example.test/code-mode",
+        "wss://example.test/code-mode#fragment",
+        "http://",
+        "https://example.test/#fragment",
+        "https://example.test/code-mode",
+        "http://alice:secret@example.test",
+        "https://alice:secret@example.test",
+        "http://example.test/?token=secret",
     ] {
         let error =
             AppServerArgs::try_parse_from(["codex-app-server", "--code-mode-host", endpoint])
-                .expect_err("invalid endpoint should fail argument parsing");
+                .expect_err("invalid code-mode host endpoint should fail startup argument parsing");
+
         assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
-        let rendered = error.to_string();
-        assert!(!rendered.contains("alice"));
-        assert!(!rendered.contains("super-secret"));
+        let rendered_error = error.to_string();
+        assert!(!rendered_error.contains("alice"));
+        assert!(!rendered_error.contains("secret"));
     }
 }

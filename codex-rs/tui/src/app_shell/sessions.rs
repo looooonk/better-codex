@@ -70,6 +70,9 @@ impl SessionListState {
 
     fn list_params_with_cursor(&self, cursor: Option<String>) -> ThreadListParams {
         ThreadListParams {
+            originators: None,
+            project_id: None,
+            section_id: None,
             cursor,
             limit: Some(SESSION_LIST_LIMIT),
             sort_key: Some(ThreadSortKey::RecencyAt),

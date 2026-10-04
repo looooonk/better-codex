@@ -546,6 +546,17 @@ fn parent_history_does_not_overwrite_a_live_nested_child() {
 
 fn thread(id: ThreadId, parent_id: ThreadId, session_id: &str, path: &str, turn: Turn) -> Thread {
     Thread {
+        model: None,
+        reasoning_effort: None,
+
+        environments: None,
+        section: None,
+        section_entered_at: None,
+        project_id: None,
+        originator: None,
+        can_accept_direct_input: None,
+        daybreak_enabled: None,
+
         id: id.to_string(),
         extra: None,
         session_id: session_id.to_string(),
@@ -586,6 +597,8 @@ fn turn(id: &str, items: Vec<ThreadItem>, status: TurnStatus, error: Option<&str
         items_view: TurnItemsView::default(),
         status,
         error: error.map(|message| TurnError {
+            misalignment: None,
+
             message: message.to_string(),
             codex_error_info: None,
             additional_details: None,
@@ -607,6 +620,9 @@ fn activity(id: &str, thread_id: ThreadId, path: &str) -> ThreadItem {
 
 fn message(id: &str, text: &str) -> ThreadItem {
     ThreadItem::AgentMessage {
+        delivery: None,
+        questions: None,
+
         id: id.to_string(),
         text: text.to_string(),
         phase: None,
@@ -616,4 +632,56 @@ fn message(id: &str, text: &str) -> ThreadItem {
 
 fn thread_id(id: &str) -> ThreadId {
     ThreadId::from_string(id).expect("thread id should be valid")
+}
+
+#[test]
+fn restored_runtime_settings_do_not_require_explicit_spawn_overrides() {
+    let root = thread_id("01900000-0000-7000-8000-000000000001");
+    let child = thread_id("01900000-0000-7000-8000-000000000002");
+    let mut state = AgentActivityState::for_root(root.to_string());
+    let mut restored = thread(
+        child,
+        root,
+        &root.to_string(),
+        "/root/review",
+        turn(
+            "completed",
+            vec![],
+            TurnStatus::Completed,
+            /*error*/ None,
+        ),
+    );
+    restored.model = Some("gpt-6.1-sol".into());
+    restored.reasoning_effort = Some(codex_protocol::openai_models::ReasoningEffort::High);
+    state.hydrate_threads(vec![restored.clone()]);
+    let agent = state.agent(&child.to_string()).unwrap();
+    assert_eq!(
+        (&agent.model, &agent.reasoning_effort),
+        (&restored.model, &restored.reasoning_effort)
+    );
+    state.reduce_completed(&ThreadItem::CollabAgentToolCall {
+        id: "old-spawn".into(),
+        tool: CollabAgentTool::SpawnAgent,
+        status: CollabAgentToolCallStatus::Completed,
+        sender_thread_id: root.to_string(),
+        receiver_thread_ids: vec![child.to_string()],
+        prompt: None,
+        model: Some("old-model".into()),
+        reasoning_effort: Some(codex_protocol::openai_models::ReasoningEffort::Low),
+        agents_states: HashMap::new(),
+    });
+    state.hydrate_snapshots(vec![AgentHistorySnapshot {
+        thread_id: child.to_string(),
+        agent_path: Some("/root/review".into()),
+        agent_nickname: None,
+        model: Some("gpt-6-astra".into()),
+        reasoning_effort: None,
+        status: ThreadStatus::Idle,
+        turns: vec![],
+    }]);
+    let agent = state.agent(&child.to_string()).unwrap();
+    assert_eq!(
+        (&agent.model, &agent.reasoning_effort),
+        (&Some("gpt-6-astra".into()), &None)
+    );
 }

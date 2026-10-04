@@ -421,7 +421,9 @@ fn hydrated_queued_messages_with_structured_input_are_read_only() {
             },
             UserInput::Image {
                 detail: None,
-                url: "https://example.test/image.png".to_string(),
+                image: codex_app_server_protocol::ImageReference::Inline {
+                    url: "https://example.test/image.png".to_string(),
+                },
             },
         ],
         client_user_message_id: "client-1".to_string(),
@@ -439,7 +441,9 @@ fn removing_an_edit_never_selects_a_structured_neighbor() {
         id: "queue-structured".to_string(),
         input: vec![UserInput::Image {
             detail: None,
-            url: "https://example.test/image.png".to_string(),
+            image: codex_app_server_protocol::ImageReference::Inline {
+                url: "https://example.test/image.png".to_string(),
+            },
         }],
         client_user_message_id: "client-structured".to_string(),
     };

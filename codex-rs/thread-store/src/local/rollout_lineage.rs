@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 
-use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -12,16 +11,19 @@ use super::thread_rollout_resolver;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
-const MAX_ROLLOUT_LINEAGE_SEGMENTS: usize = 128;
-
+/// One immutable rollout range contributing to a paginated thread's history.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RolloutLineageSegment {
-    pub(super) rollout_id: RolloutId,
+    pub(super) rollout_id: ThreadId,
     pub(super) rollout_path: PathBuf,
     pub(super) start_ordinal: u64,
     pub(super) end: Option<HistoryPosition>,
 }
 
+/// Ordered rollout ranges contributing to one forked history.
+///
+/// This is the only local abstraction that follows SessionMeta.history_base pointers. Readers
+/// consume its bounded rollout segments without resolving or mutating fork pointers themselves.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RolloutLineage {
     pub(super) segments: Vec<RolloutLineageSegment>,
@@ -31,10 +33,12 @@ impl LocalThreadStore {
     pub(super) async fn resolve_rollout_lineage(
         &self,
         requested_thread_id: ThreadId,
+        initial_path: Option<PathBuf>,
     ) -> ThreadStoreResult<RolloutLineage> {
         self.resolve_rollout_lineage_with_representation(
             requested_thread_id,
             LineageRepresentation::Existing,
+            initial_path,
         )
         .await
     }
@@ -46,6 +50,7 @@ impl LocalThreadStore {
         self.resolve_rollout_lineage_with_representation(
             requested_thread_id,
             LineageRepresentation::PlainForReference,
+            /*initial_path*/ None,
         )
         .await
     }
@@ -54,6 +59,7 @@ impl LocalThreadStore {
         &self,
         requested_thread_id: ThreadId,
         representation: LineageRepresentation,
+        mut initial_path: Option<PathBuf>,
     ) -> ThreadStoreResult<RolloutLineage> {
         let mut segments = Vec::new();
         let mut seen = HashSet::new();
@@ -61,12 +67,6 @@ impl LocalThreadStore {
         let mut end = None;
 
         loop {
-            if segments.len() == MAX_ROLLOUT_LINEAGE_SEGMENTS {
-                return Err(malformed_lineage(
-                    requested_thread_id,
-                    "lineage exceeds 128 rollout segments",
-                ));
-            }
             let coordination_id = next_rollout_id.unwrap_or(requested_thread_id);
             let _writer_guard = match representation {
                 LineageRepresentation::Existing => None,
@@ -74,14 +74,24 @@ impl LocalThreadStore {
                     Some(self.live_writer_locks.lock(coordination_id).await)
                 }
             };
-            let (rollout_id, rollout_path) = match next_rollout_id {
-                Some(rollout_id) => {
+            let (rollout_id, rollout_path) = match (next_rollout_id, initial_path.take()) {
+                (Some(rollout_id), _) => {
                     let rollout_path = resolve_rollout_path_by_id(self, rollout_id)
                         .await?
                         .ok_or_else(|| malformed_lineage(rollout_id, "missing source rollout"))?;
                     (rollout_id, rollout_path)
                 }
-                None => {
+                (None, Some(path)) => {
+                    let rollout_id =
+                        thread_rollout_resolver::rollout_id_from_path_or_legacy_thread_id(
+                            &path,
+                            requested_thread_id,
+                            ThreadHistoryMode::Paginated,
+                        )
+                        .await?;
+                    (rollout_id, path)
+                }
+                (None, None) => {
                     let resolved = thread_rollout_resolver::resolve_current_including_archived(
                         self,
                         requested_thread_id,
@@ -99,19 +109,31 @@ impl LocalThreadStore {
             let rollout_path = match representation {
                 LineageRepresentation::Existing => rollout_path,
                 LineageRepresentation::PlainForReference => {
-                    let rollout_path = super::helpers::scoped_rollout_path(
-                        self.config.codex_home.clone(),
-                        rollout_path.as_path(),
-                        "Codex home",
-                    )?;
-                    codex_rollout::materialize_rollout_for_reference(rollout_path.as_path())
-                        .await
-                        .map_err(|err| ThreadStoreError::Internal {
-                            message: format!(
-                                "failed to materialize referenced rollout {}: {err}",
-                                rollout_path.display()
-                            ),
-                        })?
+                    let outside_codex_home = || ThreadStoreError::InvalidRequest {
+                        message: format!(
+                            "rollout path `{}` must be in Codex home directory",
+                            rollout_path.display()
+                        ),
+                    };
+                    let canonical_rollout_path = std::fs::canonicalize(rollout_path.as_path())
+                        .map_err(|_| outside_codex_home())?;
+                    // Resume can retain either the logical Codex home path or its canonical
+                    // target. Keep references inside canonical managed roots so nested symlinks
+                    // cannot escape them.
+                    let is_managed_rollout = [
+                        self.config.codex_home.join(codex_rollout::SESSIONS_SUBDIR),
+                        self.config
+                            .codex_home
+                            .join(codex_rollout::ARCHIVED_SESSIONS_SUBDIR),
+                        self.config.codex_home.join("rollout_revisions"),
+                    ]
+                    .into_iter()
+                    .filter_map(|root| std::fs::canonicalize(root).ok())
+                    .any(|root| canonical_rollout_path.starts_with(root));
+                    if !is_managed_rollout {
+                        return Err(outside_codex_home());
+                    }
+                    canonical_rollout_path
                 }
             };
             let meta = codex_rollout::read_session_meta_line(rollout_path.as_path())
@@ -122,32 +144,7 @@ impl LocalThreadStore {
                         rollout_path.display()
                     ),
                 })?;
-            let canonical_rollout_id = codex_rollout::rollout_id_from_path(rollout_path.as_path());
-            let revision_rollout_id = rollout_path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.strip_suffix(".zst").unwrap_or(name))
-                .and_then(|name| name.strip_suffix(".jsonl"))
-                .and_then(|name| RolloutId::from_string(name).ok());
-            let path_rollout_id = canonical_rollout_id.or(revision_rollout_id);
-            let stable_metadata_identity = canonical_rollout_id == Some(requested_thread_id)
-                && meta.meta.rollout_id == Some(rollout_id);
-            if (path_rollout_id != Some(rollout_id) && !stable_metadata_identity)
-                || meta
-                    .meta
-                    .rollout_id
-                    .is_some_and(|metadata_rollout_id| metadata_rollout_id != rollout_id)
-            {
-                return Err(malformed_lineage(
-                    requested_thread_id,
-                    format!(
-                        "source rollout identity disagrees with requested rollout {rollout_id}: {}",
-                        rollout_path.display()
-                    )
-                    .as_str(),
-                ));
-            }
-            if meta.meta.id != requested_thread_id {
+            if next_rollout_id.is_none() && meta.meta.id != requested_thread_id {
                 return Err(malformed_lineage(
                     requested_thread_id,
                     "source rollout belongs to another thread",
@@ -159,6 +156,26 @@ impl LocalThreadStore {
                     "source rollout is not paginated",
                 ));
             }
+            let rollout_path = match representation {
+                LineageRepresentation::Existing => rollout_path,
+                LineageRepresentation::PlainForReference
+                    if next_rollout_id.is_none() && meta.meta.history_base.is_none() =>
+                {
+                    // A newly shared standalone source must remain readable by older binaries.
+                    codex_rollout::materialize_rollout_for_reference(rollout_path.as_path())
+                        .await
+                        .map_err(|err| ThreadStoreError::Internal {
+                            message: format!(
+                                "failed to materialize referenced rollout {}: {err}",
+                                rollout_path.display()
+                            ),
+                        })?
+                }
+                // Already-shared compressed history requires a compatible reader regardless of
+                // new forks. Read it without publishing decoded copies into ancestors' folders;
+                // their owners may concurrently archive or unarchive those immutable files.
+                LineageRepresentation::PlainForReference => rollout_path,
+            };
             if let Some(end) = end {
                 validate_cutoff_bounds(requested_thread_id, rollout_path.as_path(), &end).await?;
             }
@@ -189,7 +206,7 @@ impl LocalThreadStore {
 
 async fn resolve_rollout_path_by_id(
     store: &LocalThreadStore,
-    rollout_id: RolloutId,
+    rollout_id: ThreadId,
 ) -> ThreadStoreResult<Option<PathBuf>> {
     codex_rollout::find_rollout_path_by_rollout_id(store.config.codex_home.as_path(), rollout_id)
         .await
@@ -217,10 +234,33 @@ impl RolloutLineage {
                     .is_none_or(|end_ordinal| ordinal < end_ordinal)
         })
     }
+
+    pub(super) async fn truncate_at(
+        mut self,
+        end: HistoryPosition,
+    ) -> ThreadStoreResult<RolloutLineage> {
+        let segment_index = self
+            .segments
+            .iter()
+            .position(|segment| segment.rollout_id == end.thread_id)
+            .ok_or_else(|| ThreadStoreError::Internal {
+                message: "fork position is outside the source lineage".to_string(),
+            })?;
+        self.segments.truncate(segment_index + 1);
+        let segment = self
+            .segments
+            .last_mut()
+            .ok_or_else(|| ThreadStoreError::Internal {
+                message: "rollout lineage has no segments".to_string(),
+            })?;
+        validate_cutoff_bounds(end.thread_id, segment.rollout_path.as_path(), &end).await?;
+        segment.end = Some(end);
+        Ok(self)
+    }
 }
 
 impl RolloutLineageSegment {
-    pub(super) fn rollout_id(&self) -> RolloutId {
+    pub(super) fn rollout_id(&self) -> ThreadId {
         self.rollout_id
     }
 
@@ -244,23 +284,25 @@ async fn validate_cutoff_bounds(
             "cutoff cannot include source session metadata",
         ));
     }
-    let (previous_ordinal, next_ordinal) =
-        codex_rollout::rollout_ordinals_at_boundary(rollout_path, end.end_byte_offset)
-            .await
-            .map_err(|err| {
-                let detail = format!("invalid cutoff record boundary: {err}");
-                malformed_lineage(requested_thread_id, detail.as_str())
-            })?;
-    let expected_previous = end
-        .end_ordinal_exclusive
-        .checked_sub(1)
-        .ok_or_else(|| malformed_lineage(requested_thread_id, "cutoff ordinal underflow"))?;
-    if previous_ordinal != expected_previous
-        || next_ordinal.is_some_and(|ordinal| ordinal != end.end_ordinal_exclusive)
-    {
+    let path = rollout_path.to_path_buf();
+    let end_byte_offset = end.end_byte_offset;
+    let contains_prefix = tokio::task::spawn_blocking(move || {
+        codex_rollout::rollout_contains_prefix(&path, end_byte_offset)
+    })
+    .await
+    .map_err(|err| ThreadStoreError::Internal {
+        message: format!("failed to join rollout prefix validation: {err}"),
+    })?
+    .map_err(|err| ThreadStoreError::Internal {
+        message: format!(
+            "failed to read lineage metadata {}: {err}",
+            rollout_path.display()
+        ),
+    })?;
+    if !contains_prefix {
         return Err(malformed_lineage(
             requested_thread_id,
-            "cutoff byte offset disagrees with rollout ordinals",
+            "cutoff byte offset is past the source rollout",
         ));
     }
     Ok(())

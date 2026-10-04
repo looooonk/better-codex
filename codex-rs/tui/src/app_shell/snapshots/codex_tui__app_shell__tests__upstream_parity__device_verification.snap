@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 28
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.      ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                ┃ │▎+ New session  Ctrl+N
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │▎loading sessions
+          by app-server turns.                  ┃ │
+ ▎ PLAN  1. Build shell                         ┃ │▎◆ THREAD
+         2. Wire transcript                     ┃ │▎stage-one
+         3. Render dashboard                    ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
+ ▌ tool exec just test -p codex-tui             ┃ │
+                                                ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MCP ELICITATION                               ││
+│? MCP github: device verification               ││
+│  Approve production access                     ││
+│  Verify with your device to continue.          ││
+│   Verify ↵   Decline d   Cancel c              ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

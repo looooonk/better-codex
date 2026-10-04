@@ -1,8 +1,8 @@
 use super::*;
+use crate::app_theme::TuiAppTheme;
 use crate::legacy_core::config::Config;
 use crate::model_migration::migration_copy_for_models;
 use crate::test_support::buffer_style_grid;
-use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffort;
 use crossterm::event::KeyCode;
@@ -90,13 +90,15 @@ async fn model_migration_prompt_data_respects_seen_decision() {
     .await
     .expect("load test config");
     let mut available_models = crate::test_support::TEST_MODEL_PRESETS.clone();
-    let current_model = "gpt-5.4";
-    let target_model = "gpt-5.5";
+    let current_model = "gpt-6-sol";
+    let target_model = "gpt-6.1-sol";
     available_models
         .iter_mut()
         .find(|preset| preset.model == current_model)
         .expect("current preset present")
         .upgrade = Some(ModelUpgrade {
+        retirement_at: None,
+
         id: target_model.to_string(),
         migration_config_key: "hide_test_migration_prompt".to_string(),
         model_link: None,

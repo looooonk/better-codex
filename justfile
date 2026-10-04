@@ -1,26 +1,33 @@
 set working-directory := "codex-rs"
 set positional-arguments
+export CODEX_REPO_ROOT := justfile_directory()
 export JUST_SHELL := justfile_directory() / "scripts/just-shell.py"
 set shell := ["python3", "-c", 'import os, runpy; runpy.run_path(os.environ["JUST_SHELL"], run_name="__main__")']
 set windows-shell := ["python", "-c", 'import os, runpy; runpy.run_path(os.environ["JUST_SHELL"], run_name="__main__")']
 
 rust_min_stack := "8388608" # 8 MiB
+cargo_profile := env("CODEX_CARGO_PROFILE", "dev-small")
+cargo_profile_dir := if cargo_profile == "dev" { "debug" } else { cargo_profile }
 python := if os_family() == "windows" { "python" } else { "python3" }
 
 # Display help
 help:
     just -l
 
+# Build the CLI and its isolated JavaScript helper using audited V8 artifacts.
+build *args:
+    cargo build -p codex-cli -p codex-code-mode-host {args}
+
 # `codex`
 alias c := codex
 codex *args:
-    cargo build -p codex-code-mode-host --bin codex-code-mode-host
-    cargo run --bin codex -- {args}
+    cargo build --profile {{ quote(cargo_profile) }} -p codex-code-mode-host --bin codex-code-mode-host
+    cargo run --profile {{ quote(cargo_profile) }} --bin codex -- {args}
 
 # `codex exec`
 exec *args:
-    cargo build -p codex-code-mode-host --bin codex-code-mode-host
-    cargo run --bin codex -- exec {args}
+    cargo build --profile {{ quote(cargo_profile) }} -p codex-code-mode-host --bin codex-code-mode-host
+    cargo run --profile {{ quote(cargo_profile) }} --bin codex -- exec {args}
 
 # Start `codex exec-server` and run codex-tui.
 [no-cd]
@@ -31,16 +38,16 @@ tui-with-exec-server *args:
 
 # Run the CLI version of the file-search crate.
 file-search *args:
-    cargo run --bin codex-file-search -- {args}
+    cargo run --profile {{ quote(cargo_profile) }} --bin codex-file-search -- {args}
 
 # Run the standalone code-mode host from source.
 code-mode-host *args:
-    cargo run --bin codex-code-mode-host -- {args}
+    cargo run --profile {{ quote(cargo_profile) }} --bin codex-code-mode-host -- {args}
 
 # Build the CLI and run the app-server test client
 app-server-test-client *args:
-    cargo build -p codex-cli
-    cargo run -p codex-app-server-test-client -- --codex-bin ./target/debug/codex {args}
+    cargo build --profile {{ quote(cargo_profile) }} -p codex-cli
+    cargo run --profile {{ quote(cargo_profile) }} -p codex-app-server-test-client -- --codex-bin ./target/{{ quote(cargo_profile_dir) }}/codex {args}
 
 # Format the justfile, Rust, Bazel/Starlark, Python SDK code, and Python scripts.
 fmt:
@@ -156,17 +163,13 @@ bazel-clippy:
 bazel-argument-comment-lint:
     bazel build --config=argument-comment-lint -- $({{ justfile_directory() }}/tools/argument-comment-lint/list-bazel-targets.sh)
 
-# Run the MCP server
-mcp-server-run *args:
-    cargo run -p codex-mcp-server -- {args}
-
 # Regenerate the json schema for config.toml from the current config types.
 write-config-schema:
-    cargo run -p codex-core --bin codex-write-config-schema
+    cargo run -p codex-config-schema --bin codex-write-config-schema
 
 # Regenerate vendored app-server protocol schema artifacts.
 write-app-server-schema *args:
-    cargo run -p codex-app-server-protocol --bin write_schema_fixtures -- {args}
+    {{ python }} app-server-protocol/scripts/write_schema_fixtures.py {args}
 
 [no-cd]
 write-hooks-schema:
@@ -189,8 +192,8 @@ argument-comment-lint-from-source *args:
 # Tail logs from the state SQLite database
 [unix]
 log *args:
-    if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p codex-state --bin logs_client -- "$@"
+    if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p codex-cli --bin logs_client -- "$@"
 
 [windows]
 log *args:
-    $forwarded_args = @($args | Select-Object -Skip 1); if ($forwarded_args.Count -gt 0 -and $forwarded_args[0] -eq "--") { $forwarded_args = @($forwarded_args | Select-Object -Skip 1) }; cargo run -p codex-state --bin logs_client -- @forwarded_args
+    $forwarded_args = @($args | Select-Object -Skip 1); if ($forwarded_args.Count -gt 0 -and $forwarded_args[0] -eq "--") { $forwarded_args = @($forwarded_args | Select-Object -Skip 1) }; cargo run -p codex-cli --bin logs_client -- @forwarded_args

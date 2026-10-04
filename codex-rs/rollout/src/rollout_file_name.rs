@@ -7,10 +7,12 @@ use time::macros::format_description;
 
 use crate::compression;
 
-const MAX_ROLLOUT_FILE_NAME_BYTES: usize = 111;
-
 /// Parsed canonical rollout basename.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Ordinary rollout filenames encode one ID, which is both the thread ID and rollout ID.
+/// Filenames for reverted threads append an underscore and a distinct rollout ID after the stable
+/// thread ID.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct RolloutFileName {
     timestamp: OffsetDateTime,
     thread_id: ThreadId,
@@ -35,9 +37,6 @@ impl RolloutFileName {
     }
 
     pub(crate) fn parse(name: &str) -> Option<Self> {
-        if name.len() > MAX_ROLLOUT_FILE_NAME_BYTES {
-            return None;
-        }
         let name = compression::parse_rollout_file_name(name)?;
         let core = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
         let timestamp = core.get(..19)?;
@@ -64,14 +63,14 @@ impl RolloutFileName {
         let format: &[FormatItem] =
             format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]");
         let timestamp = self.timestamp.format(format)?;
-        if self.thread_id == self.rollout_id {
-            Ok(format!("rollout-{timestamp}-{}.jsonl", self.thread_id))
+        Ok(if self.thread_id == self.rollout_id {
+            format!("rollout-{timestamp}-{}.jsonl", self.thread_id)
         } else {
-            Ok(format!(
+            format!(
                 "rollout-{timestamp}-{}_{}.jsonl",
                 self.thread_id, self.rollout_id
-            ))
-        }
+            )
+        })
     }
 
     pub(crate) fn timestamp(&self) -> OffsetDateTime {
@@ -84,9 +83,5 @@ impl RolloutFileName {
 
     pub(crate) fn rollout_id(&self) -> RolloutId {
         self.rollout_id
-    }
-
-    pub(crate) fn is_legacy_compatible(&self) -> bool {
-        self.thread_id == self.rollout_id
     }
 }

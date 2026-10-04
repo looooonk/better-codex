@@ -16,13 +16,7 @@ impl AgentActivityState {
 
     pub(in crate::app_shell) fn hydrate_snapshots(&mut self, snapshots: Vec<AgentHistorySnapshot>) {
         for snapshot in snapshots {
-            self.hydrate_agent(
-                snapshot.thread_id,
-                snapshot.agent_path,
-                snapshot.agent_nickname,
-                snapshot.status,
-                snapshot.turns,
-            );
+            self.hydrate_agent(snapshot);
         }
     }
 
@@ -33,6 +27,8 @@ impl AgentActivityState {
             status,
             turns,
             agent_nickname,
+            model,
+            reasoning_effort,
             ..
         } = thread;
         let (path, source_nickname) = match source {
@@ -54,17 +50,27 @@ impl AgentActivityState {
             )
             | SessionSource::Unknown => (None, None),
         };
-        self.hydrate_agent(id, path, agent_nickname.or(source_nickname), status, turns);
+        self.hydrate_agent(AgentHistorySnapshot {
+            thread_id: id,
+            agent_path: path,
+            agent_nickname: agent_nickname.or(source_nickname),
+            model,
+            reasoning_effort,
+            status,
+            turns,
+        });
     }
 
-    fn hydrate_agent(
-        &mut self,
-        id: String,
-        path: Option<String>,
-        nickname: Option<String>,
-        thread_status: ThreadStatus,
-        turns: Vec<codex_app_server_protocol::Turn>,
-    ) {
+    fn hydrate_agent(&mut self, snapshot: AgentHistorySnapshot) {
+        let AgentHistorySnapshot {
+            thread_id: id,
+            agent_path: path,
+            agent_nickname: nickname,
+            model,
+            reasoning_effort,
+            status: thread_status,
+            turns,
+        } = snapshot;
         if self.is_root_thread(&id) {
             return;
         }
@@ -74,7 +80,10 @@ impl AgentActivityState {
             .iter()
             .filter_map(|thread_id| {
                 let agent = self.agents.get(thread_id)?;
-                (thread_id.as_str() != id && (agent.thread_status_known || agent.live_state))
+                (thread_id.as_str() != id
+                    && (agent.thread_status_known
+                        || agent.live_state
+                        || agent.live_runtime_settings))
                     .then(|| (thread_id.clone(), agent.clone()))
             })
             .collect::<Vec<_>>();
@@ -147,6 +156,9 @@ impl AgentActivityState {
         self.enforce_agent_limit();
         let agent = self.ensure_agent(&id);
         agent.thread_status_known = true;
+        if !agent.live_runtime_settings {
+            agent.update_runtime_metadata(model.as_deref(), reasoning_effort.as_ref());
+        }
         if !agent.live_state {
             match thread_status {
                 ThreadStatus::NotLoaded | ThreadStatus::Idle => {

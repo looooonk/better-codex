@@ -1,7 +1,7 @@
 use super::*;
+use crate::app_theme::TuiAppTheme;
 use crate::test_support::buffer_style_grid;
 use codex_app_server_protocol::AccountLoginCompletedNotification;
-use codex_config::types::TuiAppTheme;
 use crossterm::event::KeyModifiers;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
@@ -40,6 +40,33 @@ fn login_selection_respects_method_availability() {
     assert_eq!(
         api_state.choices(),
         vec![LoginSelection::ApiKey, LoginSelection::Exit]
+    );
+}
+
+#[test]
+fn bedrock_login_selection_uses_the_native_wizard() {
+    let mut state =
+        LoginOnboardingState::new(LoginMethodAvailability::All, TuiAppTheme::TokyoNight);
+    state.bedrock_enabled = true;
+    assert_eq!(
+        press(KeyCode::Char('3'), &mut state),
+        LoginKeyAction::Redraw
+    );
+    assert_eq!(
+        press(KeyCode::Enter, &mut state),
+        LoginKeyAction::StartBedrock
+    );
+    let mut terminal = Terminal::new(TestBackend::new(/*width*/ 100, /*height*/ 28)).unwrap();
+    terminal
+        .draw(|frame| {
+            LoginOnboardingView { state: &state }.render_visible(frame.area(), frame.buffer_mut())
+        })
+        .unwrap();
+    insta::assert_snapshot!("bedrock_login_selection", terminal.backend().to_string());
+    state.login_methods = LoginMethodAvailability::ChatGptOnly;
+    assert_eq!(
+        state.choices(),
+        vec![LoginSelection::ChatGptDeviceCode, LoginSelection::Exit]
     );
 }
 
@@ -131,6 +158,8 @@ fn device_code_completion_matches_active_login() {
 
     assert_eq!(
         state.receive_login_completed(AccountLoginCompletedNotification {
+            onboarding_entrypoint: None,
+
             login_id: Some("other".to_string()),
             success: true,
             error: None,
@@ -139,6 +168,8 @@ fn device_code_completion_matches_active_login() {
     );
     assert_eq!(
         state.receive_login_completed(AccountLoginCompletedNotification {
+            onboarding_entrypoint: None,
+
             login_id: Some("login-1".to_string()),
             success: true,
             error: None,

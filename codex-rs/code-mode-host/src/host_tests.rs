@@ -1,3 +1,14 @@
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::PoisonError;
+use std::sync::atomic::AtomicBool;
+use std::task::Context;
+use std::task::Poll;
+use std::time::Duration;
+use std::time::Instant;
+
 use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::host::Capability;
 use codex_code_mode_protocol::host::CapabilitySet;
@@ -18,15 +29,16 @@ use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::SupportedProtocolVersions;
 use codex_code_mode_protocol::host::WireExecuteRequest;
 use codex_code_mode_protocol::host::WireResult;
-use codex_code_mode_protocol::host::WireSessionCellExecutionLimits;
 use pretty_assertions::assert_eq;
+use tokio::io::AsyncWrite;
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use super::HostLimits;
 use super::HostState;
-use super::MAX_ACTIVE_CELLS;
 use super::MAX_IN_FLIGHT_REQUESTS;
 use super::MAX_RECENT_REQUEST_IDS;
 use super::RequestKind;
@@ -164,21 +176,98 @@ async fn handshake_and_multiple_session_lifecycles_are_ordered() {
 }
 
 #[tokio::test]
-async fn session_resource_limits_are_negotiated_when_requested() {
+async fn disconnect_cancels_a_backpressured_host_writer() {
+    let (host_reader, client_writer) = tokio::io::duplex(/*max_buf_size*/ 4096);
+    let (blocked_tx, blocked_rx) = oneshot::channel();
+    let host = tokio::spawn(run(
+        host_reader,
+        BlockingWriter {
+            blocked_tx: Some(blocked_tx),
+            handshake_flushed: false,
+        },
+    ));
+    let mut writer = FramedWriter::new(client_writer);
+
+    writer
+        .write(&client_hello([ProtocolVersion::V1], CapabilitySet::empty()))
+        .await
+        .expect("write client hello");
+    writer
+        .write(&ClientToHost::Request {
+            id: request_id(/*value*/ 1),
+            request: HostRequest::OpenSession {
+                session_id: session_id("backpressured-session"),
+                cell_execution_limits: None,
+            },
+        })
+        .await
+        .expect("write session-open request");
+
+    tokio::time::timeout(Duration::from_secs(1), blocked_rx)
+        .await
+        .expect("host writer should reach backpressure")
+        .expect("host writer should report backpressure");
+
+    writer
+        .write(&client_hello([ProtocolVersion::V1], CapabilitySet::empty()))
+        .await
+        .expect("write invalid second client hello");
+
+    let error = tokio::time::timeout(Duration::from_secs(1), host)
+        .await
+        .expect("disconnect should cancel the backpressured writer")
+        .expect("host task should finish")
+        .expect_err("a second client hello should fail the connection");
+    assert_eq!(
+        error.to_string(),
+        "received a second code-mode client hello"
+    );
+}
+
+struct BlockingWriter {
+    blocked_tx: Option<oneshot::Sender<()>>,
+    handshake_flushed: bool,
+}
+
+impl AsyncWrite for BlockingWriter {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        if self.handshake_flushed {
+            if let Some(blocked_tx) = self.blocked_tx.take() {
+                let _ = blocked_tx.send(());
+            }
+            Poll::Pending
+        } else {
+            Poll::Ready(Ok(bytes.len()))
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        self.handshake_flushed = true;
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[tokio::test]
+async fn session_resource_limits_are_negotiated_when_optional_or_required() {
     let resource_limits_capability =
         Capability::new(SESSION_RESOURCE_LIMITS_CAPABILITY).expect("resource limits capability");
+    let resource_limits =
+        CapabilitySet::try_new([resource_limits_capability.clone()]).expect("host capabilities");
 
     for (required, optional) in [
         (
-            CapabilitySet::try_new([resource_limits_capability.clone()])
-                .expect("required capabilities"),
             CapabilitySet::empty(),
+            CapabilitySet::try_new([resource_limits_capability]).expect("optional capabilities"),
         ),
-        (
-            CapabilitySet::empty(),
-            CapabilitySet::try_new([resource_limits_capability.clone()])
-                .expect("optional capabilities"),
-        ),
+        (resource_limits.clone(), CapabilitySet::empty()),
     ] {
         let (host_stream, client_stream) = tokio::io::duplex(/*max_buf_size*/ 1024);
         let (host_reader, host_writer) = tokio::io::split(host_stream);
@@ -203,33 +292,8 @@ async fn session_resource_limits_are_negotiated_when_requested() {
             reader.read::<HostToClient>().await.expect("host hello"),
             Some(HostToClient::HostHello(HostHello::new(
                 ProtocolVersion::V1,
-                CapabilitySet::try_new([resource_limits_capability.clone()])
-                    .expect("host capabilities"),
+                resource_limits.clone(),
             )))
-        );
-
-        let id = request_id(/*value*/ 1);
-        writer
-            .write(&ClientToHost::Request {
-                id,
-                request: HostRequest::OpenSession {
-                    session_id: session_id("heap-limit"),
-                    cell_execution_limits: Some(WireSessionCellExecutionLimits {
-                        max_yield_time_ms: Some(1_000),
-                        max_heap_size_bytes: Some(16 * 1_024 * 1_024),
-                    }),
-                },
-            })
-            .await
-            .expect("request unsupported heap limit");
-        assert_eq!(
-            reader.read::<HostToClient>().await.expect("heap rejection"),
-            Some(HostToClient::Response {
-                id,
-                result: WireResult::Err {
-                    message: "maximum heap size is not supported by the code-mode host".to_string(),
-                },
-            })
         );
 
         drop(writer);
@@ -388,7 +452,7 @@ async fn session_id_cannot_be_reused_after_shutdown() {
 }
 
 #[test]
-fn request_cancellation_tombstones_are_bounded() {
+fn request_history_is_bounded() {
     let mut requests = RequestRegistry::default();
     let duplicate = request_id(/*value*/ -1);
     requests
@@ -404,10 +468,6 @@ fn request_cancellation_tombstones_are_bounded() {
         requests.cancel(id);
         requests.finish(id);
     }
-    for value in 10_000..20_000 {
-        requests.cancel(request_id(value));
-    }
-
     assert!(requests.active.is_empty());
     assert_eq!(requests.recent.len(), MAX_RECENT_REQUEST_IDS);
     assert_eq!(requests.recent_order.len(), MAX_RECENT_REQUEST_IDS);
@@ -419,11 +479,10 @@ async fn request_task_panic_disconnects_host() {
     let peer = Arc::new(HostPeer::new(outgoing_tx));
     let state = HostState {
         sessions: Mutex::new(HashMap::new()),
+        limits: Arc::new(HostLimits::new()),
         seen_session_ids: Mutex::new(SeenSessionIds::default()),
         requests: Mutex::new(RequestRegistry::default()),
         request_tasks: TaskTracker::new(),
-        request_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
-        active_cell_permits: Arc::new(Semaphore::new(MAX_ACTIVE_CELLS)),
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
     };
@@ -448,11 +507,10 @@ async fn execute_request_id_remains_active_until_initial_response() {
     let peer = Arc::new(HostPeer::new(outgoing_tx));
     let state = Arc::new(HostState {
         sessions: Mutex::new(HashMap::new()),
+        limits: Arc::new(HostLimits::new()),
         seen_session_ids: Mutex::new(SeenSessionIds::default()),
         requests: Mutex::new(RequestRegistry::default()),
         request_tasks: TaskTracker::new(),
-        request_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
-        active_cell_permits: Arc::new(Semaphore::new(MAX_ACTIVE_CELLS)),
         closing: AtomicBool::new(false),
         peer,
     });
@@ -510,11 +568,13 @@ async fn active_cell_limit_rejects_execute_without_disconnecting() {
     let peer = Arc::new(HostPeer::new(outgoing_tx));
     let state = HostState {
         sessions: Mutex::new(HashMap::new()),
+        limits: Arc::new(HostLimits {
+            request_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+            active_cell_permits: Arc::new(Semaphore::new(/*permits*/ 0)),
+        }),
         seen_session_ids: Mutex::new(SeenSessionIds::default()),
         requests: Mutex::new(RequestRegistry::default()),
         request_tasks: TaskTracker::new(),
-        request_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
-        active_cell_permits: Arc::new(Semaphore::new(/*permits*/ 0)),
         closing: AtomicBool::new(false),
         peer: Arc::clone(&peer),
     };
@@ -535,6 +595,8 @@ async fn active_cell_limit_rejects_execute_without_disconnecting() {
                 request: execute_request("text(\"hello\");"),
             },
             CancellationToken::new(),
+            CancellationToken::new(),
+            Instant::now(),
         )
         .await;
 
@@ -568,9 +630,3 @@ async fn cell_forwarding_panic_disconnects_host() {
             .contains("cell forwarding task failed")
     );
 }
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::PoisonError;
-use std::sync::atomic::AtomicBool;
-use std::time::Duration;

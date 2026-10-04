@@ -72,6 +72,7 @@ impl<T> SelectorState<T> {
             scroll,
             geometry.visible_options,
             geometry.footer.width,
+            self.key_hints.as_deref(),
         ))
         .style(pane_style(palette::surface()))
         .render(geometry.footer, buf);
@@ -156,6 +157,7 @@ fn selector_footer(
     scroll: usize,
     visible_options: usize,
     width: u16,
+    key_hints: Option<&str>,
 ) -> Line<'static> {
     let before = if scroll > 0 { "↑ " } else { "" };
     let after = if scroll.saturating_add(visible_options) < option_count {
@@ -169,19 +171,21 @@ fn selector_footer(
         option_count
     );
     let width = usize::from(width);
-    let hint = [
-        "wheel / j k  Enter select  Esc cancel",
-        "wheel / j k  Enter  Esc",
-        "j/k  Enter  Esc",
-        "↑↓  ↵",
-        "",
-    ]
-    .into_iter()
-    .find(|hint| {
-        let spacing = usize::from(!hint.is_empty()) * 3;
-        hint.chars().count() + spacing + position.chars().count() <= width
-    })
-    .unwrap_or_default();
+    let hint = key_hints.unwrap_or_else(|| {
+        [
+            "wheel / j k  Enter select  Esc cancel",
+            "wheel / j k  Enter  Esc",
+            "j/k  Enter  Esc",
+            "↑↓  ↵",
+            "",
+        ]
+        .into_iter()
+        .find(|hint| {
+            let spacing = usize::from(!hint.is_empty()) * 3;
+            hint.chars().count() + spacing + position.chars().count() <= width
+        })
+        .unwrap_or_default()
+    });
     let hint = if hint.is_empty() {
         String::new()
     } else {

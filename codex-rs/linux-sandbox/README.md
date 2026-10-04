@@ -2,28 +2,26 @@
 
 This crate is responsible for producing:
 
-- a `codex-linux-sandbox` standalone executable for Linux that is bundled with Better Codex releases
+- a `codex-linux-sandbox` standalone executable for Linux that is bundled with the Node.js version of the Codex CLI
 - a lib crate that exposes the business logic of the executable as `run_main()` so that
   - the `codex-exec` CLI can check if its arg0 is `codex-linux-sandbox` and, if so, execute as if it were `codex-linux-sandbox`
   - this should also be true of the `codex` multitool CLI
 
-On Linux, Better Codex prefers the first `bwrap` found on `PATH`
+On Linux, Codex prefers the first `bwrap` found on `PATH`
 outside the current working directory whenever it is available. If `bwrap` is
 present but too old to support
 `--argv0`, the helper keeps using system bubblewrap and switches to a
 no-`--argv0` compatibility path for the inner re-exec. If `bwrap` is missing,
 the helper falls back to the bundled `codex-resources/bwrap` binary shipped
-with Better Codex.
-Better Codex also surfaces a startup warning when `bwrap` is missing so users
-know it is falling back to the bundled helper. Better Codex surfaces the same
-startup warning
+with Codex.
+Codex also surfaces a startup warning when `bwrap` is missing so users know it
+is falling back to the bundled helper. Codex surfaces the same startup warning
 path when bubblewrap cannot create user namespaces. WSL2 follows the normal
 Linux bubblewrap path. WSL1 is not supported for bubblewrap sandboxing because
-it cannot create the required user namespaces, so Better Codex rejects sandboxed shell
+it cannot create the required user namespaces, so Codex rejects sandboxed shell
 commands that would enter the bubblewrap path.
 
 **Current Behavior**
-
 - Legacy `SandboxPolicy` / `sandbox_mode` configs remain supported.
 - Bubblewrap is the default filesystem sandbox.
 - If `bwrap` is present on `PATH` outside the current working directory, the
@@ -32,19 +30,16 @@ commands that would enter the bubblewrap path.
   no-`--argv0` compatibility path for the inner re-exec.
 - If `bwrap` is missing, the helper falls back to the bundled
   `codex-resources/bwrap` path.
-- If `bwrap` is missing, Better Codex also surfaces a startup warning instead of
+- If `bwrap` is missing, Codex also surfaces a startup warning instead of
   printing directly from the sandbox helper.
-- If bubblewrap cannot create user namespaces, Better Codex surfaces a startup warning
+- If bubblewrap cannot create user namespaces, Codex surfaces a startup warning
   instead of waiting for a runtime sandbox failure.
 - WSL2 uses the normal Linux bubblewrap path.
-- WSL1 is not supported for bubblewrap sandboxing; Better Codex rejects sandboxed
+- WSL1 is not supported for bubblewrap sandboxing; Codex rejects sandboxed
   shell commands that would require the bubblewrap path before invoking `bwrap`.
-- Legacy Landlock + mount protections remain available as an explicit legacy
-  fallback path.
-- Set `features.use_legacy_landlock = true` (or CLI `-c use_legacy_landlock=true`)
-  to force the legacy Landlock fallback.
-- The legacy Landlock fallback is used only when the split filesystem policy is
-  sandbox-equivalent to the legacy model after `cwd` resolution.
+- Filesystem-restricted execution requires bubblewrap. The legacy Landlock
+  option is rejected for these policies because it cannot isolate app-server
+  Unix sockets. Disable `features.use_legacy_landlock` when upgrading.
 - Split-only filesystem policies that do not round-trip through the legacy
   `SandboxPolicy` model stay on bubblewrap so nested read-only or denied
   carveouts are preserved.
@@ -84,7 +79,7 @@ commands that would enter the bubblewrap path.
   writable roots are blocked by mounting `/dev/null` on the symlink or first
   missing component.
 - When bubblewrap is active, the helper explicitly isolates the user namespace via
-  `--unshare-user` and the PID namespace via `--unshare-pid`.
+  `--unshare-user`. By default it also creates a PID namespace via `--unshare-pid`.
 - When bubblewrap is active and network is restricted without proxy routing, the helper also
   isolates the network namespace via `--unshare-net`.
 - In managed proxy mode, the helper uses `--unshare-net` plus an internal
@@ -92,9 +87,25 @@ commands that would enter the bubblewrap path.
   endpoints.
 - In managed proxy mode, after the bridge is live, seccomp blocks new
   AF_UNIX/socketpair creation for the user command.
-- When bubblewrap is active, it mounts a fresh `/proc` via `--proc /proc` by default, but
-  you can skip this in restrictive container environments with `--no-proc`.
+- When bubblewrap is active, it mounts a fresh `/proc` via `--proc /proc` by default.
+  If that mount is denied, it retains the inherited `/proc` and still creates a
+  PID namespace, preserving the existing fallback. `--no-proc` also retains the
+  inherited `/proc` without disabling PID isolation. In these cases, process IDs
+  inside the sandbox can differ from those exposed by `/proc`. Default invocations
+  send no new helper flags and remain compatible with older helpers.
+- Trusted provisioning of a dedicated environment can start
+  `codex exec-server --linux-sandbox-pid-namespace=inherit`. This startup-only
+  setting applies to both process and filesystem helpers; repository config and
+  command environment variables cannot enable it. The helper receives the new
+  `--inherit-pid-namespace` option, which requires an updated helper; deploy the
+  helper and startup flag together.
+  Inheritance reuses the caller's PID namespace and `/proc` together, omitting
+  `--unshare-pid` and `--as-pid-1`. This preserves process lookups but allows
+  sandboxed commands to signal other same-UID processes, including the executor.
+  With `:minimal`, the existing `/proc` is bound read-only, preserving its
+  container masks; explicit filesystem denials are applied afterward.
+  Filesystem, user, IPC, network, seccomp, and existing container `/proc` masks
+  remain in force. The default `isolate` mode retains PID isolation.
 
 **Notes**
-
-- The CLI surface is `better-codex sandbox`; the host OS selects the sandbox backend.
+- The CLI surface is `codex sandbox`; the host OS selects the sandbox backend.

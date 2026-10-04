@@ -47,8 +47,8 @@ SHA-256 checksum, and places the `better-codex` launcher in
 `$HOME/.local/bin`. If that directory is not already on your `PATH`, the
 installer tells you before you try to launch the app.
 
-On first launch, choose ChatGPT sign-in or OpenAI API-key authentication, then
-start a session from the dashboard.
+On first launch, choose ChatGPT sign-in, an OpenAI API key, or Amazon Bedrock
+setup, then start a session from the dashboard.
 
 > [!IMPORTANT]
 > macOS release binaries are not code-signed yet. The first launch may require
@@ -62,7 +62,9 @@ start a session from the dashboard.
 | Linux    | Ubuntu 20.04+, Debian 10+, and compatible distributions | ARM64 and x86_64        |
 
 Git is optional but recommended for the built-in repository and review
-features. Native Windows and WSL are not currently supported.
+features. Realtime voice additionally requires macOS 14+ or a Linux distribution
+with glibc 2.28+ and a working audio device. Native Windows and WSL are not
+currently supported.
 
 <details>
 <summary><strong>Install a specific version</strong></summary>
@@ -86,15 +88,21 @@ compiler, and `pkg-config`. Linux builds also require `bubblewrap`.
 ```sh
 git clone https://github.com/looooonk/better-codex.git
 cd better-codex/codex-rs
-cargo build --release -p codex-cli --bin codex
-cargo build --release -p codex-code-mode-host --bin codex-code-mode-host
+cargo install --locked just
+just build --release
 mkdir -p "$HOME/.local/bin"
 install -m 755 target/release/codex "$HOME/.local/bin/better-codex"
 install -m 755 target/release/codex-code-mode-host "$HOME/.local/bin/codex-code-mode-host"
 ```
 
 The workspace pins its Rust toolchain, so `rustup` selects the expected version
-automatically. See the [complete build guide](docs/install.md) for development
+automatically. `just build`, `just test`, and the other Cargo recipes fetch
+checksum-pinned sandboxed V8 libraries and matching bindings from upstream Codex
+releases. Realtime voice also needs the separately packaged native helper
+and GStreamer runtime; building the two Rust binaries above does not bundle them.
+Source run commands such as `just codex --no-daemon` use the small development
+profile by default; set `CODEX_CARGO_PROFILE` to select another profile.
+See the [complete build guide](docs/install.md) for development
 tools, test commands, and logging.
 
 </details>
@@ -108,12 +116,14 @@ tools, test commands, and logging.
 | **Built-in review**        | Inspect the complete edit set in a navigable, side-by-side diff before accepting the result.                    |
 | **Visible agent state**    | Keep the plan, running tools, workspace changes, token usage, model, and reasoning effort in view.              |
 | **Practical controls**     | Change models, permissions, appearance, authentication, and service tier without leaving the TUI.               |
+| **Realtime voice**        | Talk with an agent through the isolated native voice helper; control microphone and playback from the workspace. |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
-GPT-6 Astra is available through the model picker for OpenAI and Amazon Bedrock.
+GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, and GPT-6 Luna are available through the
+model picker for supported OpenAI and Amazon Bedrock accounts.
 Reasoning levels and service tiers follow the provider's capabilities, including
-Ultra and Fast service for supported OpenAI accounts. Astra can ask questions
-in the conversation while continuing its work; reply through the normal message
+Ultra and Fast service for supported OpenAI accounts. Agents can ask questions
+in the conversation while continuing their work; reply through the normal message
 composer, using a suggested answer or your own text.
 
 <table>
@@ -149,6 +159,33 @@ Useful controls to get started:
 | `!<command>`            | Run a local shell command from the composer |
 | `Esc` or `Ctrl+C` twice | Exit Better Codex                           |
 
+Use `/model`, `/permissions`, `/plan`, `/review`, `/skills`, `/hooks`,
+`/memory`, and `/experimental` for the corresponding backend controls. `/voice`
+opens realtime voice controls. `better-codex agents` opens sessions across the
+shared local background server, and `better-codex queue --thread SESSION --message "message"` queues
+work for an existing session. Pass `--no-daemon` to launch an independent session.
+
+Use `/side` for a side conversation, `/recap` for a summary, and `/worktree new`
+or `/worktree fork` for work in a managed checkout. `/recap on|off` controls
+automatic recaps while the terminal is unfocused. `/daybreak` manages access for
+eligible cybersecurity work, and `/approve` lists recent auto-review denials
+that you can approve for one retry with `/approve <review-id>`.
+
+Attach images with `--image`, `/attach <path>`, or `Ctrl+V`; `/detach` removes
+attachments. `/ide on` includes the current IDE selection and open tabs in new
+messages. `/mention <query>` finds files, `/export` saves a Markdown transcript,
+and `/warnings` retains diagnostic details for inspection.
+
+Responses support tables, task lists, math, and Mermaid diagrams within the
+conversation pane. Copying a selection preserves its Markdown structure, and
+local HTML visualizations open with the session's file-access permissions.
+
+Use `/find` to search the retained conversation, `/keymap` to customize shortcuts
+and chords, `/statusline` to choose the status row's contents, and `/title` to
+configure the terminal window title.
+`/pets` selects an animated companion in terminals that support images. These
+preferences use the same configuration layers as the rest of the application.
+
 Contextual shortcuts are always shown along the bottom edge of focused views,
 so you do not need to memorize the full key map.
 
@@ -163,6 +200,15 @@ better-codex update
 
 Rerunning the installer works too. Either path activates the new verified
 release while keeping the launcher path stable.
+
+The background server has its own package under
+`$CODEX_HOME/packages/app-server-daemon`. `/daemon update latest` updates it from
+Better Codex releases after the interface closes; `/daemon update from-cli`
+copies and pins the launching CLI package. Active work must finish first.
+Explicitly installed versions remain pinned until you choose the latest channel.
+Older standalone daemon installs must migrate with
+`better-codex app-server daemon update --from-cli --yes` before automatic updates;
+this preserves the separate upstream Codex installation.
 
 ## Documentation
 
@@ -195,6 +241,13 @@ Better Codex is built on the open-source
 backend infrastructure and reference material. This fork is independently
 developed around its own full-screen terminal experience and release path; it
 is not an official OpenAI product.
+
+The current backend baseline is upstream commit
+`550eb50545a78468a09ce86b82426338640ef22d`. Backend protocol and model-catalog
+compatibility are advertised as `0.160.0`, independently of Better Codex's
+release version. Future upstream syncs must review the two compatibility
+constants in `codex-rs/build-info/src/lib.rs` alongside the imported backend and
+model catalog.
 
 ## License
 

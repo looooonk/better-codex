@@ -6,11 +6,21 @@
 mod agent_history;
 mod background;
 mod fs;
+mod history;
+mod side;
+pub(crate) use history::HistoryReader;
+pub(crate) use history::read_thread_history;
+mod managed_worktree;
+mod timeline;
 
 pub(crate) use agent_history::AgentHistorySnapshot;
 pub(crate) use agent_history::AgentHistoryTask;
 pub(crate) use agent_history::AgentHistoryUpdate;
 pub(crate) use agent_history::spawn_resumed_agent_history;
+pub(crate) use managed_worktree::check_worktree_source;
+pub(crate) use managed_worktree::start_managed_worktree_thread;
+pub(crate) use timeline::ThreadTimeline;
+pub(crate) use timeline::load_thread_timeline;
 
 use crate::legacy_core::config::Config;
 use crate::permission_compat::legacy_compatible_permission_profile;
@@ -176,6 +186,7 @@ pub(crate) struct AppServerBootstrap {
 }
 
 pub(crate) struct AppServerSession {
+    deferred_events: std::collections::VecDeque<AppServerEvent>,
     client: AppServerClient,
     next_request_id: i64,
     remote_cwd_override: Option<PathBuf>,
@@ -207,6 +218,7 @@ pub(crate) struct AppServerStartedThread {
     pub(crate) session: ThreadSessionState,
     pub(crate) thread_status: ThreadStatus,
     pub(crate) turns: Vec<Turn>,
+    pub(crate) timeline: Option<timeline::ThreadTimeline>,
     pub(crate) agent_threads: Vec<Thread>,
     pub(crate) agent_history_task: Option<AgentHistoryTask>,
 }
@@ -225,6 +237,7 @@ impl AppServerSession {
     pub(crate) fn new(client: AppServerClient, thread_params_mode: ThreadParamsMode) -> Self {
         Self {
             client,
+            deferred_events: Default::default(),
             next_request_id: 1,
             remote_cwd_override: None,
             thread_params_mode,
@@ -409,6 +422,8 @@ impl AppServerSession {
             .request_typed(ClientRequest::ExternalAgentConfigImport {
                 request_id,
                 params: ExternalAgentConfigImportParams {
+                    migration_source: None,
+                    provider_id: None,
                     migration_items,
                     source: None,
                 },
@@ -435,7 +450,18 @@ impl AppServerSession {
             .swap(false, Ordering::Relaxed)
     }
 
+    pub(crate) fn prepend_events(&mut self, events: impl IntoIterator<Item = AppServerEvent>) {
+        let mut pending = events
+            .into_iter()
+            .collect::<std::collections::VecDeque<_>>();
+        pending.append(&mut self.deferred_events);
+        self.deferred_events = pending;
+    }
+
     pub(crate) async fn next_event(&mut self) -> Option<AppServerEvent> {
+        if let Some(event) = self.deferred_events.pop_front() {
+            return Some(event);
+        }
         self.client.next_event().await
     }
 
@@ -559,6 +585,9 @@ impl AppServerSession {
         let mut started =
             started_thread_from_fork_response(response, &config, self.thread_params_mode()).await?;
         started.session.fork_parent_title = fork_parent_title;
+        started.timeline =
+            timeline::load_thread_timeline(&self.request_handle(), started.session.thread_id)
+                .await?;
         Ok(started)
     }
 
@@ -649,6 +678,9 @@ impl AppServerSession {
         thread_id: ThreadId,
         include_turns: bool,
     ) -> Result<Thread> {
+        if include_turns {
+            return read_thread_history(self.request_handle(), thread_id).await;
+        }
         let request_id = self.next_request_id();
         let response: ThreadReadResponse = self
             .client
@@ -719,6 +751,8 @@ impl AppServerSession {
             .request_typed(ClientRequest::ThreadMetadataUpdate {
                 request_id,
                 params: ThreadMetadataUpdateParams {
+                    daybreak_enabled: None,
+                    project_id: None,
                     thread_id: thread_id.to_string(),
                     git_info: Some(ThreadMetadataGitInfoUpdateParams {
                         sha: None,
@@ -800,6 +834,11 @@ impl AppServerSession {
                     output_schema,
                     collaboration_mode,
                     multi_agent_mode: None,
+                    disabled_plugin_ids: None,
+                    turn_trigger: None,
+                    tool_output: None,
+                    service_tier_for_turn: None,
+                    cyber_access_program: None,
                 },
             })
             .await
@@ -936,6 +975,7 @@ impl AppServerSession {
             .request_typed(ClientRequest::ThreadGoalSet {
                 request_id,
                 params: ThreadGoalSetParams {
+                    origin: Some(codex_app_server_protocol::ThreadGoalMutationOrigin::User),
                     thread_id: thread_id.to_string(),
                     objective,
                     status,
@@ -955,6 +995,7 @@ impl AppServerSession {
             .request_typed(ClientRequest::ThreadGoalClear {
                 request_id,
                 params: ThreadGoalClearParams {
+                    origin: Some(codex_app_server_protocol::ThreadGoalMutationOrigin::User),
                     thread_id: thread_id.to_string(),
                 },
             })
@@ -1016,6 +1057,7 @@ impl AppServerSession {
             .request_typed(ClientRequest::ThreadShellCommand {
                 request_id,
                 params: ThreadShellCommandParams {
+                    timeout_ms: None,
                     thread_id: thread_id.to_string(),
                     command,
                 },
@@ -1170,6 +1212,11 @@ fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
         ModelUpgrade {
             id: upgrade_id,
             migration_config_key: model.model.clone(),
+            retirement_at: model
+                .upgrade_info
+                .as_ref()
+                .and_then(|info| info.retirement_at)
+                .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0)),
             model_link: upgrade_info
                 .as_ref()
                 .and_then(|info| info.model_link.clone()),
@@ -1185,6 +1232,8 @@ fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
         model: model.model,
         display_name: model.display_name,
         description: model.description,
+        model_specialty: model.model_specialty,
+        available_access_programs: model.available_access_programs.map(Into::into),
         default_reasoning_effort: model.default_reasoning_effort,
         supported_reasoning_efforts: model
             .supported_reasoning_efforts
@@ -1215,7 +1264,9 @@ fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
         // `model/list` already returns models filtered for the active client/auth context.
         supported_in_api: true,
         input_modalities: model.input_modalities,
-        multi_agent_version: model.multi_agent_version,
+        multi_agent_version: model
+            .multi_agent_version
+            .map(codex_app_server_protocol::MultiAgentVersion::to_core),
     }
 }
 
@@ -1266,6 +1317,12 @@ fn config_request_overrides_from_config(
     if config.bypass_hook_trust {
         overrides.insert("bypass_hook_trust".to_string(), true.into());
     }
+    if config.suppress_unstable_features_warning {
+        overrides.insert(
+            "suppress_unstable_features_warning".to_string(),
+            true.into(),
+        );
+    }
     Some(overrides)
 }
 
@@ -1292,7 +1349,7 @@ fn sandbox_mode_from_permission_profile(
                     .network_sandbox_policy()
                     .is_enabled()
                     .then_some(codex_app_server_protocol::SandboxMode::DangerFullAccess)
-            } else if file_system_policy.can_write_path_with_cwd(cwd, cwd) {
+            } else if file_system_policy.can_write_local_path_with_cwd(cwd, cwd) {
                 Some(codex_app_server_protocol::SandboxMode::WorkspaceWrite)
             } else {
                 Some(codex_app_server_protocol::SandboxMode::ReadOnly)
@@ -1376,6 +1433,7 @@ fn thread_start_params_from_config(
         permissions,
         config: config_request_overrides_from_config(config),
         ephemeral: Some(config.ephemeral),
+        daybreak_enabled: (config.daybreak_enabled && !config.ephemeral).then_some(true),
         session_start_source,
         thread_source: Some(ThreadSource::User),
         developer_instructions: with_terminal_visualization_instructions(
@@ -1485,6 +1543,7 @@ async fn started_thread_from_start_response(
         session,
         thread_status: response.thread.status,
         turns: response.thread.turns,
+        timeline: None,
         agent_threads: Vec::new(),
         agent_history_task: None,
     })
@@ -1503,6 +1562,7 @@ async fn started_thread_from_resume_response(
         session,
         thread_status: response.thread.status,
         turns: response.thread.turns,
+        timeline: None,
         agent_threads: Vec::new(),
         agent_history_task: None,
     })
@@ -1521,6 +1581,7 @@ async fn started_thread_from_fork_response(
         session,
         thread_status: response.thread.status,
         turns: response.thread.turns,
+        timeline: None,
         agent_threads: Vec::new(),
         agent_history_task: None,
     })
@@ -1556,6 +1617,14 @@ async fn thread_session_state_from_thread_start_response(
         config,
     )
     .await
+    .map(|mut session| {
+        session.can_accept_direct_input = response.thread.can_accept_direct_input != Some(false);
+        session.daybreak_enabled = response
+            .thread
+            .daybreak_enabled
+            .unwrap_or(response.thread.ephemeral && config.daybreak_enabled);
+        session
+    })
 }
 
 async fn thread_session_state_from_thread_resume_response(
@@ -1597,6 +1666,11 @@ async fn thread_session_state_from_thread_resume_response(
         config,
     )
     .await
+    .map(|mut session| {
+        session.can_accept_direct_input = response.thread.can_accept_direct_input != Some(false);
+        session.daybreak_enabled = response.thread.daybreak_enabled.unwrap_or(false);
+        session
+    })
 }
 
 async fn thread_session_state_from_thread_fork_response(
@@ -1629,6 +1703,11 @@ async fn thread_session_state_from_thread_fork_response(
         config,
     )
     .await
+    .map(|mut session| {
+        session.can_accept_direct_input = response.thread.can_accept_direct_input != Some(false);
+        session.daybreak_enabled = response.thread.daybreak_enabled.unwrap_or(false);
+        session
+    })
 }
 
 fn display_permission_profile_from_thread_response(
@@ -1678,6 +1757,8 @@ async fn thread_session_state_from_thread_response(
         codex_message_history::HistoryConfig::new(config.codex_home.clone(), &config.history);
     let (log_id, entry_count) = codex_message_history::history_metadata(&history_config).await;
     Ok(ThreadSessionState {
+        can_accept_direct_input: true,
+        daybreak_enabled: config.daybreak_enabled,
         thread_id,
         forked_from_id,
         fork_parent_title: None,
@@ -1763,6 +1844,9 @@ mod tests {
 
     fn rate_limit_snapshot(limit_id: &str) -> RateLimitSnapshot {
         RateLimitSnapshot {
+            normal_model_slug: None,
+            spend_control_reached: None,
+
             limit_id: Some(limit_id.to_string()),
             limit_name: None,
             primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -1781,6 +1865,10 @@ mod tests {
     #[test]
     fn app_server_rate_limit_snapshots_deduplicates_top_level_limit_from_map() {
         let response = GetAccountRateLimitsResponse {
+            account_id: None,
+            ordinary_usage_allowed: None,
+            rate_limit_upsell: None,
+
             rate_limits: rate_limit_snapshot("codex"),
             rate_limits_by_limit_id: Some(HashMap::from([
                 ("codex".to_string(), rate_limit_snapshot("codex")),
@@ -2030,13 +2118,19 @@ mod tests {
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
                     FileSystemSandboxEntry {
+                        missing_path_behavior: None,
+
                         path: FileSystemPath::Special {
                             value: FileSystemSpecialPath::Root,
                         },
                         access: FileSystemAccessMode::Read,
                     },
                     FileSystemSandboxEntry {
-                        path: FileSystemPath::Path { path: extra_root },
+                        missing_path_behavior: None,
+
+                        path: FileSystemPath::Path {
+                            path: extra_root.into(),
+                        },
                         access: FileSystemAccessMode::Write,
                     },
                 ],
@@ -2058,12 +2152,16 @@ mod tests {
             file_system: ManagedFileSystemPermissions::Restricted {
                 entries: vec![
                     FileSystemSandboxEntry {
+                        missing_path_behavior: None,
+
                         path: FileSystemPath::Special {
                             value: FileSystemSpecialPath::Root,
                         },
                         access: FileSystemAccessMode::Read,
                     },
                     FileSystemSandboxEntry {
+                        missing_path_behavior: None,
+
                         path: FileSystemPath::Special {
                             value: FileSystemSpecialPath::ProjectRoots { subpath: None },
                         },
@@ -2164,6 +2262,7 @@ mod tests {
             .set(WebSearchMode::Disabled)
             .expect("test web search mode should be allowed");
         config.bypass_hook_trust = true;
+        config.suppress_unstable_features_warning = true;
         config.service_tier = Some(ServiceTier::Fast.request_value().to_string());
         let thread_id = ThreadId::new();
 
@@ -2198,6 +2297,10 @@ mod tests {
             ("personality".to_string(), string("pragmatic")),
             ("web_search".to_string(), string("disabled")),
             ("bypass_hook_trust".to_string(), true.into()),
+            (
+                "suppress_unstable_features_warning".to_string(),
+                true.into(),
+            ),
         ]);
         assert_eq!(start.config, Some(expected_config.clone()));
         assert_eq!(resume.config, Some(expected_config.clone()));
@@ -2328,7 +2431,21 @@ mod tests {
         let forked_from_id = ThreadId::new();
         let read_only_profile = PermissionProfile::read_only();
         let response = ThreadResumeResponse {
+            collaboration_mode: None,
+
+            disabled_plugin_ids: Vec::new(),
+
             thread: codex_app_server_protocol::Thread {
+                model: None,
+                reasoning_effort: None,
+                environments: None,
+                section: None,
+                section_entered_at: None,
+                project_id: None,
+                originator: None,
+                can_accept_direct_input: None,
+                daybreak_enabled: None,
+
                 id: thread_id.to_string(),
                 extra: None,
                 session_id: ThreadId::new().to_string(),
@@ -2366,6 +2483,9 @@ mod tests {
                             }],
                         },
                         codex_app_server_protocol::ThreadItem::AgentMessage {
+                            questions: None,
+                            delivery: None,
+
                             id: "assistant-1".to_string(),
                             text: "assistant reply".to_string(),
                             phase: None,

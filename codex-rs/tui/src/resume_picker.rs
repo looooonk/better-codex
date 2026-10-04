@@ -626,7 +626,9 @@ fn spawn_app_server_page_loader(
 fn sort_key_label(sort_key: ThreadSortKey) -> &'static str {
     match sort_key {
         ThreadSortKey::CreatedAt => "Created",
-        ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt => "Updated",
+        ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt | ThreadSortKey::SectionPosition => {
+            "Updated"
+        }
     }
 }
 
@@ -1646,7 +1648,9 @@ impl PickerState {
     fn toggle_sort_key(&mut self) {
         self.sort_key = match self.sort_key {
             ThreadSortKey::CreatedAt => ThreadSortKey::UpdatedAt,
-            ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt => ThreadSortKey::CreatedAt,
+            ThreadSortKey::UpdatedAt
+            | ThreadSortKey::RecencyAt
+            | ThreadSortKey::SectionPosition => ThreadSortKey::CreatedAt,
         };
         self.start_initial_load();
     }
@@ -1845,6 +1849,9 @@ fn thread_list_params(
     include_non_interactive: bool,
 ) -> ThreadListParams {
     ThreadListParams {
+        originators: None,
+        project_id: None,
+        section_id: None,
         cursor,
         limit: Some(PAGE_SIZE as u32),
         sort_key: Some(sort_key),
@@ -1905,11 +1912,11 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
             state.action.title().bold().cyan()
         };
         let header_line: Line = vec![header_title].into();
-        frame.render_widget_ref(header_line, chrome(header));
+        frame.render_widget(header_line, chrome(header));
 
         // Search line
         let search = chrome(search);
-        frame.render_widget_ref(search_line(state, search.width), search);
+        frame.render_widget(search_line(state, search.width), search);
 
         let list = Rect::new(
             list.x.saturating_add(2),
@@ -2081,7 +2088,7 @@ fn render_picker_footer(
         if y >= area.bottom() {
             break;
         }
-        frame.render_widget_ref(line, Rect::new(area.x, y, area.width, 1));
+        frame.render_widget(line, Rect::new(area.x, y, area.width, 1));
     }
 }
 
@@ -2095,7 +2102,7 @@ fn render_picker_footer_separator(
     }
 
     let separator = "─".repeat(area.width as usize);
-    frame.render_widget_ref(Line::from(separator.dim()), area);
+    frame.render_widget(Line::from(separator.dim()), area);
 
     let progress_width = UnicodeWidthStr::width(progress_label.as_str()) as u16;
     if progress_width < area.width {
@@ -2105,7 +2112,7 @@ fn render_picker_footer_separator(
             progress_width,
             1,
         );
-        frame.render_widget_ref(Line::from(progress_label.dim()), percent_area);
+        frame.render_widget(Line::from(progress_label.dim()), percent_area);
     }
 }
 
@@ -2344,7 +2351,7 @@ fn render_transcript_loading_overlay(frame: &mut crate::custom_terminal::Frame, 
         message_width.min(overlay.width),
         1,
     );
-    frame.render_widget_ref(Line::from(message.bold()), line);
+    frame.render_widget(Line::from(message.bold()), line);
 }
 
 fn transcript_loading_overlay_style() -> Style {
@@ -2461,7 +2468,7 @@ fn render_list(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &Pi
     let rows = &state.filtered_rows;
     if rows.is_empty() {
         let message = render_empty_state_line(state);
-        frame.render_widget_ref(message, area);
+        frame.render_widget(message, area);
         return;
     }
 
@@ -2476,7 +2483,7 @@ fn render_list(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &Pi
             .saturating_sub(u16::from(show_more_below)),
     );
     if show_more_above {
-        frame.render_widget_ref(
+        frame.render_widget(
             more_line("↑ more"),
             Rect::new(area.x, area.y, area.width, 1),
         );
@@ -2498,7 +2505,7 @@ fn render_list(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &Pi
             if y >= content_area.y.saturating_add(content_area.height) {
                 break;
             }
-            frame.render_widget_ref(line, Rect::new(area.x, y, area.width, 1));
+            frame.render_widget(line, Rect::new(area.x, y, area.width, 1));
             y = y.saturating_add(1);
         }
         if state.density == SessionListDensity::Comfortable
@@ -2514,7 +2521,7 @@ fn render_list(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &Pi
     {
         let loading_line: Line = vec!["  ".into(), "Loading older sessions…".italic().dim()].into();
         let rect = Rect::new(area.x, y, area.width, 1);
-        frame.render_widget_ref(loading_line, rect);
+        frame.render_widget(loading_line, rect);
     }
     if show_more_below {
         let label = if state.pagination.loading.is_pending() {
@@ -2522,7 +2529,7 @@ fn render_list(frame: &mut crate::custom_terminal::Frame, area: Rect, state: &Pi
         } else {
             "↓ more"
         };
-        frame.render_widget_ref(
+        frame.render_widget(
             more_line(label),
             Rect::new(
                 area.x,
@@ -2650,7 +2657,9 @@ fn render_dense_session_lines(
     let updated = format_relative_time(reference, row.updated_at.or(row.created_at));
     let date = match state.sort_key {
         ThreadSortKey::CreatedAt => created,
-        ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt => updated,
+        ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt | ThreadSortKey::SectionPosition => {
+            updated
+        }
     };
     let mut lines = vec![dense_summary_line(DenseSummaryInput {
         marker,
@@ -2779,7 +2788,9 @@ fn render_footer_lines(
 ) -> Vec<Line<'static>> {
     let date = match sort_key {
         ThreadSortKey::CreatedAt => created,
-        ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt => updated,
+        ThreadSortKey::UpdatedAt | ThreadSortKey::RecencyAt | ThreadSortKey::SectionPosition => {
+            updated
+        }
     };
     let mut parts = vec![FooterPart::Date(date.to_string())];
     if show_cwd {
@@ -3580,11 +3591,7 @@ mod tests {
         assert_eq!(params.model_providers, None);
         assert_eq!(
             params.source_kinds,
-            Some(vec![
-                ThreadSourceKind::Cli,
-                ThreadSourceKind::VsCode,
-                ThreadSourceKind::Custom,
-            ])
+            Some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode,])
         );
         assert_eq!(
             params.cwd,
@@ -3773,7 +3780,7 @@ mod tests {
         {
             let mut frame = terminal.get_frame();
             let line = search_line(&state, frame.area().width);
-            frame.render_widget_ref(line, frame.area());
+            frame.render_widget(line, frame.area());
         }
         terminal.flush().expect("flush");
 
@@ -4710,7 +4717,7 @@ session_picker_view = "dense"
         {
             let mut frame = terminal.get_frame();
             let line = search_line(&state, frame.area().width);
-            frame.render_widget_ref(line, frame.area());
+            frame.render_widget(line, frame.area());
         }
         terminal.flush().expect("flush");
 
@@ -5205,6 +5212,7 @@ session_picker_view = "dense"
         }
         terminal.flush().expect("flush");
         assert!(terminal.backend().to_string().contains("↓ more"));
+        terminal.swap_buffers();
 
         state.density = SessionListDensity::Dense;
         state.update_viewport(height as usize, width);
@@ -5799,6 +5807,17 @@ session_picker_view = "dense"
     fn app_server_row_keeps_pathless_threads() {
         let thread_id = ThreadId::new();
         let thread = Thread {
+            model: None,
+            reasoning_effort: None,
+
+            environments: None,
+            section: None,
+            section_entered_at: None,
+            project_id: None,
+            originator: None,
+            can_accept_direct_input: None,
+            daybreak_enabled: None,
+
             id: thread_id.to_string(),
             extra: None,
             session_id: thread_id.to_string(),
@@ -5837,6 +5856,17 @@ session_picker_view = "dense"
 
         let thread_id = ThreadId::new();
         let thread = Thread {
+            model: None,
+            reasoning_effort: None,
+
+            environments: None,
+            section: None,
+            section_entered_at: None,
+            project_id: None,
+            originator: None,
+            can_accept_direct_input: None,
+            daybreak_enabled: None,
+
             id: thread_id.to_string(),
             extra: None,
             session_id: thread_id.to_string(),
@@ -5872,6 +5902,9 @@ session_picker_view = "dense"
                         }],
                     },
                     ThreadItem::AgentMessage {
+                        delivery: None,
+                        questions: None,
+
                         id: String::from("agent-1"),
                         text: String::from("hello from assistant"),
                         phase: None,
@@ -5908,6 +5941,17 @@ session_picker_view = "dense"
 
         let thread_id = ThreadId::new();
         let thread = Thread {
+            model: None,
+            reasoning_effort: None,
+
+            environments: None,
+            section: None,
+            section_entered_at: None,
+            project_id: None,
+            originator: None,
+            can_accept_direct_input: None,
+            daybreak_enabled: None,
+
             id: thread_id.to_string(),
             extra: None,
             session_id: thread_id.to_string(),
@@ -5967,6 +6011,17 @@ session_picker_view = "dense"
 
         let thread_id = ThreadId::new();
         let thread = Thread {
+            model: None,
+            reasoning_effort: None,
+
+            environments: None,
+            section: None,
+            section_entered_at: None,
+            project_id: None,
+            originator: None,
+            can_accept_direct_input: None,
+            daybreak_enabled: None,
+
             id: thread_id.to_string(),
             extra: None,
             session_id: thread_id.to_string(),

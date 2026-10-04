@@ -1,0 +1,26 @@
+---
+source: tui/src/app_shell/file_mentions_tests.rs
+expression: text
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              │
+ ▎ PLAN  1. Build shell                                                                           │
+         2. Wire transcript                                                                       ┃
+         3. Rend╭ Mention a file ──────────────────────────────────────────────────╮              ┃
+                │ › 1 ○ src/main.rs                                                │              ┃
+ ▌ tool exec jus│       /workspace/project                                         │              ┃
+                │  wheel / j k  Enter select  Esc cancel  1/1                      │              ┃
+ ▌ edited 3 file╰──────────────────────────────────────────────────────────────────╯              ┃
+                                                                                                  ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -1,0 +1,36 @@
+---
+source: tui/src/app_shell/voice_tests.rs
+assertion_line: 40
+expression: "lines.join(\"\\n\")"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  Voice settings
+           Voices: juniper, sol
+           Default voice: juniper
+           Microphone: Desk microphone
+           Speaker: Headphones
+           Microphone channels: 2
+
+           /voice settings voice <name|default>
+           /voice settings devices
+           /voice settings microphone <name|default>
+           /voice settings speaker <name|default>
+           /voice settings channels <1,2|default>
+           /voice [on|off|mute|unmute]
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+
+
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                             │
+│> Summarize the new shell architecture                                                                      │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

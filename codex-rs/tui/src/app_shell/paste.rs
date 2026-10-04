@@ -4,6 +4,9 @@ use super::composer::ComposerInsertResult;
 
 impl ShellState {
     pub(super) fn insert_pasted_text(&mut self, text: &str) {
+        if self.paste_transcript_find(text) {
+            return;
+        }
         let text = text.replace("\r\n", "\n").replace('\r', "\n");
         if text.is_empty()
             || self.diff_view.is_some()
@@ -44,7 +47,10 @@ impl ShellState {
             self.insert_pasted_composer_text(&text);
             return;
         }
-        if self.dashboard_route == DashboardRoute::Sessions && self.session_list.focused {
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Sessions
+            && self.session_list.focused
+        {
             if self.session_list.renaming() {
                 self.session_list.insert_rename_text(&text);
             } else if self.session_list.search_active() {
@@ -52,7 +58,10 @@ impl ShellState {
             }
             return;
         }
-        if self.dashboard_route == DashboardRoute::Status && self.settings.focused {
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Status
+            && self.settings.focused
+        {
             if self.settings.editing() {
                 self.settings.insert_edit_text(&text);
             }

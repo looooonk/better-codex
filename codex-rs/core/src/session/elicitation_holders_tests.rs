@@ -1,5 +1,9 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use codex_core_plugins::PluginCommandAttribution;
+use codex_plugin::PluginId;
+use codex_protocol::approvals::ExecApprovalKind;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
@@ -11,8 +15,8 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use super::tests::make_session_and_context_with_rx;
+use crate::session::step_context::StepContext;
 use crate::state::ActiveTurn;
-use crate::tools::context::ToolCallSource;
 
 async fn wait_until_held(pause_state: &mut watch::Receiver<bool>) {
     pause_state
@@ -35,6 +39,10 @@ async fn command_approval_holds_an_elicitation_until_response() {
     let mut pause_state = session.subscribe_elicitation_pause_state();
     #[allow(deprecated)]
     let cwd = turn_context.cwd.clone();
+    let plugin_attribution = PluginCommandAttribution {
+        plugin_id: PluginId::parse("sample@openai-curated").expect("valid plugin id"),
+        normalized_relative_path: "scripts/run.py".to_string(),
+    };
 
     let request = tokio::spawn({
         let session = session.clone();
@@ -43,22 +51,31 @@ async fn command_approval_holds_an_elicitation_until_response() {
             session
                 .request_command_approval(
                     turn_context.as_ref(),
+                    ExecApprovalKind::Command,
+                    crate::guardian::GuardianReviewContext::from(turn_context.clone())
+                        .model_context(),
                     "call-1".to_string(),
                     /*approval_id*/ None,
                     /*environment_id*/ None,
                     vec!["echo".to_string()],
-                    cwd,
+                    cwd.into(),
                     /*reason*/ None,
                     /*network_approval_context*/ None,
                     /*proposed_execpolicy_amendment*/ None,
                     /*additional_permissions*/ None,
                     /*available_decisions*/ None,
+                    /*plugin_attribution_override*/ Some(plugin_attribution),
                 )
                 .await
         }
     });
 
-    events.recv().await.expect("approval event");
+    let event = events.recv().await.expect("approval event");
+    let codex_protocol::protocol::EventMsg::ExecApprovalRequest(event) = event.msg else {
+        panic!("expected command approval event");
+    };
+    assert_eq!(event.plugin_id.as_deref(), Some("sample@openai-curated"));
+    assert_eq!(event.script_path.as_deref(), Some("scripts/run.py"));
     wait_until_held(&mut pause_state).await;
     session
         .notify_approval("call-1", ReviewDecision::Approved)
@@ -109,13 +126,13 @@ async fn permission_request_holds_an_elicitation_until_response() {
         let turn_context = turn_context.clone();
         async move {
             let environment = turn_context
-                .environments
+                .initial_environments
                 .primary()
                 .expect("primary environment")
                 .selection();
             session
                 .request_permissions_for_environment(
-                    &turn_context,
+                    &StepContext::for_test(Arc::clone(&turn_context)),
                     "call-1".to_string(),
                     RequestPermissionsArgs {
                         environment_id: None,
@@ -123,7 +140,6 @@ async fn permission_request_holds_an_elicitation_until_response() {
                         permissions: RequestPermissionProfile::default(),
                     },
                     environment,
-                    ToolCallSource::Direct,
                     CancellationToken::new(),
                 )
                 .await
@@ -162,6 +178,7 @@ async fn request_user_input_holds_an_elicitation_until_response() {
                     "call-1".to_string(),
                     RequestUserInputArgs {
                         questions: Vec::new(),
+                        is_blocking: true,
                         auto_resolution_ms: None,
                     },
                 )

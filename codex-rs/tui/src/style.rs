@@ -6,7 +6,6 @@ use crate::terminal_palette::default_fg;
 use crate::terminal_palette::rgb_color;
 use crate::terminal_palette::stdout_color_level;
 use ratatui::style::Style;
-use ratatui::style::Stylize;
 
 const TABLE_SEPARATOR_FG_ALPHA: f32 = 0.20;
 
@@ -21,4 +20,8 @@ pub(crate) fn table_separator_style() -> Style {
         StdoutColorLevel::Ansi256 => Style::default().fg(best_color(separator_rgb)),
         StdoutColorLevel::Ansi16 | StdoutColorLevel::Unknown => Style::default().dim(),
     }
+}
+
+pub(crate) fn accent_color() -> ratatui::style::Color {
+    crate::app_theme::palette().focus
 }

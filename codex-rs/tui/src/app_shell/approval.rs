@@ -178,10 +178,7 @@ impl PendingApproval {
                     })?;
                 let mut details = context_details(
                     params.reason.as_deref(),
-                    Some(format!(
-                        "Working directory: {}",
-                        params.cwd.as_path().display()
-                    )),
+                    Some(format!("Working directory: {}", params.cwd.render_for_ui())),
                     params.environment_id.as_deref(),
                 );
                 details.push(json_detail("Requested permissions", &params.permissions));
@@ -327,6 +324,57 @@ impl PendingApproval {
         self.options
             .iter()
             .position(|option| option.decision.is_safe_denial())
+    }
+
+    pub(super) fn keymap_action(&self, action: &str) -> Option<ApprovalAction> {
+        self.options
+            .iter()
+            .position(|option| match (&option.decision, action) {
+                (
+                    ApprovalDecision::Command(CommandExecutionApprovalDecision::Accept),
+                    "approve",
+                )
+                | (ApprovalDecision::FileChange(FileChangeApprovalDecision::Accept), "approve")
+                | (
+                    ApprovalDecision::Command(CommandExecutionApprovalDecision::AcceptForSession),
+                    "approve_for_session",
+                )
+                | (
+                    ApprovalDecision::FileChange(FileChangeApprovalDecision::AcceptForSession),
+                    "approve_for_session",
+                )
+                | (
+                    ApprovalDecision::Command(
+                        CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment { .. },
+                    ),
+                    "approve_for_prefix",
+                )
+                | (
+                    ApprovalDecision::Command(CommandExecutionApprovalDecision::Decline),
+                    "decline" | "deny",
+                )
+                | (
+                    ApprovalDecision::FileChange(FileChangeApprovalDecision::Decline),
+                    "decline" | "deny",
+                )
+                | (ApprovalDecision::Command(CommandExecutionApprovalDecision::Cancel), "cancel")
+                | (ApprovalDecision::FileChange(FileChangeApprovalDecision::Cancel), "cancel") => {
+                    true
+                }
+                (ApprovalDecision::Permissions(response), "approve") => {
+                    response.scope == PermissionGrantScope::Turn
+                        && !option.decision.is_safe_denial()
+                }
+                (ApprovalDecision::Permissions(response), "approve_for_session") => {
+                    response.scope == PermissionGrantScope::Session
+                        && !option.decision.is_safe_denial()
+                }
+                (ApprovalDecision::Permissions(_), "decline" | "deny" | "cancel") => {
+                    option.decision.is_safe_denial()
+                }
+                _ => false,
+            })
+            .map(ApprovalAction::Choose)
     }
 
     pub(super) fn result(&self, option_index: usize) -> serde_json::Result<Value> {

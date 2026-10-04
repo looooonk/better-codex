@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/ide_tests.rs
+assertion_line: 46
+expression: rendered
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                        │
+ ▎ PLAN  1. Build shell                                                                                     │
+         2. Wire transcript                                                                                 ┃
+         3. Render dashboard                                                                                ┃
+                                                                                                            ┃
+ ▌ tool exec just test -p codex-tui                                                                         ┃
+                                                                                                            ┃
+ ▌ edited 3 files +128 -24                                                                                  ┃
+ ▎ SYSTEM  IDE context is off.                                                                              ┃
+ ▎ SYSTEM  IDE context was skipped for this message. Open this project in VS Code or Cursor with the Codex  ┃
+           extension active.                                                                                ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                                                        ┃
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                             │
+│> Summarize the new shell architecture                                                                      │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

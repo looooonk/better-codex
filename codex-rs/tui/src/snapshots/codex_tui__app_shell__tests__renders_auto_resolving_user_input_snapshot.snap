@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
+assertion_line: 8801
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
@@ -27,6 +28,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 │  2 Staging - Use the staging service           ││
 │  Other (free-form) - Type a custom answer      ││
 │  below.                                        ││
-│  Auto-continue after 60s if unanswered         ││
+│  Auto-continue after 120s if unanswered        ││
 │> ▏answer                                       ││
 ╰────────────────────────────────────────────────╯│

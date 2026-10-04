@@ -129,8 +129,11 @@ impl ShellState {
     {
         let ThreadRehydration {
             thread,
+            timeline,
             agent_history_task,
         } = rehydration;
+        self.can_accept_direct_input = thread.can_accept_direct_input != Some(false);
+        self.daybreak_enabled = thread.daybreak_enabled.unwrap_or(false);
         let thread_id = thread.id;
         let thread_status = thread.status;
         let active_turn_id = thread
@@ -164,7 +167,7 @@ impl ShellState {
         self.agent_activity = live_agent_activity;
         self.diff_store.set_display_root(thread.cwd.as_path());
         self.push_system("session reverted");
-        self.ingest_turn_history(thread.turns);
+        self.ingest_thread_history(thread.turns, timeline);
         for line in live_transcript {
             let already_hydrated = line.item_id.as_ref().is_some_and(|item_id| {
                 line.kind == super::TranscriptKind::Output

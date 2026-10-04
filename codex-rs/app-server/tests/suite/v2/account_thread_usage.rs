@@ -1,17 +1,18 @@
 use anyhow::Result;
 use app_test_support::ChatGptAuthFixture;
+use app_test_support::ChatGptIdTokenClaims;
 use app_test_support::TestAppServer;
-use app_test_support::to_response;
+use app_test_support::encode_id_token;
 use app_test_support::write_chatgpt_auth;
-use codex_app_server_protocol::GetAccountThreadUsageResponse;
+use codex_app_server_protocol::AccountTokenUsageSummary;
+use codex_app_server_protocol::GetAccountTokenUsageResponse;
 use codex_app_server_protocol::JSONRPCError;
-use codex_app_server_protocol::JSONRPCResponse;
+use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::ThreadUsageBreakdownGroup;
 use codex_config::types::AuthCredentialsStoreMode;
 use pretty_assertions::assert_eq;
-use serde::de::DeserializeOwned;
 use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -24,69 +25,6 @@ use wiremock::matchers::method;
 use wiremock::matchers::path;
 
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(/*secs*/ 30);
-
-#[tokio::test]
-async fn account_token_usage_preserves_the_parameterless_wire_contract() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    let server = MockServer::start().await;
-    std::fs::write(
-        codex_home.path().join("config.toml"),
-        format!("chatgpt_base_url = \"{}\"\n", server.uri()),
-    )?;
-    write_chatgpt_auth(
-        codex_home.path(),
-        ChatGptAuthFixture::new("active-token").account_id("active-workspace"),
-        AuthCredentialsStoreMode::File,
-    )?;
-    Mock::given(method("GET"))
-        .and(path("/api/codex/profiles/me"))
-        .and(header("authorization", "Bearer active-token"))
-        .and(header("chatgpt-account-id", "active-workspace"))
-        .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_json(json!({
-            "stats": {
-                "lifetime_tokens": 123,
-                "peak_daily_tokens": 45,
-                "longest_running_turn_sec": 67,
-                "current_streak_days": 8,
-                "longest_streak_days": 9,
-                "daily_usage_buckets": [{
-                    "start_date": "2026-05-29",
-                    "tokens": 10
-                }]
-            }
-        })))
-        .expect(/*r*/ 1)
-        .mount(&server)
-        .await;
-    let mut app_server = initialized_server(&codex_home).await?;
-
-    let request_id = app_server
-        .send_raw_request("account/usage/read", None)
-        .await?;
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        app_server.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-
-    assert_eq!(
-        response.result,
-        json!({
-            "summary": {
-                "lifetimeTokens": 123,
-                "peakDailyTokens": 45,
-                "longestRunningTurnSec": 67,
-                "currentStreakDays": 8,
-                "longestStreakDays": 9
-            },
-            "dailyUsageBuckets": [{
-                "startDate": "2026-05-29",
-                "tokens": 10
-            }]
-        })
-    );
-    Ok(())
-}
 
 #[tokio::test]
 async fn account_thread_usage_uses_active_workspace_and_canonical_thread_ids() -> Result<()> {
@@ -102,7 +40,12 @@ async fn account_thread_usage_uses_active_workspace_and_canonical_thread_ids() -
         ChatGptAuthFixture::new("active-token").account_id("active-workspace"),
         AuthCredentialsStoreMode::File,
     )?;
-    let mut app_server = initialized_server(&codex_home).await?;
+
+    let mut app_server = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .with_env_overrides(&[("OPENAI_API_KEY", None)])
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+        .await?;
     write_chatgpt_auth(
         codex_home.path(),
         ChatGptAuthFixture::new("different-token").account_id("different-workspace"),
@@ -138,16 +81,24 @@ async fn account_thread_usage_uses_active_workspace_and_canonical_thread_ids() -
 
     let request_id = app_server
         .send_raw_request(
-            "account/threadUsage/read",
+            "account/usage/read",
             Some(json!({ "threadId": "019FC8AB-1FB2-7000-8000-000000000123" })),
         )
         .await?;
-    let response: GetAccountThreadUsageResponse =
-        read_response(&mut app_server, request_id).await?;
+    let response: GetAccountTokenUsageResponse =
+        timeout(DEFAULT_READ_TIMEOUT, app_server.read_response(request_id)).await??;
 
     assert_eq!(
         response,
-        GetAccountThreadUsageResponse {
+        GetAccountTokenUsageResponse {
+            summary: AccountTokenUsageSummary {
+                lifetime_tokens: None,
+                peak_daily_tokens: None,
+                longest_running_turn_sec: None,
+                current_streak_days: None,
+                longest_streak_days: None,
+            },
+            daily_usage_buckets: None,
             thread_usage: Some(ThreadUsage {
                 thread_id: thread_id.to_string(),
                 estimated_usage_credits_micros: 46_000_000,
@@ -165,6 +116,75 @@ async fn account_thread_usage_uses_active_workspace_and_canonical_thread_ids() -
                 }],
             }),
         }
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn account_thread_usage_supports_externally_managed_authentication() -> Result<()> {
+    let thread_id = "019fc8ab-1fb2-7000-8000-000000000456";
+    let codex_home = TempDir::new()?;
+    let server = MockServer::start().await;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        format!("chatgpt_base_url = \"{}\"\n", server.uri()),
+    )?;
+    let access_token = encode_id_token(
+        &ChatGptIdTokenClaims::new()
+            .email("external@example.com")
+            .plan_type("business")
+            .chatgpt_account_id("external-workspace"),
+    )?;
+    Mock::given(method("GET"))
+        .and(path("/api/codex/config/bundle"))
+        .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_json(json!({})))
+        .mount(&server)
+        .await;
+    let mut app_server = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .with_env_overrides(&[("OPENAI_API_KEY", None)])
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+        .await?;
+    let login_id = app_server
+        .send_chatgpt_auth_tokens_login_request(
+            access_token.clone(),
+            "external-workspace".to_string(),
+            Some("business".to_string()),
+        )
+        .await?;
+    let login: LoginAccountResponse =
+        timeout(DEFAULT_READ_TIMEOUT, app_server.read_response(login_id)).await??;
+    assert_eq!(login, LoginAccountResponse::ChatgptAuthTokens {});
+
+    Mock::given(method("POST"))
+        .and(path("/api/codex/usage/thread_usage/query"))
+        .and(header("authorization", format!("Bearer {access_token}")))
+        .and(header("chatgpt-account-id", "external-workspace"))
+        .and(body_json(json!({ "thread_ids": [thread_id] })))
+        .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_json(json!({
+            "threads": [{
+                "thread_id": thread_id,
+                "estimated_usage_credits_micros": 21_000_000,
+                "estimated_usage_usd_micros": 840_000
+            }]
+        })))
+        .expect(/*r*/ 1)
+        .mount(&server)
+        .await;
+
+    let request_id = app_server
+        .send_raw_request("account/usage/read", Some(json!({ "threadId": thread_id })))
+        .await?;
+    let response: GetAccountTokenUsageResponse =
+        timeout(DEFAULT_READ_TIMEOUT, app_server.read_response(request_id)).await??;
+    assert_eq!(
+        response.thread_usage,
+        Some(ThreadUsage {
+            thread_id: thread_id.to_string(),
+            estimated_usage_credits_micros: 21_000_000,
+            estimated_usage_usd_micros: Some(840_000),
+            groups: Vec::new(),
+        })
     );
     Ok(())
 }
@@ -189,17 +209,17 @@ async fn account_thread_usage_hides_unavailable_billing_routes() -> Result<()> {
         .expect(/*r*/ 1)
         .mount(&server)
         .await;
-    let mut app_server = initialized_server(&codex_home).await?;
+    let mut app_server = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .with_env_overrides(&[("OPENAI_API_KEY", None)])
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+        .await?;
 
     let request_id = app_server
-        .send_raw_request(
-            "account/threadUsage/read",
-            Some(json!({ "threadId": thread_id })),
-        )
+        .send_raw_request("account/usage/read", Some(json!({ "threadId": thread_id })))
         .await?;
-    let response: GetAccountThreadUsageResponse =
-        read_response(&mut app_server, request_id).await?;
-
+    let response: GetAccountTokenUsageResponse =
+        timeout(DEFAULT_READ_TIMEOUT, app_server.read_response(request_id)).await??;
     assert_eq!(response.thread_usage, None);
     Ok(())
 }
@@ -223,11 +243,15 @@ async fn account_thread_usage_rejects_malformed_thread_ids_before_backend_reques
         .expect(/*r*/ 0)
         .mount(&server)
         .await;
-    let mut app_server = initialized_server(&codex_home).await?;
+    let mut app_server = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .with_env_overrides(&[("OPENAI_API_KEY", None)])
+        .build_initialized_with_timeout(DEFAULT_READ_TIMEOUT)
+        .await?;
 
     let request_id = app_server
         .send_raw_request(
-            "account/threadUsage/read",
+            "account/usage/read",
             Some(json!({ "threadId": "not-a-thread-id" })),
         )
         .await?;
@@ -240,27 +264,4 @@ async fn account_thread_usage_rejects_malformed_thread_ids_before_backend_reques
     assert_eq!(error.error.code, -32600);
     assert!(error.error.message.starts_with("invalid thread id:"));
     Ok(())
-}
-
-async fn initialized_server(codex_home: &TempDir) -> Result<TestAppServer> {
-    let mut app_server = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .with_env_overrides(&[("OPENAI_API_KEY", None)])
-        .build()
-        .await?;
-    timeout(DEFAULT_READ_TIMEOUT, app_server.initialize()).await??;
-    Ok(app_server)
-}
-
-async fn read_response<T>(app_server: &mut TestAppServer, request_id: i64) -> Result<T>
-where
-    T: DeserializeOwned,
-{
-    let response: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        app_server.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    to_response(response)
 }

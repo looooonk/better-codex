@@ -1,200 +1,231 @@
 use std::io::ErrorKind;
 
 use codex_exec_server::HttpRedirectPolicy;
-use futures::StreamExt;
-use futures::stream;
+use http::HeaderMap;
+use http::HeaderValue;
+use http::header::AUTHORIZATION;
 use pretty_assertions::assert_eq;
-use reqwest::header::HeaderMap;
-use reqwest::header::HeaderValue;
-use rmcp::model::ClientJsonRpcMessage;
-use rmcp::model::ClientRequest;
-use rmcp::model::DiscoverRequest;
-use rmcp::model::DiscoverRequestParams;
-use rmcp::model::ErrorCode;
-use rmcp::model::ErrorData;
-use rmcp::model::JsonRpcMessage;
-use rmcp::model::RequestId;
-use rmcp::model::ServerJsonRpcMessage;
-use rmcp::transport::common::http_header::HEADER_MCP_PROTOCOL_VERSION;
-use sse_stream::Sse;
 
 use super::HttpHeader;
-use super::NON_JSON_RESPONSE_BODY_PREVIEW_BYTES;
 use super::SseEventSizeLimit;
-use super::body_preview;
+use super::StreamableHttpRedirectMode;
 use super::mcp_redirect_policy;
-use super::next_correlated_discovery_response;
 use super::protocol_headers;
-use crate::http_discovery::correlated_discovery_response;
 
-fn discovery_request(id: &str) -> ClientJsonRpcMessage {
-    ClientJsonRpcMessage::request(
-        ClientRequest::from(DiscoverRequest::new(DiscoverRequestParams {})),
-        RequestId::String(id.to_string().into()),
-    )
-}
+#[test]
+fn protocol_headers_preserve_utf8_values() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-plugin-name",
+        HeaderValue::from_str("café").expect("valid HTTP field value"),
+    );
 
-fn server_error(id: Option<&str>, code: ErrorCode, message: &str) -> ServerJsonRpcMessage {
-    ServerJsonRpcMessage::error(
-        ErrorData::new(code, message.to_string(), None),
-        id.map(|id| RequestId::String(id.to_string().into())),
-    )
+    assert_eq!(
+        protocol_headers(&headers),
+        vec![HttpHeader {
+            name: "x-plugin-name".to_string(),
+            value: "café".to_string(),
+            value_env_var: None,
+        }]
+    );
 }
 
 #[test]
-fn legacy_requests_keep_redirect_compatibility() {
+fn legacy_configured_headers_follow_redirects() {
     assert_eq!(
-        mcp_redirect_policy(&HeaderMap::new()),
+        mcp_redirect_policy(
+            StreamableHttpRedirectMode::Legacy,
+            &HeaderMap::new(),
+            /*has_configured_headers*/ true,
+        ),
         HttpRedirectPolicy::Follow
     );
 }
 
 #[test]
-fn modern_protocol_requests_stop_redirects() {
+fn agent_plugin_configured_headers_stop_redirects() {
+    assert_eq!(
+        mcp_redirect_policy(
+            StreamableHttpRedirectMode::AgentPluginV1,
+            &HeaderMap::new(),
+            /*has_configured_headers*/ true,
+        ),
+        HttpRedirectPolicy::Stop
+    );
+}
+
+#[test]
+fn requests_without_sensitive_headers_follow_redirects() {
+    assert_eq!(
+        mcp_redirect_policy(
+            StreamableHttpRedirectMode::AgentPluginV1,
+            &HeaderMap::new(),
+            /*has_configured_headers*/ false,
+        ),
+        HttpRedirectPolicy::Follow
+    );
+}
+
+#[test]
+fn authorization_redirects_depend_on_mode() {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        HEADER_MCP_PROTOCOL_VERSION,
-        HeaderValue::from_static("2026-07-28"),
-    );
-
-    assert_eq!(mcp_redirect_policy(&headers), HttpRedirectPolicy::Stop);
-}
-
-#[test]
-fn json_discovery_rejects_a_wrong_response_id() {
-    let request = discovery_request("discover-1");
-    let wrong_response = server_error(
-        Some("other-request"),
-        ErrorCode::METHOD_NOT_FOUND,
-        "method not found",
-    );
-
-    assert!(
-        correlated_discovery_response(
-            &request,
-            wrong_response,
-            /*allow_idless_http_prevalidation*/ false,
-        )
-        .is_none()
-    );
-}
-
-#[test]
-fn only_evidenced_idless_http_prevalidation_errors_are_correlated() {
-    let request = discovery_request("discover-1");
-    let error = server_error(
-        /*id*/ None,
-        ErrorCode(-32000),
-        "Bad Request: No valid session ID provided",
-    );
-
-    assert!(
-        correlated_discovery_response(
-            &request,
-            error.clone(),
-            /*allow_idless_http_prevalidation*/ false,
-        )
-        .is_none()
-    );
-    let response = correlated_discovery_response(
-        &request, error, /*allow_idless_http_prevalidation*/ true,
-    )
-    .expect("known id-less prevalidation rejection should trigger legacy fallback");
-    let JsonRpcMessage::Error(response) = response else {
-        panic!("legacy fallback should return a JSON-RPC error");
-    };
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer secret"));
     assert_eq!(
-        (response.id, response.error.code),
-        (
-            Some(RequestId::String("discover-1".to_string().into())),
-            ErrorCode::METHOD_NOT_FOUND,
-        )
+        mcp_redirect_policy(
+            StreamableHttpRedirectMode::Legacy,
+            &headers,
+            /*has_configured_headers*/ false,
+        ),
+        HttpRedirectPolicy::Follow
     );
-}
-
-#[tokio::test]
-async fn sse_discovery_ignores_wrong_ids_until_the_matching_response() {
-    let request = discovery_request("discover-1");
-    let wrong = serde_json::to_string(&server_error(
-        Some("other-request"),
-        ErrorCode::INTERNAL_ERROR,
-        "wrong request",
-    ))
-    .expect("wrong response should serialize");
-    let matching = serde_json::to_string(&server_error(
-        Some("discover-1"),
-        ErrorCode::METHOD_NOT_FOUND,
-        "method not found",
-    ))
-    .expect("matching response should serialize");
-    let mut events = stream::iter([
-        Ok::<_, sse_stream::Error>(Sse::default().data(wrong)),
-        Ok(Sse::default().data(matching)),
-    ])
-    .boxed();
-
-    let response = next_correlated_discovery_response(&request, &mut events)
-        .await
-        .expect("matching response should be returned");
-    let JsonRpcMessage::Error(response) = response else {
-        panic!("matching response should retain its JSON-RPC error");
-    };
     assert_eq!(
-        response.id,
-        Some(RequestId::String("discover-1".to_string().into()))
+        mcp_redirect_policy(
+            StreamableHttpRedirectMode::AgentPluginV1,
+            &headers,
+            /*has_configured_headers*/ false,
+        ),
+        HttpRedirectPolicy::Stop
     );
 }
 
 #[test]
-fn server_body_previews_redact_credentials() {
-    let preview =
-        body_preview("authorization: Bearer abcdefghijklmnopsecret\napi_key=supersecretvalue");
-
-    assert_eq!(
-        preview,
-        "authorization: Bearer [REDACTED_SECRET]\napi_key=[REDACTED_SECRET]"
-    );
-}
-
-#[test]
-fn server_body_previews_redact_credentials_crossing_the_truncation_boundary() {
-    let label = "\napi_key=";
-    let prefix = "x".repeat(NON_JSON_RESPONSE_BODY_PREVIEW_BYTES - label.len() - 4);
-    let preview = body_preview(format!("{prefix}{label}boundarysecretvalue"));
-
-    assert!(preview.contains(label));
-    assert!(!preview.contains("boun"));
-    assert!(preview.contains("truncated"));
-}
-
-#[test]
-fn event_terminators_reset_the_size_limit() {
+fn lf_terminators_reset_the_event_limit() {
     let mut limit = SseEventSizeLimit::new(Some(8));
 
     limit
         .observe(b"data: a\n\ndata: b\n\n")
-        .expect("events must have independent size limits");
+        .expect("LF-terminated events must have independent size limits");
 
     assert_eq!((limit.retained_bytes, limit.line_bytes), (0, 0));
 }
 
 #[test]
-fn oversized_events_are_rejected_permanently() {
+fn carriage_return_terminators_reset_the_event_limit() {
     let mut limit = SseEventSizeLimit::new(Some(8));
 
-    let first = limit
-        .observe(b"data: abc")
-        .expect_err("an oversized event must be rejected");
-    let second = limit
-        .observe(b"")
-        .expect_err("a rejected event must not resume");
+    limit
+        .observe(b"data: a\r\rdata: b\r\r")
+        .expect("CR-terminated events must have independent size limits");
+
+    assert_eq!((limit.retained_bytes, limit.line_bytes), (0, 0));
+}
+
+#[test]
+fn crlf_terminators_split_across_chunks_reset_the_event_limit() {
+    let mut limit = SseEventSizeLimit::new(Some(8));
+
+    limit
+        .observe(b"data: a\r")
+        .expect("a CR must finish the first event field");
+    limit
+        .observe(b"\n\r")
+        .expect("a split CRLF must not finish another field");
+    limit
+        .observe(b"\ndata: b\r")
+        .expect("the blank CRLF must reset the first event");
+    limit
+        .observe(b"\n\r\n")
+        .expect("the second split CRLF event must remain within the limit");
+
+    assert_eq!((limit.retained_bytes, limit.line_bytes), (0, 0));
+}
+
+#[test]
+fn event_at_the_exact_size_limit_is_accepted() {
+    let mut limit = SseEventSizeLimit::new(Some(9));
+
+    limit
+        .observe(b"data: ab\n\n")
+        .expect("an event at the exact limit must be accepted");
+
+    assert_eq!((limit.retained_bytes, limit.line_bytes), (0, 0));
+}
+
+#[test]
+fn completed_keepalive_comments_do_not_accumulate() {
+    let mut limit = SseEventSizeLimit::new(Some(6));
+
+    limit
+        .observe(&b": ping\n".repeat(/*n*/ 64))
+        .expect("completed keepalive comments must not accumulate");
+
+    assert_eq!((limit.retained_bytes, limit.line_bytes), (0, 0));
+}
+
+#[test]
+fn split_keepalive_comments_are_discarded_only_when_complete() {
+    let mut limit = SseEventSizeLimit::new(Some(6));
+
+    limit
+        .observe(b": pi")
+        .expect("an incomplete comment within the limit must be retained");
+    assert_eq!((limit.retained_bytes, limit.line_bytes), (0, 4));
+
+    limit
+        .observe(b"ng\n: ping\n")
+        .expect("only completed comments may be excluded from the limit");
+
+    assert_eq!((limit.retained_bytes, limit.line_bytes), (0, 0));
+}
+
+#[test]
+fn comments_do_not_reset_accumulated_event_data() {
+    let mut limit = SseEventSizeLimit::new(Some(14));
+
+    limit
+        .observe(b"data: a\n")
+        .expect("the first data field must fit");
+    limit
+        .observe(b": ping\n")
+        .expect("a completed comment must not count as event data");
+
+    let error = limit
+        .observe(b"data: b\n")
+        .expect_err("a comment must not reset previously retained data");
 
     assert_eq!(
-        (first.kind(), first.to_string(), second.kind()),
+        (error.kind(), error.to_string()),
         (
             ErrorKind::InvalidData,
-            "MCP response body exceeds 8 bytes".to_string(),
+            "MCP response body exceeds 14 bytes".to_string(),
+        )
+    );
+}
+
+#[test]
+fn an_unterminated_comment_remains_size_limited() {
+    let mut limit = SseEventSizeLimit::new(Some(6));
+
+    limit
+        .observe(b": ping")
+        .expect("a comment at the exact limit must be accepted");
+
+    let error = limit
+        .observe(b"!")
+        .expect_err("an unterminated comment must not bypass the limit");
+
+    assert_eq!(
+        (error.kind(), error.to_string()),
+        (
             ErrorKind::InvalidData,
+            "MCP response body exceeds 6 bytes".to_string(),
+        )
+    );
+}
+
+#[test]
+fn multiline_data_counts_parser_inserted_newlines() {
+    let mut limit = SseEventSizeLimit::new(Some(18));
+
+    let error = limit
+        .observe(b"data: aaa\ndata: bbb\n\n")
+        .expect_err("joined multiline event data must remain size limited");
+
+    assert_eq!(
+        (error.kind(), error.to_string()),
+        (
+            ErrorKind::InvalidData,
+            "MCP response body exceeds 18 bytes".to_string(),
         )
     );
 }
@@ -220,18 +251,35 @@ fn legacy_sse_streams_remain_unlimited() {
 }
 
 #[test]
-fn protocol_headers_preserve_utf8_values() {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        "x-plugin-name",
-        HeaderValue::from_str("café").expect("valid HTTP field value"),
-    );
+fn rejected_events_remain_rejected() {
+    let mut limit = SseEventSizeLimit::new(Some(8));
+
+    limit
+        .observe(b"data: abc")
+        .expect_err("an oversized event must be rejected");
+
+    let error = limit
+        .observe(b"")
+        .expect_err("a rejected event must not be resumed");
 
     assert_eq!(
-        protocol_headers(&headers),
-        vec![HttpHeader {
-            name: "x-plugin-name".to_string(),
-            value: "café".to_string(),
-        }]
+        (error.kind(), error.to_string()),
+        (
+            ErrorKind::InvalidData,
+            "oversized MCP SSE event was already rejected".to_string(),
+        )
     );
+}
+
+#[test]
+fn size_accounting_saturates_without_overflow() {
+    let mut limit = SseEventSizeLimit::new(Some(usize::MAX - 1));
+    limit.retained_bytes = usize::MAX - 2;
+    limit.line_bytes = 1;
+
+    let error = limit
+        .observe(b"x")
+        .expect_err("saturating counts must still reject an oversized event");
+
+    assert_eq!((error.kind(), limit.failed), (ErrorKind::InvalidData, true));
 }

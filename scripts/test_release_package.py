@@ -86,8 +86,9 @@ class ReleasePackageTest(unittest.TestCase):
                         "entrypoint": "bin/codex",
                         "layoutVersion": 1,
                         "name": "better-codex",
-                        "path": "codex-path",
-                        "resources": "codex-resources",
+                        "variant": "codex",
+                        "pathDir": "codex-path",
+                        "resourcesDir": "codex-resources",
                         "target": target,
                         "version": "0.1.0-alpha.1",
                     },
@@ -111,6 +112,11 @@ class ReleasePackageTest(unittest.TestCase):
             bin_dir = root / "bin"
             environment = os.environ | {
                 "HOME": str(home),
+                "CODEX_HOME": str(home / ".codex"),
+                "CODEX_INSTALL_DAEMON_ONLY": "0",
+                "CODEX_INSTALL_DEFER_SELECTION": "0",
+                "CODEX_INSTALL_IF_LATEST": "0",
+                "CODEX_INSTALL_IF_CURRENT": "0",
                 "BETTER_CODEX_ARCHIVE_PATH": str(first),
                 "BETTER_CODEX_INSTALL_ROOT": str(install_root),
                 "BETTER_CODEX_BIN_DIR": str(bin_dir),

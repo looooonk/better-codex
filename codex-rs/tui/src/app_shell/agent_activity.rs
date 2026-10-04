@@ -13,6 +13,7 @@ use std::collections::VecDeque;
 
 mod hydration;
 mod metadata;
+mod runtime;
 mod text;
 mod timeline;
 
@@ -51,6 +52,7 @@ pub(super) struct AgentActivity {
     pub(super) timeline: VecDeque<AgentTimelineEntry>,
     thread_status_known: bool,
     live_state: bool,
+    live_runtime_settings: bool,
 }
 
 impl AgentActivity {
@@ -69,6 +71,7 @@ impl AgentActivity {
             timeline: VecDeque::new(),
             thread_status_known: false,
             live_state: false,
+            live_runtime_settings: false,
         }
     }
 
@@ -104,11 +107,15 @@ impl AgentActivity {
         {
             self.task_summary = concise_summary(prompt);
         }
-        if let Some(model) = model {
+        if !self.live_runtime_settings
+            && let Some(model) = model
+        {
             self.model = bounded_text(model, MAX_MODEL_CHARS);
         }
-        if let Some(reasoning_effort) = reasoning_effort {
-            self.reasoning_effort = Some(reasoning_effort.clone());
+        if !self.live_runtime_settings
+            && let Some(reasoning_effort) = reasoning_effort
+        {
+            self.reasoning_effort = Some(runtime::bounded_effort(reasoning_effort));
         }
     }
 
@@ -418,6 +425,7 @@ impl AgentActivityState {
                         AgentLifecycleStatus::Running
                     }
                     SubAgentActivityKind::Interrupted => AgentLifecycleStatus::Interrupted,
+                    SubAgentActivityKind::Completed => AgentLifecycleStatus::Completed,
                 };
                 agent.upsert_timeline(id, AgentTimelineEvent::Activity(*kind), None);
                 true

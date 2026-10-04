@@ -1,6 +1,5 @@
 # App Server Test Client
-
-Quickstart for running and hitting `better-codex app-server`.
+Quickstart for running and hitting `codex app-server`.
 
 ## Quickstart
 
@@ -20,8 +19,44 @@ cargo run -p codex-app-server-test-client -- model-list
 ```
 
 `send-message` and `send-message-v2` handle `request_user_input` server requests interactively.
-When Better Codex asks a question, choose a numbered option (or `o` for a free-form answer when offered)
+When Codex asks a question, choose a numbered option (or `o` for a free-form answer when offered)
 and the client will send the response and continue streaming the same turn.
+
+## Testing Codex-managed Amazon Bedrock login
+
+`test-login --amazon-bedrock` initializes the experimental app-server API, sends an
+`account/login/start` request with an Amazon Bedrock API key, and waits for the
+`account/login/completed` and `account/updated` notifications. Login replaces the current primary
+credential and sets `model_provider = "amazon-bedrock"`, so use an isolated `CODEX_HOME` when
+testing.
+
+```bash
+export CODEX_HOME="$(mktemp -d)"
+printf 'cli_auth_credentials_store = "file"\n' > "$CODEX_HOME/config.toml"
+
+cargo build -p codex-cli --bin codex
+cargo run -p codex-app-server-test-client -- \
+  --codex-bin ./target/debug/codex \
+  test-login \
+  --amazon-bedrock \
+  --api-key "<BEDROCK_API_KEY>" \
+  --region us-west-2
+```
+
+The test client redacts `apiKey` from its outbound request log. After login, start a fresh Codex
+process with the same `CODEX_HOME` to verify that it uses the persisted managed credential.
+
+## Testing logout
+
+`test-logout` initializes the app-server, sends an `account/logout` request, and waits for the
+resulting `account/updated` notification. It uses the active `CODEX_HOME`, so point it at an
+isolated directory when testing credential cleanup.
+
+```bash
+cargo run -p codex-app-server-test-client -- \
+  --codex-bin ./target/debug/codex \
+  test-logout
+```
 
 ## Testing Plugin Analytics
 
@@ -32,11 +67,11 @@ not sent to the analytics backend. The model turn uses a loopback Responses
 API server.
 
 The selected plugin must already be installed and enabled remotely, and the
-active Better Codex profile must be authenticated. On a fresh local cache, the command
+active Codex profile must be authenticated. On a fresh local cache, the command
 retries ephemeral turns while the installed remote bundle finishes syncing.
 
 ```bash
-# Build a debug Better Codex binary; analytics capture is unavailable in release builds.
+# Build a debug Codex binary; analytics capture is unavailable in release builds.
 cargo build -p codex-cli --bin codex
 
 cargo run -p codex-app-server-test-client -- \
@@ -68,7 +103,7 @@ installed, installs it, validates `codex_plugin_installed`, uninstalls it, and
 validates `codex_plugin_uninstalled`, and verifies that the original
 uninstalled state was restored.
 
-The mutation events include the local plugin ID in `plugin_id` and the backend ID
+The mutation events include the local Codex ID in `plugin_id` and the backend ID
 in `remote_plugin_id`.
 
 `--remote-plugin-id` takes the backend ID, such as `plugins~Plugin_...`, not the
@@ -105,7 +140,7 @@ cargo run -p codex-app-server-test-client -- \
   --confirm-account-mutation
 ```
 
-Cleanup does not require analytics capture or a debug Better Codex binary. When the
+Cleanup does not require analytics capture or a debug Codex binary. When the
 smoke uses global `--config` overrides, its printed recovery command preserves
 them so cleanup targets the same backend and account.
 

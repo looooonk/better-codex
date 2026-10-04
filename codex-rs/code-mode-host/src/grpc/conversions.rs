@@ -3,78 +3,33 @@ use codex_code_mode_protocol::CodeModeToolKind;
 use codex_code_mode_protocol::ExecuteRequest;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
 use codex_code_mode_protocol::ImageDetail;
+use codex_code_mode_protocol::MissingCodeModeHostDuration;
 use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::ToolDefinition;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
-use codex_code_mode_protocol::grpc::MAX_CONTENT_ITEMS;
-use codex_code_mode_protocol::parse_bounded_json;
 use codex_protocol::ToolName;
-use prost::Message;
 use serde_json::Value as JsonValue;
 use tonic::Status;
 
 use super::validation;
 
-#[allow(deprecated)]
 pub(super) fn session_limits(
     limits: Option<proto::SessionCellExecutionLimits>,
 ) -> Result<CodeModeSessionCellExecutionLimits, Status> {
     let limits = limits.unwrap_or_default();
-    if limits.max_heap_size_bytes.is_some() {
-        return Err(Status::invalid_argument(
-            "maximum heap size is not supported by the gRPC code-mode host",
-        ));
-    }
     Ok(CodeModeSessionCellExecutionLimits {
         max_yield_time_ms: limits.max_yield_time_ms,
-        max_heap_size_bytes: None,
+        max_heap_size_bytes: limits
+            .max_heap_size_bytes
+            .map(usize::try_from)
+            .transpose()
+            .map_err(|_| Status::invalid_argument("maximum heap size exceeds this platform"))?,
     })
 }
 
 pub(super) fn execute_request(request: proto::ExecuteRequest) -> Result<ExecuteRequest, Status> {
-    if request.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
-        return Err(Status::resource_exhausted(format!(
-            "code-mode execution request exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
-        )));
-    }
     validation::identifier(&request.tool_call_id, "tool call ID")?;
-    validation::bounded(
-        &request.source,
-        validation::MAX_APPLICATION_MESSAGE_BYTES,
-        "execution source",
-    )?;
-    if request.enabled_tools.len() > validation::MAX_TOOL_DEFINITIONS {
-        return Err(Status::invalid_argument(format!(
-            "code-mode execution exceeds {} enabled tools",
-            validation::MAX_TOOL_DEFINITIONS
-        )));
-    }
-    let metadata_bytes = request
-        .enabled_tools
-        .iter()
-        .try_fold(0usize, |total, tool| {
-            let tool_name_bytes = tool.tool_name.as_ref().map_or(0, |name| {
-                name.name.len() + name.namespace.as_ref().map_or(0, String::len)
-            });
-            [
-                tool.name.len(),
-                tool_name_bytes,
-                tool.description.len(),
-                tool.input_schema_json.as_ref().map_or(0, Vec::len),
-                tool.output_schema_json.as_ref().map_or(0, Vec::len),
-            ]
-            .into_iter()
-            .try_fold(total, usize::checked_add)
-            .ok_or_else(|| Status::invalid_argument("tool metadata byte count overflowed"))
-        })?;
-    if metadata_bytes > validation::MAX_TOOL_METADATA_BYTES {
-        return Err(Status::invalid_argument(format!(
-            "code-mode tool metadata exceeds {} bytes",
-            validation::MAX_TOOL_METADATA_BYTES
-        )));
-    }
     Ok(ExecuteRequest {
         tool_call_id: request.tool_call_id,
         source: request.source,
@@ -94,11 +49,6 @@ pub(super) fn execute_request(request: proto::ExecuteRequest) -> Result<ExecuteR
 
 fn tool_definition(definition: proto::ToolDefinition) -> Result<ToolDefinition, Status> {
     validation::identifier(&definition.name, "tool definition name")?;
-    validation::bounded(
-        &definition.description,
-        validation::MAX_TOOL_DESCRIPTION_BYTES,
-        "tool description",
-    )?;
     let name = definition
         .tool_name
         .ok_or_else(|| Status::invalid_argument("tool definition is missing its tool name"))?;
@@ -117,6 +67,7 @@ fn tool_definition(definition: proto::ToolDefinition) -> Result<ToolDefinition, 
             }
         },
         input_schema: json_field(definition.input_schema_json, "input schema")?,
+        input_schema_max_bytes: None,
         output_schema: json_field(definition.output_schema_json, "output schema")?,
     })
 }
@@ -124,69 +75,62 @@ fn tool_definition(definition: proto::ToolDefinition) -> Result<ToolDefinition, 
 fn json_field(value: Option<Vec<u8>>, field: &str) -> Result<Option<JsonValue>, Status> {
     value
         .map(|value| {
-            parse_bounded_json(&value)
+            serde_json::from_slice(&value)
                 .map_err(|error| Status::invalid_argument(format!("invalid tool {field}: {error}")))
         })
         .transpose()
 }
 
+/// Preserves the response's timing; the host handler must record it first.
 pub(super) fn execution_outcome(
     response: RuntimeResponse,
-) -> Result<proto::ExecutionOutcome, Status> {
-    let (cell_id, content_items, outcome) = match response {
+) -> Result<proto::ExecutionOutcome, MissingCodeModeHostDuration> {
+    let (cell_id, content_items, outcome, code_mode_host_duration) = match response {
         RuntimeResponse::Yielded {
             cell_id,
             content_items,
+            code_mode_host_duration,
         } => (
             cell_id,
             content_items,
             proto::execution_outcome::Outcome::Yielded(proto::ExecutionYielded {}),
+            code_mode_host_duration,
         ),
         RuntimeResponse::Terminated {
             cell_id,
             content_items,
+            code_mode_host_duration,
         } => (
             cell_id,
             content_items,
             proto::execution_outcome::Outcome::Terminated(proto::ExecutionTerminated {}),
+            code_mode_host_duration,
         ),
         RuntimeResponse::Result {
             cell_id,
             content_items,
             error_text,
+            code_mode_host_duration,
         } => (
             cell_id,
             content_items,
             proto::execution_outcome::Outcome::Completed(proto::ExecutionCompleted { error_text }),
+            code_mode_host_duration,
         ),
     };
-    if content_items.len() > MAX_CONTENT_ITEMS {
-        return Err(Status::resource_exhausted(format!(
-            "code-mode execution outcome exceeds {MAX_CONTENT_ITEMS} content items"
-        )));
-    }
-    bounded_message(
-        proto::ExecutionOutcome {
-            cell_id: cell_id.to_string(),
-            content_items: content_items.into_iter().map(content_item).collect(),
-            outcome: Some(outcome),
-        },
-        "code-mode execution outcome",
-    )
+    let code_mode_host_duration = code_mode_host_duration.ok_or(MissingCodeModeHostDuration)?;
+    Ok(proto::ExecutionOutcome {
+        cell_id: cell_id.to_string(),
+        content_items: content_items.into_iter().map(content_item).collect(),
+        outcome: Some(outcome),
+        code_mode_host_duration_ns: u64::try_from(code_mode_host_duration.as_nanos())
+            .unwrap_or(u64::MAX),
+    })
 }
 
-pub(super) fn execute_event(response: RuntimeResponse) -> Result<proto::ExecuteEvent, Status> {
-    bounded_message(
-        proto::ExecuteEvent {
-            event: Some(proto::execute_event::Event::Outcome(execution_outcome(
-                response,
-            )?)),
-        },
-        "code-mode execution event",
-    )
-}
-
-pub(super) fn wait_response(outcome: WaitOutcome) -> Result<proto::WaitResponse, Status> {
+pub(super) fn wait_response(
+    outcome: WaitOutcome,
+) -> Result<proto::WaitResponse, MissingCodeModeHostDuration> {
     let state = match outcome {
         WaitOutcome::LiveCell(response) => {
             proto::wait_response::State::LiveCell(execution_outcome(response)?)
@@ -195,19 +139,7 @@ pub(super) fn wait_response(outcome: WaitOutcome) -> Result<proto::WaitResponse,
             proto::wait_response::State::MissingCell(execution_outcome(response)?)
         }
     };
-    bounded_message(
-        proto::WaitResponse { state: Some(state) },
-        "code-mode wait response",
-    )
-}
-
-fn bounded_message<T: Message>(message: T, label: &str) -> Result<T, Status> {
-    if message.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
-        return Err(Status::resource_exhausted(format!(
-            "{label} exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
-        )));
-    }
-    Ok(message)
+    Ok(proto::WaitResponse { state: Some(state) })
 }
 
 fn content_item(item: FunctionCallOutputContentItem) -> proto::ContentItem {
@@ -227,6 +159,9 @@ fn content_item(item: FunctionCallOutputContentItem) -> proto::ContentItem {
                     }) as i32
                 }),
             })
+        }
+        FunctionCallOutputContentItem::InputAudio { audio_url } => {
+            proto::content_item::Item::Audio(proto::AudioContent { audio_url })
         }
     };
     proto::ContentItem { item: Some(item) }

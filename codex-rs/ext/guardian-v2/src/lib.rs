@@ -1,19 +1,22 @@
-mod evidence;
-mod extension;
-mod request;
-mod review;
-mod sampler;
-mod transcript;
+use std::sync::Arc;
+use std::sync::Weak;
 
-pub use evidence::GuardianEvidenceEntry;
-pub use extension::GuardianV2ThreadConfigInput;
-pub use extension::install;
-pub use request::GuardianReviewAction;
-pub use request::GuardianReviewError;
-pub use request::GuardianReviewImage;
-pub use request::GuardianReviewRequest;
-pub use review::GuardianReviewClient;
-pub use review::GuardianReviewOutcome;
-pub use sampler::LunaSampler;
-pub use sampler::LunaSamplerConfig;
-pub use sampler::LunaSamplerError;
+use codex_core::ThreadManager;
+use codex_core::config::Config;
+use codex_extension_api::ExtensionRegistryBuilder;
+use codex_login::AuthManager;
+
+mod async_scorer;
+mod sync_reviewer;
+
+pub use sync_reviewer::install as install_reviewer;
+
+/// Installs the guardian contributors into the extension registry.
+pub fn install(
+    registry: &mut ExtensionRegistryBuilder<Config>,
+    auth_manager: Arc<AuthManager>,
+    thread_manager: Weak<ThreadManager>,
+) {
+    async_scorer::install(registry, auth_manager, thread_manager.clone());
+    install_reviewer(registry, thread_manager);
+}

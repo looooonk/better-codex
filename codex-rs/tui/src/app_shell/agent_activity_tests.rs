@@ -323,6 +323,9 @@ fn known_child_message_and_reasoning_updates_upsert_typed_activity() {
     assert!(state.record_child_item(
         "agent-1",
         &ThreadItem::AgentMessage {
+            delivery: None,
+            questions: None,
+
             id: "message-1".to_string(),
             text: "Layout audit complete".to_string(),
             phase: None,
@@ -447,6 +450,11 @@ fn tracked_agent() -> AgentActivityState {
 
 fn command_item(status: CommandExecutionStatus, output: Option<&str>) -> ThreadItem {
     ThreadItem::CommandExecution {
+        sandbox_type: None,
+        model_context: None,
+        plugin_id: None,
+        script_path: None,
+
         id: "exec-1".to_string(),
         command: "just test -p codex-tui".to_string(),
         cwd: LegacyAppPathString::from_path(Path::new("/workspace")),

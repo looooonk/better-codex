@@ -41,6 +41,8 @@ impl ShellState {
 
     pub(super) fn current_session_config(&self, config: &Config) -> Result<Config> {
         let mut session_config = config.clone();
+        session_config.tui_auto_recap = self.automatic_recap.enabled;
+        session_config.daybreak_enabled = self.daybreak_enabled;
         session_config.model = Some(self.model.clone());
         session_config.model_reasoning_effort = self.reasoning_effort.clone();
         session_config.service_tier = self.service_tier.clone();

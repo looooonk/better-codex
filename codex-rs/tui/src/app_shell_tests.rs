@@ -1,11 +1,33 @@
+#[path = "app_shell/agent_runtime_tests.rs"]
+mod agent_runtime;
+
+#[path = "app_shell/dashboard_focus_tests.rs"]
+mod dashboard_focus;
+
+#[path = "app_shell/keybinding_dispatch_tests.rs"]
+mod keybinding_dispatch;
+
+#[path = "app_shell/windows_key_sequence_tests.rs"]
+mod windows_key_sequence;
+
+#[path = "app_shell/image_submission_tests.rs"]
+mod image_submission;
+
 use super::render::ShellView;
 use super::transcript_view::TranscriptCardHit;
 use super::transcript_view::TranscriptScrollbarMetrics;
 use super::*;
+use crate::app_server_session::AppServerStartedThread;
+
+#[path = "app_shell/ide_submission_tests.rs"]
+mod ide_submission;
 
 #[path = "app_shell/astra_tests.rs"]
 mod astra;
+#[path = "app_shell/upstream_parity_tests.rs"]
+mod upstream_parity;
 use crate::app_server_session::ForkGoalContinuation;
+use crate::app_theme::TuiAppTheme;
 use crate::test_support::buffer_style_grid;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
@@ -38,7 +60,6 @@ use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
 use codex_app_server_protocol::FileChangePatchUpdatedNotification;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::GetAccountThreadUsageResponse;
 use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
@@ -116,7 +137,6 @@ use codex_app_server_protocol::UserInput as ApiUserInput;
 use codex_app_server_protocol::WebSearchItem;
 use codex_app_server_protocol::WriteStatus;
 use codex_config::types::ResumeCwdMode;
-use codex_config::types::TuiAppTheme;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -355,11 +375,11 @@ async fn terminal_thread_status_waits_for_the_authoritative_turn_completion() {
         shell
             .handle_app_server_event(
                 &mut backend,
-                AppServerEvent::ServerNotification(ServerNotification::ThreadStatusChanged(
-                    ThreadStatusChangedNotification {
+                AppServerEvent::ServerNotification(Box::new(
+                    ServerNotification::ThreadStatusChanged(ThreadStatusChangedNotification {
                         thread_id,
                         status: remote_status,
-                    },
+                    }),
                 )),
             )
             .await
@@ -410,6 +430,9 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     let mut retained_turn = prompt_turn("retained-turn", "retained prompt");
     retained_turn.items.extend([
         ThreadItem::AgentMessage {
+            delivery: None,
+            questions: None,
+
             id: "retained-response".to_string(),
             text: "retained response".to_string(),
             phase: None,
@@ -425,6 +448,11 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
             status: codex_app_server_protocol::PatchApplyStatus::Completed,
         },
         ThreadItem::CommandExecution {
+            sandbox_type: None,
+            model_context: None,
+            plugin_id: None,
+            script_path: None,
+
             id: "current-command".to_string(),
             command: "cargo test".to_string(),
             cwd: LegacyAppPathString::from_abs_path(&test_absolute_path("workspace/better-codex")),
@@ -474,11 +502,11 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::ThreadReverted(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::ThreadReverted(
                 ThreadRevertedNotification {
                     thread_id: thread_id.to_string(),
                 },
-            )),
+            ))),
         )
         .await
         .expect("revert notification should be handled");
@@ -510,12 +538,12 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::TurnStarted(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::TurnStarted(
                 codex_app_server_protocol::TurnStartedNotification {
                     thread_id: thread_id.to_string(),
                     turn: active_turn,
                 },
-            )),
+            ))),
         )
         .await
         .expect("queued follower should start");
@@ -553,6 +581,8 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     ));
     shell.handle_notification(ServerNotification::Error(ErrorNotification {
         error: TurnError {
+            misalignment: None,
+
             message: "live retry detail survives".to_string(),
             codex_error_info: None,
             additional_details: None,
@@ -652,11 +682,11 @@ async fn active_thread_revert_lag_recovery_preserves_pending_user_input() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::ThreadReverted(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::ThreadReverted(
                 ThreadRevertedNotification {
                     thread_id: thread_id.to_string(),
                 },
-            )),
+            ))),
         )
         .await
         .expect("revert notification should be handled");
@@ -701,11 +731,11 @@ async fn remote_archive_can_be_unarchived_and_resumed() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::ThreadArchived(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::ThreadArchived(
                 ThreadArchivedNotification {
                     thread_id: thread_id.to_string(),
                 },
-            )),
+            ))),
         )
         .await
         .expect("archive notification should be handled");
@@ -715,11 +745,11 @@ async fn remote_archive_can_be_unarchived_and_resumed() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::ThreadUnarchived(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::ThreadUnarchived(
                 ThreadUnarchivedNotification {
                     thread_id: thread_id.to_string(),
                 },
-            )),
+            ))),
         )
         .await
         .expect("unarchive notification should be handled");
@@ -817,11 +847,11 @@ async fn remote_delete_closes_active_session_and_blocks_submission() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::ThreadDeleted(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::ThreadDeleted(
                 ThreadDeletedNotification {
                     thread_id: deleted_id.to_string(),
                 },
-            )),
+            ))),
         )
         .await
         .expect("delete notification should be handled");
@@ -881,6 +911,8 @@ fn permission_profile_update_refreshes_status_dashboard_snapshot() {
     };
     shell.workspace_git_status = Some(workspace_status.clone());
     let settings = codex_app_server_protocol::ThreadSettings {
+        disabled_plugin_ids: Vec::new(),
+
         cwd: test_absolute_path("workspace/locked"),
         approval_policy: codex_app_server_protocol::AskForApproval::Never,
         approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::User,
@@ -944,12 +976,12 @@ async fn current_time_request_resolves_without_disturbing_pending_approval() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerRequest(ServerRequest::CurrentTimeRead {
+            AppServerEvent::ServerRequest(Box::new(ServerRequest::CurrentTimeRead {
                 request_id: RequestId::Integer(47),
                 params: CurrentTimeReadParams {
                     thread_id: shell.thread_id.to_string(),
                 },
-            }),
+            })),
         )
         .await
         .expect("current time should resolve");
@@ -1357,6 +1389,8 @@ fn status_spinner_only_runs_during_active_codex_work() {
 fn retrying_error(shell: &ShellState, turn_id: &str) -> ServerNotification {
     ServerNotification::Error(ErrorNotification {
         error: TurnError {
+            misalignment: None,
+
             message: "stream disconnected".to_string(),
             codex_error_info: None,
             additional_details: None,
@@ -1391,6 +1425,9 @@ fn active_turn_progress_recovers_retrying_status() {
             turn_id: "turn-active".to_string(),
             started_at_ms: 0,
             item: ThreadItem::AgentMessage {
+                delivery: None,
+                questions: None,
+
                 id: "assistant-1".to_string(),
                 text: String::new(),
                 phase: None,
@@ -1850,6 +1887,9 @@ fn renders_rate_limits_snapshot() {
     let snapshot_time_at = chrono::Utc::now().timestamp();
     shell.rate_limits = vec![
         codex_app_server_protocol::RateLimitSnapshot {
+            normal_model_slug: None,
+            spend_control_reached: None,
+
             limit_id: Some("codex".to_string()),
             limit_name: None,
             primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -1877,6 +1917,9 @@ fn renders_rate_limits_snapshot() {
             rate_limit_reached_type: None,
         },
         codex_app_server_protocol::RateLimitSnapshot {
+            normal_model_slug: None,
+            spend_control_reached: None,
+
             limit_id: Some("secondary".to_string()),
             limit_name: Some("Background".to_string()),
             primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -1893,6 +1936,9 @@ fn renders_rate_limits_snapshot() {
             ),
         },
         codex_app_server_protocol::RateLimitSnapshot {
+            normal_model_slug: None,
+            spend_control_reached: None,
+
             limit_id: Some("gpt-5.3-codex-spark".to_string()),
             limit_name: Some("GPT-5.3-Codex-Spark".to_string()),
             primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -2548,13 +2594,18 @@ fn rewind_anchors_only_opening_text_only_prompts() {
             },
             ApiUserInput::Image {
                 detail: None,
-                url: "https://example.test/image.png".to_string(),
+                image: codex_app_server_protocol::ImageReference::Inline {
+                    url: "https://example.test/image.png".to_string(),
+                },
             },
         ],
     });
     let mut automatic_turn = test_turn("turn-three", TurnStatus::Completed);
     automatic_turn.items.extend([
         ThreadItem::AgentMessage {
+            delivery: None,
+            questions: None,
+
             id: "automatic-response".to_string(),
             text: "Continue the active goal.".to_string(),
             phase: None,
@@ -2950,6 +3001,9 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
                 format!("middle history item {index}")
             };
             turn.items.push(ThreadItem::AgentMessage {
+                delivery: None,
+                questions: None,
+
                 id: format!("child-message-{index}"),
                 text,
                 phase: None,
@@ -2958,6 +3012,9 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
             if index == 12 {
                 turn.items.extend([
                     ThreadItem::AgentMessage {
+                        delivery: None,
+                        questions: None,
+
                         id: "full-log-git-action".to_string(),
                         text: "::git-stage{cwd=\"/workspace/better-codex\"}".to_string(),
                         phase: None,
@@ -2973,6 +3030,9 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
                         status: codex_app_server_protocol::PatchApplyStatus::Completed,
                     },
                     ThreadItem::McpToolCall {
+                        mcp_app_ui: None,
+                        read_only_hint: None,
+
                         id: "full-log-mcp".to_string(),
                         server: "review-tools".to_string(),
                         tool: "inspect".to_string(),
@@ -2992,6 +3052,8 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
                 ]);
                 turn.status = TurnStatus::Failed;
                 turn.error = Some(TurnError {
+                    misalignment: None,
+
                     message: "agent failure sentinel".to_string(),
                     codex_error_info: None,
                     additional_details: Some("detailed failure sentinel".to_string()),
@@ -3584,7 +3646,7 @@ async fn interactive_requests_preempt_management_overlays() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerRequest(command_approval_request()),
+            AppServerEvent::ServerRequest(Box::new(command_approval_request())),
         )
         .await
         .expect("approval request should preempt the management overlay");
@@ -3609,7 +3671,10 @@ async fn approval_transcript_title_is_bounded_without_truncating_the_popup_snaps
     shell.dashboard_visible = false;
     let mut backend = RecordingBackend::default();
     shell
-        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request.clone()))
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(Box::new(request.clone())),
+        )
         .await
         .expect("approval request should open");
 
@@ -3655,12 +3720,15 @@ async fn approval_transcript_title_is_bounded_without_truncating_the_popup_snaps
     queued_shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerRequest(tool_user_input_request()),
+            AppServerEvent::ServerRequest(Box::new(tool_user_input_request())),
         )
         .await
         .expect("tool input should open");
     queued_shell
-        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(Box::new(request)),
+        )
         .await
         .expect("approval request should queue");
     assert_eq!(
@@ -3685,7 +3753,10 @@ async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
         mcp_url_elicitation_request(),
     ] {
         shell
-            .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+            .handle_app_server_event(
+                &mut backend,
+                AppServerEvent::ServerRequest(Box::new(request)),
+            )
             .await
             .expect("interactive request should be accepted");
     }
@@ -3755,7 +3826,10 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
         mcp_url_elicitation_request(),
     ] {
         shell
-            .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+            .handle_app_server_event(
+                &mut backend,
+                AppServerEvent::ServerRequest(Box::new(request)),
+            )
             .await
             .expect("interactive request should be accepted");
     }
@@ -3850,7 +3924,10 @@ async fn interactive_requests_from_replaced_sessions_are_rejected() {
     params.thread_id = "01900000-0000-7000-8000-000000000099".to_string();
 
     shell
-        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(Box::new(request)),
+        )
         .await
         .expect("stale approval should be rejected");
 
@@ -3941,11 +4018,11 @@ async fn external_agent_import_starts_selected_items_and_reports_completion() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(
+            AppServerEvent::ServerNotification(Box::new(
                 ServerNotification::ExternalAgentConfigImportCompleted(
                     external_agent_import_completed_notification(),
                 ),
-            ),
+            )),
         )
         .await
         .expect("completion notification should be handled");
@@ -3998,6 +4075,8 @@ fn external_agent_import_completed_notification() -> ExternalAgentConfigImportCo
         item_type_results: vec![ExternalAgentConfigImportTypeResult {
             item_type: ExternalAgentConfigMigrationItemType::Config,
             successes: vec![ExternalAgentConfigImportItemTypeSuccess {
+                title: None,
+
                 item_type: ExternalAgentConfigMigrationItemType::Config,
                 cwd: None,
                 source: Some("Claude Code".to_string()),
@@ -4626,12 +4705,16 @@ async fn device_code_login_completes_from_the_matching_notification() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::AccountLoginCompleted(
-                codex_app_server_protocol::AccountLoginCompletedNotification {
-                    login_id: Some("login-1".to_string()),
-                    success: true,
-                    error: None,
-                },
+            AppServerEvent::ServerNotification(Box::new(
+                ServerNotification::AccountLoginCompleted(
+                    codex_app_server_protocol::AccountLoginCompletedNotification {
+                        onboarding_entrypoint: None,
+
+                        login_id: Some("login-1".to_string()),
+                        success: true,
+                        error: None,
+                    },
+                ),
             )),
         )
         .await
@@ -5970,6 +6053,7 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
             show_tooltips: true,
         },
         ResumeCwdRuntime {
+            daemon_update_available: false,
             launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
             explicit_cwd: None,
             uses_remote_workspace_or_environment: false,
@@ -6197,6 +6281,9 @@ fn completed_agent_message_replaces_matching_stream() {
 
     shell.ingest_completed_item(
         ThreadItem::AgentMessage {
+            delivery: None,
+            questions: None,
+
             id: "agent-1".to_string(),
             text: "hello from codex".to_string(),
             phase: None,
@@ -6235,6 +6322,9 @@ fn completed_agent_message_reconciles_a_mismatched_stream_by_item_id() {
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
             item: ThreadItem::AgentMessage {
+                delivery: None,
+                questions: None,
+
                 id: "agent-1".to_string(),
                 text: "The authoritative first answer.".to_string(),
                 phase: None,
@@ -6396,6 +6486,10 @@ fn completed_extension_items_render_as_successful_tools() {
     );
     shell.ingest_completed_item(
         ThreadItem::ImageGeneration(ImageGenerationItem {
+            transparent_background: None,
+            failure: None,
+            imagegen_request_id: None,
+            generation_id: None,
             id: "image-1".to_string(),
             status: "completed".to_string(),
             revised_prompt: None,
@@ -8286,6 +8380,8 @@ fn bio_policy_error_renders_dedicated_safety_notice() {
 
     shell.handle_notification(ServerNotification::Error(ErrorNotification {
         error: TurnError {
+            misalignment: None,
+
             message: serde_json::json!({
                 "error": {"code": "bio_policy", "message": "copy may change"}
             })
@@ -8635,7 +8731,7 @@ async fn approval_keys_take_priority_over_transcript_selection_without_writing_a
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerRequest(command_approval_request()),
+            AppServerEvent::ServerRequest(Box::new(command_approval_request())),
         )
         .await
         .expect("approval request should open");
@@ -9241,6 +9337,9 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
             turn_id: "child-turn".to_string(),
             completed_at_ms: 2,
             item: ThreadItem::AgentMessage {
+                delivery: None,
+                questions: None,
+
                 id: "message-1".to_string(),
                 text: "Review complete.".to_string(),
                 phase: None,
@@ -9297,6 +9396,8 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
     );
     shell.handle_notification(ServerNotification::Error(ErrorNotification {
         error: TurnError {
+            misalignment: None,
+
             message: "child failed".to_string(),
             codex_error_info: None,
             additional_details: None,
@@ -9437,6 +9538,9 @@ fn non_tool_item_starts_do_not_render_as_tool_calls() {
             }],
         },
         ThreadItem::AgentMessage {
+            delivery: None,
+            questions: None,
+
             id: "assistant-start".to_string(),
             text: "working".to_string(),
             phase: None,
@@ -9659,6 +9763,11 @@ fn command_output_deltas_update_one_output_block() {
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
             item: ThreadItem::CommandExecution {
+                sandbox_type: None,
+                model_context: None,
+                plugin_id: None,
+                script_path: None,
+
                 id: "exec-1".to_string(),
                 command: "cargo test".to_string(),
                 cwd: LegacyAppPathString::from_abs_path(&test_absolute_path(
@@ -10020,6 +10129,11 @@ async fn clicking_running_output_opens_a_live_full_output_popup() {
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
             item: ThreadItem::CommandExecution {
+                sandbox_type: None,
+                model_context: None,
+                plugin_id: None,
+                script_path: None,
+
                 id: "exec-live".to_string(),
                 command: "cargo test".to_string(),
                 cwd: LegacyAppPathString::from_abs_path(&test_absolute_path(
@@ -10135,13 +10249,13 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::TurnDiffUpdated(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::TurnDiffUpdated(
                 TurnDiffUpdatedNotification {
                     thread_id: thread_id.clone(),
                     turn_id: "turn-1".to_string(),
                     diff: "@@\n-old\n+new\n".to_string(),
                 },
-            )),
+            ))),
         )
         .await
         .expect("diff update should be handled");
@@ -10152,12 +10266,12 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::TurnCompleted(
                 codex_app_server_protocol::TurnCompletedNotification {
                     thread_id,
                     turn: test_turn("turn-1", TurnStatus::Completed),
                 },
-            )),
+            ))),
         )
         .await
         .expect("turn completion should schedule workspace status refresh");
@@ -11196,30 +11310,32 @@ async fn token_usage_notification_uses_last_usage_for_context_pressure() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::ThreadTokenUsageUpdated(
-                codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
-                    thread_id: shell.thread_id.to_string(),
-                    turn_id: "turn-context".to_string(),
-                    token_usage: codex_app_server_protocol::ThreadTokenUsage {
-                        total: codex_app_server_protocol::TokenUsageBreakdown {
-                            total_tokens: 900_000,
-                            input_tokens: 800_000,
-                            cached_input_tokens: 100_000,
-                            cache_write_input_tokens: 0,
-                            output_tokens: 100_000,
-                            reasoning_output_tokens: 0,
+            AppServerEvent::ServerNotification(Box::new(
+                ServerNotification::ThreadTokenUsageUpdated(
+                    codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
+                        thread_id: shell.thread_id.to_string(),
+                        turn_id: "turn-context".to_string(),
+                        token_usage: codex_app_server_protocol::ThreadTokenUsage {
+                            total: codex_app_server_protocol::TokenUsageBreakdown {
+                                total_tokens: 900_000,
+                                input_tokens: 800_000,
+                                cached_input_tokens: 100_000,
+                                cache_write_input_tokens: 0,
+                                output_tokens: 100_000,
+                                reasoning_output_tokens: 0,
+                            },
+                            last: codex_app_server_protocol::TokenUsageBreakdown {
+                                total_tokens: 24_000,
+                                input_tokens: 20_000,
+                                cached_input_tokens: 4_000,
+                                cache_write_input_tokens: 0,
+                                output_tokens: 4_000,
+                                reasoning_output_tokens: 0,
+                            },
+                            model_context_window: Some(200_000),
                         },
-                        last: codex_app_server_protocol::TokenUsageBreakdown {
-                            total_tokens: 24_000,
-                            input_tokens: 20_000,
-                            cached_input_tokens: 4_000,
-                            cache_write_input_tokens: 0,
-                            output_tokens: 4_000,
-                            reasoning_output_tokens: 0,
-                        },
-                        model_context_window: Some(200_000),
                     },
-                },
+                ),
             )),
         )
         .await
@@ -12116,9 +12232,9 @@ async fn queued_messages_hydrate_on_attach_and_queue_changed_notification() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::ThreadQueueChanged(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::ThreadQueueChanged(
                 codex_app_server_protocol::ThreadQueueChangedNotification { thread_id },
-            )),
+            ))),
         )
         .await
         .expect("queue notification should be handled");
@@ -12586,7 +12702,7 @@ async fn failed_approval_response_keeps_modal_open() {
     shell
         .handle_app_server_event(
             &mut backend.clone(),
-            AppServerEvent::ServerRequest(command_approval_request()),
+            AppServerEvent::ServerRequest(Box::new(command_approval_request())),
         )
         .await
         .expect("approval request should open");
@@ -12609,7 +12725,7 @@ async fn completed_approval_keeps_an_active_turn_running() {
     shell
         .handle_app_server_event(
             &mut backend.clone(),
-            AppServerEvent::ServerRequest(command_approval_request()),
+            AppServerEvent::ServerRequest(Box::new(command_approval_request())),
         )
         .await
         .expect("approval request should open");
@@ -13617,7 +13733,7 @@ async fn user_input_auto_resolves_only_after_its_deadline() {
     );
 
     assert!(!shell.start_expired_user_input_resolution(&backend));
-    tokio::time::advance(Duration::from_millis(/*millis*/ 59_999)).await;
+    tokio::time::advance(Duration::from_millis(/*millis*/ 119_999)).await;
     assert!(!shell.start_expired_user_input_resolution(&backend));
     tokio::time::advance(Duration::from_millis(/*millis*/ 1)).await;
     assert!(shell.start_expired_user_input_resolution(&backend));
@@ -13743,7 +13859,7 @@ async fn mcp_structured_forms_collect_typed_content_and_openai_choices() {
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerRequest(mcp_form_elicitation_request()),
+            AppServerEvent::ServerRequest(Box::new(mcp_form_elicitation_request())),
         )
         .await
         .expect("structured form should open");
@@ -14048,6 +14164,9 @@ fn model_preset_fixture(
     service_tiers: &[&str],
 ) -> ModelPreset {
     ModelPreset {
+        available_access_programs: None,
+        model_specialty: None,
+
         id: slug.to_string(),
         model: slug.to_string(),
         display_name: slug.to_string(),
@@ -14100,6 +14219,8 @@ fn command_approval_request() -> ServerRequest {
     ServerRequest::CommandExecutionRequestApproval {
         request_id: RequestId::Integer(41),
         params: CommandExecutionRequestApprovalParams {
+            kind: Default::default(),
+
             thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "exec-1".to_string(),
@@ -14133,7 +14254,7 @@ fn permissions_approval_request() -> ServerRequest {
             item_id: "permissions-1".to_string(),
             environment_id: None,
             started_at_ms: 0,
-            cwd: test_absolute_path("workspace/better-codex"),
+            cwd: test_absolute_path("workspace/better-codex").into(),
             reason: Some("Need package registry access".to_string()),
             permissions: codex_app_server_protocol::RequestPermissionProfile {
                 network: Some(AdditionalNetworkPermissions {
@@ -14163,6 +14284,7 @@ fn tool_user_input_request() -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: RequestId::Integer(43),
         params: ToolRequestUserInputParams {
+            is_blocking: true,
             thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "tool-input-1".to_string(),
@@ -14193,6 +14315,7 @@ fn tool_user_input_request_with_auto_resolution(auto_resolution_ms: u64) -> Serv
     let ServerRequest::ToolRequestUserInput { params, .. } = &mut request else {
         unreachable!("tool user input fixture should return a tool input request");
     };
+    params.is_blocking = false;
     params.auto_resolution_ms = Some(auto_resolution_ms);
     request
 }
@@ -14201,6 +14324,7 @@ fn tool_free_form_user_input_request() -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: RequestId::Integer(44),
         params: ToolRequestUserInputParams {
+            is_blocking: true,
             thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "tool-input-2".to_string(),
@@ -14333,6 +14457,11 @@ fn command_execution_item(
     exit_code: Option<i32>,
 ) -> ThreadItem {
     ThreadItem::CommandExecution {
+        sandbox_type: None,
+        model_context: None,
+        plugin_id: None,
+        script_path: None,
+
         id: id.to_string(),
         command: "cargo test".to_string(),
         cwd: LegacyAppPathString::from_abs_path(&test_absolute_path("workspace/better-codex")),
@@ -14361,6 +14490,12 @@ fn mcp_status_fixture<const N: usize>(
     tools: [&str; N],
 ) -> McpServerStatus {
     McpServerStatus {
+        http_origin: None,
+        plugin_id: None,
+        runtime_status: None,
+        server_capabilities: None,
+        tools_error: None,
+
         name: name.to_string(),
         server_info: None,
         tools: tools
@@ -14415,6 +14550,9 @@ fn plugin_list_response_fixture() -> PluginListResponse {
 
 fn plugin_summary_fixture(id: &str, name: &str, installed: bool, enabled: bool) -> PluginSummary {
     PluginSummary {
+        installed_at: None,
+        must_show_installation_interstitial: None,
+
         id: id.to_string(),
         remote_plugin_id: None,
         version: None,
@@ -15577,6 +15715,9 @@ async fn rate_limit_notification_during_startup_baseline_triggers_a_refetch() {
     shell.handle_notification(ServerNotification::AccountRateLimitsUpdated(
         AccountRateLimitsUpdatedNotification {
             rate_limits: RateLimitSnapshot {
+                normal_model_slug: None,
+                spend_control_reached: None,
+
                 limit_id: Some("codex".to_string()),
                 limit_name: Some("Codex".to_string()),
                 primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -15631,6 +15772,9 @@ async fn rate_limit_notification_after_baseline_fetches_canonical_state() {
     shell.handle_notification(ServerNotification::AccountRateLimitsUpdated(
         AccountRateLimitsUpdatedNotification {
             rate_limits: RateLimitSnapshot {
+                normal_model_slug: None,
+                spend_control_reached: None,
+
                 limit_id: Some("codex".to_string()),
                 limit_name: Some("Codex".to_string()),
                 primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -15926,6 +16070,9 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
     child.thread_source = Some(codex_app_server_protocol::ThreadSource::Subagent);
     let mut turn = test_turn("child-turn", TurnStatus::Completed);
     turn.items.push(ThreadItem::AgentMessage {
+        delivery: None,
+        questions: None,
+
         id: "child-message".to_string(),
         text: "private child result".to_string(),
         phase: None,
@@ -17177,26 +17324,26 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::AgentMessageDelta(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::AgentMessageDelta(
                 codex_app_server_protocol::AgentMessageDeltaNotification {
                     thread_id: shell.thread_id.to_string(),
                     turn_id: "turn-submit".to_string(),
                     item_id: "assistant-1".to_string(),
                     delta: "streamed ".to_string(),
                 },
-            )),
+            ))),
         )
         .await
         .expect("assistant delta should be handled");
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::TurnCompleted(
                 codex_app_server_protocol::TurnCompletedNotification {
                     thread_id: shell.thread_id.to_string(),
                     turn: test_turn("turn-submit", TurnStatus::Completed),
                 },
-            )),
+            ))),
         )
         .await
         .expect("turn completion should be handled");
@@ -17204,7 +17351,7 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            AppServerEvent::ServerRequest(command_approval_request()),
+            AppServerEvent::ServerRequest(Box::new(command_approval_request())),
         )
         .await
         .expect("approval request should be handled");
@@ -17660,6 +17807,23 @@ enum RecordedBackendCall {
 }
 
 impl backend::AppShellBackend for RecordingBackend {
+    fn workspace_request_in_background(
+        &self,
+        _thread_id: ThreadId,
+        request: super::workspace_requests::WorkspaceRequest,
+    ) -> impl std::future::Future<Output = Result<super::workspace_requests::WorkspaceResponse>>
+    + Send
+    + 'static {
+        async move {
+            match request {
+                super::workspace_requests::WorkspaceRequest::Plan(mode) => {
+                    Ok(super::workspace_requests::WorkspaceResponse::Mode(mode))
+                }
+                _ => Err(color_eyre::eyre::eyre!("workspace request not configured")),
+            }
+        }
+    }
+
     async fn next_event(&mut self) -> Option<AppServerEvent> {
         if let Some(event) = self
             .events
@@ -17713,6 +17877,14 @@ impl backend::AppShellBackend for RecordingBackend {
     + 'static {
         let mut backend = self.clone();
         async move { backend.resume_thread(config, thread_id).await }
+    }
+
+    fn fork_side_thread_in_background(
+        &self,
+        _config: Config,
+        _thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        async { Err(color_eyre::eyre::eyre!("side fork fixture unavailable")) }
     }
 
     async fn fork_thread(
@@ -17905,6 +18077,7 @@ impl backend::AppShellBackend for RecordingBackend {
                 .ok_or_else(|| color_eyre::eyre::eyre!("thread {thread_id} was not found"))?;
             Ok(backend::ThreadRehydration {
                 thread,
+                timeline: None,
                 agent_history_task: None,
             })
         }
@@ -17929,7 +18102,14 @@ impl backend::AppShellBackend for RecordingBackend {
                     .forget();
             }
             Ok(GetAccountRateLimitsResponse {
+                account_id: None,
+                ordinary_usage_allowed: None,
+                rate_limit_upsell: None,
+
                 rate_limits: RateLimitSnapshot {
+                    normal_model_slug: None,
+                    spend_control_reached: None,
+
                     limit_id: Some("codex".to_string()),
                     limit_name: Some("Codex".to_string()),
                     primary: Some(codex_app_server_protocol::RateLimitWindow {
@@ -17952,16 +18132,15 @@ impl backend::AppShellBackend for RecordingBackend {
     fn thread_usage_in_background(
         &self,
         thread_id: codex_protocol::ThreadId,
-    ) -> impl std::future::Future<Output = color_eyre::Result<GetAccountThreadUsageResponse>>
-    + Send
-    + 'static {
+    ) -> impl std::future::Future<Output = color_eyre::Result<Option<ThreadUsage>>> + Send + 'static
+    {
         self.push(RecordedBackendCall::ThreadUsage(thread_id));
         let thread_usage = self
             .thread_usage
             .lock()
             .expect("thread usage should lock")
             .clone();
-        async move { Ok(GetAccountThreadUsageResponse { thread_usage }) }
+        async move { Ok(thread_usage) }
     }
 
     async fn login_account(
@@ -18044,6 +18223,9 @@ impl backend::AppShellBackend for RecordingBackend {
             for archived in [false, true] {
                 let response = backend
                     .thread_list(ThreadListParams {
+                        originators: None,
+                        project_id: None,
+                        section_id: None,
                         cursor: None,
                         limit: None,
                         sort_key: None,
@@ -18229,7 +18411,10 @@ impl backend::AppShellBackend for RecordingBackend {
                     })
                     .collect()
             };
-            backend.write_config(edits).await?;
+            let has_config_edits = !edits.is_empty();
+            if has_config_edits {
+                backend.write_config(edits).await?;
+            }
             let Some(params) = thread_update else {
                 return Ok(());
             };
@@ -18244,6 +18429,9 @@ impl backend::AppShellBackend for RecordingBackend {
             let Some(error) = backend.take_thread_settings_error() else {
                 return Ok(());
             };
+            if !has_config_edits {
+                return Err(color_eyre::eyre::eyre!(error));
+            }
             match backend.write_config(rollback_edits).await {
                 Ok(_) => Err(color_eyre::eyre::eyre!(error)).wrap_err(
                     "thread settings update failed; global config changes were rolled back",
@@ -18301,6 +18489,8 @@ impl backend::AppShellBackend for RecordingBackend {
             thread_id: params.thread_id,
         });
         Ok(McpServerOauthLoginResponse {
+            login_id: None,
+
             authorization_url: "https://auth.example.test/mcp".to_string(),
         })
     }
@@ -18445,6 +18635,8 @@ impl backend::AppShellBackend for RecordingBackend {
             cwds: params.cwds,
         });
         Ok(ExternalAgentConfigDetectResponse {
+            connectors: Vec::new(),
+
             items: self
                 .external_agent_items
                 .lock()
@@ -18739,6 +18931,15 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(())
     }
 
+    fn turn_steer_in_background(
+        &self,
+        params: backend::AppShellTurnSteer,
+    ) -> impl std::future::Future<Output = color_eyre::Result<TurnSteerResponse>> + Send + 'static
+    {
+        let mut backend = self.clone();
+        async move { Ok(backend.turn_steer(params).await?) }
+    }
+
     async fn turn_steer(
         &mut self,
         params: backend::AppShellTurnSteer,
@@ -18759,6 +18960,22 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(TurnSteerResponse {
             turn_id: params.turn_id,
         })
+    }
+
+    fn verify_user_in_background(
+        &self,
+        _request_id: RequestId,
+        _params: codex_app_server_protocol::UserVerificationVerifyParams,
+        _cancelled: tokio_util::sync::CancellationToken,
+    ) -> impl std::future::Future<
+        Output = Result<codex_app_server_protocol::UserVerificationVerifyResponse>,
+    > + Send
+    + 'static {
+        async {
+            Err(color_eyre::eyre::eyre!(
+                "no device verifier configured in recording backend"
+            ))
+        }
     }
 
     async fn resolve_server_request(
@@ -19009,6 +19226,8 @@ fn started_thread(
 ) -> crate::app_server_session::AppServerStartedThread {
     crate::app_server_session::AppServerStartedThread {
         session: crate::session_state::ThreadSessionState {
+            can_accept_direct_input: true,
+            daybreak_enabled: false,
             thread_id,
             forked_from_id,
             fork_parent_title: forked_from_id.map(|_| "parent".to_string()),
@@ -19032,6 +19251,7 @@ fn started_thread(
         },
         thread_status: ThreadStatus::Idle,
         turns: Vec::new(),
+        timeline: None,
         agent_threads: Vec::new(),
         agent_history_task: None,
     }
@@ -19043,6 +19263,17 @@ fn thread_fixture(
     preview: &str,
 ) -> Thread {
     Thread {
+        model: None,
+        reasoning_effort: None,
+
+        environments: None,
+        section: None,
+        section_entered_at: None,
+        project_id: None,
+        originator: None,
+        can_accept_direct_input: None,
+        daybreak_enabled: None,
+
         id: thread_id.to_string(),
         extra: None,
         session_id: thread_id.to_string(),
@@ -19106,12 +19337,12 @@ fn turn_completed_event(
     turn_id: &str,
     status: TurnStatus,
 ) -> AppServerEvent {
-    AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
+    AppServerEvent::ServerNotification(Box::new(ServerNotification::TurnCompleted(
         codex_app_server_protocol::TurnCompletedNotification {
             thread_id: thread_id.to_string(),
             turn: test_turn(turn_id, status),
         },
-    ))
+    )))
 }
 
 fn queue_messages(composer: &mut ComposerState, messages: &[&str]) {

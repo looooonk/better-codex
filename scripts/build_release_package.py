@@ -8,6 +8,8 @@ import json
 import re
 import subprocess
 import tarfile
+import tempfile
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,6 +60,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-bin", required=True, type=Path)
     parser.add_argument("--code-mode-host-bin", required=True, type=Path)
     parser.add_argument("--bwrap-bin", type=Path)
+    parser.add_argument("--voice-host-bin", type=Path)
+    parser.add_argument("--voice-runtime-dir", type=Path)
+    parser.add_argument("--build-commit")
     parser.add_argument("--rg-bin", type=Path)
     parser.add_argument("--rg-license-dir", type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -150,11 +155,16 @@ def validate_inputs(args: argparse.Namespace) -> None:
         raise ValueError("--bwrap-bin is required only for Linux targets")
     if args.bwrap_bin is not None and not args.bwrap_bin.is_file():
         raise ValueError(f"bubblewrap binary not found: {args.bwrap_bin}")
+    voice_options = (args.voice_host_bin, args.voice_runtime_dir, args.build_commit)
+    if any(value is not None for value in voice_options) and not all(voice_options):
+        raise ValueError(
+            "voice helper, runtime directory, and build commit are required together"
+        )
     if (args.rg_bin is None) != (args.rg_license_dir is None):
         raise ValueError("--rg-bin and --rg-license-dir must be provided together")
 
 
-def build_package(args: argparse.Namespace) -> None:
+def build_base_package(args: argparse.Namespace) -> None:
     validate_inputs(args)
     if args.rg_bin is None:
         rg, rg_licenses = read_ripgrep_release(args.target)
@@ -167,8 +177,9 @@ def build_package(args: argparse.Namespace) -> None:
         "version": args.version,
         "target": args.target,
         "entrypoint": "bin/codex",
-        "path": "codex-path",
-        "resources": "codex-resources",
+        "variant": "codex",
+        "pathDir": "codex-path",
+        "resourcesDir": "codex-resources",
     }
     directories = [
         PACKAGE_ROOT,
@@ -229,6 +240,46 @@ def build_package(args: argparse.Namespace) -> None:
                         REPOSITORY_ROOT / "codex-rs/vendor/bubblewrap/LICENSE",
                         0o644,
                     )
+
+
+def build_package(args: argparse.Namespace) -> None:
+    build_base_package(args)
+    if args.voice_host_bin is None:
+        return
+    sys.path.insert(0, str(REPOSITORY_ROOT / "third_party/voice"))
+    from assemble_package import assemble
+
+    with tempfile.TemporaryDirectory(prefix="better-codex-package-") as directory:
+        staging = Path(directory)
+        with tarfile.open(args.output, "r:gz") as archive:
+            archive.extractall(staging, filter="data")
+        assembled = staging / "assembled"
+        assemble(
+            staging / PACKAGE_ROOT,
+            args.voice_host_bin,
+            args.target.replace("-linux-musl", "-linux-gnu"),
+            args.build_commit,
+            assembled,
+            runtime=args.voice_runtime_dir,
+            release_version=args.version,
+        )
+        with args.output.open("wb") as output:
+            with gzip.GzipFile(
+                filename="", mode="wb", fileobj=output, mtime=0
+            ) as compressed:
+                with tarfile.open(
+                    fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
+                ) as archive:
+                    add_directory(archive, PACKAGE_ROOT)
+                    for path in sorted(assembled.rglob("*")):
+                        name = (
+                            f"{PACKAGE_ROOT}/{path.relative_to(assembled).as_posix()}"
+                        )
+                        if path.is_dir():
+                            add_directory(archive, name)
+                        else:
+                            mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
+                            add_path(archive, name, path, mode)
 
 
 def main() -> None:

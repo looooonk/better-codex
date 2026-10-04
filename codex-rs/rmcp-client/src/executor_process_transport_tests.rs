@@ -10,8 +10,6 @@ use codex_exec_server::ReadResponse;
 use codex_exec_server::WriteResponse;
 use codex_exec_server::WriteStatus;
 use pretty_assertions::assert_eq;
-use rmcp::model::JsonRpcMessage;
-use rmcp::model::ServerResult;
 use rmcp::service::RoleClient;
 use rmcp::service::TxJsonRpcMessage;
 use rmcp::transport::Transport;
@@ -29,13 +27,64 @@ use super::LineBuffer;
 use super::LineTooLong;
 use super::MAX_MCP_STDERR_LINE_BYTES;
 use super::MAX_MCP_STDOUT_LINE_BYTES;
-use crate::local_stdio_transport::MAX_MCP_STDIO_LINE_BYTES;
-use crate::protocol_mode::McpProtocolMode;
 
 struct BlockingFirstWriteProcess {
     process_id: ProcessId,
     writes: StdMutex<Vec<Vec<u8>>>,
     release_first_write: AtomicBool,
+}
+
+impl BlockingFirstWriteProcess {
+    fn writes(&self) -> Vec<Vec<u8>> {
+        self.writes.lock().expect("writes lock").clone()
+    }
+}
+
+impl ExecProcess for BlockingFirstWriteProcess {
+    fn process_id(&self) -> &ProcessId {
+        &self.process_id
+    }
+
+    fn subscribe_wake(&self) -> watch::Receiver<u64> {
+        watch::channel(0).1
+    }
+
+    fn subscribe_events(&self) -> ExecProcessEventReceiver {
+        ExecProcessEventReceiver::empty()
+    }
+
+    fn read(
+        &self,
+        _after_seq: Option<u64>,
+        _max_bytes: Option<usize>,
+        _wait_ms: Option<u64>,
+    ) -> ExecProcessFuture<'_, ReadResponse> {
+        Box::pin(async { unreachable!("send test should not read process output") })
+    }
+
+    fn write(&self, chunk: Vec<u8>) -> ExecProcessFuture<'_, WriteResponse> {
+        let first_write = {
+            let mut writes = self.writes.lock().expect("writes lock");
+            writes.push(chunk);
+            writes.len() == 1
+        };
+        Box::pin(std::future::poll_fn(move |_| {
+            if first_write && !self.release_first_write.load(Ordering::Acquire) {
+                return Poll::Pending;
+            }
+            Poll::Ready(Ok(WriteResponse {
+                status: WriteStatus::Accepted,
+            }))
+        }))
+    }
+
+    fn signal(&self, _signal: ProcessSignal) -> ExecProcessFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn terminate(&self) -> ExecProcessFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 struct RetainedReadProcess {
@@ -98,59 +147,6 @@ fn retained_read_response(chunks: Vec<ProcessOutputChunk>, next_seq: u64) -> Rea
     }
 }
 
-impl BlockingFirstWriteProcess {
-    fn writes(&self) -> Vec<Vec<u8>> {
-        self.writes.lock().expect("writes lock").clone()
-    }
-}
-
-impl ExecProcess for BlockingFirstWriteProcess {
-    fn process_id(&self) -> &ProcessId {
-        &self.process_id
-    }
-
-    fn subscribe_wake(&self) -> watch::Receiver<u64> {
-        watch::channel(0).1
-    }
-
-    fn subscribe_events(&self) -> ExecProcessEventReceiver {
-        ExecProcessEventReceiver::empty()
-    }
-
-    fn read(
-        &self,
-        _after_seq: Option<u64>,
-        _max_bytes: Option<usize>,
-        _wait_ms: Option<u64>,
-    ) -> ExecProcessFuture<'_, ReadResponse> {
-        Box::pin(async { unreachable!("send test should not read process output") })
-    }
-
-    fn write(&self, chunk: Vec<u8>) -> ExecProcessFuture<'_, WriteResponse> {
-        let first_write = {
-            let mut writes = self.writes.lock().expect("writes lock");
-            writes.push(chunk);
-            writes.len() == 1
-        };
-        Box::pin(std::future::poll_fn(move |_| {
-            if first_write && !self.release_first_write.load(Ordering::Acquire) {
-                return Poll::Pending;
-            }
-            Poll::Ready(Ok(WriteResponse {
-                status: WriteStatus::Accepted,
-            }))
-        }))
-    }
-
-    fn signal(&self, _signal: ProcessSignal) -> ExecProcessFuture<'_, ()> {
-        Box::pin(async { Ok(()) })
-    }
-
-    fn terminate(&self) -> ExecProcessFuture<'_, ()> {
-        Box::pin(async { Ok(()) })
-    }
-}
-
 #[tokio::test]
 async fn serializes_concurrent_stdin_writes() {
     let process = Arc::new(BlockingFirstWriteProcess {
@@ -158,11 +154,8 @@ async fn serializes_concurrent_stdin_writes() {
         writes: StdMutex::new(Vec::new()),
         release_first_write: AtomicBool::new(false),
     });
-    let mut transport = ExecutorProcessTransport::new(
-        process.clone(),
-        "mcp-stdio-test".to_string(),
-        McpProtocolMode::Legacy,
-    );
+    let mut transport =
+        ExecutorProcessTransport::new(process.clone(), "mcp-stdio-test".to_string());
     let first_message: TxJsonRpcMessage<RoleClient> =
         serde_json::from_value(json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" }))
             .expect("first MCP message should deserialize");
@@ -209,117 +202,6 @@ async fn serializes_concurrent_stdin_writes() {
 }
 
 #[tokio::test]
-async fn modern_outbound_limit_is_checked_before_executor_write() {
-    for protocol_mode in [McpProtocolMode::Legacy, McpProtocolMode::V20260728] {
-        let process = Arc::new(BlockingFirstWriteProcess {
-            process_id: ProcessId::from(format!("mcp-stdio-{protocol_mode:?}")),
-            writes: StdMutex::new(Vec::new()),
-            release_first_write: AtomicBool::new(true),
-        });
-        let mut transport = ExecutorProcessTransport::new(
-            process.clone(),
-            "mcp-stdio-limit-test".to_string(),
-            protocol_mode,
-        );
-        let message: TxJsonRpcMessage<RoleClient> = serde_json::from_value(json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {"arguments": {"value": "x".repeat(MAX_MCP_STDIO_LINE_BYTES + 1)}},
-        }))
-        .expect("oversized MCP message should deserialize");
-
-        let result = transport.send(message).await;
-        match protocol_mode {
-            McpProtocolMode::Legacy => {
-                result.expect("legacy executor writes must remain unbounded");
-                assert_eq!(process.writes().len(), 1);
-            }
-            McpProtocolMode::V20260728 => {
-                let error = result.expect_err("modern executor writes must be bounded");
-                assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-                assert!(process.writes().is_empty());
-            }
-        }
-    }
-}
-
-#[test]
-fn executor_input_required_requires_modern_peer_negotiation() {
-    for (negotiated, expect_modern) in [("2026-07-28", true), ("2025-06-18", false)] {
-        let process = Arc::new(RetainedReadProcess {
-            process_id: ProcessId::from(format!("mcp-stdio-{negotiated}")),
-            response: retained_read_response(Vec::new(), /*next_seq*/ 0),
-        });
-        let mut transport = ExecutorProcessTransport::new(
-            process,
-            "mcp-stdio-negotiation-test".to_string(),
-            McpProtocolMode::V20260728,
-        );
-        transport
-            .stdout
-            .extend_from_slice(
-                format!(
-                    "{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"protocolVersion\":\"{negotiated}\",\"capabilities\":{{}},\"serverInfo\":{{\"name\":\"test\",\"version\":\"1\"}}}}}}\n\
-                     {{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"resultType\":\"input_required\",\"requestState\":\"state\",\"_meta\":{{\"trace\":\"round-one\"}}}}}}\n"
-                )
-                .as_bytes(),
-            )
-            .expect("protocol lines should fit");
-
-        transport
-            .take_stdout_message(/*allow_partial*/ false)
-            .expect("initialize response");
-        let JsonRpcMessage::Response(response) = transport
-            .take_stdout_message(/*allow_partial*/ false)
-            .expect("input-required response")
-        else {
-            panic!("expected JSON-RPC response");
-        };
-        assert_eq!(
-            matches!(response.result, ServerResult::InputRequiredResult(_)),
-            expect_modern
-        );
-    }
-}
-
-#[tokio::test]
-async fn executor_preserves_legacy_outbound_behavior_after_downgrade() {
-    let process = Arc::new(BlockingFirstWriteProcess {
-        process_id: ProcessId::from("mcp-stdio-downgrade"),
-        writes: StdMutex::new(Vec::new()),
-        release_first_write: AtomicBool::new(true),
-    });
-    let mut transport = ExecutorProcessTransport::new(
-        process.clone(),
-        "mcp-stdio-downgrade-test".to_string(),
-        McpProtocolMode::V20260728,
-    );
-    transport
-        .stdout
-        .extend_from_slice(
-            b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"serverInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n",
-        )
-        .expect("initialize response should fit");
-    transport
-        .take_stdout_message(/*allow_partial*/ false)
-        .expect("initialize response");
-    let message: TxJsonRpcMessage<RoleClient> = serde_json::from_value(json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {"arguments": {"value": "x".repeat(MAX_MCP_STDIO_LINE_BYTES + 1)}},
-    }))
-    .expect("oversized MCP message should deserialize");
-
-    transport
-        .send(message)
-        .await
-        .expect("negotiated legacy executor writes must remain unbounded");
-    assert_eq!(process.writes().len(), 1);
-}
-
-#[tokio::test]
 async fn rejects_lagged_recovery_when_retained_output_skips_a_sequence() {
     let process = Arc::new(RetainedReadProcess {
         process_id: ProcessId::from("mcp-stdio-lost-output"),
@@ -332,11 +214,7 @@ async fn rejects_lagged_recovery_when_retained_output_skips_a_sequence() {
             /*next_seq*/ 7,
         ),
     });
-    let mut transport = ExecutorProcessTransport::new(
-        process,
-        "mcp-stdio-lost-output".to_string(),
-        McpProtocolMode::Legacy,
-    );
+    let mut transport = ExecutorProcessTransport::new(process, "mcp-stdio-lost-output".to_string());
     transport.last_seq = 4;
     transport
         .stdout
@@ -368,11 +246,8 @@ async fn rejects_lagged_recovery_when_all_missing_output_was_evicted() {
         process_id: ProcessId::from("mcp-stdio-evicted-output"),
         response: retained_read_response(Vec::new(), /*next_seq*/ 7),
     });
-    let mut transport = ExecutorProcessTransport::new(
-        process,
-        "mcp-stdio-evicted-output".to_string(),
-        McpProtocolMode::Legacy,
-    );
+    let mut transport =
+        ExecutorProcessTransport::new(process, "mcp-stdio-evicted-output".to_string());
     transport.last_seq = 4;
 
     let error = transport
@@ -413,11 +288,8 @@ async fn recovers_contiguous_output_after_a_duplicate_replayed_event() {
             /*next_seq*/ 7,
         ),
     });
-    let mut transport = ExecutorProcessTransport::new(
-        process,
-        "mcp-stdio-duplicate-output".to_string(),
-        McpProtocolMode::Legacy,
-    );
+    let mut transport =
+        ExecutorProcessTransport::new(process, "mcp-stdio-duplicate-output".to_string());
     transport.last_seq = 4;
 
     transport
@@ -430,6 +302,7 @@ async fn recovers_contiguous_output_after_a_duplicate_replayed_event() {
         Some(BytesMut::from(&b"recovered stdout"[..]))
     );
     assert_eq!(transport.stdout.take_line(), None);
+    assert_eq!(transport.stderr, LineBuffer::new(MAX_MCP_STDERR_LINE_BYTES));
     assert_eq!(transport.last_seq, 6);
     assert!(!transport.closed);
 }
@@ -458,11 +331,8 @@ async fn recovers_contiguous_output_and_accounts_for_terminal_events() {
         process_id: ProcessId::from("mcp-stdio-recovered-output"),
         response,
     });
-    let mut transport = ExecutorProcessTransport::new(
-        process,
-        "mcp-stdio-recovered-output".to_string(),
-        McpProtocolMode::Legacy,
-    );
+    let mut transport =
+        ExecutorProcessTransport::new(process, "mcp-stdio-recovered-output".to_string());
     transport.last_seq = 4;
 
     transport
@@ -474,6 +344,7 @@ async fn recovers_contiguous_output_and_accounts_for_terminal_events() {
         transport.stdout.take_line(),
         Some(BytesMut::from(&b"recovered stdout"[..]))
     );
+    assert_eq!(transport.stderr, LineBuffer::new(MAX_MCP_STDERR_LINE_BYTES));
     assert_eq!(transport.last_seq, 8);
     assert!(transport.closed);
 }
@@ -488,11 +359,8 @@ async fn closes_on_an_unsequenced_process_failure_without_inventing_missing_outp
         process_id: ProcessId::from("mcp-stdio-failed-process"),
         response,
     });
-    let mut transport = ExecutorProcessTransport::new(
-        process,
-        "mcp-stdio-failed-process".to_string(),
-        McpProtocolMode::Legacy,
-    );
+    let mut transport =
+        ExecutorProcessTransport::new(process, "mcp-stdio-failed-process".to_string());
     transport.last_seq = 4;
 
     transport

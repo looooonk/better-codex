@@ -40,6 +40,7 @@ fn dragging_the_divider_resizes_and_clamps_the_sidebar() {
                 dragging: false,
             },
             Some(shell_layout::ShellLayout {
+                status: None,
                 header: Rect::new(
                     /*x*/ 0, /*y*/ 0, /*width*/ 88, /*height*/ 3,
                 ),
@@ -101,6 +102,7 @@ fn dragging_the_overlay_border_resizes_without_hiding_the_input() {
     assert_eq!(
         shell_layout::calculate(&shell, area),
         Some(shell_layout::ShellLayout {
+            status: None,
             header: Rect::new(
                 /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 3,
             ),

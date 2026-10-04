@@ -2,8 +2,6 @@ use codex_code_mode_protocol::grpc;
 use pretty_assertions::assert_eq;
 use prost::Message;
 
-use super::MAX_TOOL_ERROR_BYTES;
-use super::TRUNCATED_SUFFIX;
 use super::request;
 use super::request_with_maximum;
 
@@ -17,38 +15,20 @@ fn completion_size_includes_the_protobuf_envelope() {
         completion.outcome,
         Some(grpc::complete_tool_call_request::Outcome::Failed(grpc::ToolCallFailed {
             message,
-        })) if message.contains("application limit")
+        })) if message.contains("encoded bytes exceeds the gRPC message limit")
     ));
 }
 
 #[test]
-fn oversized_delegate_values_are_not_materialized_as_json_buffers() {
-    let completion = request_with_maximum(
-        "session",
-        "invocation",
-        Ok(serde_json::Value::String("x".repeat(2_000))),
-        /*maximum_message_bytes*/ 1_000,
-    );
-
-    assert!(matches!(
-        completion.outcome,
-        Some(grpc::complete_tool_call_request::Outcome::Failed(grpc::ToolCallFailed {
-            message,
-        })) if message.contains("byte limit")
-    ));
-}
-#[test]
-fn delegate_errors_are_truncated_at_a_utf8_boundary() {
-    let error = "🦀".repeat(MAX_TOOL_ERROR_BYTES);
-    let completion = request("session", "invocation", Err(error));
+fn delegate_errors_larger_than_64_kib_are_preserved() {
+    let error = "🦀".repeat(64 * 1024);
+    let completion = request("session", "invocation", Err(error.clone()));
     let Some(grpc::complete_tool_call_request::Outcome::Failed(failure)) = completion.outcome
     else {
         panic!("expected a failed tool completion");
     };
 
-    assert!(failure.message.len() <= MAX_TOOL_ERROR_BYTES);
-    assert!(failure.message.ends_with(TRUNCATED_SUFFIX));
-    assert!(failure.message.starts_with('🦀'));
+    assert_eq!(failure.message, error);
 }
 
 #[test]

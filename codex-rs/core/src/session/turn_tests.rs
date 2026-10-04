@@ -5,9 +5,9 @@ use codex_protocol::ResponseItemId;
 use codex_protocol::items::AgentMessageContent;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
+use tracing_subscriber::prelude::*;
 
 struct RewriteAgentMessageContributor;
-struct ManyTurnInputContributor;
 
 impl TurnItemContributor for RewriteAgentMessageContributor {
     fn contribute<'a>(
@@ -27,30 +27,6 @@ impl TurnItemContributor for RewriteAgentMessageContributor {
     }
 }
 
-impl codex_extension_api::TurnInputContributor for ManyTurnInputContributor {
-    fn contribute<'a>(
-        &'a self,
-        _input: codex_extension_api::TurnInputContext,
-        _session_store: &'a ExtensionData,
-        _thread_store: &'a ExtensionData,
-        _turn_store: &'a ExtensionData,
-    ) -> codex_extension_api::ExtensionFuture<
-        'a,
-        Vec<Box<dyn codex_extension_api::ContextualUserFragment + Send>>,
-    > {
-        Box::pin(std::future::ready(
-            (0..40)
-                .map(|index| {
-                    Box::new(crate::context::DeveloperInstructions::new(format!(
-                        "turn input extension {index}"
-                    )))
-                        as Box<dyn codex_extension_api::ContextualUserFragment + Send>
-                })
-                .collect(),
-        ))
-    }
-}
-
 fn assistant_output_text(text: &str) -> ResponseItem {
     ResponseItem::Message {
         id: Some(ResponseItemId::with_suffix("msg", "1")),
@@ -61,6 +37,27 @@ fn assistant_output_text(text: &str) -> ResponseItem {
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     }
+}
+
+#[test]
+fn post_sampling_token_estimate_is_disabled_by_always_on_sinks() {
+    let feedback = codex_feedback::CodexFeedback::new();
+    let subscriber = tracing_subscriber::registry()
+        .with(feedback.logger_layer())
+        .with(tracing_subscriber::fmt::layer().with_filter(codex_state::log_db::default_filter()));
+
+    static METADATA: tracing::Metadata<'static> = tracing::metadata! {
+        name: "post sampling token estimate filter probe",
+        target: POST_SAMPLING_TOKEN_ESTIMATE_TARGET,
+        level: tracing::Level::TRACE,
+        fields: &["turn_id", "estimated_token_count", "message"],
+        callsite: &CALLSITE,
+        kind: tracing::metadata::Kind::EVENT.hint(),
+    };
+    static CALLSITE: tracing::callsite::DefaultCallsite =
+        tracing::callsite::DefaultCallsite::new(&METADATA);
+
+    assert!(tracing::Subscriber::register_callsite(&subscriber, &METADATA).is_never());
 }
 
 #[tokio::test]
@@ -74,9 +71,10 @@ async fn plan_mode_uses_contributed_turn_item_for_last_agent_message() {
     let mut last_agent_message = None;
     let item = assistant_output_text("original assistant text");
 
+    let step_context = StepContext::for_test(Arc::new(turn_context));
     let handled = handle_assistant_item_done_in_plan_mode(
         &session,
-        &turn_context,
+        &step_context,
         &turn_store,
         &item,
         &mut state,
@@ -92,25 +90,24 @@ async fn plan_mode_uses_contributed_turn_item_for_last_agent_message() {
     );
 }
 
-#[tokio::test]
-async fn extension_turn_input_keeps_every_contributed_fragment() {
-    let (mut session, turn_context) = crate::session::tests::make_session_and_context().await;
-    let mut builder = codex_extension_api::ExtensionRegistryBuilder::new();
-    builder.turn_input_contributor(Arc::new(ManyTurnInputContributor));
-    session.services.extensions = Arc::new(builder.build());
-    let session = Arc::new(session);
-
-    let items =
-        build_extension_turn_input_items(&session, &turn_context, &[], &CancellationToken::new())
-            .await
-            .expect("extension contribution should not be cancelled");
-    let expected = (0..40)
-        .map(|index| {
-            ContextualUserFragment::into(crate::context::DeveloperInstructions::new(format!(
-                "turn input extension {index}"
-            )))
-        })
-        .collect::<Vec<_>>();
-
-    assert_eq!(items, expected);
+#[test]
+fn realtime_user_verification_notice_excludes_request_payload() {
+    let event = EventMsg::ElicitationRequest(codex_protocol::approvals::ElicitationRequestEvent {
+        turn_id: None,
+        server_name: "private-server-name".to_string(),
+        id: codex_protocol::mcp::RequestId::String("private-request-id".to_string()),
+        request: codex_protocol::approvals::ElicitationRequest::UserVerification {
+            meta: None,
+            title: "private-title".to_string(),
+            description: "private-description".to_string(),
+            challenge: "private-challenge".to_string(),
+        },
+    });
+    assert_eq!(
+        realtime_text_for_event(&event),
+        Some(RealtimeEventText::Handoff(
+            "<user_verification_notice>User verification is required. Please respond in the app.</user_verification_notice>".to_string(),
+            None,
+        )),
+    );
 }

@@ -5,42 +5,15 @@ use codex_protocol::ThreadId;
 use sqlx::QueryBuilder;
 use sqlx::Sqlite;
 use std::collections::HashMap;
-use std::collections::HashSet;
 
 const SECTION_POSITION_GAP: i64 = 1_000_000;
 
-/// A destination for an atomic thread-section move.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ThreadSectionMove<'a> {
-    Clear,
-    Append {
-        section_id: &'a str,
-    },
-    Before {
-        section_id: &'a str,
-        before_thread_id: ThreadId,
-    },
-}
-
 impl StateRuntime {
-    /// Read persisted section ordering for a bounded set of unique thread IDs.
+    /// Read persisted section ordering for multiple threads in one SQLite query.
     pub async fn get_thread_section_ordering(
         &self,
         thread_ids: &[ThreadId],
     ) -> anyhow::Result<HashMap<ThreadId, (Option<i64>, Option<DateTime<Utc>>)>> {
-        if thread_ids.len() > crate::MAX_THREAD_SECTION_ORDERING_IDS {
-            anyhow::bail!(
-                "thread section ordering batch exceeds limit of {}; got {}",
-                crate::MAX_THREAD_SECTION_ORDERING_IDS,
-                thread_ids.len()
-            );
-        }
-        let mut unique_thread_ids = HashSet::with_capacity(thread_ids.len());
-        for thread_id in thread_ids {
-            if !unique_thread_ids.insert(*thread_id) {
-                anyhow::bail!("duplicate thread id in section ordering batch: {thread_id}");
-            }
-        }
         if thread_ids.is_empty() {
             return Ok(HashMap::new());
         }
@@ -73,20 +46,73 @@ impl StateRuntime {
             .collect()
     }
 
-    /// Atomically move a thread into, within, or out of a section.
+    /// Read an independently persisted thread section by its opaque identifier.
+    pub async fn get_thread_section(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<Option<crate::ThreadSection>> {
+        let row = sqlx::query_as::<_, (String, String, Option<String>)>(
+            "SELECT id, name, appearance FROM thread_sections WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.map(crate::ThreadSection::from_row).transpose()
+    }
+
+    /// List independently persisted sections in stable, cursor-paginated identifier order.
+    pub async fn list_thread_sections(
+        &self,
+        cursor: Option<&str>,
+        limit: usize,
+    ) -> anyhow::Result<crate::ThreadSectionsPage> {
+        let page_size = limit.max(1);
+        let fetch_limit = i64::try_from(page_size.saturating_add(1))?;
+        let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
+            r#"
+SELECT id, name, appearance
+FROM thread_sections
+WHERE (? IS NULL OR id > ?)
+ORDER BY id
+LIMIT ?
+            "#,
+        )
+        .bind(cursor)
+        .bind(cursor)
+        .bind(fetch_limit)
+        .fetch_all(self.pool.as_ref())
+        .await?;
+        let mut sections = rows
+            .into_iter()
+            .map(crate::ThreadSection::from_row)
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let next_cursor = if sections.len() > page_size {
+            sections.pop();
+            sections.last().map(|section| section.id.clone())
+        } else {
+            None
+        };
+        Ok(crate::ThreadSectionsPage {
+            sections,
+            next_cursor,
+        })
+    }
+
+    /// Move a thread into or within a section, or clear its section.
+    ///
+    /// Omitting `before_thread_id` appends the thread to its destination section.
     pub async fn move_thread_to_section(
         &self,
         thread_id: ThreadId,
-        destination: ThreadSectionMove<'_>,
+        section: Option<&str>,
+        before_thread_id: Option<ThreadId>,
     ) -> anyhow::Result<bool> {
-        let (section, before_thread_id) = match destination {
-            ThreadSectionMove::Clear => (None, None),
-            ThreadSectionMove::Append { section_id } => (Some(section_id), None),
-            ThreadSectionMove::Before {
-                section_id,
-                before_thread_id,
-            } => (Some(section_id), Some(before_thread_id)),
-        };
+        if section.is_none() && before_thread_id.is_some() {
+            return Err(anyhow::anyhow!(
+                "before thread cannot be specified without a section"
+            ));
+        }
+
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let thread_id = thread_id.to_string();
         let current_section = sqlx::query_scalar::<_, Option<String>>(
@@ -124,6 +150,7 @@ impl StateRuntime {
                 "thread {thread_id} cannot be moved before itself"
             ));
         }
+
         if let Some(before_thread_id) = before_thread_id.as_deref() {
             let before_section = sqlx::query_scalar::<_, Option<String>>(
                 "SELECT thread_section_id FROM threads WHERE id = ?",
@@ -142,13 +169,11 @@ impl StateRuntime {
             section_move_position(&mut tx, section, &thread_id, before_thread_id.as_deref())
                 .await?;
         if current_section.as_deref() == Some(section) {
-            sqlx::query(
-                "UPDATE threads SET section_position = ?, section_entered_at_ms = COALESCE(section_entered_at_ms, recency_at_ms) WHERE id = ?",
-            )
-            .bind(position)
-            .bind(&thread_id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("UPDATE threads SET section_position = ? WHERE id = ?")
+                .bind(position)
+                .bind(&thread_id)
+                .execute(&mut *tx)
+                .await?;
         } else {
             sqlx::query(
                 "UPDATE threads SET thread_section_id = ?, section_position = ?, section_entered_at_ms = ? WHERE id = ?",
@@ -162,39 +187,6 @@ impl StateRuntime {
         }
         tx.commit().await?;
         Ok(true)
-    }
-
-    pub(super) async fn repair_thread_section_ordering(&self, section: &str) -> anyhow::Result<()> {
-        let needs_repair = sqlx::query_scalar::<_, i64>(
-            "SELECT 1 FROM threads WHERE thread_section_id = ? AND (section_position IS NULL OR section_entered_at_ms IS NULL) LIMIT 1",
-        )
-        .bind(section)
-        .fetch_optional(self.pool.as_ref())
-        .await?
-        .is_some();
-        if !needs_repair {
-            return Ok(());
-        }
-
-        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-        let needs_repair = sqlx::query_scalar::<_, i64>(
-            "SELECT 1 FROM threads WHERE thread_section_id = ? AND (section_position IS NULL OR section_entered_at_ms IS NULL) LIMIT 1",
-        )
-        .bind(section)
-        .fetch_optional(&mut *tx)
-        .await?
-        .is_some();
-        if needs_repair {
-            renumber_section_positions(&mut tx, section, /*excluded_thread_id*/ None).await?;
-            sqlx::query(
-                "UPDATE threads SET section_entered_at_ms = COALESCE(section_entered_at_ms, recency_at_ms) WHERE thread_section_id = ?",
-            )
-            .bind(section)
-            .execute(&mut *tx)
-            .await?;
-        }
-        tx.commit().await?;
-        Ok(())
     }
 }
 
@@ -271,12 +263,7 @@ UPDATE threads
 SET section_position = ranked.position
 FROM (
     SELECT id,
-           ROW_NUMBER() OVER (
-               ORDER BY section_position IS NULL,
-                        section_position ASC,
-                        recency_at_ms DESC,
-                        id DESC
-           ) * ? AS position
+           ROW_NUMBER() OVER (ORDER BY section_position ASC, id ASC) * ? AS position
     FROM threads
     WHERE thread_section_id = ? AND (? IS NULL OR id <> ?)
 ) AS ranked

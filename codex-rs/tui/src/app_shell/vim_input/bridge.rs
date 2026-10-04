@@ -1,15 +1,16 @@
-const ARGUMENT_SLASH_COMMANDS: [&str; 2] = ["/copy", "/goal"];
-const NO_ARGUMENT_SLASH_COMMANDS: [&str; 5] = ["/clear", "/exit", "/login", "/logout", "/vim"];
+use crate::app_shell::slash_commands::SLASH_COMMANDS;
 
 pub(super) fn script() -> String {
-    let argument_commands = ARGUMENT_SLASH_COMMANDS
+    let argument_commands = SLASH_COMMANDS
         .iter()
-        .map(|command| format!("'{command}'"))
+        .filter(|command| command.accepts_arguments())
+        .map(|command| format!("'{}'", command.name()))
         .collect::<Vec<_>>()
         .join(", ");
-    let no_argument_commands = NO_ARGUMENT_SLASH_COMMANDS
+    let no_argument_commands = SLASH_COMMANDS
         .iter()
-        .map(|command| format!("'{command}'"))
+        .filter(|command| !command.accepts_arguments())
+        .map(|command| format!("'{}'", command.name()))
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -50,9 +51,8 @@ function! s:RefreshSlashCommandHighlight() abort
   if strcharpart(l:remaining, 0, 1) !=# '/'
     return
   endif
-  let l:command_prefix = strcharpart(l:remaining, 0, 8)
-  let l:boundary = match(l:command_prefix, s:RustWhitespaceAtom)
-  let l:command = l:boundary < 0 ? l:command_prefix : strpart(l:command_prefix, 0, l:boundary)
+  let l:boundary = match(l:remaining, s:RustWhitespaceAtom)
+  let l:command = l:boundary < 0 ? l:remaining : strpart(l:remaining, 0, l:boundary)
   let l:valid = index([{argument_commands}], l:command) >= 0
   if !l:valid && index([{no_argument_commands}], l:command) >= 0
     let l:tail = strpart(l:remaining, strlen(l:command))

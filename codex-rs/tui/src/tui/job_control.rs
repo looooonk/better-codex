@@ -61,9 +61,11 @@ impl SuspendContext {
     /// - Update the cached inline cursor row so suspend can place the cursor meaningfully.
     /// - Trigger SIGTSTP so the process can be resumed and continue drawing with the saved state.
     pub(crate) fn suspend(&self, alt_screen_active: &Arc<AtomicBool>) -> Result<()> {
+        crate::pets::clear_active_terminal_image(&mut stdout())?;
+        crate::terminal_title::clear_managed_terminal_title();
         if alt_screen_active.load(Ordering::Relaxed) {
             // Leave alt-screen so the terminal returns to the normal buffer while suspended; also turn off alt-scroll.
-            super::keyboard_modes::restore_keyboard_enhancement_stack();
+            super::keyboard_modes::restore_keyboard_enhancement_stack(&mut stdout());
             let _ = execute!(stdout(), DisableAlternateScroll);
             let _ = execute!(stdout(), LeaveAlternateScreen);
             self.set_resume_action(ResumeAction::RestoreAlt);
@@ -186,7 +188,9 @@ impl PreparedResumeAction {
             }
             PreparedResumeAction::RestoreAltScreen => {
                 execute!(terminal.backend_mut(), EnterAlternateScreen)?;
-                super::keyboard_modes::enable_keyboard_enhancement();
+                let mouse_capture =
+                    super::keyboard_modes::enable_keyboard_enhancement(terminal.backend_mut());
+                super::set_mouse_capture(terminal.backend_mut(), mouse_capture)?;
                 // Enable "alternate scroll" so terminals may translate wheel to arrows
                 execute!(terminal.backend_mut(), EnableAlternateScroll)?;
                 if let Ok(size) = terminal.size() {

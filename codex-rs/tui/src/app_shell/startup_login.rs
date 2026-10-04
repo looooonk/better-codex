@@ -1,7 +1,10 @@
+use super::bedrock::BedrockFlow;
+use super::bedrock::FlowAction;
 use super::login_method_availability::LoginMethodAvailability;
 use super::modal_view;
 use crate::LoginStatus;
 use crate::app_server_session::AppServerSession;
+use crate::app_theme::TuiAppTheme;
 use crate::clipboard_copy::ClipboardLease;
 use crate::legacy_core::config::Config;
 use crate::text_input::EditableText;
@@ -13,7 +16,6 @@ use codex_app_server_protocol::AccountLoginCompletedNotification;
 use codex_app_server_protocol::LoginAccountParams;
 use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::ServerNotification;
-use codex_config::types::TuiAppTheme;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -35,6 +37,7 @@ pub(crate) enum LoginOnboardingOutcome {
 enum LoginSelection {
     ChatGptDeviceCode,
     ApiKey,
+    AmazonBedrock,
     Exit,
 }
 
@@ -43,6 +46,7 @@ impl LoginSelection {
         match self {
             Self::ChatGptDeviceCode => "Sign in with ChatGPT",
             Self::ApiKey => "Use API key",
+            Self::AmazonBedrock => "Use Amazon Bedrock",
             Self::Exit => "Exit",
         }
     }
@@ -51,6 +55,9 @@ impl LoginSelection {
         match self {
             Self::ChatGptDeviceCode => "Get a one-time code and finish sign-in in your browser.",
             Self::ApiKey => "Paste an OpenAI API key and store it through app-server auth.",
+            Self::AmazonBedrock => {
+                "Connect with your AWS profile, credentials, or Bedrock API key."
+            }
             Self::Exit => "Return to the terminal without starting a thread.",
         }
     }
@@ -70,6 +77,7 @@ enum LoginMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LoginOnboardingState {
     login_methods: LoginMethodAvailability,
+    bedrock_enabled: bool,
     app_theme: TuiAppTheme,
     selected: usize,
     mode: LoginMode,
@@ -82,6 +90,7 @@ impl LoginOnboardingState {
     fn new(login_methods: LoginMethodAvailability, app_theme: TuiAppTheme) -> Self {
         Self {
             login_methods,
+            bedrock_enabled: false,
             app_theme,
             selected: 0,
             mode: LoginMode::Select,
@@ -98,6 +107,9 @@ impl LoginOnboardingState {
         }
         if self.login_methods.allows_api() {
             choices.push(LoginSelection::ApiKey);
+            if self.bedrock_enabled {
+                choices.push(LoginSelection::AmazonBedrock);
+            }
         }
         choices.push(LoginSelection::Exit);
         choices
@@ -199,6 +211,7 @@ pub(crate) async fn run_login_onboarding(
     app_server: &mut AppServerSession,
     config: &Config,
     login_status: LoginStatus,
+    app_server_target: &crate::AppServerTarget,
 ) -> Result<LoginOnboardingOutcome> {
     if !matches!(login_status, LoginStatus::NotAuthenticated) {
         return Ok(LoginOnboardingOutcome::Continue);
@@ -206,16 +219,19 @@ pub(crate) async fn run_login_onboarding(
 
     tui.enter_alt_screen()
         .wrap_err("failed to enter login setup screen")?;
-    tui.frame_requester().schedule_frame();
 
     let login_methods = if app_server.uses_remote_workspace() {
         LoginMethodAvailability::connected_workspace()
     } else {
         LoginMethodAvailability::from_auth_config(&config.auth_config())
     };
-    let mut state = LoginOnboardingState::new(login_methods, config.tui_app_theme);
+    let mut state = LoginOnboardingState::new(login_methods, crate::app_theme::configured(config));
+    state.bedrock_enabled =
+        crate::should_show_bedrock_setup_wizard(login_status, config, app_server_target);
+    let mut bedrock: Option<BedrockFlow> = None;
     let mut clipboard_lease: Option<ClipboardLease> = None;
     let mut tui_events = tui.event_stream();
+    tui.frame_requester().schedule_frame();
 
     loop {
         select! {
@@ -226,12 +242,23 @@ pub(crate) async fn run_login_onboarding(
                 };
                 match event {
                     TuiEvent::Key(key) => {
+                        if let Some(flow) = bedrock.as_mut() {
+                            match flow.handle_key(&key) {
+                                Some(FlowAction::Back) => bedrock = None,
+                                Some(FlowAction::Configured) => return Ok(LoginOnboardingOutcome::Continue),
+                                Some(FlowAction::Exit) => return Ok(LoginOnboardingOutcome::Exit),
+                                None => {}
+                            }
+                            tui.frame_requester().schedule_frame();
+                            continue;
+                        }
                         let action = handle_login_key(key, &mut state);
                         if let Some(outcome) = apply_login_action(
                             action,
                             app_server,
                             &mut state,
                             &mut clipboard_lease,
+                            &mut bedrock,
                         ).await {
                             return Ok(outcome);
                         }
@@ -240,12 +267,18 @@ pub(crate) async fn run_login_onboarding(
                         }
                     }
                     TuiEvent::Paste(text) => {
-                        if matches!(state.mode, LoginMode::ApiKeyEntry) {
+                        if let Some(flow) = bedrock.as_mut() {
+                            flow.paste(&text);
+                            tui.frame_requester().schedule_frame();
+                        } else if matches!(state.mode, LoginMode::ApiKeyEntry) {
                             state.api_key_draft.insert_str(text.trim());
                             tui.frame_requester().schedule_frame();
                         }
                     }
                     TuiEvent::MouseClick(position) => {
+                        if bedrock.is_some() {
+                            continue;
+                        }
                         let size = tui.terminal.size()?;
                         let area = Rect::new(
                             /*x*/ 0,
@@ -259,6 +292,7 @@ pub(crate) async fn run_login_onboarding(
                             app_server,
                             &mut state,
                             &mut clipboard_lease,
+                            &mut bedrock,
                         ).await {
                             return Ok(outcome);
                         }
@@ -271,16 +305,38 @@ pub(crate) async fn run_login_onboarding(
                     | TuiEvent::MouseRelease(_)
                     | TuiEvent::MouseScroll { .. } => {}
                     TuiEvent::Resize | TuiEvent::Draw => {
-                        draw_login_onboarding(tui, &state)?;
+                        if let Some(flow) = bedrock.as_ref() {
+                            let height = tui.terminal.size()?.height;
+                            tui.draw(height, |frame| {
+                                let _theme = crate::app_theme::activate(state.app_theme);
+                                let area = frame.area();
+                                super::design::fill_rect(frame.buffer, area, super::design::palette::base());
+                                flow.render(area.inner(ratatui::layout::Margin::new(/*horizontal*/ 2, /*vertical*/ 1)), frame.buffer);
+                            })?;
+                        } else {
+                            draw_login_onboarding(tui, &state)?;
+                        }
                     }
                 }
+            }
+            configured = async {
+                match bedrock.as_mut() {
+                    Some(flow) => flow.complete().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if configured { return Ok(LoginOnboardingOutcome::Continue); }
+                tui.frame_requester().schedule_frame();
             }
             event = app_server.next_event() => {
                 let Some(event) = event else {
                     return Ok(LoginOnboardingOutcome::Exit);
                 };
                 match event {
-                    AppServerEvent::ServerNotification(ServerNotification::AccountLoginCompleted(notification)) => {
+                    AppServerEvent::ServerNotification(notification) => {
+                        let ServerNotification::AccountLoginCompleted(notification) = *notification else {
+                            continue;
+                        };
                         if let Some(outcome) = state.receive_login_completed(notification) {
                             return Ok(outcome);
                         }
@@ -290,7 +346,6 @@ pub(crate) async fn run_login_onboarding(
                         return Err(color_eyre::eyre::eyre!(message));
                     }
                     AppServerEvent::Lagged { .. }
-                    | AppServerEvent::ServerNotification(_)
                     | AppServerEvent::ServerRequest(_) => {}
                 }
             }
@@ -301,6 +356,7 @@ pub(crate) async fn run_login_onboarding(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LoginKeyAction {
     StartDeviceCode,
+    StartBedrock,
     SubmitApiKey,
     OpenUrl,
     CopyUrl,
@@ -331,12 +387,13 @@ fn handle_select_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginKe
             state.move_down();
             LoginKeyAction::Redraw
         }
-        KeyCode::Char(number @ ('1' | '2' | '3')) => {
+        KeyCode::Char(number @ ('1'..='4')) => {
             state.select_number(number);
             LoginKeyAction::Redraw
         }
         KeyCode::Enter => match state.selected() {
             LoginSelection::ChatGptDeviceCode => LoginKeyAction::StartDeviceCode,
+            LoginSelection::AmazonBedrock => LoginKeyAction::StartBedrock,
             LoginSelection::ApiKey => {
                 state.mode = LoginMode::ApiKeyEntry;
                 state.notice = None;
@@ -409,9 +466,13 @@ async fn apply_login_action(
     app_server: &mut AppServerSession,
     state: &mut LoginOnboardingState,
     clipboard_lease: &mut Option<ClipboardLease>,
+    bedrock: &mut Option<BedrockFlow>,
 ) -> Option<LoginOnboardingOutcome> {
     match action {
         LoginKeyAction::StartDeviceCode => start_device_code_login(app_server, state).await,
+        LoginKeyAction::StartBedrock => {
+            *bedrock = Some(BedrockFlow::new(app_server.request_handle()))
+        }
         LoginKeyAction::SubmitApiKey => return submit_api_key(app_server, state).await,
         LoginKeyAction::OpenUrl => open_login_url(state),
         LoginKeyAction::CopyUrl => copy_login_url(state, clipboard_lease),

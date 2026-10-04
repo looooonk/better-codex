@@ -4,6 +4,7 @@ use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::SubAgentSource;
 use codex_utils_path_uri::LegacyAppPathString;
 use std::collections::HashSet;
@@ -25,6 +26,8 @@ pub(crate) struct AgentHistorySnapshot {
     pub(crate) thread_id: String,
     pub(crate) agent_path: Option<String>,
     pub(crate) agent_nickname: Option<String>,
+    pub(crate) model: Option<String>,
+    pub(crate) reasoning_effort: Option<ReasoningEffort>,
     pub(crate) status: ThreadStatus,
     pub(crate) turns: Vec<Turn>,
 }
@@ -35,19 +38,25 @@ impl AgentHistorySnapshot {
             thread_id: thread.id.clone(),
             agent_path: agent_path(thread),
             agent_nickname: agent_nickname(thread),
+            model: thread
+                .model
+                .as_ref()
+                .map(|model| model.chars().take(MAX_ITEM_ID_CHARS).collect()),
+            reasoning_effort: thread.reasoning_effort.clone().map(|mut effort| {
+                if let ReasoningEffort::Custom(value) = &mut effort {
+                    truncate(value, MAX_ITEM_ID_CHARS);
+                }
+                effort
+            }),
             status: thread.status.clone(),
             turns: Vec::new(),
         }
     }
 
     pub(super) fn loaded(mut thread: Thread) -> Self {
-        Self {
-            thread_id: thread.id.clone(),
-            agent_path: agent_path(&thread),
-            agent_nickname: agent_nickname(&thread),
-            status: thread.status.clone(),
-            turns: bounded_turns(mem::take(&mut thread.turns)),
-        }
+        let mut snapshot = Self::metadata(&thread);
+        snapshot.turns = bounded_turns(mem::take(&mut thread.turns));
+        snapshot
     }
 }
 
@@ -264,9 +273,10 @@ fn bounded_item(mut item: ThreadItem) -> Option<ThreadItem> {
         | ThreadItem::FileChange { .. }
         | ThreadItem::McpToolCall { .. }
         | ThreadItem::DynamicToolCall { .. }
+        | ThreadItem::FunctionCallOutput { .. }
         | ThreadItem::WebSearch(_)
         | ThreadItem::ImageView { .. }
-        | ThreadItem::Sleep { .. }
+        | ThreadItem::Sleep(_)
         | ThreadItem::ImageGeneration(_)
         | ThreadItem::EnteredReviewMode { .. }
         | ThreadItem::ExitedReviewMode { .. }

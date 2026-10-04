@@ -1,11 +1,5 @@
-use codex_utils_output_truncation::TruncationPolicy;
-use codex_utils_output_truncation::truncate_text;
-
 use super::ContextualUserFragment;
-
-#[cfg(test)]
-pub(crate) const DEVELOPER_CONFIGURATION_MAX_TOKENS: usize = 1_000;
-const DEVELOPER_CONFIGURATION_TRUNCATION_TOKENS: usize = 950;
+use codex_protocol::models::ContentItemKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DeveloperInstructions {
@@ -15,12 +9,16 @@ pub(crate) struct DeveloperInstructions {
 impl DeveloperInstructions {
     pub(crate) fn new(instructions: impl Into<String>) -> Self {
         Self {
-            instructions: bound_developer_configuration_text(&instructions.into()),
+            instructions: instructions.into(),
         }
     }
 }
 
 impl ContextualUserFragment for DeveloperInstructions {
+    fn content_kind(&self) -> ContentItemKind {
+        ContentItemKind("generic.developer_instructions".to_string())
+    }
+
     fn role(&self) -> &'static str {
         "developer"
     }
@@ -37,14 +35,3 @@ impl ContextualUserFragment for DeveloperInstructions {
         self.instructions.clone()
     }
 }
-
-pub(crate) fn bound_developer_configuration_text(text: &str) -> String {
-    truncate_text(
-        text,
-        TruncationPolicy::Tokens(DEVELOPER_CONFIGURATION_TRUNCATION_TOKENS),
-    )
-}
-
-#[cfg(test)]
-#[path = "developer_instructions_tests.rs"]
-mod tests;

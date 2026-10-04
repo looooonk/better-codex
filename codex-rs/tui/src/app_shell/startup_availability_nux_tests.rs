@@ -43,6 +43,9 @@ fn test_models() -> Vec<ModelPreset> {
     ["newest-model", "older-model"]
         .into_iter()
         .map(|slug| ModelPreset {
+            available_access_programs: None,
+            model_specialty: None,
+
             id: slug.to_string(),
             model: slug.to_string(),
             display_name: slug.to_string(),

@@ -274,7 +274,7 @@ impl ShellState {
         let lookup = app_server.thread_usage_in_background(thread_id);
         self.session_hydration.thread_usage_task = Some(tokio::spawn(async move {
             let value = match timeout(SESSION_HYDRATION_LOOKUP_TIMEOUT, lookup).await {
-                Ok(Ok(response)) => Ok(response.thread_usage),
+                Ok(Ok(response)) => Ok(response),
                 Ok(Err(err)) => Err(err.to_string()),
                 Err(_) => Err("thread usage refresh timed out".to_string()),
             };

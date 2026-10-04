@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/keybinding_dispatch_tests.rs
+assertion_line: 136
+expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ YOU  Find the café response
+
+ ▎ CODEX  The café serves tea
+
+ ▎ CODEX  An unrelated answer
+                     ╭ Find retained text: café▏ ───────────────────────────────────────╮
+ ▎ CODEX  The new she│ › 1 ○ Assistant: The café serves tea                             │
+                     │                                                                  │
+                     │   2 ○ You: Find the café response                                │
+                     │                                                                  │
+                     │  Type to search  wheel move  Enter select  Esc cancel  1/2       │
+                     ╰──────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:16                                                                                             │
+│> Keep this draft                                                                                           │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/status_surfaces_tests.rs
+assertion_line: 26
+expression: rendered
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ Display controls | gpt-5-codex | Context 50% used | 1/3 tasks
+
+ ◆ CONVERSATION
+                                                                                                  │
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              ┃
+ ▎ PLAN  1. Build shell                                                                           ┃
+         2. Wire transcript                                                                       ┃
+         3. Render dashboard                                                                      ┃
+                                                                                                  ┃
+ ▌ tool exec just test -p codex-tui                                                               ┃
+                                                                                                  ┃
+ ▌ edited 3 files +128 -24                                                                        ┃
+                                                                                                  ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

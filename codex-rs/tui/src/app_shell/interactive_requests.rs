@@ -131,8 +131,10 @@ impl ShellState {
         {
             let uses_composer = pending.uses_composer();
             self.pending_elicitation = None;
+            self.backend_actions
+                .invalidate([super::backend_actions::ActionGroup::UserVerification]);
             if uses_composer {
-                self.composer.clear();
+                self.composer.clear_text();
             }
             return InteractiveRequestRemoval::Active;
         }
@@ -142,7 +144,7 @@ impl ShellState {
             .is_some_and(|pending| pending.request_id() == request_id)
         {
             self.pending_user_input = None;
-            self.composer.clear();
+            self.composer.clear_text();
             return InteractiveRequestRemoval::Active;
         }
         let Some(index) = self
@@ -163,6 +165,8 @@ impl ShellState {
     }
 
     pub(super) fn clear_interactive_requests(&mut self) {
+        self.backend_actions
+            .invalidate([super::backend_actions::ActionGroup::UserVerification]);
         self.pending_approval = None;
         self.pending_elicitation = None;
         self.pending_user_input = None;

@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/keybinding_dispatch_tests.rs
+assertion_line: 75
+expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
+---
+                                                            │
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+─────────────────────╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━━━━──────────
+                     │ › 1 ○ global.open_agents                                         │
+ ◆ CONVERSATION      │       f2 / ⌃space - select to change                             │
+ ▎ SYSTEM  Better Cod│   2 ○ global.open_transcript                                     │ sessions
+ ▎ YOU  Create a dive│       unbound - select to change                                 │
+                     │   3 ○ global.find_transcript                                     │
+ ▎ CODEX  Started a f│       unbound - select to change                                 │
+          server turn│   4 ○ global.focus_activity                                      │
+ ▎ PLAN  1. Build she│       unbound - select to change                                 │
+         2. Wire tran│   5 ○ global.open_external_editor                                │000000000001
+         3. Render da│       unbound - select to change                                 │te in session list
+                     │   6 ○ global.copy                                                │
+ ▌ tool exec just tes│       ⌃o - select to change                                      │
+                     │   7 ○ global.clear_terminal                                      │
+ ▌ edited 3 files +12│       unbound - select to change                                 │
+                     │   8 ○ global.toggle_fast_mode                                    │
+ ▎ CODEX  The new she│       unbound - select to change                                 │
+                     │   9 ○ global.toggle_side_conversation                            │
+                     │       unbound - select to change                                 │
+                     │   · ○ chat.toggle_voice                                          │
+╭────────────────────│       unbound - select to change                                 │
+│◆ MESSAGE  1:37     │                                                                  │
+│> Summarize the new │  up / down move  f18 select  f19 cancel  1/54 ↓                  │
+│                    ╰──────────────────────────────────────────────────────────────────╯
+│                                                          ││
+╰──────────────────────────────────────────────────────────╯│

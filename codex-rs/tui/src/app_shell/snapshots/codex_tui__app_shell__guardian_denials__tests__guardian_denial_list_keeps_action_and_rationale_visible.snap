@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell/guardian_denials_tests.rs
+assertion_line: 59
+expression: "lines.join(\"\\n\")"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+         2. Wire transcript                                                                                 │
+         3. Render dashboard                                                                                │
+                                                                                                            │
+ ▌ tool exec just test -p codex-tui                                                                         ┃
+                                                                                                            ┃
+ ▌ edited 3 files +128 -24                                                                                  ┃
+                                                                                                            ┃
+ ▌ tool Approval review: Denied                                                                             ┃
+                                                                                                            ┃
+   ▌ output This command changes files outside the requested directory.                                     ┃
+ ▎ SYSTEM  Recent auto-review denials                                                                       ┃
+           review-1: touch /tmp/reviewed-file                                                               ┃
+           This command changes files outside the requested directory.                                      ┃
+           Use /approve <review-id> to allow one retry. The retry still goes through auto-review.           ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                                                        ┃
+
+╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                             │
+│> Summarize the new shell architecture                                                                      │
+│                                                                                                            │
+│                                                                                                            │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

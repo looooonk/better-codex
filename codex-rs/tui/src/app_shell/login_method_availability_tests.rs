@@ -14,20 +14,25 @@ fn auth_config(managed_auth_policy: ManagedAuthPolicy) -> AuthConfig {
         chatgpt_base_url: None,
         forced_chatgpt_workspace_id: None,
         managed_auth_policy,
-        auth_route_config: None,
+        auth_route_config: codex_login::test_support::transport_default_auth_route_config(),
     }
 }
 
 #[test]
 fn reflects_effective_managed_login_methods() {
     let unrestricted = auth_config(ManagedAuthPolicy::default());
-    let chatgpt_only = auth_config(
-        ManagedAuthPolicy::default().restrict_login_methods_to([ForcedLoginMethod::Chatgpt]),
-    );
-    let api_only = auth_config(
-        ManagedAuthPolicy::default().restrict_login_methods_to([ForcedLoginMethod::Api]),
-    );
-    let none = auth_config(ManagedAuthPolicy::default().restrict_login_methods_to([]));
+    let chatgpt_only = auth_config(ManagedAuthPolicy {
+        allowed_login_methods: Some(vec![ForcedLoginMethod::Chatgpt]),
+        ..ManagedAuthPolicy::default()
+    });
+    let api_only = auth_config(ManagedAuthPolicy {
+        allowed_login_methods: Some(vec![ForcedLoginMethod::Api]),
+        ..ManagedAuthPolicy::default()
+    });
+    let none = auth_config(ManagedAuthPolicy {
+        allowed_login_methods: Some(vec![]),
+        ..ManagedAuthPolicy::default()
+    });
 
     assert_eq!(
         [

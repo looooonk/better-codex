@@ -6,6 +6,7 @@ use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::spawn_resumed_agent_history;
+use crate::app_theme::TuiAppTheme;
 use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
 use codex_app_server_client::AppServerEvent;
@@ -19,8 +20,8 @@ use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::GetAccountThreadUsageParams;
-use codex_app_server_protocol::GetAccountThreadUsageResponse;
+use codex_app_server_protocol::GetAccountTokenUsageParams;
+use codex_app_server_protocol::GetAccountTokenUsageResponse;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::LoginAccountParams;
@@ -37,7 +38,6 @@ use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::QueuedSubmission;
 use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::SortDirection;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoalClearResponse;
 use codex_app_server_protocol::ThreadGoalGetParams;
@@ -47,17 +47,12 @@ use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
-use codex_app_server_protocol::ThreadReadParams;
-use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
-use codex_app_server_protocol::ThreadTurnsListParams;
-use codex_app_server_protocol::ThreadTurnsListResponse;
-use codex_app_server_protocol::TurnItemsView;
+use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
-use codex_config::types::TuiAppTheme;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
@@ -66,18 +61,14 @@ use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
-use color_eyre::eyre::WrapErr;
 use std::path::PathBuf;
-use std::time::Duration;
 use tokio::task::JoinHandle;
-use tokio::time::timeout;
 use uuid::Uuid;
-
-const THREAD_REHYDRATE_REQUEST_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 30);
 
 #[derive(Debug)]
 pub(super) struct ThreadRehydration {
     pub(super) thread: Thread,
+    pub(super) timeline: Option<crate::app_server_session::ThreadTimeline>,
     pub(super) agent_history_task: Option<AgentHistoryTask>,
 }
 
@@ -86,6 +77,14 @@ pub(super) struct ThreadRehydration {
 /// Implementations should preserve app-server request semantics while allowing
 /// the shell to be tested without a live server.
 pub(super) trait AppShellBackend {
+    fn workspace_request_in_background(
+        &self,
+        thread_id: ThreadId,
+        request: super::workspace_requests::WorkspaceRequest,
+    ) -> impl std::future::Future<Output = Result<super::workspace_requests::WorkspaceResponse>>
+    + Send
+    + 'static;
+
     /// Waits for the next server event while preserving its original ordering.
     fn next_event(&mut self) -> impl std::future::Future<Output = Option<AppServerEvent>> + Send;
 
@@ -102,6 +101,12 @@ pub(super) trait AppShellBackend {
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
 
     fn resume_thread_in_background(
+        &self,
+        config: Config,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static;
+
+    fn fork_side_thread_in_background(
         &self,
         config: Config,
         thread_id: ThreadId,
@@ -161,7 +166,7 @@ pub(super) trait AppShellBackend {
     fn thread_usage_in_background(
         &self,
         thread_id: ThreadId,
-    ) -> impl std::future::Future<Output = Result<GetAccountThreadUsageResponse>> + Send + 'static;
+    ) -> impl std::future::Future<Output = Result<Option<ThreadUsage>>> + Send + 'static;
 
     fn login_account(
         &mut self,
@@ -355,11 +360,30 @@ pub(super) trait AppShellBackend {
         turn_id: String,
     ) -> impl std::future::Future<Output = std::result::Result<(), TypedRequestError>> + Send;
 
+    fn turn_steer_in_background(
+        &self,
+        params: AppShellTurnSteer,
+    ) -> impl std::future::Future<Output = Result<TurnSteerResponse>> + Send + 'static;
+
     fn turn_steer(
         &mut self,
         params: AppShellTurnSteer,
     ) -> impl std::future::Future<Output = std::result::Result<TurnSteerResponse, TypedRequestError>>
     + Send;
+
+    fn app_server_request_handle(&self) -> Option<codex_app_server_client::AppServerRequestHandle> {
+        None
+    }
+
+    fn verify_user_in_background(
+        &self,
+        request_id: RequestId,
+        params: codex_app_server_protocol::UserVerificationVerifyParams,
+        cancelled: tokio_util::sync::CancellationToken,
+    ) -> impl std::future::Future<
+        Output = Result<codex_app_server_protocol::UserVerificationVerifyResponse>,
+    > + Send
+    + 'static;
 
     fn resolve_server_request(
         &self,
@@ -403,6 +427,7 @@ pub(super) fn app_shell_request_id(prefix: &str) -> RequestId {
 
 #[derive(Debug, Clone)]
 pub(super) struct AppShellTurnStart {
+    pub(super) cyber_access_program: Option<codex_protocol::turn_input::CyberAccessProgram>,
     pub(super) thread_id: ThreadId,
     pub(super) client_user_message_id: String,
     pub(super) items: Vec<UserInput>,
@@ -429,6 +454,16 @@ pub(super) struct AppShellTurnSteer {
 }
 
 impl AppShellBackend for AppServerSession {
+    fn workspace_request_in_background(
+        &self,
+        thread_id: ThreadId,
+        request: super::workspace_requests::WorkspaceRequest,
+    ) -> impl std::future::Future<Output = Result<super::workspace_requests::WorkspaceResponse>>
+    + Send
+    + 'static {
+        super::workspace_requests::execute(self.request_handle(), thread_id, request)
+    }
+
     async fn next_event(&mut self) -> Option<AppServerEvent> {
         AppServerSession::next_event(self).await
     }
@@ -456,6 +491,14 @@ impl AppShellBackend for AppServerSession {
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
         AppServerSession::resume_thread_in_background(self, config, thread_id)
+    }
+
+    fn fork_side_thread_in_background(
+        &self,
+        config: Config,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        AppServerSession::fork_side_thread_in_background(self, config, thread_id)
     }
 
     async fn fork_thread(
@@ -524,18 +567,7 @@ impl AppShellBackend for AppServerSession {
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<Thread>> + Send + 'static {
         let request_handle = AppServerSession::request_handle(self);
-        async move {
-            let response = request_handle
-                .request_typed::<ThreadReadResponse>(ClientRequest::ThreadRead {
-                    request_id: app_shell_request_id("app-shell-thread-log"),
-                    params: ThreadReadParams {
-                        thread_id: thread_id.to_string(),
-                        include_turns: true,
-                    },
-                })
-                .await?;
-            Ok(response.thread)
-        }
+        crate::app_server_session::read_thread_history(request_handle, thread_id)
     }
 
     fn thread_rehydrate_in_background(
@@ -544,49 +576,11 @@ impl AppShellBackend for AppServerSession {
     ) -> impl std::future::Future<Output = Result<ThreadRehydration>> + Send + 'static {
         let request_handle = AppServerSession::request_handle(self);
         async move {
-            let mut thread = timeout(
-                THREAD_REHYDRATE_REQUEST_TIMEOUT,
-                request_handle.request_typed::<ThreadReadResponse>(ClientRequest::ThreadRead {
-                    request_id: app_shell_request_id("app-shell-thread-rehydrate"),
-                    params: ThreadReadParams {
-                        thread_id: thread_id.to_string(),
-                        include_turns: false,
-                    },
-                }),
-            )
-            .await
-            .wrap_err("reverted thread read timed out")??
-            .thread;
-            let mut cursor = None;
-            loop {
-                let response = timeout(
-                    THREAD_REHYDRATE_REQUEST_TIMEOUT,
-                    request_handle.request_typed::<ThreadTurnsListResponse>(
-                        ClientRequest::ThreadTurnsList {
-                            request_id: app_shell_request_id("app-shell-thread-rehydrate-turns"),
-                            params: ThreadTurnsListParams {
-                                thread_id: thread_id.to_string(),
-                                cursor: cursor.clone(),
-                                limit: Some(100),
-                                sort_direction: Some(SortDirection::Asc),
-                                items_view: Some(TurnItemsView::Full),
-                            },
-                        },
-                    ),
-                )
-                .await
-                .wrap_err("reverted thread turns page timed out")??;
-                thread.turns.extend(response.data);
-                let Some(next_cursor) = response.next_cursor else {
-                    break;
-                };
-                if cursor.as_ref() == Some(&next_cursor) {
-                    return Err(color_eyre::eyre::eyre!(
-                        "thread {thread_id} returned a repeated turns cursor"
-                    ));
-                }
-                cursor = Some(next_cursor);
-            }
+            let thread =
+                crate::app_server_session::read_thread_history(request_handle.clone(), thread_id)
+                    .await?;
+            let timeline =
+                crate::app_server_session::load_thread_timeline(&request_handle, thread_id).await?;
             let agent_history_task = spawn_resumed_agent_history(
                 request_handle,
                 thread_id,
@@ -595,6 +589,7 @@ impl AppShellBackend for AppServerSession {
             );
             Ok(ThreadRehydration {
                 thread,
+                timeline,
                 agent_history_task,
             })
         }
@@ -619,18 +614,20 @@ impl AppShellBackend for AppServerSession {
     fn thread_usage_in_background(
         &self,
         thread_id: ThreadId,
-    ) -> impl std::future::Future<Output = Result<GetAccountThreadUsageResponse>> + Send + 'static
-    {
+    ) -> impl std::future::Future<Output = Result<Option<ThreadUsage>>> + Send + 'static {
         let request_handle = AppServerSession::request_handle(self);
         async move {
             request_handle
-                .request_typed(ClientRequest::GetAccountThreadUsage {
-                    request_id: app_shell_request_id("app-shell-thread-usage"),
-                    params: GetAccountThreadUsageParams {
-                        thread_id: thread_id.to_string(),
+                .request_typed::<GetAccountTokenUsageResponse>(
+                    ClientRequest::GetAccountTokenUsage {
+                        request_id: app_shell_request_id("app-shell-thread-usage"),
+                        params: Some(GetAccountTokenUsageParams {
+                            thread_id: Some(thread_id.to_string()),
+                        }),
                     },
-                })
+                )
                 .await
+                .map(|response| response.thread_usage)
                 .map_err(Into::into)
         }
     }
@@ -735,6 +732,9 @@ impl AppShellBackend for AppServerSession {
                 .request_typed(ClientRequest::ThreadGoalSet {
                     request_id: app_shell_request_id("app-shell-goal-rate-limit-recovery"),
                     params: ThreadGoalSetParams {
+                        origin: Some(
+                            codex_app_server_protocol::ThreadGoalMutationOrigin::Automatic,
+                        ),
                         thread_id: thread_id.to_string(),
                         objective: None,
                         status: Some(ThreadGoalStatus::Active),
@@ -923,25 +923,7 @@ impl AppShellBackend for AppServerSession {
     }
 
     async fn turn_start(&mut self, params: AppShellTurnStart) -> Result<TurnStartResponse> {
-        AppServerSession::turn_start(
-            self,
-            params.thread_id,
-            params.client_user_message_id,
-            params.items,
-            params.cwd,
-            params.approval_policy,
-            params.approvals_reviewer,
-            params.permissions_override,
-            &params.workspace_roots,
-            params.model,
-            params.effort,
-            params.summary,
-            params.service_tier,
-            params.collaboration_mode,
-            params.personality,
-            params.output_schema,
-        )
-        .await
+        super::backend_background::start_turn(self.request_handle(), params).await
     }
 
     fn turn_start_in_background(
@@ -988,6 +970,28 @@ impl AppShellBackend for AppServerSession {
         AppServerSession::turn_interrupt(self, thread_id, turn_id).await
     }
 
+    fn turn_steer_in_background(
+        &self,
+        params: AppShellTurnSteer,
+    ) -> impl std::future::Future<Output = Result<TurnSteerResponse>> + Send + 'static {
+        let handle = self.request_handle();
+        async move {
+            Ok(handle
+                .request_typed(codex_app_server_protocol::ClientRequest::TurnSteer {
+                    request_id: app_shell_request_id("app-shell-turn-steer"),
+                    params: codex_app_server_protocol::TurnSteerParams {
+                        thread_id: params.thread_id.to_string(),
+                        client_user_message_id: Some(params.client_user_message_id),
+                        input: params.items,
+                        expected_turn_id: params.turn_id,
+                        responsesapi_client_metadata: None,
+                        additional_context: None,
+                    },
+                })
+                .await?)
+        }
+    }
+
     async fn turn_steer(
         &mut self,
         params: AppShellTurnSteer,
@@ -1000,6 +1004,38 @@ impl AppShellBackend for AppServerSession {
             params.items,
         )
         .await
+    }
+
+    fn app_server_request_handle(&self) -> Option<codex_app_server_client::AppServerRequestHandle> {
+        Some(AppServerSession::request_handle(self))
+    }
+
+    fn verify_user_in_background(
+        &self,
+        request_id: RequestId,
+        params: codex_app_server_protocol::UserVerificationVerifyParams,
+        cancelled: tokio_util::sync::CancellationToken,
+    ) -> impl std::future::Future<
+        Output = Result<codex_app_server_protocol::UserVerificationVerifyResponse>,
+    > + Send
+    + 'static {
+        let handle = AppServerSession::request_handle(self);
+        async move {
+            let response = handle.request_typed(
+                codex_app_server_protocol::ClientRequest::UserVerificationVerify {
+                    request_id: request_id.clone(),
+                    params,
+                },
+            );
+            tokio::select! {
+                biased;
+                _ = cancelled.cancelled() => {
+                    let _: std::result::Result<codex_app_server_protocol::UserVerificationCancelResponse, _> = handle.request_typed(codex_app_server_protocol::ClientRequest::UserVerificationCancel { request_id: RequestId::String(uuid::Uuid::new_v4().to_string()), params: codex_app_server_protocol::UserVerificationCancelParams { request_id } }).await;
+                    Err(color_eyre::eyre::eyre!("device verification cancelled"))
+                }
+                result = response => Ok(result?),
+            }
+        }
     }
 
     async fn resolve_server_request(

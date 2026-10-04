@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/image_submission_tests.rs
+assertion_line: 43
+expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
+---
+                                                            │
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                            │
+ ◆ CONVERSATION                                             │▎◆ SESSIONS
+ ▎ SYSTEM  switched session                                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                            │▎+ New session  Ctrl+N
+                                                            │▎loading sessions
+                                                            │
+                                                            │▎◆ THREAD
+                                                            │▎next
+                                                            │▎id 01900000-0000-7000-8000-000000000203
+                                                            │▎resume, fork, archive, delete in session list
+                                                            │
+                                                            │
+                                                            │
+                                                            │
+                                                            │
+╭──────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:11  [1: screenshot.png]                      ││
+│> next image                                              ││
+│                                                          ││
+│                                                          ││
+╰──────────────────────────────────────────────────────────╯│

@@ -8,10 +8,10 @@ use super::super::selector::SelectorState;
 use super::super::selector::SelectorValue;
 use super::SettingsAction;
 use super::ultra_reasoning_concurrency_warning;
+use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
-use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ReasoningEffort;
 use color_eyre::Result;
 use std::future::Future;
@@ -62,6 +62,17 @@ impl ShellState {
     where
         F: Future<Output = Result<()>> + Send + 'static,
     {
+        if self.pets.has_work()
+            || self.pending_worktree.is_some()
+            || self.has_pending_backend_action(ActionGroup::Workspace)
+            || self.has_pending_backend_action(ActionGroup::SessionSwitch)
+            || self.has_pending_backend_action(ActionGroup::ConversationBranch)
+        {
+            self.push_status(
+                "wait for the workspace action or session transition before saving settings",
+            );
+            return;
+        }
         let update = SettingsUpdate {
             change,
             edit: self.settings.edit_value(),

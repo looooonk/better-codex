@@ -407,12 +407,14 @@ impl PluginEntry {
         }
         if let Some(marketplace_path) = self.marketplace_path.clone() {
             return Some(PluginInstallParams {
+                install_attempt_id: None,
                 marketplace_path: Some(marketplace_path),
                 remote_marketplace_name: None,
                 plugin_name: plugin_request_name(&self.plugin),
             });
         }
         plugin_remote_identity(&self.plugin).map(|_| PluginInstallParams {
+            install_attempt_id: None,
             marketplace_path: None,
             remote_marketplace_name: Some(self.marketplace_name.clone()),
             plugin_name: plugin_request_name(&self.plugin),

@@ -49,8 +49,10 @@ const MEMO_URI: &str = "memo://codex/example-note";
 const MEMO_CONTENT: &str = "This is a sample MCP resource served by the rmcp test server.";
 const SANDBOX_STATE_META_CAPABILITY: &str = "codex/sandbox-state-meta";
 const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+const APP_ONLY_CWD_MARKER_FILE_ENV: &str = "MCP_TEST_APP_ONLY_CWD_MARKER_FILE";
 const DYNAMIC_SERVER_METADATA_ENV: &str = "MCP_TEST_DYNAMIC_SERVER_METADATA";
 const INITIALIZE_BARRIER_FILE_ENV: &str = "MCP_TEST_INITIALIZE_BARRIER_FILE";
+const SERVER_INSTRUCTIONS_ENV: &str = "MCP_TEST_SERVER_INSTRUCTIONS";
 
 fn dynamic_server_process_label() -> Option<String> {
     std::env::var_os(DYNAMIC_SERVER_METADATA_ENV)
@@ -77,6 +79,28 @@ impl TestToolServer {
             Arc::new(sandbox_meta_schema),
         );
         sandbox_meta_tool.annotations = Some(ToolAnnotations::new().read_only(true));
+        let entitlement_tools = std::env::var("MCP_TEST_DAYBREAK_READ_ONLY")
+            .ok()
+            .into_iter()
+            .flat_map(|read_only| {
+                ["get_codex_security_daybreak_access", "get_daybreak_access"].map(|name| {
+                    let mut tool = sandbox_meta_tool.clone();
+                    tool.name = Cow::Borrowed(name);
+                    tool.description =
+                        Some(Cow::Borrowed("Return requested account access metadata."));
+                    tool.annotations = Some(ToolAnnotations::new().read_only(read_only == "true"));
+                    if name == "get_codex_security_daybreak_access" {
+                        let mut meta = MetaObject::new();
+                        meta.insert(
+                            "openai/requestedEntitlements".to_string(),
+                            json!(["cyber_trusted_access"]),
+                        );
+                        tool.meta = Some(meta);
+                    }
+                    tool
+                })
+            })
+            .collect::<Vec<_>>();
 
         #[expect(clippy::expect_used)]
         let thread_hint_schema: JsonObject = serde_json::from_value(json!({
@@ -122,6 +146,24 @@ impl TestToolServer {
             Self::image_scenario_tool(),
             sandbox_meta_tool,
         ];
+        tools.extend(entitlement_tools);
+        if std::env::var_os("MCP_TEST_ENABLE_NODE_REPL_JS").is_some() {
+            #[expect(clippy::expect_used)]
+            let schema: JsonObject = serde_json::from_value(json!({
+                "type": "object",
+                "properties": { "code": { "type": "string" } },
+                "required": ["code"],
+                "additionalProperties": false
+            }))
+            .expect("js tool schema should deserialize");
+            let mut tool = Tool::new(
+                Cow::Borrowed("js"),
+                Cow::Borrowed("Run JavaScript in the test Node REPL."),
+                Arc::new(schema),
+            );
+            tool.annotations = Some(ToolAnnotations::new().read_only(true));
+            tools.push(tool);
+        }
         if let Some(process_label) = dynamic_server_process_label()
             && let Some(echo) = tools.iter_mut().find(|tool| tool.name == "echo")
         {
@@ -394,6 +436,11 @@ struct EchoArgs {
     env_var: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct JsArgs {
+    code: String,
+}
+
 const DEFAULT_SYNC_TIMEOUT_MS: u64 = 1_000;
 
 static SYNC_BARRIERS: OnceLock<tokio::sync::Mutex<HashMap<String, SyncBarrierState>>> =
@@ -492,7 +539,7 @@ impl ServerHandler for TestToolServer {
         )]));
 
         let server_info = ServerInfo::new(capabilities);
-        match dynamic_server_process_label() {
+        let server_info = match dynamic_server_process_label() {
             Some(process_label) => server_info
                 .with_server_info(
                     Implementation::new("codex-rmcp-test-server", env!("CARGO_PKG_VERSION"))
@@ -502,16 +549,49 @@ impl ServerHandler for TestToolServer {
             None => {
                 server_info.with_instructions("Use these tools to exercise the rmcp test server.")
             }
+        };
+        match std::env::var(SERVER_INSTRUCTIONS_ENV) {
+            Ok(instructions) => server_info.with_instructions(instructions),
+            Err(_) => server_info,
         }
     }
 
     fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParams>,
+        request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
         let tools = self.tools.clone();
-        async move { Ok(ListToolsResult::with_all_items((*tools).clone())) }
+        async move {
+            let mut tools = (*tools).clone();
+            if let Some(marker_file) = std::env::var_os(APP_ONLY_CWD_MARKER_FILE_ENV)
+                && std::path::Path::new(&marker_file).is_file()
+                && let Some(cwd) = tools.iter_mut().find(|tool| tool.name == "cwd")
+            {
+                cwd.meta
+                    .get_or_insert_with(MetaObject::new)
+                    .insert("ui".to_string(), json!({ "visibility": ["app"] }));
+            }
+            let mut result = ListToolsResult::with_all_items(tools);
+            match (
+                std::env::var("MCP_TEST_TOOL_PAGINATION").as_deref(),
+                request.and_then(|request| request.cursor).as_deref(),
+            ) {
+                (Ok("two-pages"), None) => {
+                    result.tools.retain(|tool| tool.name == "echo");
+                    result.next_cursor = Some("second".to_string());
+                }
+                (Ok("two-pages"), Some("second")) => {
+                    result.tools.retain(|tool| tool.name == "sync");
+                }
+                (Ok("oversized-cursor"), None) => {
+                    result.tools.retain(|tool| tool.name == "echo");
+                    result.next_cursor = Some("x".repeat(65_537));
+                }
+                _ => {}
+            }
+            Ok(result)
+        }
     }
 
     fn list_resources(
@@ -562,14 +642,52 @@ impl ServerHandler for TestToolServer {
         context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> Result<rmcp::model::CallToolResponse, McpError> {
         match request.name.as_ref() {
+            "js" => {
+                let args = Self::parse_call_args::<JsArgs>(&request, "js")?;
+                if args.code == "nodeRepl.fail()" {
+                    Ok(CallToolResult::error(vec![
+                        rmcp::model::ContentBlock::text("guardian-hidden-failed-result"),
+                    ]))
+                } else if args.code == "nodeRepl.empty()" {
+                    Ok(CallToolResult::success(vec![
+                        rmcp::model::ContentBlock::text(" "),
+                    ]))
+                } else if args.code == "await nodeRepl.emitImage(await tab.screenshot())" {
+                    let mut meta = MetaObject::new();
+                    meta.insert("codex/imageDetail".to_string(), json!("low"));
+                    Ok(CallToolResult::success(vec![
+                        rmcp::model::ContentBlock::text("guardian-visible-before-image"),
+                        rmcp::model::ContentBlock::Image(
+                            rmcp::model::ImageContent::new(SMALL_PNG_BASE64, "IMAGE/PNG")
+                                .with_meta(meta),
+                        ),
+                        rmcp::model::ContentBlock::text("guardian-visible-after-image"),
+                    ]))
+                } else if let Some(text) = args.code.strip_prefix("nodeRepl.write(")
+                    && let Some(text) = text.strip_suffix(')')
+                {
+                    let text = serde_json::from_str::<String>(text)
+                        .map_err(|error| McpError::invalid_params(error.to_string(), None))?;
+                    let mut result =
+                        CallToolResult::success(vec![rmcp::model::ContentBlock::text(text)]);
+                    result.structured_content =
+                        Some(json!({ "text": "guardian-hidden-structured-override" }));
+                    let mut meta = MetaObject::new();
+                    meta.insert("ui".to_string(), json!("guardian-hidden-ui-preview"));
+                    result.meta = Some(meta);
+                    Ok(result)
+                } else {
+                    Err(McpError::invalid_params("unsupported test js source", None))
+                }
+            }
             "client_capabilities" => Ok(Self::structured_result(json!({
                 "supportsOpenaiFormElicitation": self
                     .supports_openai_form_elicitation
                     .load(Ordering::Relaxed),
             }))),
-            "sandbox_meta" => Ok(Self::structured_result(serde_json::Value::Object(
-                context.meta.0.0,
-            ))),
+            "sandbox_meta" | "get_codex_security_daybreak_access" | "get_daybreak_access" => Ok(
+                Self::structured_result(serde_json::Value::Object(context.meta.0.0)),
+            ),
             "cwd" => {
                 let cwd = std::env::current_dir()
                     .map(|path| path.to_string_lossy().into_owned())
@@ -585,15 +703,13 @@ impl ServerHandler for TestToolServer {
                     .ok_or_else(|| {
                         McpError::invalid_params("missing threadId metadata".to_string(), None)
                     })?;
-                let fixture_result =
-                    std::env::var("MCP_TEST_THREAD_HINT_TEXT").unwrap_or_else(|_| {
-                        "unstructured notes/thread_hint fixture result".to_string()
-                    });
                 Ok(CallToolResult::success(vec![
                     rmcp::model::ContentBlock::text(format!(
                         "manual history hint for thread {thread_id}"
                     )),
-                    rmcp::model::ContentBlock::text(fixture_result),
+                    rmcp::model::ContentBlock::text(
+                        "unstructured notes/thread_hint fixture result",
+                    ),
                 ]))
             }
             "echo" | "echo-tool" => {
@@ -612,8 +728,10 @@ impl ServerHandler for TestToolServer {
 
                 let env_snapshot: HashMap<String, String> = std::env::vars().collect();
                 let env_name = args.env_var.as_deref().unwrap_or("MCP_TEST_VALUE");
+                let echo = dynamic_server_process_label()
+                    .unwrap_or_else(|| format!("ECHOING: {}", args.message));
                 let structured_content = json!({
-                    "echo": format!("ECHOING: {}", args.message),
+                    "echo": echo,
                     "env": env_snapshot.get(env_name),
                 });
 
@@ -733,10 +851,19 @@ impl TestToolServer {
                 content.push(rmcp::model::ContentBlock::image(valid_data_b64, mime_type));
             }
             ImageScenario::InvalidImageBytesThenImage => {
+                let oversized = std::env::var("MCP_TEST_OVERSIZED_INVALID_IMAGE") == Ok("1".into());
                 content.push(rmcp::model::ContentBlock::image(
-                    "bm90IGFuIGltYWdl".to_string(),
+                    if oversized {
+                        "A".repeat(8 * 1024 * 1024 - 24)
+                    } else {
+                        "bm90IGFuIGltYWdl".to_string()
+                    },
                     "image/png".to_string(),
                 ));
+                let (mime_type, valid_data_b64) = std::env::var("MCP_TEST_IMAGE_DATA_URL")
+                    .ok()
+                    .and_then(|data_url| parse_data_url(&data_url))
+                    .unwrap_or((mime_type, valid_data_b64));
                 content.push(rmcp::model::ContentBlock::image(valid_data_b64, mime_type));
             }
             ImageScenario::MultipleValidImages => {
@@ -865,17 +992,79 @@ fn parse_data_url(url: &str) -> Option<(String, String)> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(windows)]
+    if std::env::var_os("MCP_TEST_DESCENDANT_ROLE").is_some() {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        return Ok(());
+    }
+
     eprintln!("starting rmcp test server");
     if let Ok(pid_file) = std::env::var("MCP_TEST_PID_FILE") {
         std::fs::write(pid_file, std::process::id().to_string())?;
+    }
+    #[cfg(windows)]
+    if let Ok(console_state_file) = std::env::var("MCP_TEST_CONSOLE_STATE_FILE") {
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetConsoleWindow() -> *mut std::ffi::c_void;
+        }
+        let has_console = unsafe { !GetConsoleWindow().is_null() };
+        std::fs::write(console_state_file, has_console.to_string())?;
+    }
+    #[cfg(windows)]
+    if let Ok(marker_file) = std::env::var("MCP_TEST_BREAKAWAY_DENIED_FILE") {
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const ERROR_ACCESS_DENIED: i32 = 5;
+
+        let escaped = std::process::Command::new(std::env::current_exe()?)
+            .creation_flags(CREATE_BREAKAWAY_FROM_JOB)
+            .env("MCP_TEST_DESCENDANT_ROLE", "1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        match escaped {
+            Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED) => {
+                std::fs::write(marker_file, "denied")?;
+            }
+            Err(error) => return Err(error.into()),
+            Ok(mut child) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("MCP descendant unexpectedly escaped its Windows job".into());
+            }
+        }
+    }
+    #[cfg(windows)]
+    if let Ok(pid_file) = std::env::var("MCP_TEST_DESCENDANT_PID_FILE") {
+        let child = std::process::Command::new(std::env::current_exe()?)
+            .env("MCP_TEST_DESCENDANT_ROLE", "1")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        std::fs::write(pid_file, child.id().to_string())?;
     }
     // Run the server with STDIO transport. If the client disconnects we simply
     // bubble up the error so the process exits.
     let service = TestToolServer::new();
     let running = service.serve(stdio()).await?;
 
-    // Wait for the client to finish interacting with the server.
-    running.waiting().await?;
+    // A test can close an initialized transport without killing an arbitrary PID.
+    let exit_file = std::env::var_os("MCP_TEST_EXIT_FILE");
+    tokio::select! {
+        result = running.waiting() => { result?; }
+        _ = async {
+            let Some(exit_file) = exit_file else {
+                return std::future::pending::<()>().await;
+            };
+            while !std::path::Path::new(&exit_file).exists() {
+                sleep(Duration::from_millis(/*millis*/ 20)).await;
+            }
+        } => std::process::exit(0),
+    }
     // Drain background tasks to ensure clean shutdown.
     task::yield_now().await;
     Ok(())

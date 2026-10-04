@@ -3,7 +3,11 @@
 set -eu
 
 repository="looooonk/better-codex"
-version=${BETTER_CODEX_RELEASE:-}
+version=${CODEX_RELEASE:-${BETTER_CODEX_RELEASE:-}}
+daemon_only=${CODEX_INSTALL_DAEMON_ONLY:-0}
+defer_selection=${CODEX_INSTALL_DEFER_SELECTION:-0}
+guard_latest=${CODEX_INSTALL_IF_LATEST:-0}
+guard_current=${CODEX_INSTALL_IF_CURRENT:-0}
 archive_path=${BETTER_CODEX_ARCHIVE_PATH:-}
 release_index_url="https://raw.githubusercontent.com/$repository/main/scripts/latest-release"
 github_releases_url="https://api.github.com/repos/$repository/releases?per_page=1"
@@ -44,6 +48,10 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ "$daemon_only" != 1 ] && { [ "$guard_latest" = 1 ] || [ "$guard_current" = 1 ]; }; then
+    fail "migrate the daemon with better-codex app-server daemon update --from-cli --yes before updating"
+fi
 
 command -v tar >/dev/null 2>&1 || fail "tar is required"
 
@@ -141,7 +149,10 @@ download_github_release_metadata() {
     return 1
 }
 
-if [ -z "$version" ]; then
+latest_channel=0
+if [ -z "$version" ] || [ "$version" = latest ]; then
+    latest_channel=1
+    version=
     [ -z "$archive_path" ] || fail "set --version when installing a local archive"
     metadata_dir=$(mktemp -d "${TMPDIR:-/tmp}/better-codex-metadata.XXXXXX")
     metadata="$metadata_dir/release"
@@ -171,16 +182,40 @@ esac
 
 install_root=${BETTER_CODEX_INSTALL_ROOT:-${XDG_DATA_HOME:-"$HOME/.local/share"}/better-codex}
 bin_dir=${BETTER_CODEX_BIN_DIR:-"$HOME/.local/bin"}
+if [ "$daemon_only" = 1 ] || [ "$guard_latest" = 1 ] || [ "$guard_current" = 1 ]; then
+    codex_home=${CODEX_HOME:-"$HOME/.codex"}
+    if [ "$daemon_only" = 1 ]; then
+        install_root="$codex_home/packages/app-server-daemon"
+    else
+        install_root="$codex_home/packages/standalone"
+    fi
+fi
+selection=current
+if [ "$defer_selection" = 1 ]; then
+    [ "$daemon_only" = 1 ] || fail "deferred selection requires daemon-only installation"
+    selection=.migration-current
+fi
 asset="better-codex-package-$target.tar.gz"
 temporary_dir=$(mktemp -d "${TMPDIR:-/tmp}/better-codex.XXXXXX")
 stage=
+lock_kind=
+current_link=
 cleanup() {
     rm -rf "$temporary_dir"
+    if [ "$lock_kind" = directory ]; then
+        rm -rf "$install_root/install.lock.d"
+    elif [ -n "$lock_kind" ]; then
+        exec 9>&-
+    fi
+    if [ -n "$current_link" ]; then
+        rm -f "$current_link"
+    fi
     if [ -n "$stage" ] && [ -d "$stage" ]; then
         rm -rf "$stage"
     fi
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 archive="$temporary_dir/$asset"
 
 if [ -n "$archive_path" ]; then
@@ -207,11 +242,74 @@ tar -tzf "$archive" | while IFS= read -r entry; do
     esac
 done
 
-mkdir -p "$install_root/releases" "$bin_dir"
+mkdir -p "$install_root/releases"
+case "$target" in
+    *apple-darwin) lock_command=lockf ;;
+    *) lock_command=flock ;;
+esac
+if ! command -v "$lock_command" >/dev/null 2>&1; then
+    lock_command=flock
+fi
+if command -v "$lock_command" >/dev/null 2>&1; then
+    exec 9>"$install_root/install.lock"
+    "$lock_command" 9
+    lock_kind="file"
+else
+    deadline=$(($(date +%s) + 30))
+    while ! mkdir "$install_root/install.lock.d" 2>/dev/null; do
+        owner_pid=$(cat "$install_root/install.lock.d/pid" 2>/dev/null || true)
+        started_at=$(cat "$install_root/install.lock.d/started_at" 2>/dev/null || true)
+        now=$(date +%s)
+        case "$owner_pid:$started_at" in
+            *[!0-9:]*|:*|*:) ;;
+            *)
+                if ! kill -0 "$owner_pid" 2>/dev/null && [ $((now - started_at)) -ge 600 ]; then
+                    rm -rf "$install_root/install.lock.d"
+                    continue
+                fi
+                ;;
+        esac
+        [ "$now" -lt "$deadline" ] || fail "timed out waiting for installer lock"
+        sleep 1
+    done
+    lock_kind=directory
+    printf '%s\n' "$$" >"$install_root/install.lock.d/pid"
+    date +%s >"$install_root/install.lock.d/started_at"
+fi
+if [ "$defer_selection" = 1 ]; then
+    [ ! -e "$install_root/current" ] && [ ! -L "$install_root/current" ] || \
+        fail "daemon selection changed before migration"
+fi
+if [ "$guard_latest" = 1 ] || [ "$guard_current" = 1 ]; then
+    [ "$latest_channel" = 1 ] || fail "guarded installation requires the latest channel"
+    previous=${CODEX_UPDATE_FROM_RELEASE:-}
+    case "$previous" in
+        ''|*[!0-9A-Za-z.+-]*) fail "invalid guarded release" ;;
+    esac
+    selected=$(cd "$install_root/current" 2>/dev/null && pwd -P || true)
+    releases=$(cd "$install_root/releases" && pwd -P)
+    if [ "$selected" != "$releases/$previous" ]; then
+        [ "$guard_current" != 1 ] || fail "daemon selection changed before restoration"
+        exit 0
+    fi
+    if [ "$guard_latest" = 1 ]; then
+        marker=$(cat "$install_root/auto-update-version" 2>/dev/null || true)
+        [ "$marker" = "$previous" ] || exit 0
+    fi
+fi
+validate_package() {
+    package=$1
+    [ -r "$package/codex-package.json" ] || fail "package manifest is missing"
+    [ -x "$package/bin/codex" ] || fail "package does not contain bin/codex"
+    [ -x "$package/bin/codex-code-mode-host" ] || fail "package does not contain code-mode host"
+    [ -x "$package/codex-path/rg" ] || fail "package does not contain ripgrep"
+    case "$target" in
+        *linux*) [ -x "$package/codex-resources/bwrap" ] || fail "package does not contain bubblewrap" ;;
+    esac
+}
 stage=$(mktemp -d "$install_root/releases/.install.XXXXXX")
 tar -xzf "$archive" -C "$stage" --strip-components 1
-[ -x "$stage/bin/codex" ] || fail "archive does not contain bin/codex"
-[ -x "$stage/bin/codex-code-mode-host" ] || fail "archive does not contain code-mode host"
+validate_package "$stage"
 installed_version=$("$stage/bin/codex" --version)
 case "$installed_version" in
     *" $version") ;;
@@ -220,29 +318,47 @@ esac
 
 release_dir="$install_root/releases/$version-$target"
 if [ -e "$release_dir" ]; then
+    validate_package "$release_dir"
+    [ "$("$release_dir/bin/codex" --version)" = "$installed_version" ] || \
+        fail "existing release version does not match: $release_dir"
     rm -rf "$stage"
 else
     mv "$stage" "$release_dir"
 fi
 stage=
 
+if [ "$daemon_only" = 1 ] && [ "$defer_selection" != 1 ]; then
+    "$release_dir/bin/codex" app-server daemon pid-update-loop --check-package-ownership || \
+        fail "release does not support daemon package ownership"
+fi
 current_link="$install_root/.current.$$"
 ln -s "$release_dir" "$current_link"
 case "$target" in
     aarch64-apple-darwin|x86_64-apple-darwin)
-        mv -fh "$current_link" "$install_root/current"
+        mv -fh "$current_link" "$install_root/$selection"
         ;;
     aarch64-unknown-linux-musl|x86_64-unknown-linux-musl)
-        mv -fT "$current_link" "$install_root/current"
+        mv -fT "$current_link" "$install_root/$selection"
         ;;
 esac
 
-active_version=$("$install_root/current/bin/codex" --version)
+active_version=$("$install_root/$selection/bin/codex" --version)
 case "$active_version" in
     *" $version") ;;
     *) fail "activated version '$active_version', expected $version" ;;
 esac
 
+if [ "$latest_channel" = 1 ]; then
+    printf '%s' "$version-$target" >"$install_root/.auto-update-version.$$"
+    mv -f "$install_root/.auto-update-version.$$" "$install_root/auto-update-version"
+else
+    rm -f "$install_root/auto-update-version"
+fi
+if [ "$daemon_only" = 1 ] || [ "$guard_latest" = 1 ] || [ "$guard_current" = 1 ]; then
+    printf 'Better Codex %s prepared for the daemon.\n' "$version"
+    exit 0
+fi
+mkdir -p "$bin_dir"
 escaped_root=$(printf '%s' "$install_root" | sed "s/'/'\\\\''/g")
 launcher="$bin_dir/.better-codex.$$"
 {

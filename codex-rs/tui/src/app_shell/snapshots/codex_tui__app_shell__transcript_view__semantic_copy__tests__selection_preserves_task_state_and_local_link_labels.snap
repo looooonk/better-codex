@@ -1,0 +1,7 @@
+---
+source: tui/src/app_shell/transcript_semantic_copy_tests.rs
+assertion_line: 27
+expression: copied
+---
+- [x] Read the implementation (/workspace/src/main.rs:12)
+- [ ] Keep `next_step` ready

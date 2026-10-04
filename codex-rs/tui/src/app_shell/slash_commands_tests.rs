@@ -45,3 +45,25 @@ fn invalid_copy_arguments_stay_local_for_usage_feedback() {
         ]
     );
 }
+
+#[test]
+fn extension_mutations_and_guardian_retries_are_local_commands() {
+    for (text, command, args) in [
+        (
+            "/skills project review off",
+            WorkspaceCommand::Skills,
+            "project review off",
+        ),
+        (
+            "/hooks trust repo-hook 123abc",
+            WorkspaceCommand::Hooks,
+            "trust repo-hook 123abc",
+        ),
+        ("/approve review-1", WorkspaceCommand::Approve, "review-1"),
+    ] {
+        assert_eq!(
+            LocalSlashCommand::parse(text),
+            Some(LocalSlashCommand::Workspace(command, args.to_string()))
+        );
+    }
+}

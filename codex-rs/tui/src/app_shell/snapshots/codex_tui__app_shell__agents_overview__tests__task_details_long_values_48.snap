@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell/agents_overview_tests.rs
+assertion_line: 118
+expression: rendered
+---
+
+ Better Codex   Agents overview
+
+
+ > Review long provider settings  [working]
+   /workspace/a-long-project-path//workspace/a…
+
+
+
+ Task details: Review long provider settings
+ Model: provider/provider/provider/provider/pr…
+ Reasoning: deliberatedeliberatedeliberatedeli…
+ Project: /workspace/a-long-project-path//work…
+ Prompt: Review the current workspace
+
+
+ Up/Down select   Enter open   n new   r refres

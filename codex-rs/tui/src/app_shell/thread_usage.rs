@@ -19,7 +19,7 @@ pub(super) fn thread_usage_line(usage: &ThreadUsage) -> Option<Line<'static>> {
     (!values.is_empty()).then(|| Line::from(values.join(" | ")))
 }
 
-fn format_positive_micros(value: i64) -> String {
+pub(super) fn format_positive_micros(value: i64) -> String {
     let rounded_hundredths = value.saturating_add(MICROS_PER_HUNDREDTH / 2) / MICROS_PER_HUNDREDTH;
     if rounded_hundredths == 0 {
         return "<0.01".to_string();

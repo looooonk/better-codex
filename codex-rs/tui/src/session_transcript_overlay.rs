@@ -20,7 +20,6 @@ use ratatui::text::Text;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
-use ratatui::widgets::WidgetRef;
 use ratatui::widgets::Wrap;
 
 pub(crate) struct SessionTranscriptOverlay {
@@ -116,7 +115,7 @@ impl SessionTranscriptOverlay {
 
         "T R A N S C R I P T"
             .dim()
-            .render_ref(Rect::new(area.x, area.y, area.width, 1), buf);
+            .render(Rect::new(area.x, area.y, area.width, 1), buf);
 
         let paragraph = Paragraph::new(Text::from(self.lines.clone())).wrap(Wrap { trim: false });
         let max_scroll = paragraph
@@ -189,5 +188,5 @@ fn render_key_hints(area: Rect, buf: &mut Buffer, pairs: &[(Vec<KeyBinding>, &st
         spans.push(" ".into());
         spans.push((*description).to_string().into());
     }
-    Paragraph::new(Line::from(spans).dim()).render_ref(area, buf);
+    Paragraph::new(Line::from(spans).dim()).render(area, buf);
 }

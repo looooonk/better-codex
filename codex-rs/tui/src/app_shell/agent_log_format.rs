@@ -253,9 +253,10 @@ fn agent_item_lines(
                 palette::muted(),
             )
         }
-        ThreadItem::WebSearch(_)
+        ThreadItem::FunctionCallOutput { .. }
+        | ThreadItem::WebSearch(_)
         | ThreadItem::ImageView { .. }
-        | ThreadItem::Sleep { .. }
+        | ThreadItem::Sleep(_)
         | ThreadItem::ImageGeneration(_)
         | ThreadItem::EnteredReviewMode { .. }
         | ThreadItem::ExitedReviewMode { .. }
@@ -421,6 +422,10 @@ fn collaboration_lines(
     let action = match tool {
         CollabAgentTool::SpawnAgent => "Spawn agent",
         CollabAgentTool::SendInput => "Send input",
+        CollabAgentTool::SendMessage => "Send message",
+        CollabAgentTool::FollowupTask => "Follow-up task",
+        CollabAgentTool::InterruptAgent => "Interrupt agent",
+        CollabAgentTool::ListAgents => "List agents",
         CollabAgentTool::ResumeAgent => "Resume agent",
         CollabAgentTool::Wait => "Wait for agent",
         CollabAgentTool::CloseAgent => "Close agent",
@@ -488,6 +493,7 @@ fn collaboration_status(status: &CollabAgentToolCallStatus) -> (&'static str, Co
         CollabAgentToolCallStatus::InProgress => ("Running", palette::warning()),
         CollabAgentToolCallStatus::Completed => ("Completed", palette::success()),
         CollabAgentToolCallStatus::Failed => ("Failed", palette::error()),
+        CollabAgentToolCallStatus::Interrupted => ("Interrupted", palette::warning()),
     }
 }
 

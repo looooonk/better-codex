@@ -50,18 +50,42 @@ validation commands.
 
 ## Validate your work
 
-Run formatting and the tests for the crate you changed. For example, a TUI
-change should finish with:
+Run the tests for the crate you changed, then apply lint fixes and formatting.
+For example, a TUI change should finish with:
 
 ```sh
+just test --cargo-profile dev-small -p codex-tui
+just fix --profile dev-small -p codex-tui
 just fmt
-just test -p codex-tui
-just fix -p codex-tui
 ```
 
 If you intentionally changed TUI output, review every pending snapshot before
 accepting it. Changes to shared crates may need the complete test suite; call
 that out in the pull request if you could not run it locally.
+
+The complete workspace suite also builds the native voice helper. It requires
+GStreamer 1.28 or newer, its development libraries, and the base/good plugins.
+On macOS, `brew install gstreamer` provides these dependencies.
+For workspace-wide runs, match the V8 probe's expectation to the sandbox feature
+required by Code Mode:
+
+```sh
+just test --workspace --features codex-v8-poc/sandbox --cargo-profile dev-small
+```
+
+## Updating the Codex backend
+
+Merge upstream changes while keeping the agent harness unchanged. Adapt native
+session, execution, and protocol APIs at the TUI and client boundaries, and keep
+presentation features in `codex-rs/tui`. Prefer reusing upstream parsers and
+renderers with small adapters for the full-screen workspace.
+
+The README records the imported revision. Update it together with the backend
+and model-catalog compatibility constants in `codex-rs/build-info/src/lib.rs`.
+Those constants are independent of Better Codex's release version. Preserve the
+legacy rollout and queue migration tests: imported work must retain its identity,
+and uncertain or paused inputs must not start automatically. Regenerate the Cargo,
+Bazel, configuration, and protocol fixtures when their inputs change.
 
 ## Open a pull request
 

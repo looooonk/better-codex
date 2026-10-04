@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 133
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                         │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                     │ │▎+ New session  Ctrl+N
+         3. Render dashboard                    │ │▎loading sessions
+                                                ┃ │
+ ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
+                                                ┃ │▎stage-one
+ ▌ edited 3 files +128 -24                      ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
+ ▌ tool Approval review: Denied                 ┃ │
+                                                ┃ │
+   ▌ output The requested upload includes       ┃ │
+   ▌        credentials outside the authorized  ┃ │
+   ▌        scope.                              ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

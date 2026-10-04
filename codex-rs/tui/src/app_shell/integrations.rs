@@ -31,7 +31,10 @@ impl McpInventorySummary {
         for server in &response.data {
             summary.tools += server.tools.len();
             match server.auth_status {
-                McpAuthStatus::OAuth | McpAuthStatus::BearerToken | McpAuthStatus::Unsupported => {}
+                McpAuthStatus::OAuth
+                | McpAuthStatus::BearerToken
+                | McpAuthStatus::Unsupported
+                | McpAuthStatus::Unknown => {}
                 McpAuthStatus::NotLoggedIn => summary.not_logged_in += 1,
             }
         }

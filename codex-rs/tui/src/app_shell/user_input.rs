@@ -51,12 +51,18 @@ impl PendingUserInput {
             questions: params.questions.clone(),
             current_index: 0,
             answers: HashMap::new(),
-            auto_resolution: params.auto_resolution_ms.and_then(|delay_ms| {
-                Instant::now()
-                    .checked_add(Duration::from_millis(delay_ms))
-                    .map(|deadline| AutoResolution { delay_ms, deadline })
-            }),
+            auto_resolution: (!params.is_blocking)
+                .then_some(120_000)
+                .and_then(|delay_ms| {
+                    Instant::now()
+                        .checked_add(Duration::from_millis(delay_ms))
+                        .map(|deadline| AutoResolution { delay_ms, deadline })
+                }),
         })
+    }
+
+    pub(super) fn snooze_auto_resolution(&mut self) {
+        self.auto_resolution = None;
     }
 
     pub(super) fn request_id(&self) -> &RequestId {

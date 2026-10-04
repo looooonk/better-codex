@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell/astra_tests.rs
+assertion_line: 46
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
@@ -20,8 +21,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
                                                 ┃ │
  ▎ CODEX  Which approach?                       ┃ │
                                                 ┃ │
-          - Small change                        ┃ │
-          - Full rewrite                        ┃ │
+          • Small change                        ┃ │
+          • Full rewrite                        ┃ │
                                                 ┃ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │

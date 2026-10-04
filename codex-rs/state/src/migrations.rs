@@ -1,24 +1,22 @@
 use std::borrow::Cow;
 
-use sqlx::SqlitePool;
 use sqlx::migrate::Migrator;
+use sqlx_sqlite::SqlitePool;
 
-pub(crate) static STATE_MIGRATOR: Migrator = sqlx::migrate!("./migrations");
-pub(crate) static LOGS_MIGRATOR: Migrator = sqlx::migrate!("./logs_migrations");
-pub(crate) static GOALS_MIGRATOR: Migrator = sqlx::migrate!("./goals_migrations");
-pub(crate) static MEMORIES_MIGRATOR: Migrator = sqlx::migrate!("./memory_migrations");
-pub(crate) static THREAD_HISTORY_MIGRATOR: Migrator = sqlx::migrate!("./thread_history_migrations");
+pub(crate) static STATE_MIGRATOR: Migrator = sqlx_macros::migrate!("./migrations");
+pub(crate) static LOGS_MIGRATOR: Migrator = sqlx_macros::migrate!("./logs_migrations");
+pub(crate) static GOALS_MIGRATOR: Migrator = sqlx_macros::migrate!("./goals_migrations");
+pub(crate) static MEMORIES_MIGRATOR: Migrator = sqlx_macros::migrate!("./memory_migrations");
+pub(crate) static QUEUE_MIGRATOR: Migrator = sqlx_macros::migrate!("./queue_migrations");
+pub(crate) static THREAD_HISTORY_MIGRATOR: Migrator =
+    sqlx_macros::migrate!("./thread_history_migrations");
 
-const LEGACY_BETTER_MIGRATION_VERSIONS: [(i64, i64); 3] =
-    [(49, 10_001), (50, 10_002), (51, 10_003)];
-
-/// Allow the runtime to open a database containing compatible migration
-/// versions that are not embedded in this binary.
+/// Allow an older Codex binary to open a database that has already been
+/// migrated by a newer binary running in parallel.
 ///
-/// We intentionally ignore applied migration versions that are absent from the
-/// embedded migration set. This covers both newer databases and compatible
-/// fork-specific gaps such as upstream migration 0042. Embedded versions are
-/// still validated by checksum.
+/// We intentionally ignore applied migration versions that are newer than the
+/// embedded migration set. Known migration versions are still validated by
+/// checksum, so this only relaxes the "database is ahead of me" case.
 fn runtime_migrator(base: &'static Migrator) -> Migrator {
     Migrator {
         migrations: Cow::Borrowed(base.migrations.as_ref()),
@@ -44,6 +42,10 @@ pub(crate) fn runtime_goals_migrator() -> Migrator {
 
 pub(crate) fn runtime_memories_migrator() -> Migrator {
     runtime_migrator(&MEMORIES_MIGRATOR)
+}
+
+pub(crate) fn runtime_queue_migrator() -> Migrator {
+    runtime_migrator(&QUEUE_MIGRATOR)
 }
 
 // The paginated history projector will call this when it takes ownership of opening the database.
@@ -73,6 +75,27 @@ pub(crate) async fn repair_legacy_recency_migration_version(
         return Ok(());
     }
 
+    let legacy_recency_needs_repair = sqlx::query_scalar::<_, i64>(
+        r#"
+SELECT 1
+FROM _sqlx_migrations
+WHERE version = ?
+  AND checksum = ?
+  AND NOT EXISTS (
+      SELECT 1 FROM _sqlx_migrations WHERE version = ?
+  )
+        "#,
+    )
+    .bind(38_i64)
+    .bind(recency_migration.checksum.as_ref())
+    .bind(recency_migration.version)
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !legacy_recency_needs_repair {
+        return Ok(());
+    }
+
     sqlx::query(
         r#"
 UPDATE _sqlx_migrations
@@ -91,67 +114,6 @@ WHERE version = ?
     .bind(recency_migration.version)
     .execute(pool)
     .await?;
-    Ok(())
-}
-
-pub(crate) async fn repair_legacy_better_migration_versions(
-    pool: &SqlitePool,
-    migrator: &Migrator,
-) -> anyhow::Result<()> {
-    let migrations_table_exists = sqlx::query_scalar::<_, i64>(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
-    )
-    .fetch_optional(pool)
-    .await?
-    .is_some();
-    if !migrations_table_exists {
-        return Ok(());
-    }
-
-    let mut transaction = pool.begin().await?;
-    for (legacy_version, reserved_version) in LEGACY_BETTER_MIGRATION_VERSIONS {
-        let Some(reserved_migration) = migrator
-            .migrations
-            .iter()
-            .find(|migration| migration.version == reserved_version)
-        else {
-            continue;
-        };
-        let legacy_checksum = sqlx::query_scalar::<_, Vec<u8>>(
-            "SELECT checksum FROM _sqlx_migrations WHERE version = ? AND success = 1",
-        )
-        .bind(legacy_version)
-        .fetch_optional(&mut *transaction)
-        .await?;
-        if legacy_checksum.as_deref() != Some(reserved_migration.checksum.as_ref()) {
-            continue;
-        }
-
-        let reserved_checksum = sqlx::query_scalar::<_, Vec<u8>>(
-            "SELECT checksum FROM _sqlx_migrations WHERE version = ? AND success = 1",
-        )
-        .bind(reserved_version)
-        .fetch_optional(&mut *transaction)
-        .await?;
-        if reserved_checksum.as_deref() == Some(reserved_migration.checksum.as_ref()) {
-            sqlx::query("DELETE FROM _sqlx_migrations WHERE version = ? AND checksum = ?")
-                .bind(legacy_version)
-                .bind(reserved_migration.checksum.as_ref())
-                .execute(&mut *transaction)
-                .await?;
-        } else if reserved_checksum.is_none() {
-            sqlx::query(
-                "UPDATE _sqlx_migrations SET version = ?, description = ? WHERE version = ? AND checksum = ?",
-            )
-            .bind(reserved_version)
-            .bind(reserved_migration.description.as_ref())
-            .bind(legacy_version)
-            .bind(reserved_migration.checksum.as_ref())
-            .execute(&mut *transaction)
-            .await?;
-        }
-    }
-    transaction.commit().await?;
     Ok(())
 }
 

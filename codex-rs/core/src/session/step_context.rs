@@ -1,89 +1,91 @@
-use std::collections::HashMap;
+//! Request-scoped settings and capabilities, with live grants bound to the originating turn.
+
 use std::sync::Arc;
 
 use crate::agents_md::LoadedAgentsMd;
+use crate::config::TokenBudgetConfig;
 use crate::environment_selection::TurnEnvironmentSnapshot;
-use crate::session::McpRuntimeSnapshot;
+use crate::realtime_conversation::RealtimeConversationSnapshot;
+use crate::session::step_settings::ResolvedStepSettings;
 use crate::session::turn_context::TurnContext;
+use crate::session::turn_context::TurnEnvironment;
+use crate::tools::router::ToolRouter;
 use codex_exec_server::ExecutorCapabilityDiscoverySnapshot;
-use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::ResolvedSelectedCapabilityRoot;
 use codex_extension_api::ExtensionData;
+use codex_file_system::EnvironmentAccess;
 use codex_mcp::McpBinding;
-use tokio::sync::OnceCell;
+use codex_otel::SessionTelemetry;
+use codex_protocol::items::ModelInvocationContext;
+use codex_protocol::protocol::TurnContextItem;
+use tokio_util::sync::CancellationToken;
 
 /// Request-scoped state that may change between model sampling requests.
-#[derive(Debug)]
 pub(crate) struct StepContext {
     pub(crate) turn: Arc<TurnContext>,
+    /// Preempts this request and yields its code-mode observations when user input arrives.
+    pub(crate) preempt: Option<CancellationToken>,
+    /// Realtime call activity and instructions captured for this sampling request.
+    pub(crate) realtime: RealtimeConversationSnapshot,
+    /// One immutable settings version captured before request preparation.
+    pub(crate) settings: Arc<ResolvedStepSettings>,
+    /// Frozen turn preferences resolved against this step's captured model.
+    pub(crate) token_budget: Option<TokenBudgetConfig>,
+    /// Telemetry context tagged with this sampling request's model.
+    pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) environments: TurnEnvironmentSnapshot,
     /// Capability roots bound to ready environments in this exact step.
     pub(crate) selected_capability_roots: Vec<ResolvedSelectedCapabilityRoot>,
     /// Executor-materialized capability files shared by MCP and skills in this exact step.
     pub(crate) executor_capability_discovery: Option<Arc<ExecutorCapabilityDiscoverySnapshot>>,
-    /// The exact MCP config and manager used to advertise and execute tools for this step.
-    pub(crate) mcp: Arc<McpRuntimeSnapshot>,
-    /// The revision-bound MCP catalog used for this exact sampling request.
-    mcp_binding: OnceCell<Arc<McpBinding>>,
+    /// Keeps the extension inputs used to build this step's tools for its World State as well.
+    pub(crate) extension_data: ExtensionData,
+    /// The exact MCP connections, configuration, and catalog captured for this step.
+    pub(crate) mcp: Arc<McpBinding>,
+    /// The finalized tool plan advertised and executed for this exact sampling request.
+    pub(crate) tool_router: Arc<ToolRouter>,
     /// The canonical AGENTS.md value observed with this environment snapshot.
     pub(crate) loaded_agents_md: Option<Arc<LoadedAgentsMd>>,
-    /// Extension-owned values captured for this exact sampling request.
-    pub(crate) extension_data: ExtensionData,
 }
 
 impl StepContext {
-    pub(crate) fn new(
-        turn: Arc<TurnContext>,
-        environments: TurnEnvironmentSnapshot,
-        selected_capability_roots: Vec<ResolvedSelectedCapabilityRoot>,
-        executor_capability_discovery: Option<Arc<ExecutorCapabilityDiscoverySnapshot>>,
-        mcp: Arc<McpRuntimeSnapshot>,
-        loaded_agents_md: Option<Arc<LoadedAgentsMd>>,
-    ) -> Self {
-        let extension_data = ExtensionData::new(turn.sub_id.clone());
-        extension_data.insert(selected_capability_roots.clone());
-        if let Some(discovery) = &executor_capability_discovery {
-            extension_data.insert(discovery.as_ref().clone());
-        }
-        if !turn
-            .config
-            .permissions
-            .file_system_sandbox_policy()
-            .has_full_disk_read_access()
-        {
-            extension_data.insert(
-                environments
-                    .turn_environments
-                    .iter()
-                    .map(|environment| {
-                        (
-                            environment.environment_id.clone(),
-                            turn.file_system_sandbox_context(
-                                /*additional_permissions*/ None,
-                                environment,
-                            ),
-                        )
-                    })
-                    .collect::<HashMap<String, FileSystemSandboxContext>>(),
-            );
-        }
-        Self {
-            turn,
-            environments,
-            selected_capability_roots,
-            executor_capability_discovery,
-            mcp,
-            mcp_binding: OnceCell::new(),
-            loaded_agents_md,
-            extension_data,
-        }
+    pub(crate) fn uses_incremental_tools(&self) -> bool {
+        self.settings.model_info.use_responses_lite
+            && self
+                .turn
+                .config
+                .features
+                .enabled(codex_features::Feature::IncrementalTools)
     }
 
-    pub(crate) async fn mcp_binding(&self) -> &Arc<McpBinding> {
-        self.mcp_binding.get_or_init(|| self.mcp.binding()).await
+    /// Pairs the step's environments with access using current session and originating-turn grants.
+    pub(crate) fn environments(&self) -> Vec<(&TurnEnvironment, impl EnvironmentAccess + '_)> {
+        self.environments
+            .turn_environments()
+            .map(|environment| {
+                let grants = self
+                    .turn
+                    .granted_permissions(&environment.selection.environment_id);
+                (environment, environment.fs_accessor(grants))
+            })
+            .collect()
     }
 
-    pub(crate) async fn mcp_tools(&self) -> &[codex_mcp::ToolInfo] {
-        self.mcp_binding().await.tools()
+    /// Persist the context captured for this request, even after a live update.
+    pub(crate) fn to_turn_context_item(&self) -> TurnContextItem {
+        let mut item = self.turn.to_turn_context_item();
+        item.realtime_active = Some(self.realtime.active);
+        item.summary = self.settings.reasoning_summary;
+        item
+    }
+
+    pub(crate) fn model_context(&self) -> ModelInvocationContext {
+        ModelInvocationContext {
+            model_slug: self.settings.model_info.slug.clone(),
+            reasoning_effort: self
+                .settings
+                .effective_reasoning_effort()
+                .map(|effort| effort.to_string()),
+        }
     }
 }

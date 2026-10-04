@@ -32,10 +32,12 @@ pub(super) enum QueueMutation {
         input: Vec<UserInput>,
         client_user_message_id: String,
         attempts: u8,
+        capture_ide: bool,
     },
     Update {
         target: QueueTarget,
         input: Vec<UserInput>,
+        capture_ide: bool,
     },
     Delete {
         target: QueueTarget,
@@ -128,6 +130,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.reject_direct_input() {
+            return;
+        }
         if self.composer.queued_edit_position().is_some() {
             self.composer.finish_queued_message_edit();
             self.sync_composer_queue_edits(app_server);
@@ -135,12 +140,16 @@ impl ShellState {
         }
 
         let prompt = self.composer.submission_text();
-        if prompt.trim().is_empty()
+        if (prompt.trim().is_empty() && !self.composer.has_images())
             || self.reject_oversized_input(prompt.len())
             || self.reject_unavailable_session_action()
         {
             return;
         }
+        if self.reject_unsupported_images() {
+            return;
+        }
+        let input = self.composer.submission_items(&prompt);
         let client_user_message_id = format!("better-codex-queue-{}", uuid::Uuid::new_v4());
         if !self
             .composer
@@ -153,9 +162,10 @@ impl ShellState {
         }
         self.composer.remember_submission(&prompt);
         self.queue_state.pending.push_back(QueueMutation::Add {
-            input: text_input(prompt),
+            input,
             client_user_message_id,
             attempts: 0,
+            capture_ide: true,
         });
         self.status = "queueing message".to_string();
         self.start_next_queue_mutation(app_server);
@@ -178,6 +188,7 @@ impl ShellState {
                 } => self.queue_state.pending.push_back(QueueMutation::Update {
                     target: queue_target(id, client_user_message_id),
                     input: text_input(text),
+                    capture_ide: true,
                 }),
                 QueueEdit::Delete {
                     id,
@@ -205,6 +216,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.reject_direct_input() {
+            return;
+        }
         let hydration_pending = self.has_pending_backend_action(ActionGroup::QueueHydration);
         if self.queue_state.recovery_required()
             || self.queue_state.hydration_due
@@ -306,11 +320,12 @@ impl ShellState {
                         self.status = "message queued".to_string();
                     } else {
                         self.cancel_pending_queue_mutations();
-                        if let Some((submission, _)) = self
+                        if let Some((submission, _, images)) = self
                             .composer
                             .remove_queued_submission_for_client(&recovery.client_user_message_id)
                         {
                             self.composer.restore_failed_queued_submission(&submission);
+                            self.composer.restore_queued_images(images);
                         }
                         self.status = "action failed".to_string();
                         self.push_error(format!(
@@ -397,11 +412,13 @@ impl ShellState {
                     input,
                     client_user_message_id,
                     attempts,
+                    capture_ide,
                 } if attempts.saturating_add(1) < MAX_ADD_ATTEMPTS => {
                     self.queue_state.pending.push_front(QueueMutation::Add {
                         input,
                         client_user_message_id,
                         attempts: attempts.saturating_add(1),
+                        capture_ide,
                     });
                     self.status = "retrying queued message".to_string();
                 }
@@ -451,26 +468,34 @@ impl ShellState {
                 self.queue_state.start_pending = false;
                 continue;
             }
-            let Some(rpc) = self.resolve_queue_mutation(&mutation) else {
-                self.cancel_pending_queue_mutations();
-                self.queue_state.reconciliation_required = true;
-                self.queue_state.hydration_due = true;
-                self.push_status("queued message changed; refreshing");
-                self.maybe_start_queue_hydration(app_server);
-                return;
-            };
-            let thread_id = self.thread_id;
-            let request = app_server.thread_queue_mutate_in_background(thread_id, rpc);
-            self.backend_actions
-                .start(Some(ActionGroup::QueueMutation), async move {
-                    BackendActionResult::QueueMutation {
-                        thread_id,
-                        mutation,
-                        result: request.await,
-                    }
-                });
+            self.prepare_ide_queue(app_server, mutation);
             return;
         }
+    }
+
+    pub(super) fn dispatch_queue_mutation<S: AppShellBackend>(
+        &mut self,
+        app_server: &S,
+        mutation: QueueMutation,
+    ) {
+        let Some(rpc) = self.resolve_queue_mutation(&mutation) else {
+            self.cancel_pending_queue_mutations();
+            self.queue_state.reconciliation_required = true;
+            self.queue_state.hydration_due = true;
+            self.push_status("queued message changed; refreshing");
+            self.maybe_start_queue_hydration(app_server);
+            return;
+        };
+        let thread_id = self.thread_id;
+        let request = app_server.thread_queue_mutate_in_background(thread_id, rpc);
+        self.backend_actions
+            .start(Some(ActionGroup::QueueMutation), async move {
+                BackendActionResult::QueueMutation {
+                    thread_id,
+                    mutation,
+                    result: request.await,
+                }
+            });
     }
 
     fn resolve_queue_mutation(&self, mutation: &QueueMutation) -> Option<QueueRpc> {
@@ -483,7 +508,7 @@ impl ShellState {
                 input: input.clone(),
                 client_user_message_id: client_user_message_id.clone(),
             }),
-            QueueMutation::Update { target, input } => Some(QueueRpc::Update {
+            QueueMutation::Update { target, input, .. } => Some(QueueRpc::Update {
                 queued_submission_id: self.queue_state.resolve(target)?,
                 input: input.clone(),
             }),
@@ -516,11 +541,12 @@ impl ShellState {
             })
             .collect::<Vec<_>>();
         for client_user_message_id in failed_adds.into_iter().rev() {
-            if let Some((submission, was_selected)) = self
+            if let Some((submission, was_selected, images)) = self
                 .composer
                 .remove_queued_submission_for_client(&client_user_message_id)
             {
                 self.composer.restore_failed_queued_submission(&submission);
+                self.composer.restore_queued_images(images);
                 if was_selected {
                     self.composer.finish_queued_message_edit();
                 }

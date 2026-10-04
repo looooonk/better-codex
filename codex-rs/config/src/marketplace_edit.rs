@@ -2,9 +2,6 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use codex_utils_path::SymlinkWritePaths;
-use codex_utils_path::resolve_symlink_write_paths;
-use codex_utils_path::write_atomically;
 use toml_edit::DocumentMut;
 use toml_edit::Item as TomlItem;
 use toml_edit::Table as TomlTable;
@@ -12,11 +9,8 @@ use toml_edit::Value as TomlValue;
 use toml_edit::value;
 
 use crate::CONFIG_TOML_FILE;
-use crate::ConfigFileLock;
 
 pub struct MarketplaceConfigUpdate<'a> {
-    pub last_updated: &'a str,
-    pub last_revision: Option<&'a str>,
     pub source_type: &'a str,
     pub source: &'a str,
     pub ref_name: Option<&'a str>,
@@ -35,9 +29,11 @@ pub fn record_user_marketplace(
     marketplace_name: &str,
     update: &MarketplaceConfigUpdate<'_>,
 ) -> std::io::Result<()> {
-    let (write_paths, _config_lock, mut doc) = load_config_for_update(codex_home)?;
+    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let mut doc = read_or_create_document(&config_path)?;
     upsert_marketplace(&mut doc, marketplace_name, update);
-    write_atomically(&write_paths.write_path, &doc.to_string())
+    fs::create_dir_all(codex_home)?;
+    fs::write(config_path, doc.to_string())
 }
 
 pub fn remove_user_marketplace(codex_home: &Path, marketplace_name: &str) -> std::io::Result<bool> {
@@ -49,31 +45,28 @@ pub fn remove_user_marketplace_config(
     codex_home: &Path,
     marketplace_name: &str,
 ) -> std::io::Result<RemoveMarketplaceConfigOutcome> {
-    let (write_paths, _config_lock, mut doc) = load_config_for_update(codex_home)?;
+    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let mut doc = match fs::read_to_string(&config_path) {
+        Ok(raw) => raw
+            .parse::<DocumentMut>()
+            .map_err(|err| std::io::Error::new(ErrorKind::InvalidData, err))?,
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            return Ok(RemoveMarketplaceConfigOutcome::NotFound);
+        }
+        Err(err) => return Err(err),
+    };
 
     let outcome = remove_marketplace(&mut doc, marketplace_name);
     if outcome != RemoveMarketplaceConfigOutcome::Removed {
         return Ok(outcome);
     }
 
-    write_atomically(&write_paths.write_path, &doc.to_string())?;
+    fs::create_dir_all(codex_home)?;
+    fs::write(config_path, doc.to_string())?;
     Ok(RemoveMarketplaceConfigOutcome::Removed)
 }
 
-fn load_config_for_update(
-    codex_home: &Path,
-) -> std::io::Result<(SymlinkWritePaths, ConfigFileLock, DocumentMut)> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
-    let write_paths = resolve_symlink_write_paths(&config_path)?;
-    let config_lock = ConfigFileLock::acquire_for_write_path(&write_paths.write_path)?;
-    let doc = read_or_create_document(write_paths.read_path.as_deref())?;
-    Ok((write_paths, config_lock, doc))
-}
-
-fn read_or_create_document(config_path: Option<&Path>) -> std::io::Result<DocumentMut> {
-    let Some(config_path) = config_path else {
-        return Ok(DocumentMut::new());
-    };
+fn read_or_create_document(config_path: &Path) -> std::io::Result<DocumentMut> {
     match fs::read_to_string(config_path) {
         Ok(raw) => raw
             .parse::<DocumentMut>()
@@ -105,10 +98,6 @@ fn upsert_marketplace(
     };
     let mut entry = TomlTable::new();
     entry.set_implicit(false);
-    entry["last_updated"] = value(update.last_updated.to_string());
-    if let Some(last_revision) = update.last_revision {
-        entry["last_revision"] = value(last_revision.to_string());
-    }
     entry["source_type"] = value(update.source_type.to_string());
     entry["source"] = value(update.source.to_string());
     if let Some(ref_name) = update.ref_name {
@@ -192,11 +181,44 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn record_user_marketplace_omits_runtime_update_metadata() {
+        let codex_home = TempDir::new().unwrap();
+        let update = MarketplaceConfigUpdate {
+            source_type: "git",
+            source: "https://github.com/owner/repo.git",
+            ref_name: Some("main"),
+            sparse_paths: &[],
+        };
+
+        record_user_marketplace(codex_home.path(), "debug", &update).unwrap();
+
+        let config: toml::Value =
+            toml::from_str(&fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).unwrap())
+                .unwrap();
+        let marketplace = config
+            .get("marketplaces")
+            .and_then(|marketplaces| marketplaces.get("debug"))
+            .expect("marketplace declaration");
+        assert_eq!(
+            marketplace.get("source_type").and_then(toml::Value::as_str),
+            Some("git")
+        );
+        assert_eq!(
+            marketplace.get("source").and_then(toml::Value::as_str),
+            Some("https://github.com/owner/repo.git")
+        );
+        assert_eq!(
+            marketplace.get("ref").and_then(toml::Value::as_str),
+            Some("main")
+        );
+        assert!(marketplace.get("last_updated").is_none());
+        assert!(marketplace.get("last_revision").is_none());
+    }
+
+    #[test]
     fn remove_user_marketplace_removes_requested_entry() {
         let codex_home = TempDir::new().unwrap();
         let update = MarketplaceConfigUpdate {
-            last_updated: "2026-04-13T00:00:00Z",
-            last_revision: None,
             source_type: "git",
             source: "https://github.com/owner/repo.git",
             ref_name: Some("main"),
@@ -232,8 +254,6 @@ mod tests {
     fn remove_user_marketplace_config_reports_case_mismatch() {
         let codex_home = TempDir::new().unwrap();
         let update = MarketplaceConfigUpdate {
-            last_updated: "2026-04-13T00:00:00Z",
-            last_revision: None,
             source_type: "git",
             source: "https://github.com/owner/repo.git",
             ref_name: Some("main"),

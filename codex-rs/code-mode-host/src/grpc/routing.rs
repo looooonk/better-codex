@@ -3,7 +3,8 @@ use std::sync::PoisonError;
 
 use codex_code_mode_protocol::CodeModeNestedToolCall;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_protocol::ToolName;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use prost::Message;
@@ -19,12 +20,11 @@ use super::GrpcStream;
 use super::conversions;
 use super::session::GrpcSession;
 use super::session::PendingInvocation;
-use super::session::ToolByteReservation;
 use super::session::ToolSubscription;
 use super::validation;
 use crate::OUTGOING_CHANNEL_CAPACITY;
 
-pub(crate) const MAX_SUBSCRIPTIONS_PER_SESSION: usize = 2;
+const MAX_SUBSCRIPTIONS: usize = OUTGOING_CHANNEL_CAPACITY;
 
 impl GrpcSession {
     pub(super) fn subscribe(
@@ -38,7 +38,7 @@ impl GrpcSession {
         if self.closed.is_cancelled() {
             return Err(Status::cancelled("code-mode session is closed"));
         }
-        if state.subscriptions.len() >= MAX_SUBSCRIPTIONS_PER_SESSION {
+        if state.subscriptions.len() >= MAX_SUBSCRIPTIONS {
             return Err(Status::resource_exhausted(
                 "code-mode session has too many tool subscriptions",
             ));
@@ -52,7 +52,7 @@ impl GrpcSession {
 
         let session = Arc::downgrade(self);
         let closed = self.closed.clone();
-        let watcher_registered = self.spawn_task(async move {
+        tokio::spawn(async move {
             tokio::select! {
                 _ = sender.closed() => {}
                 _ = closed.cancelled() => return,
@@ -83,17 +83,7 @@ impl GrpcSession {
                 }
             }
         });
-        if !watcher_registered {
-            self.state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .subscriptions
-                .retain(|subscription| subscription.id != id);
-            return Err(Status::cancelled("code-mode session is closed"));
-        }
-        Ok(Box::pin(
-            ReceiverStream::new(receiver).map(|call| Ok(call.message)),
-        ))
+        Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 
     pub(super) async fn dispatch_tool(
@@ -105,39 +95,16 @@ impl GrpcSession {
         response: oneshot::Sender<Result<JsonValue, String>>,
         cancellation: &CancellationToken,
     ) -> Result<(), String> {
-        let reservation = self.reserve_tool_bytes(MAX_APPLICATION_MESSAGE_BYTES)?;
-        self.dispatch_tool_reserved(
-            invocation,
-            execution_id,
-            invocation_id,
-            input_json,
-            response,
-            reservation,
-            cancellation,
-        )
-        .await
-    }
-
-    pub(super) async fn dispatch_tool_reserved(
-        &self,
-        invocation: CodeModeNestedToolCall,
-        execution_id: String,
-        invocation_id: Uuid,
-        input_json: Option<Vec<u8>>,
-        response: oneshot::Sender<Result<JsonValue, String>>,
-        reservation: ToolByteReservation,
-        cancellation: &CancellationToken,
-    ) -> Result<(), String> {
         let cell_id = invocation.cell_id.to_string();
         let tool_name = proto::ToolName {
             name: invocation.tool_name.name,
             namespace: invocation.tool_name.namespace,
         };
-        let (sequence, subscriptions) = {
+        let canonical_tool_name =
+            ToolName::new(tool_name.namespace.clone(), tool_name.name.clone())
+                .with_default_namespace();
+        let (sequence, traceparent, subscriptions) = {
             let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if self.closed.is_cancelled() {
-                return Err("code-mode session closed before dispatching its tool call".to_string());
-            }
             let Some(execution) = state.cells.get(&cell_id) else {
                 return Err("code-mode cell closed before dispatching its tool call".to_string());
             };
@@ -150,13 +117,21 @@ impl GrpcSession {
                 .filter(|subscription| {
                     subscription.filters.is_empty()
                         || subscription.filters.iter().any(|filter| {
-                            filter.name == tool_name.name && filter.namespace == tool_name.namespace
+                            ToolName::new(filter.namespace.clone(), filter.name.clone())
+                                .with_default_namespace()
+                                == canonical_tool_name
                         })
                 })
                 .map(|subscription| (subscription.id, subscription.sender.clone()))
                 .collect::<Vec<_>>();
-            (sequence, subscriptions)
+            (sequence, execution.traceparent.clone(), subscriptions)
         };
+        // The saved traceparent belongs to the outer execution. Prefer the runtime's
+        // per-tool span so the callback is nested under its invocation, with the
+        // execution context as a fallback when no current span context is available.
+        let traceparent = codex_otel::current_span_w3c_trace_context()
+            .and_then(|trace| trace.traceparent)
+            .or(traceparent);
         if subscriptions.is_empty() {
             return Err("no code-mode tool subscription matches the requested tool".to_string());
         }
@@ -170,20 +145,14 @@ impl GrpcSession {
             tool_kind: conversions::tool_kind(invocation.tool_kind),
             input_json,
             sequence,
+            traceparent,
         };
-        if message.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
+        if message.encoded_len() > MAX_FRAME_BYTES {
             return Err(format!(
-                "code-mode tool invocation exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
+                "code-mode tool invocation exceeds the {MAX_FRAME_BYTES}-byte gRPC message limit"
             ));
         }
-        message.sequence = u64::MAX;
-        let reservation = reservation.retain(
-            message
-                .encoded_len()
-                .min(MAX_APPLICATION_MESSAGE_BYTES)
-                .max(1),
-        )?;
-        message.sequence = sequence;
+
         let mut reservations =
             subscriptions
                 .into_iter()
@@ -210,9 +179,6 @@ impl GrpcSession {
             };
 
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if self.closed.is_cancelled() {
-                return Err("code-mode session closed before dispatching its tool call".to_string());
-            }
             let Some(subscription_index) = state.subscriptions.iter().position(|subscription| {
                 subscription.id == subscription_id && !subscription.sender.is_closed()
             }) else {
@@ -225,12 +191,11 @@ impl GrpcSession {
                 "code-mode execution tool-call sequence was exhausted".to_string()
             })?;
             message.sequence = sequence;
-            if message.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
+            if message.encoded_len() > MAX_FRAME_BYTES {
                 return Err(format!(
-                    "code-mode tool invocation exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
+                    "code-mode tool invocation exceeds the {MAX_FRAME_BYTES}-byte gRPC message limit"
                 ));
             }
-            let reservation = reservation.retain(message.encoded_len().max(1))?;
             execution.tool_call_sequence = sequence;
             state.pending_invocations.insert(
                 invocation_id,
@@ -241,7 +206,7 @@ impl GrpcSession {
             );
             state.seen_invocations.remember(invocation_id);
             state.next_subscription = (subscription_index + 1) % state.subscriptions.len();
-            permit.send(self.buffered_tool_call(message, reservation));
+            permit.send(Ok(message));
             return Ok(());
         }
     }
@@ -253,9 +218,6 @@ impl GrpcSession {
     ) -> Result<(), Status> {
         let response = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if self.closed.is_cancelled() {
-                return Err(Status::cancelled("code-mode session is closed"));
-            }
             match state.pending_invocations.remove(&invocation_id) {
                 Some(invocation) => Some(invocation.response),
                 None if state.seen_invocations.contains(&invocation_id) => None,

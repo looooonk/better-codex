@@ -58,3 +58,19 @@ pub fn prefix_lines(
         })
         .collect()
 }
+
+/// Borrow the spans of an existing line while retaining its presentation.
+pub(crate) fn line_to_borrowed<'a>(line: &'a Line<'_>) -> Line<'a> {
+    Line {
+        style: line.style,
+        alignment: line.alignment,
+        spans: line
+            .spans
+            .iter()
+            .map(|span| Span {
+                style: span.style,
+                content: std::borrow::Cow::Borrowed(span.content.as_ref()),
+            })
+            .collect(),
+    }
+}

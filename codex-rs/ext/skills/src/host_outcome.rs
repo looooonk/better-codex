@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::LOCAL_FS;
-use codex_protocol::protocol::Product;
+use codex_exec_server::ReadFileOptions;
 use codex_skills::SkillError;
 use codex_skills::SkillMetadata;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -51,18 +51,6 @@ impl SkillLoadOutcome {
 
     pub fn is_skill_enabled(&self, skill: &SkillMetadata) -> bool {
         !self.disabled_paths.contains(&skill.path_to_skills_md)
-    }
-
-    pub fn is_skill_allowed_for_implicit_invocation(&self, skill: &SkillMetadata) -> bool {
-        self.is_skill_enabled(skill) && skill.allows_implicit_invocation()
-    }
-
-    pub fn allowed_skills_for_implicit_invocation(&self) -> Vec<SkillMetadata> {
-        self.skills
-            .iter()
-            .filter(|skill| self.is_skill_allowed_for_implicit_invocation(skill))
-            .cloned()
-            .collect()
     }
 
     pub(crate) fn skills_with_enabled(&self) -> impl Iterator<Item = (&SkillMetadata, bool)> {
@@ -130,7 +118,8 @@ impl SkillLoadOutcome {
             .file_system_for_skill(skill)
             .unwrap_or_else(|| Arc::clone(&LOCAL_FS));
         let path = PathUri::from_abs_path(&skill.path_to_skills_md);
-        fs.read_file_text(&path, /*sandbox*/ None).await
+        fs.read_file_text(&path, ReadFileOptions::default(), /*sandbox*/ None)
+            .await
     }
 }
 
@@ -177,16 +166,6 @@ impl SkillFileSystemsByPath {
     fn get(&self, path: &AbsolutePathBuf) -> Option<Arc<dyn ExecutorFileSystem>> {
         self.values.get(path).map(Arc::clone)
     }
-
-    fn retain_paths(&mut self, paths: &HashSet<AbsolutePathBuf>) {
-        self.values = Arc::new(
-            self.values
-                .iter()
-                .filter(|(path, _)| paths.contains(*path))
-                .map(|(path, fs)| (path.clone(), Arc::clone(fs)))
-                .collect(),
-        );
-    }
 }
 
 impl fmt::Debug for SkillFileSystemsByPath {
@@ -199,62 +178,4 @@ impl fmt::Debug for SkillFileSystemsByPath {
 
 fn canonicalize_if_exists(path: &AbsolutePathBuf) -> AbsolutePathBuf {
     path.canonicalize().unwrap_or_else(|_| path.clone())
-}
-
-pub fn filter_skill_load_outcome_for_product(
-    mut outcome: SkillLoadOutcome,
-    restriction_product: Option<Product>,
-) -> SkillLoadOutcome {
-    outcome
-        .skills
-        .retain(|skill| skill.matches_product_restriction_for_product(restriction_product));
-    let retained_paths: HashSet<AbsolutePathBuf> = outcome
-        .skills
-        .iter()
-        .map(|skill| skill.path_to_skills_md.clone())
-        .collect();
-    outcome
-        .file_systems_by_skill_path
-        .retain_paths(&retained_paths);
-    outcome.skill_root_by_path = Arc::new(
-        outcome
-            .skill_root_by_path
-            .iter()
-            .filter(|(path, _)| retained_paths.contains(*path))
-            .map(|(path, root)| (path.clone(), root.clone()))
-            .collect(),
-    );
-    outcome.skill_discovery_path_by_path = Arc::new(
-        outcome
-            .skill_discovery_path_by_path
-            .iter()
-            .filter(|(path, _)| retained_paths.contains(*path))
-            .map(|(path, discovery_path)| (path.clone(), discovery_path.clone()))
-            .collect(),
-    );
-    outcome
-        .agent_plugin_skill_paths
-        .retain(|path| retained_paths.contains(path));
-    let retained_roots: HashSet<AbsolutePathBuf> =
-        outcome.skill_root_by_path.values().cloned().collect();
-    outcome
-        .skill_roots
-        .retain(|root| retained_roots.contains(root));
-    outcome.implicit_skills_by_scripts_dir = Arc::new(
-        outcome
-            .implicit_skills_by_scripts_dir
-            .iter()
-            .filter(|(_, skill)| skill.matches_product_restriction_for_product(restriction_product))
-            .map(|(path, skill)| (path.clone(), skill.clone()))
-            .collect(),
-    );
-    outcome.implicit_skills_by_doc_path = Arc::new(
-        outcome
-            .implicit_skills_by_doc_path
-            .iter()
-            .filter(|(_, skill)| skill.matches_product_restriction_for_product(restriction_product))
-            .map(|(path, skill)| (path.clone(), skill.clone()))
-            .collect(),
-    );
-    outcome
 }

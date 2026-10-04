@@ -338,16 +338,22 @@ impl ShellState {
     }
 
     pub(super) fn block_session_switch_if_busy(&mut self) -> bool {
-        let message = if self.has_pending_backend_action(ActionGroup::SessionSwitch) {
+        let message = if self.side_parent.is_some() {
+            "return to the main conversation with /side return before switching sessions"
+        } else if self.has_pending_backend_action(ActionGroup::SessionSwitch) {
             "wait for the pending session switch to finish"
         } else if self.has_pending_backend_action(ActionGroup::ConversationBranch) {
             "wait for the conversation branch to finish"
-        } else if self.has_pending_backend_action(ActionGroup::TurnStart) {
+        } else if self.has_pending_backend_action(ActionGroup::TurnStart)
+            || self.has_pending_backend_action(ActionGroup::TurnSteer)
+        {
             "wait for the turn submission to finish"
         } else if self.composer.queued_edit_position().is_some() {
             "finish the queued message edit before switching sessions"
         } else if self.has_pending_queue_mutation() {
             "wait for queued message changes to finish"
+        } else if self.has_pending_backend_action(ActionGroup::Workspace) {
+            "wait for the workspace action to finish"
         } else if self.has_pending_backend_action(ActionGroup::Settings) {
             "wait for settings to finish saving"
         } else if self.active_turn_id.is_some() {
@@ -407,6 +413,7 @@ impl ShellState {
     }
 
     pub(super) fn replace_started_session(&mut self, started: AppServerStartedThread) {
+        self.stop_voice();
         self.terminal_clear_requested.set(true);
         self.invalidate_session_hydration();
         self.close_agent_log();
@@ -416,10 +423,17 @@ impl ShellState {
             session,
             thread_status,
             turns,
+            timeline,
             agent_threads,
             agent_history_task,
         } = started;
         self.thread_id = session.thread_id;
+        self.recent_guardian_denials.clear();
+        self.recap = super::recap::RecapState::default();
+        self.automatic_recap.reset();
+        self.can_accept_direct_input = session.can_accept_direct_input;
+        self.daybreak_enabled = session.daybreak_enabled;
+        self.model_provider_id = session.model_provider_id;
         self.session_unavailable_reason = None;
         self.thread_name = session.thread_name;
         if !session.model.is_empty() {
@@ -449,7 +463,12 @@ impl ShellState {
         self.plan_explanation = None;
         self.plan_steps.clear();
         self.record_active_goal(None);
+        let draft = self.composer.clone_without_queue();
+        let image_draft = draft.has_images().then_some(draft);
         self.composer.reset_for_session();
+        if let Some(draft) = image_draft {
+            self.composer = draft;
+        }
         self.queue_state.reset();
         self.slash_command_popup.reset();
         self.rewind = super::rewind::RewindState::default();
@@ -486,7 +505,7 @@ impl ShellState {
         self.safety_buffering.clear();
         self.push_system("switched session");
         self.restore_thread_lifecycle(thread_status, &turns);
-        self.ingest_turn_history(turns);
+        self.ingest_thread_history(turns, timeline);
         self.install_agent_history(agent_threads, agent_history_task);
     }
 }

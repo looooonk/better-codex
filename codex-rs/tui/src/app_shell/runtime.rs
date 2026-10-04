@@ -42,14 +42,17 @@ const WORKSPACE_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(/*secs*/ 5)
 const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
 const TURN_TIMER_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 1);
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
     tui: &mut tui::Tui,
     mut app_server: AppServerSession,
     mut config: Config,
     resume_cwd_runtime: ResumeCwdRuntime,
     initial_prompt: Option<String>,
+    initial_images: Vec<std::path::PathBuf>,
     session_selection: SessionSelection,
     startup_bootstrap: Option<crate::app_server_session::AppServerBootstrap>,
+    worktree_runtime: crate::managed_worktree::WorktreeRuntime,
 ) -> Result<AppExitInfo> {
     tui.enter_alt_screen()
         .wrap_err("failed to enter fullscreen app shell")?;
@@ -100,10 +103,14 @@ pub(crate) async fn run(
     ));
 
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
+    if let Some(worktree) = &worktree_runtime.startup {
+        worktree.bind(started.session.thread_id)?;
+    }
     let AppServerStartedThread {
         session,
         thread_status,
         turns,
+        timeline,
         agent_threads,
         agent_history_task,
     } = started;
@@ -115,7 +122,7 @@ pub(crate) async fn run(
         ShellClientConfig {
             codex_home: config.codex_home.to_path_buf(),
             config_path: client_config_path,
-            app_theme: config.tui_app_theme,
+            app_theme: crate::app_theme::configured(&config),
             tui_theme: config.tui_theme.clone(),
             animations: config.animations,
             show_tooltips: config.show_tooltips,
@@ -123,9 +130,22 @@ pub(crate) async fn run(
         resume_cwd_runtime,
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
+    let invalid_display_items = shell.status_surfaces.configure(&config);
+    if !invalid_display_items.is_empty() {
+        shell.push_error(format!(
+            "Unknown title/status items: {}",
+            invalid_display_items.join(", ")
+        ));
+    }
+    shell.worktree_loader = Some(worktree_runtime.loader);
+    shell.voice.configure(&config);
+    shell.keybindings = super::keybindings::ShellKeymap::from_config(&config.tui_keymap)
+        .map_err(|error| color_eyre::eyre::eyre!(error))?;
+    shell.pets.configure(&config, tui.frame_requester());
+    shell.automatic_recap.enabled = config.tui_auto_recap;
     shell.workspace_command_runner = Some(workspace_command_runner.clone());
     shell.restore_thread_lifecycle(thread_status, &turns);
-    shell.ingest_turn_history(turns);
+    shell.ingest_thread_history(turns, timeline);
     shell.install_agent_history(agent_threads, agent_history_task);
     for error in tui.take_startup_errors() {
         shell.push_error(error);
@@ -136,7 +156,10 @@ pub(crate) async fn run(
     // Paint the restored conversation and start accepting input before secondary dashboard data
     // completes. These lookups can cross a remote app-server boundary, so their results are
     // revision-guarded and applied from the event loop as they become available.
-    let mut pending_initial_prompt = initial_prompt.filter(|prompt| !prompt.trim().is_empty());
+    shell.attach_image_paths(initial_images).await?;
+    let mut pending_initial_prompt = initial_prompt
+        .filter(|prompt| !prompt.trim().is_empty())
+        .or_else(|| shell.composer.has_images().then(String::new));
     let has_initial_prompt = pending_initial_prompt.is_some();
     draw_shell(tui, &shell)?;
     shell.start_initial_dashboard_hydration(&app_server);
@@ -147,6 +170,8 @@ pub(crate) async fn run(
 
     let run_result: Result<ExitReason> = async {
         let mut tui_events = tui.event_stream();
+        let mut automatic_recap_poll = tokio::time::interval(Duration::from_secs(/*secs*/ 1));
+        automatic_recap_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut agent_history_poll = tokio::time::interval(AGENT_HISTORY_POLL_INTERVAL);
         agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut backend_action_poll = tokio::time::interval(BACKEND_ACTION_POLL_INTERVAL);
@@ -171,6 +196,8 @@ pub(crate) async fn run(
         );
         turn_timer_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = 'event_loop: loop {
+            shell.refresh_status_metadata(&app_server);
+            shell.poll_automatic_recap(tui.is_focused(), &config, &app_server);
             let terminal_size = tui.terminal.size()?;
             if terminal_size_supported(terminal_size.width, terminal_size.height)
                 && let Some(prompt) = pending_initial_prompt.take()
@@ -181,6 +208,7 @@ pub(crate) async fn run(
             let user_input_auto_resolution_deadline =
                 shell.pending_user_input_auto_resolution_deadline();
             select! {
+                _ = automatic_recap_poll.tick() => {},
                 event = tui_events.next() => {
                     let Some(event) = event else {
                         break ExitReason::UserRequested;
@@ -219,7 +247,10 @@ pub(crate) async fn run(
                             }
                             while let Some(request) = shell.take_vim_input_request() {
                                 let originating_thread_id = request.thread_id();
+                                let replaced_draft = request.replaced_draft().map(str::to_string);
                                 draw_shell(tui, &shell)?;
+                                shell.pets.clear()?;
+                                crate::terminal_title::clear_managed_terminal_title();
                                 let wait_outcome = tui
                                     .with_restored_terminal(|| {
                                         vim_input::wait_while_processing_events(
@@ -239,6 +270,10 @@ pub(crate) async fn run(
                                         );
                                     }
                                 };
+                                if originating_thread_id == shell.thread_id
+                                    && replaced_draft.as_deref() == Some(shell.composer.submission_text().as_str())
+                                    && matches!(&result, Ok(vim_input::VimInputOutcome::Submit(_) | vim_input::VimInputOutcome::ReturnDraft(_)))
+                                { shell.composer.clear_text(); }
                                 match shell
                                     .complete_vim_input(
                                         originating_thread_id,
@@ -404,8 +439,11 @@ pub(crate) async fn run(
                         tui.frame_requester().schedule_frame();
                     }
                 }
-                _ = backend_action_poll.tick(), if shell.has_pending_backend_actions() => {
-                    if shell.poll_backend_actions(&app_server).await {
+                _ = backend_action_poll.tick(), if shell.has_pending_backend_actions() || shell.voice.has_work() || shell.pending_worktree.is_some() || shell.pets.has_work() => {
+                    let pet_changed = shell.poll_pets().await;
+                    let voice_changed = shell.poll_voice().await;
+                    let worktree_changed = shell.poll_managed_worktree(&mut config, &app_server).await;
+                    if shell.poll_backend_actions(&app_server).await || voice_changed || worktree_changed || pet_changed {
                         if let Err(err) = shell
                             .dispatch_pending_prompt_submission(&mut app_server)
                             .await
@@ -456,6 +494,7 @@ pub(crate) async fn run(
     }
     .await;
 
+    let pet_clear_result = shell.pets.clear();
     shell.cancel_shell_command();
     shell.close_agent_log();
     shell.close_tool_output();
@@ -474,12 +513,13 @@ pub(crate) async fn run(
         })
         .ok();
     let exit_reason = run_result?;
+    pet_clear_result?;
 
     Ok(AppExitInfo {
         token_usage: shell.token_usage.clone(),
         thread_id: Some(shell.thread_id),
         resume_hint: shell.resume_hint(),
-        update_action: None,
+        update_action: shell.pending_update_action,
         exit_reason,
     })
 }

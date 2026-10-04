@@ -254,7 +254,8 @@ impl ShellState {
                     return;
                 };
                 let range = NormalizedVisualRange::from_hits(anchor, focus);
-                let Some(text) = transcript_view::transcript_selected_text(self, transcript, range)
+                let Some(text) =
+                    transcript_view::transcript_selected_copy_text(self, transcript, range)
                 else {
                     return;
                 };

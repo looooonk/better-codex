@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide gets a published OpenAI Codex Python SDK beta installation running
+This guide gets a published OpenAI Codex Python SDK installation running
 with a multi-turn thread.
 
 ## 1. Install
@@ -16,10 +16,8 @@ Requirements:
 - Python `>=3.10`
 - An existing Codex account session, or one of the login flows below
 
-The SDK installs its compatible `openai-codex-cli-bin` runtime dependency
-automatically. While beta releases are the only published SDK releases, this
-normal install command selects the latest beta. After a stable release exists,
-use `pip install --pre openai-codex` to opt into a newer prerelease.
+The SDK installs its matching `openai-codex-cli-bin` runtime dependency
+automatically. Stable SDK releases track the corresponding stable Codex CLI release.
 
 ## 2. Authenticate When Needed
 
@@ -71,6 +69,11 @@ with Codex() as codex:
 
 Use `Thread.turn(...)` when you need a `TurnHandle` for streaming, steering,
 or interrupting an active turn.
+
+For **untrusted content** from another agent, tool, or application, pass an
+[`ExternalMessage`](api-reference.md#externalmessage). It retains tool-level
+authority and does not establish user authorization or approval. Plain strings
+and `TextInput` represent user input.
 
 ## 4. Choose Sandbox Access
 
@@ -163,6 +166,6 @@ source .venv/bin/activate
 
 ## Next Stops
 
-- [API reference](api-reference.md)
-- [FAQ](faq.md)
-- [Runnable examples](../examples/README.md)
+- [API reference](https://github.com/openai/codex/blob/main/sdk/python/docs/api-reference.md)
+- [FAQ](https://github.com/openai/codex/blob/main/sdk/python/docs/faq.md)
+- [Runnable examples](https://github.com/openai/codex/blob/main/sdk/python/examples/README.md)

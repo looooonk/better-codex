@@ -1,5 +1,5 @@
 use super::*;
-use codex_config::types::TuiAppTheme;
+use crate::app_theme::TuiAppTheme;
 use pretty_assertions::assert_eq;
 
 fn option(index: usize) -> SelectorOption<usize> {

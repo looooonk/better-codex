@@ -55,6 +55,9 @@ mod keyboard_modes;
 mod terminal_stderr;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod tmux;
+#[cfg(any(windows, test))]
+pub(crate) mod windows_key_sequence;
 
 /// Target frame interval for UI redraw scheduling.
 pub(crate) const TARGET_FRAME_INTERVAL: Duration = frame_rate_limiter::MIN_FRAME_INTERVAL;
@@ -175,7 +178,7 @@ pub fn set_modes() -> Result<()> {
     // Some terminals (notably legacy Windows consoles) do not support
     // keyboard enhancement flags. Attempt to enable them, but continue
     // gracefully if unsupported.
-    keyboard_modes::enable_keyboard_enhancement();
+    keyboard_modes::enable_keyboard_enhancement(&mut stdout());
 
     let _ = execute!(stdout(), EnableFocusChange);
     cleanup_guard.disarm();
@@ -263,10 +266,18 @@ fn restore_common(
     keyboard_restore: KeyboardRestore,
 ) -> Result<()> {
     let mut first_error = ensure_virtual_terminal_processing().err();
+    if let Err(error) = crate::pets::clear_active_terminal_image(&mut stdout()) {
+        first_error.get_or_insert(error);
+    }
+    crate::terminal_title::clear_managed_terminal_title();
 
     match keyboard_restore {
-        KeyboardRestore::PopStack => keyboard_modes::restore_keyboard_enhancement_stack(),
-        KeyboardRestore::ResetAfterExit => keyboard_modes::reset_keyboard_reporting_after_exit(),
+        KeyboardRestore::PopStack => {
+            keyboard_modes::restore_keyboard_enhancement_stack(&mut stdout())
+        }
+        KeyboardRestore::ResetAfterExit => {
+            keyboard_modes::reset_keyboard_reporting_after_exit(&mut stdout())
+        }
     }
 
     if let Err(err) = execute!(stdout(), DisableBracketedPaste) {
@@ -292,13 +303,20 @@ fn restore_common(
     }
 }
 
+fn set_mouse_capture(writer: &mut impl Write, policy: tmux::MouseCapture) -> Result<()> {
+    match policy {
+        tmux::MouseCapture::Enabled => execute!(writer, EnableMouseCapture),
+        tmux::MouseCapture::DisabledByTmux => execute!(writer, DisableMouseCapture),
+    }
+}
+
 fn restore_terminal_modes_after_exit() -> Result<()> {
     let mut first_error =
         restore_common(RawModeRestore::Disable, KeyboardRestore::ResetAfterExit).err();
     if let Err(err) = write_exit_alt_screen_restore(&mut stdout()) {
         first_error.get_or_insert(err);
     }
-    keyboard_modes::reset_keyboard_reporting_after_exit();
+    keyboard_modes::reset_keyboard_reporting_after_exit(&mut stdout());
 
     match first_error {
         Some(err) => Err(err),
@@ -436,14 +454,19 @@ fn flush_terminal_input_buffer() {
 #[cfg(not(any(unix, windows)))]
 pub(crate) fn flush_terminal_input_buffer() {}
 
-/// Initialize the terminal (inline viewport; history stays in normal scrollback)
-pub(crate) fn init() -> Result<InitializedTerminal> {
+pub(crate) fn validate_terminal() -> Result<()> {
     if !stdin().is_terminal() {
         return Err(std::io::Error::other("stdin is not a terminal"));
     }
     if !stdout().is_terminal() {
         return Err(std::io::Error::other("stdout is not a terminal"));
     }
+    Ok(())
+}
+
+/// Initialize the terminal (inline viewport; history stays in normal scrollback)
+pub(crate) fn init() -> Result<InitializedTerminal> {
+    validate_terminal()?;
     set_modes()?;
     let mut cleanup_guard = TerminalModeCleanupGuard::new();
 
@@ -631,7 +654,7 @@ pub struct Tui {
 
 fn clear_for_viewport_change<B>(terminal: &mut CustomTerminal<B>, new_area: Rect) -> Result<()>
 where
-    B: Backend + Write,
+    B: Backend<Error = std::io::Error> + Write,
 {
     let clear_position = if terminal.viewport_area.is_empty() {
         new_area.as_position()
@@ -686,6 +709,10 @@ impl Tui {
         std::mem::take(&mut self.startup_errors)
     }
 
+    pub fn is_focused(&self) -> bool {
+        self.terminal_focused.load(Ordering::Relaxed)
+    }
+
     pub fn is_alt_screen_active(&self) -> bool {
         self.alt_screen_active.load(Ordering::Relaxed)
     }
@@ -717,11 +744,12 @@ impl Tui {
         let was_alt_screen = self.is_alt_screen_active();
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
         if !was_alt_screen {
-            keyboard_modes::enable_keyboard_enhancement();
+            let mouse_capture =
+                keyboard_modes::enable_keyboard_enhancement(self.terminal.backend_mut());
+            set_mouse_capture(self.terminal.backend_mut(), mouse_capture)?;
         }
         // Keep wheel input available in alternate screen.
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
-        let _ = execute!(self.terminal.backend_mut(), EnableMouseCapture);
         if let Ok(size) = self.terminal.size() {
             self.alt_saved_viewport = Some(self.terminal.viewport_area);
             self.terminal.set_viewport_area(ratatui::layout::Rect::new(
@@ -742,7 +770,7 @@ impl Tui {
             return Ok(());
         }
         if self.is_alt_screen_active() {
-            keyboard_modes::restore_keyboard_enhancement_stack();
+            keyboard_modes::restore_keyboard_enhancement_stack(&mut stdout());
         }
         // Disable alternate scroll when leaving alt-screen
         let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);

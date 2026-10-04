@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/startup_login_tests.rs
+assertion_line: 54
+expression: terminal.backend().to_string()
+---
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"              ╭──────────────────────────────────────────────────────────────────────╮              "
+"              │◆ ACCOUNT LOGIN                                                       │              "
+"              │Choose how to sign in.                                                │              "
+"              │                                                                      │              "
+"              │  1. Sign in with ChatGPT                                             │              "
+"              │    Get a one-time code and finish sign-in in your browser.           │              "
+"              │  2. Use API key                                                      │              "
+"              │    Paste an OpenAI API key and store it through app-server auth.     │              "
+"              │> 3. Use Amazon Bedrock                                               │              "
+"              │    Connect with your AWS profile, credentials, or Bedrock API key.   │              "
+"              │  4. Exit                                                             │              "
+"              │    Return to the terminal without starting a thread.                 │              "
+"              │                                                                      │              "
+"              │↑↓ navigate   Enter select   Esc exit                                 │              "
+"              │                                                                      │              "
+"              ╰──────────────────────────────────────────────────────────────────────╯              "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "

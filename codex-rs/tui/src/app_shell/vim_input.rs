@@ -35,6 +35,7 @@ pub(super) const MAX_VIM_SUBMISSION_BYTES: usize = 10_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct VimInputRequest {
     seed: String,
+    replace_current_draft: bool,
     thread_id: ThreadId,
 }
 
@@ -42,8 +43,13 @@ impl VimInputRequest {
     pub(super) fn empty(thread_id: ThreadId) -> Self {
         Self {
             seed: String::new(),
+            replace_current_draft: false,
             thread_id,
         }
+    }
+
+    pub(super) fn replaced_draft(&self) -> Option<&str> {
+        self.replace_current_draft.then_some(self.seed.as_str())
     }
 
     pub(super) fn thread_id(&self) -> ThreadId {
@@ -234,6 +240,14 @@ impl ShellState {
         }
         self.pending_vim_input = Some(VimInputRequest::empty(self.thread_id));
         self.push_status("opening Vim input");
+    }
+
+    pub(super) fn request_external_editor(&mut self) {
+        self.request_vim_input();
+        if let Some(request) = self.pending_vim_input.as_mut() {
+            request.seed = self.composer.submission_text();
+            request.replace_current_draft = true;
+        }
     }
 
     pub(super) fn take_vim_input_request(&mut self) -> Option<VimInputRequest> {

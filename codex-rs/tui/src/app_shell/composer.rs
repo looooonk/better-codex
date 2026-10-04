@@ -33,6 +33,7 @@ pub(super) fn input_too_large_message(actual_bytes: usize) -> String {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ComposerDraft {
     input: EditableText,
+    images: Vec<super::attachments::ImageAttachment>,
     history_index: Option<usize>,
     draft_before_history: String,
 }
@@ -43,6 +44,8 @@ struct QueuedMessage {
     client_user_message_id: String,
     text: String,
     editable: bool,
+    images: Vec<super::attachments::ImageAttachment>,
+    prompt: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +73,7 @@ pub(super) enum QueueEdit {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct ComposerState {
     input: EditableText,
+    images: Vec<super::attachments::ImageAttachment>,
     history: VecDeque<String>,
     history_index: Option<usize>,
     draft_before_history: String,
@@ -85,7 +89,7 @@ impl ComposerState {
     }
 
     pub(super) fn is_empty(&self) -> bool {
-        self.input.is_empty()
+        self.input.is_empty() && self.images.is_empty()
     }
 
     pub(super) fn cursor(&self) -> usize {
@@ -166,11 +170,30 @@ impl ComposerState {
     }
 
     pub(super) fn clear(&mut self) {
+        self.images.clear();
+        self.clear_text();
+    }
+
+    pub(super) fn clear_text(&mut self) {
         self.input.clear();
         self.clear_history_recall();
     }
 
     pub(super) fn restore_failed_submission(&mut self, submission: &str) {
+        if submission.is_empty() {
+            return;
+        }
+        if let Some(draft) = self.queued_index.and(self.draft_before_queue.as_mut()) {
+            let text = draft.input.text();
+            draft.input.set_text(if text.is_empty() {
+                submission.to_string()
+            } else {
+                format!("{submission}\n\n{text}")
+            });
+            draft.history_index = None;
+            draft.draft_before_history.clear();
+            return;
+        }
         let draft = self.input.text().to_string();
         self.set_text(if draft.is_empty() {
             submission.to_string()
@@ -254,6 +277,9 @@ impl ComposerState {
         self.draft_before_history.clear();
     }
 }
+
+#[path = "composer_attachments.rs"]
+mod attachments;
 
 #[path = "composer_queue.rs"]
 mod queue;

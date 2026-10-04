@@ -1,3 +1,4 @@
+use crate::context::world_state::test_support::FragmentSectionTestExt as _;
 use crate::shell::ShellType;
 
 use super::*;
@@ -11,7 +12,6 @@ use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::permissions::project_roots_glob_pattern;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
-use codex_utils_string::approx_token_count;
 use core_test_support::test_path_buf;
 use pretty_assertions::assert_eq;
 use std::path::Path;
@@ -35,7 +35,9 @@ fn environment(id: &str, cwd: PathUri, shell: impl Into<String>) -> (String, Env
         EnvironmentState {
             cwd,
             status: EnvironmentStatus::Available,
+            error: None,
             shell: Some(shell.into()),
+            is_primary: false,
         },
     )
 }
@@ -47,8 +49,17 @@ fn environment_state(
     network: Option<NetworkContext>,
     subagents: Option<String>,
 ) -> EnvironmentsState {
+    let environments = environments
+        .into_iter()
+        .enumerate()
+        .map(|(index, (id, mut environment))| {
+            environment.is_primary = index == 0;
+            (id, environment)
+        })
+        .collect();
     EnvironmentsState {
-        environments: environments.into_iter().collect(),
+        environments,
+        shell_version: None,
         current_date,
         timezone,
         network,
@@ -145,68 +156,6 @@ fn serialize_environment_context_with_network() {
     assert_eq!(context.render(), expected);
 }
 
-#[test]
-fn environment_context_bounds_and_escapes_dynamic_metadata() {
-    let long_value = format!("<unsafe>&\"'{}", "x".repeat(2_000));
-    let environments = (0..10).map(|index| {
-        environment(
-            &format!("environment-{index}-{long_value}"),
-            PathUri::from_abs_path(&test_abs_path(&format!("/repo/{index}-{long_value}"))),
-            long_value.clone(),
-        )
-    });
-    let network = NetworkContext::new(
-        (0..12)
-            .map(|index| format!("allowed-{index}-{long_value}"))
-            .collect(),
-        (0..12)
-            .map(|index| format!("denied-{index}-{long_value}"))
-            .collect(),
-    );
-    let entries = (0..12)
-        .map(|index| FileSystemSandboxEntry {
-            path: FileSystemPath::Path {
-                path: test_abs_path(&format!("/entry/{index}-{long_value}")),
-            },
-            access: FileSystemAccessMode::Read,
-        })
-        .collect();
-    let permission_profile = PermissionProfile::from_runtime_permissions(
-        &FileSystemSandboxPolicy::restricted(entries),
-        NetworkSandboxPolicy::Restricted,
-    );
-    let workspace_roots = (0..12)
-        .map(|index| PathUri::from_abs_path(&test_abs_path(&format!("/root/{index}-{long_value}"))))
-        .collect::<Vec<_>>();
-    let mut context = environment_state(
-        environments,
-        Some(long_value.clone()),
-        Some(long_value.clone()),
-        Some(network),
-        Some(
-            (0..12)
-                .map(|index| format!("agent-{index}-{long_value}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        ),
-    );
-    context.filesystem = Some(FileSystemContext::from_permission_profile(
-        &permission_profile,
-        &workspace_roots,
-    ));
-
-    let rendered = context.render();
-
-    assert!(approx_token_count(&rendered) <= 8_000);
-    assert!(rendered.contains("&lt;unsafe&gt;&amp;&quot;&apos;"));
-    assert!(!rendered.contains("<unsafe>"));
-    assert!(rendered.contains("[truncated]"));
-    assert!(rendered.contains("<omitted count=\"6\" />"));
-    assert!(rendered.contains("<omitted count=\"4\" />"));
-    assert!(rendered.contains("[8 omitted]"));
-    assert!(rendered.contains("[additional 4 subagents omitted]"));
-}
-
 fn workspace_write_permission_profile_with_private_denials() -> PermissionProfile {
     PermissionProfile::from_runtime_permissions(
         &FileSystemSandboxPolicy::restricted(vec![
@@ -215,18 +164,21 @@ fn workspace_write_permission_profile_with_private_denials() -> PermissionProfil
                     value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
                 },
                 access: FileSystemAccessMode::Write,
+                missing_path_behavior: None,
             },
             FileSystemSandboxEntry {
                 path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::project_roots(Some(PathBuf::from("private"))),
+                    value: FileSystemSpecialPath::project_roots(Some("private".to_string())),
                 },
                 access: FileSystemAccessMode::Deny,
+                missing_path_behavior: None,
             },
             FileSystemSandboxEntry {
                 path: FileSystemPath::GlobPattern {
                     pattern: project_roots_glob_pattern(Path::new("private/**")),
                 },
                 access: FileSystemAccessMode::Deny,
+                missing_path_behavior: None,
             },
         ]),
         NetworkSandboxPolicy::Restricted,
@@ -347,11 +299,11 @@ fn serialize_environment_context_with_multiple_selected_environments() {
     let expected = format!(
         r#"<environment_context>
   <environments>
-    <environment id="local">
+    <environment id="local" primary="true">
       <cwd>{}</cwd>
       <shell>bash</shell>
     </environment>
-    <environment id="remote">
+    <environment id="remote" primary="false">
       <cwd>{}</cwd>
       <shell>bash</shell>
     </environment>
@@ -388,11 +340,11 @@ fn serialize_environment_context_prefers_environment_shell_when_present() {
     let expected = format!(
         r#"<environment_context>
   <environments>
-    <environment id="local">
+    <environment id="local" primary="true">
       <cwd>{}</cwd>
       <shell>powershell</shell>
     </environment>
-    <environment id="remote">
+    <environment id="remote" primary="false">
       <cwd>{}</cwd>
       <shell>cmd</shell>
     </environment>
@@ -403,4 +355,101 @@ fn serialize_environment_context_prefers_environment_shell_when_present() {
     );
 
     assert_eq!(context.render(), expected);
+}
+
+fn powershell_environment() -> EnvironmentsState {
+    let cwd = PathUri::from_abs_path(&test_abs_path("/repo"));
+    EnvironmentsState {
+        environments: [environment("local", cwd, "powershell")].into(),
+        shell_version: Some("5.1".to_string()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn shell_version_diff_restates_shell_from_legacy_snapshot() {
+    let current = powershell_environment();
+    let mut previous = current
+        .render_fragment_diff(PreviousSectionState::Absent)
+        .0
+        .unwrap();
+    previous.shell_version = None;
+    previous.environments.get_mut("local").expect("local").shell = None;
+    let rendered = current
+        .render_fragment_diff(PreviousSectionState::Known(&previous))
+        .1
+        .expect("shell version update")
+        .render();
+    assert!(
+        rendered.contains("<shell>powershell</shell>\n  <shell_version>5.1</shell_version>"),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn shell_version_diff_clears_previously_visible_version() {
+    let previous = powershell_environment();
+    let current = EnvironmentsState {
+        shell_version: None,
+        ..previous.clone()
+    };
+    assert_eq!(
+        current
+            .render_fragment_diff(PreviousSectionState::Known(
+                &previous
+                    .render_fragment_diff(PreviousSectionState::Absent)
+                    .0
+                    .unwrap()
+            ))
+            .1
+            .expect("removed shell version")
+            .render(),
+        "<environment_context>\n  <shell_version status=\"unavailable\" />\n</environment_context>"
+    );
+}
+
+#[test]
+fn current_date_diff_clears_once_and_recovers() {
+    let available = EnvironmentsState {
+        current_date: Some("2026-06-17".to_string()),
+        ..Default::default()
+    };
+    let unavailable = EnvironmentsState::default();
+    assert_eq!(
+        unavailable
+            .render_fragment_diff(PreviousSectionState::Known(
+                &available
+                    .render_fragment_diff(PreviousSectionState::Absent)
+                    .0
+                    .unwrap()
+            ))
+            .1
+            .expect("removed current date")
+            .render(),
+        "<environment_context>\n  <current_date status=\"unavailable\" />\n</environment_context>"
+    );
+    assert!(
+        unavailable
+            .render_fragment_diff(PreviousSectionState::Known(
+                &unavailable
+                    .render_fragment_diff(PreviousSectionState::Absent)
+                    .0
+                    .unwrap()
+            ))
+            .1
+            .is_none()
+    );
+    assert_eq!(
+        available
+            .render_fragment_diff(PreviousSectionState::Known(
+                &unavailable
+                    .render_fragment_diff(PreviousSectionState::Absent)
+                    .0
+                    .unwrap()
+            ))
+            .1
+            .expect("restored current date")
+            .render(),
+        "<environment_context>\n  <current_date>2026-06-17</current_date>\n</environment_context>"
+    );
 }

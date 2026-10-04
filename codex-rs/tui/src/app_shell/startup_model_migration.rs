@@ -6,6 +6,7 @@ use super::design::pane_style;
 use super::startup_layout::STARTUP_FOOTER_HEIGHT;
 use super::startup_layout::startup_panes;
 use crate::app_server_session::AppServerSession;
+use crate::app_theme::TuiAppTheme;
 use crate::config_update::build_model_migration_seen_edit;
 use crate::config_update::build_model_selection_edits;
 use crate::legacy_core::config::Config;
@@ -13,7 +14,6 @@ use crate::model_migration::ModelMigrationCopy;
 use crate::model_migration::migration_copy_for_models;
 use crate::tui;
 use crate::tui::TuiEvent;
-use codex_config::types::TuiAppTheme;
 use codex_models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
 use codex_models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use codex_protocol::openai_models::ModelPreset;
@@ -165,7 +165,8 @@ pub(crate) async fn run_model_migration_onboarding(
         return Ok(ModelMigrationOnboardingOutcome::Continue);
     };
 
-    let mut state = ModelMigrationOnboardingState::new(prompt, config.tui_app_theme);
+    let mut state =
+        ModelMigrationOnboardingState::new(prompt, crate::app_theme::configured(config));
     let mut tui_events = tui.event_stream();
     tui.frame_requester().schedule_frame();
 

@@ -6,11 +6,11 @@ use super::design::pane_style;
 use super::startup_layout::STARTUP_FOOTER_HEIGHT;
 use super::startup_layout::startup_panes;
 use crate::app_server_session::AppServerSession;
+use crate::app_theme::TuiAppTheme;
 use crate::config_update::build_project_trust_level_edit;
 use crate::legacy_core::config::Config;
 use crate::tui;
 use crate::tui::TuiEvent;
-use codex_config::types::TuiAppTheme;
 use codex_exec_server::LOCAL_FS;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_protocol::config_types::TrustLevel;
@@ -132,15 +132,17 @@ pub(crate) async fn run_startup_onboarding(
 
     tui.enter_alt_screen()
         .wrap_err("failed to enter startup setup screen")?;
-    tui.frame_requester().schedule_frame();
 
     let cwd = config.cwd.to_path_buf();
     let trust_target = resolve_root_git_project_for_trust(LOCAL_FS.as_ref(), &config.cwd)
         .await
         .map(Into::into)
         .unwrap_or_else(|| cwd.clone());
-    let mut state = StartupOnboardingState::new(cwd, trust_target, config.tui_app_theme);
+    let mut state =
+        StartupOnboardingState::new(cwd, trust_target, crate::app_theme::configured(config));
     let mut tui_events = tui.event_stream();
+    // Discovery above can yield while no view is subscribed to redraws.
+    tui.frame_requester().schedule_frame();
 
     loop {
         let Some(event) = tui_events.next().await else {

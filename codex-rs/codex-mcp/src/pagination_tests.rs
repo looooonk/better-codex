@@ -5,14 +5,12 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use codex_rmcp_client::McpProtocolMode;
 use pretty_assertions::assert_eq;
 
 use super::MAX_MCP_CATALOG_ITEMS;
 use super::MAX_MCP_CATALOG_PAGES;
 use super::MAX_MCP_PAGINATION_CURSOR_BYTES;
 use super::collect_paginated;
-use super::collect_tool_catalog;
 
 #[tokio::test]
 async fn collects_all_pages_including_an_empty_cursor() {
@@ -192,81 +190,6 @@ async fn applies_a_default_timeout_when_no_timeout_is_configured() {
         error.to_string(),
         "resources/list pagination timed out after 30s"
     );
-}
-
-#[tokio::test(start_paused = true)]
-async fn configured_timeout_cannot_exceed_the_hard_timeout() {
-    let error = collect_paginated(
-        "resources/list",
-        Some(Duration::from_secs(60)),
-        |_params| async {
-            tokio::time::sleep(Duration::from_secs(31)).await;
-            Ok((Vec::<()>::new(), None))
-        },
-    )
-    .await
-    .expect_err("configured pagination timeout must remain capped");
-
-    assert_eq!(
-        error.to_string(),
-        "resources/list pagination timed out after 30s"
-    );
-}
-
-#[tokio::test]
-async fn legacy_tool_catalog_keeps_one_unbounded_page() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let observed = Arc::clone(&requests);
-
-    let tools = collect_tool_catalog(
-        McpProtocolMode::Legacy,
-        /*overall_timeout*/ None,
-        MAX_MCP_CATALOG_ITEMS,
-        move |params| {
-            let observed = Arc::clone(&observed);
-            async move {
-                assert_eq!(params, None);
-                observed.fetch_add(1, Ordering::Relaxed);
-                Ok((
-                    vec![(); MAX_MCP_CATALOG_ITEMS + 1],
-                    Some("ignored".to_string()),
-                ))
-            }
-        },
-    )
-    .await
-    .expect("legacy catalog preserves its single-page compatibility path");
-
-    assert_eq!(tools.len(), MAX_MCP_CATALOG_ITEMS + 1);
-    assert_eq!(requests.load(Ordering::Relaxed), 1);
-}
-
-#[tokio::test]
-async fn modern_tool_catalog_follows_bounded_pages() {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let observed = Arc::clone(&requests);
-
-    let tools = collect_tool_catalog(
-        McpProtocolMode::V20260728,
-        /*overall_timeout*/ None,
-        MAX_MCP_CATALOG_ITEMS,
-        move |params| {
-            let observed = Arc::clone(&observed);
-            async move {
-                observed.fetch_add(1, Ordering::Relaxed);
-                match params.and_then(|params| params.cursor).as_deref() {
-                    None => Ok((vec!["first"], Some("last".to_string()))),
-                    Some("last") => Ok((vec!["second"], None)),
-                    Some(cursor) => Err(anyhow!("unexpected cursor: {cursor}")),
-                }
-            }
-        },
-    )
-    .await
-    .expect("modern catalog follows pagination cursors");
-
-    assert_eq!(tools, vec!["first", "second"]);
-    assert_eq!(requests.load(Ordering::Relaxed), 2);
 }
 
 #[tokio::test(start_paused = true)]

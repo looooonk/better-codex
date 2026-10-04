@@ -45,16 +45,16 @@ host_executable(
 
 ## CLI
 
-- From Better Codex, run the `better-codex execpolicy check` subcommand with one or more policy files (for example `src/default.rules`) to check a command:
+- From the Codex CLI, run `codex execpolicy check` subcommand with one or more policy files (for example `src/default.rules`) to check a command:
 
 ```bash
-better-codex execpolicy check --rules path/to/policy.rules git status
+codex execpolicy check --rules path/to/policy.rules git status
 ```
 
 - To opt into basename fallback for absolute program paths, pass `--resolve-host-executables`:
 
 ```bash
-better-codex execpolicy check \
+codex execpolicy check \
   --rules path/to/policy.rules \
   --resolve-host-executables \
   /usr/bin/git status

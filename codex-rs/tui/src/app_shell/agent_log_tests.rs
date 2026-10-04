@@ -1,6 +1,7 @@
 use super::*;
 use crate::app_shell::ShellState;
 use crate::app_shell::agent_log_view::render_agent_log;
+use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::ThreadHistoryMode;
@@ -10,7 +11,6 @@ use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStatus;
-use codex_config::types::TuiAppTheme;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -147,7 +147,11 @@ async fn async_load_formats_positioned_styles_with_the_selected_app_theme() {
                         Style::new().fg(Color::Rgb(137, 220, 235)),
                     ),
                     StyledSpan::new(/*span*/ 2, " and ", Style::new()),
-                    StyledSpan::new(/*span*/ 3, "themed links", Style::new(),),
+                    StyledSpan::new(
+                        /*span*/ 3,
+                        "themed links",
+                        Style::new().fg(Color::Rgb(137, 220, 235)).underlined(),
+                    ),
                     StyledSpan::new(/*span*/ 4, " (", Style::new()),
                     StyledSpan::new(
                         /*span*/ 5,
@@ -263,6 +267,17 @@ fn target() -> AgentLogTarget {
 
 fn themed_thread() -> Thread {
     Thread {
+        model: None,
+        reasoning_effort: None,
+
+        environments: None,
+        section: None,
+        section_entered_at: None,
+        project_id: None,
+        originator: None,
+        can_accept_direct_input: None,
+        daybreak_enabled: None,
+
         id: "01900000-0000-7000-8000-000000000099".to_string(),
         extra: None,
         session_id: "01900000-0000-7000-8000-000000000099".to_string(),
@@ -295,6 +310,9 @@ fn themed_thread() -> Thread {
                     content: vec!["Reasoning follows the active palette.".to_string()],
                 },
                 ThreadItem::AgentMessage {
+                    delivery: None,
+                    questions: None,
+
                     id: "message-1".to_string(),
                     text: "Use `themed code` and [themed links](https://example.com).".to_string(),
                     phase: None,

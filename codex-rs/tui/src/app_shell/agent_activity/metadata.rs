@@ -20,20 +20,29 @@ pub(super) fn fallback_status(
     status: &CollabAgentToolCallStatus,
 ) -> Option<AgentLifecycleStatus> {
     match status {
+        CollabAgentToolCallStatus::Interrupted => Some(AgentLifecycleStatus::Interrupted),
         CollabAgentToolCallStatus::Failed => Some(AgentLifecycleStatus::Errored),
         CollabAgentToolCallStatus::InProgress => match tool {
             CollabAgentTool::SpawnAgent => Some(AgentLifecycleStatus::PendingInit),
-            CollabAgentTool::SendInput | CollabAgentTool::ResumeAgent => {
-                Some(AgentLifecycleStatus::Running)
-            }
-            CollabAgentTool::Wait | CollabAgentTool::CloseAgent => None,
+            CollabAgentTool::SendInput
+            | CollabAgentTool::FollowupTask
+            | CollabAgentTool::ResumeAgent => Some(AgentLifecycleStatus::Running),
+            CollabAgentTool::Wait
+            | CollabAgentTool::CloseAgent
+            | CollabAgentTool::SendMessage
+            | CollabAgentTool::InterruptAgent
+            | CollabAgentTool::ListAgents => None,
         },
         CollabAgentToolCallStatus::Completed => match tool {
             CollabAgentTool::SpawnAgent
             | CollabAgentTool::SendInput
+            | CollabAgentTool::FollowupTask
             | CollabAgentTool::ResumeAgent => Some(AgentLifecycleStatus::Running),
             CollabAgentTool::CloseAgent => Some(AgentLifecycleStatus::Shutdown),
-            CollabAgentTool::Wait => None,
+            CollabAgentTool::InterruptAgent => Some(AgentLifecycleStatus::Interrupted),
+            CollabAgentTool::Wait | CollabAgentTool::SendMessage | CollabAgentTool::ListAgents => {
+                None
+            }
         },
     }
 }

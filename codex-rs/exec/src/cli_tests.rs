@@ -1,5 +1,4 @@
 use super::*;
-use clap::error::ErrorKind;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -12,6 +11,8 @@ fn resume_parses_prompt_after_global_flags() {
         "--json",
         "--model",
         "gpt-5.2-codex",
+        "--cyber-access-program",
+        "daybreak_blue",
         "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
         "--ephemeral",
@@ -23,6 +24,10 @@ fn resume_parses_prompt_after_global_flags() {
     assert!(cli.ephemeral);
     assert!(cli.ignore_user_config);
     assert!(cli.ignore_rules);
+    assert_eq!(
+        cli.cyber_access_program,
+        Some(CyberAccessProgramCliArg::DaybreakBlue)
+    );
     let Some(Command::Resume(args)) = cli.command else {
         panic!("expected resume command");
     };
@@ -63,18 +68,33 @@ fn resume_accepts_output_flags_after_subcommand() {
 }
 
 #[test]
-fn resume_rejects_dangerous_bypass_with_sandbox_mode() {
-    let error = Cli::try_parse_from([
+fn fork_parses_prompt_after_global_flags() {
+    const PROMPT: &str = "continue on the fork";
+    let cli = Cli::parse_from([
         "codex-exec",
-        "resume",
-        "--last",
-        "--sandbox",
-        "workspace-write",
-        "--dangerously-bypass-approvals-and-sandbox",
-    ])
-    .expect_err("conflicting sandbox flags should fail");
+        "fork",
+        "session-123",
+        "--json",
+        "--model",
+        "gpt-5.2-codex",
+        "--thread-source",
+        "automated_review",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        PROMPT,
+    ]);
 
-    assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
+    assert!(cli.json);
+    assert!(cli.ephemeral);
+    assert_eq!(
+        cli.thread_source,
+        Some(ThreadSource::Feature("automated_review".to_string()))
+    );
+    let Some(Command::Fork(args)) = cli.command else {
+        panic!("expected fork command");
+    };
+    assert_eq!(args.session_id, "session-123");
+    assert_eq!(args.prompt.as_deref(), Some(PROMPT));
 }
 
 #[test]
@@ -91,11 +111,43 @@ fn parses_config_isolation_flags() {
 }
 
 #[test]
-fn removed_full_auto_flag_reports_migration_path() {
-    let cli = Cli::parse_from(["codex-exec", "--full-auto", "summarize"]);
+fn approve_for_me_flag_applies_to_resume_when_passed_at_exec_root() {
+    for flag in ["--approve-for-me", "--not-so-yolo"] {
+        let cli = Cli::parse_from(["codex-exec", flag, "resume", "--last"]);
 
-    assert_eq!(
-        cli.removed_full_auto_warning(),
-        Some("warning: `--full-auto` is deprecated; use `--sandbox workspace-write` instead.")
-    );
+        assert!(cli.auto_review);
+    }
+}
+
+#[test]
+fn approve_for_me_flag_conflicts_with_other_sandbox_modes() {
+    for conflicting_args in [
+        vec!["--sandbox", "read-only"],
+        vec!["--dangerously-bypass-approvals-and-sandbox"],
+    ] {
+        let mut args = vec!["codex-exec", "--approve-for-me"];
+        args.extend(conflicting_args);
+        args.push("summarize");
+
+        let error = Cli::try_parse_from(args).expect_err("flags should conflict");
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+}
+
+#[test]
+fn worktree_flag_is_accepted_after_fork_subcommand() {
+    let cli = Cli::try_parse_from(["codex-exec", "fork", "session-id", "--worktree"])
+        .expect("worktree should be a global exec argument");
+
+    assert!(cli.worktree);
+    assert!(matches!(cli.command, Some(Command::Fork(_))));
+}
+
+#[test]
+fn worktree_flag_is_accepted_before_fork_subcommand() {
+    let cli = Cli::try_parse_from(["codex-exec", "--worktree", "fork", "session-id"])
+        .expect("worktree should be accepted before the fork subcommand");
+
+    assert!(cli.worktree);
+    assert!(matches!(cli.command, Some(Command::Fork(_))));
 }

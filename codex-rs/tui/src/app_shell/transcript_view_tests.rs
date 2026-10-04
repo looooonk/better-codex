@@ -548,8 +548,8 @@ fn selected_text_excludes_visual_continuation_prefixes() {
         ),
         Some(
             "▎ CODEX  Released the alpha.9 source and started CD.\n\n\
-             - Version bumped to 0.1.0-alpha.9.\n\
-             - Commit pushed: 307e72ba1"
+             • Version bumped to 0.1.0-alpha.9.\n\
+             • Commit pushed: 307e72ba1"
                 .to_string()
         )
     );

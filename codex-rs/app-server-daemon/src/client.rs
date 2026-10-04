@@ -61,13 +61,39 @@ async fn probe_inner(socket_path: &Path) -> Result<ProbeInfo> {
 }
 
 pub(crate) async fn connect(socket_path: &Path) -> Result<WebSocketStream<UnixStream>> {
+    connect_at(socket_path, "ws://localhost/").await
+}
+
+async fn connect_at(socket_path: &Path, url: &str) -> Result<WebSocketStream<UnixStream>> {
     let stream = UnixStream::connect(socket_path)
         .await
         .with_context(|| format!("failed to connect to {}", socket_path.display()))?;
-    let (websocket, _response) = client_async("ws://localhost/", stream)
+    let (websocket, _response) = client_async(url, stream)
         .await
         .with_context(|| format!("failed to upgrade {}", socket_path.display()))?;
     Ok(websocket)
+}
+
+#[cfg(windows)]
+pub(crate) async fn request_shutdown(socket_path: &Path, pid: u32) -> Result<()> {
+    timeout(CONTROL_SOCKET_RESPONSE_TIMEOUT, async {
+        let mut websocket = connect_at(socket_path, "ws://localhost/daemon/shutdown").await?;
+        websocket
+            .send(Message::Text(pid.to_string().into()))
+            .await?;
+        let reply = websocket
+            .next()
+            .await
+            .context("shutdown socket closed without acknowledgment")??;
+        anyhow::ensure!(
+            matches!(reply, Message::Text(ack) if ack == pid.to_string()),
+            "shutdown acknowledgment did not match the managed process {pid}"
+        );
+        websocket.close(None).await?;
+        Ok(())
+    })
+    .await
+    .context("timed out waiting for managed app-server shutdown acknowledgment")?
 }
 
 pub(crate) async fn initialize<S>(
@@ -83,7 +109,7 @@ where
         params: Some(serde_json::to_value(InitializeParams {
             client_info: ClientInfo {
                 name: CLIENT_NAME.to_string(),
-                title: Some("Better Codex App Server Daemon".to_string()),
+                title: Some("Codex App Server Daemon".to_string()),
                 version: env!("CARGO_PKG_VERSION").to_string(),
             },
             capabilities: if experimental_api {
@@ -146,6 +172,14 @@ where
 }
 
 fn parse_version_from_user_agent(user_agent: &str) -> Result<String> {
+    if let Some(version) = user_agent
+        .split_whitespace()
+        .rev()
+        .find_map(|product| product.strip_prefix("better-codex/"))
+    {
+        anyhow::ensure!(!version.is_empty(), "app-server product omitted version");
+        return Ok(version.to_string());
+    }
     let (_originator, rest) = user_agent
         .split_once('/')
         .ok_or_else(|| anyhow!("app-server user-agent omitted version separator"))?;
@@ -172,6 +206,13 @@ mod tests {
             .expect("version"),
             "1.2.3"
         );
+    }
+
+    #[test]
+    fn daemon_uses_package_identity_instead_of_protocol_compatibility_version() {
+        assert_eq!(parse_version_from_user_agent(
+            "codex_cli_rs/0.160.0 (macOS; arm64) (codex_app_server_daemon; 0.1.0-alpha.15) better-codex/0.1.0-alpha.15",
+        ).unwrap(), "0.1.0-alpha.15");
     }
 
     #[test]

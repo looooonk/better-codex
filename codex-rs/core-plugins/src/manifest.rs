@@ -3,13 +3,16 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 use codex_utils_plugins::AGENT_PLUGIN_MANIFEST_RELATIVE_PATH;
-use codex_utils_plugins::SkillDiscoveryMode;
 use codex_utils_plugins::find_plugin_manifest_path;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::path::PathBuf;
+
+mod manifest_cache;
+pub(crate) use manifest_cache::ManifestCache;
 const MAX_DEFAULT_PROMPT_COUNT: usize = 3;
 const MAX_DEFAULT_PROMPT_LEN: usize = 128;
 
@@ -35,15 +38,6 @@ pub type UriPluginManifest = codex_plugin::manifest::PluginManifest<PathUri>;
 pub(crate) enum PluginManifestFormat {
     Legacy,
     AgentPlugin,
-}
-
-impl PluginManifestFormat {
-    pub(crate) fn skill_discovery_mode(self) -> SkillDiscoveryMode {
-        match self {
-            Self::Legacy => SkillDiscoveryMode::Recursive,
-            Self::AgentPlugin => SkillDiscoveryMode::DirectChildren,
-        }
-    }
 }
 
 pub(crate) struct LoadedPluginManifest {
@@ -74,6 +68,14 @@ struct RawPluginManifest {
     hooks: Option<RawPluginManifestHooks>,
     #[serde(default)]
     interface: Option<RawPluginManifestInterface>,
+    #[serde(default)]
+    extensions: JsonValue,
+}
+
+#[derive(Deserialize)]
+struct RawPluginCommandManifest {
+    #[serde(default)]
+    commands: Option<RawPluginManifestPaths>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -166,52 +168,45 @@ pub fn is_agent_plugin_manifest(plugin_root: &Path) -> bool {
 }
 
 pub(crate) fn load_plugin_manifest_with_format(plugin_root: &Path) -> Option<LoadedPluginManifest> {
-    let manifest_path = find_plugin_manifest_path(plugin_root)?;
-    let contents = fs::read_to_string(&manifest_path).ok()?;
-    let is_agent_plugin = manifest_path == plugin_root.join(AGENT_PLUGIN_MANIFEST_RELATIVE_PATH);
-    let overlay = if is_agent_plugin {
-        let overlay_path = plugin_root.join(".codex-plugin/plugin.json");
-        fs::read_to_string(&overlay_path)
-            .ok()
-            .map(|contents| (overlay_path, contents))
-    } else {
-        None
-    };
-    match parse_resolved_plugin_manifest(
-        plugin_root,
-        &manifest_path,
-        &contents,
-        overlay
-            .as_ref()
-            .map(|(path, contents)| (path.as_path(), contents.as_str())),
-    ) {
-        Ok(manifest) => Some(LoadedPluginManifest {
-            manifest,
-            format: if is_agent_plugin {
-                PluginManifestFormat::AgentPlugin
-            } else {
-                PluginManifestFormat::Legacy
-            },
-        }),
-        Err(err) => {
-            tracing::warn!(
-                path = %manifest_path.display(),
-                "failed to parse plugin manifest: {err}"
-            );
-            None
-        }
-    }
+    // TODO: accept an owner-provided cache when these standalone loaders join a repeated workflow.
+    ManifestCache::disabled().load(plugin_root)
 }
 
+pub(crate) fn load_plugin_command_paths(plugin_root: &Path) -> io::Result<Option<Vec<PathBuf>>> {
+    let Some(manifest_path) = find_plugin_manifest_path(plugin_root) else {
+        return Ok(None);
+    };
+    let manifest =
+        serde_json::from_str::<RawPluginCommandManifest>(&fs::read_to_string(manifest_path)?)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    let Some(commands) = manifest.commands else {
+        return Ok(None);
+    };
+    let plugin_root = PathUri::from_host_native_path(plugin_root)?;
+    resolve_manifest_paths(&plugin_root, "commands", Some(&commands))
+        .into_iter()
+        .map(|path| Ok(path.to_abs_path()?.into_path_buf()))
+        .collect::<io::Result<Vec<_>>>()
+        .map(Some)
+}
+
+// TODO: share an owner-provided cache if inline fallback manifests are parsed repeatedly.
 pub(crate) fn parse_plugin_manifest(
     plugin_root: &Path,
     manifest_path: &Path,
     contents: &str,
 ) -> Result<PluginManifest, serde_json::Error> {
-    parse_resolved_plugin_manifest(plugin_root, manifest_path, contents, /*overlay*/ None)
+    parse_resolved_plugin_manifest(
+        &ManifestCache::disabled(),
+        plugin_root,
+        manifest_path,
+        contents,
+        /*overlay*/ None,
+    )
 }
 
 fn parse_resolved_plugin_manifest(
+    cache: &ManifestCache,
     plugin_root: &Path,
     manifest_path: &Path,
     contents: &str,
@@ -228,13 +223,22 @@ fn parse_resolved_plugin_manifest(
                 .map_err(serde_json::Error::io)
         })
         .transpose()?;
-    parse_resolved_plugin_manifest_uri(
-        &plugin_root_uri,
-        &manifest_path_uri,
-        contents,
-        overlay.as_ref().map(|(path, contents)| (path, *contents)),
-    )?
-    .try_map_resources(|path| path.to_abs_path().map_err(serde_json::Error::io))
+    cache
+        .parse(
+            &plugin_root_uri,
+            &manifest_path_uri,
+            contents,
+            overlay.as_ref().map(|(path, contents)| (path, *contents)),
+            || {
+                parse_resolved_plugin_manifest_uri(
+                    &plugin_root_uri,
+                    &manifest_path_uri,
+                    contents,
+                    overlay.as_ref().map(|(path, contents)| (path, *contents)),
+                )
+            },
+        )?
+        .try_map_resources(|path| path.to_abs_path().map_err(serde_json::Error::io))
 }
 
 pub fn parse_plugin_manifest_uri(
@@ -287,6 +291,7 @@ fn resolve_raw_plugin_manifest(
         apps,
         hooks,
         interface,
+        extensions,
     } = raw;
     let name = plugin_root
         .basename()
@@ -379,6 +384,10 @@ fn resolve_raw_plugin_manifest(
         keywords,
         paths: codex_plugin::manifest::PluginManifestPaths {
             skills: resolve_manifest_paths(plugin_root, "skills", skills.as_ref()),
+            onboarding_skill: resolve_openai_onboarding_skill(
+                plugin_root,
+                extensions.get("com.openai"),
+            ),
             mcp_servers: resolve_manifest_mcp_servers(plugin_root, mcp_servers),
             apps: resolve_manifest_path(plugin_root, "apps", apps.as_deref()),
             hooks: resolve_manifest_hooks(plugin_root, hooks),
@@ -542,6 +551,22 @@ fn warn_invalid_default_prompt(manifest_path: &str, field: &str, message: &str) 
     tracing::warn!(path = %manifest_path, "ignoring {field}: {message}");
 }
 
+fn resolve_openai_onboarding_skill(
+    plugin_root: &PathUri,
+    extension: Option<&JsonValue>,
+) -> Option<PathUri> {
+    let path = extension
+        .and_then(|extension| extension.get("onboardingSkill"))
+        .and_then(JsonValue::as_str)?;
+    // This extension accepts relative paths with or without the legacy `./` prefix.
+    let path = format!("./{}", path.strip_prefix("./").unwrap_or(path));
+    resolve_manifest_path(
+        plugin_root,
+        "extensions[\"com.openai\"].onboardingSkill",
+        Some(&path),
+    )
+}
+
 fn json_value_type(value: &JsonValue) -> &'static str {
     match value {
         JsonValue::Null => "null",
@@ -640,7 +665,6 @@ mod tests {
     use super::load_plugin_manifest;
     use codex_exec_server::EnvironmentManager;
     use codex_exec_server::LOCAL_ENVIRONMENT_ID;
-    use codex_plugin::PluginProvider;
     use codex_plugin::ResolvedPlugin;
     use codex_plugin::manifest::PluginManifest as GenericPluginManifest;
     use codex_plugin::manifest::PluginManifestHooks;
@@ -658,7 +682,6 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::ExecutorPluginProvider;
-
     const ALTERNATE_PLUGIN_MANIFEST_RELATIVE_PATH: &str = ".claude-plugin/plugin.json";
 
     fn write_manifest(plugin_root: &Path, version: Option<&str>, interface: &str) {
@@ -926,7 +949,7 @@ mod tests {
         };
 
         let executor_plugin = provider
-            .resolve(&selected_root)
+            .resolve_bound(&selected_root)
             .await
             .expect("resolve executor plugin")
             .expect("plugin descriptor");
@@ -947,7 +970,7 @@ mod tests {
         )
         .expect("valid expected descriptor");
 
-        assert_eq!(executor_plugin, expected_plugin);
+        assert_eq!(executor_plugin.plugin(), &expected_plugin);
     }
 
     #[test]
@@ -982,6 +1005,7 @@ mod tests {
                 description: None,
                 keywords: Vec::new(),
                 paths: PluginManifestPaths {
+                    onboarding_skill: None,
                     skills: vec![plugin_root.join("skills").expect("skills URI")],
                     mcp_servers: Some(PluginManifestMcpServers::Path(
                         plugin_root.join(".mcp.json").expect("MCP URI"),

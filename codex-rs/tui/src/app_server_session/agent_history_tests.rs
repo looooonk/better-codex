@@ -50,6 +50,9 @@ fn referenced_threads_are_deduplicated_across_agent_items() {
 #[test]
 fn agent_free_history_has_no_hydration_candidates() {
     let turns = vec![turn(vec![ThreadItem::AgentMessage {
+        delivery: None,
+        questions: None,
+
         id: "message".to_string(),
         text: "no delegated work".to_string(),
         phase: None,
@@ -214,11 +217,18 @@ fn activity_snapshots_bound_turn_items_and_text() {
     let child = thread_id("01900000-0000-7000-8000-000000000102");
     let mut thread = metadata_thread(child, &root.to_string(), Some(root), Some(root));
     thread.agent_nickname = Some("n".repeat(256));
+    thread.model = Some("m".repeat(256));
+    thread.reasoning_effort = Some(codex_protocol::openai_models::ReasoningEffort::Custom(
+        "r".repeat(256),
+    ));
     thread.turns = (0..20)
         .map(|turn_index| {
             let mut turn = turn(
                 (0..130)
                     .map(|item_index| ThreadItem::AgentMessage {
+                        delivery: None,
+                        questions: None,
+
                         id: format!("message-{turn_index}-{item_index}"),
                         text: "x".repeat(2_000),
                         phase: None,
@@ -234,6 +244,15 @@ fn activity_snapshots_bound_turn_items_and_text() {
     let snapshot = AgentHistorySnapshot::loaded(thread);
 
     assert_eq!(snapshot.agent_nickname, Some("n".repeat(128)));
+    assert_eq!(
+        (snapshot.model, snapshot.reasoning_effort),
+        (
+            Some("m".repeat(128)),
+            Some(codex_protocol::openai_models::ReasoningEffort::Custom(
+                "r".repeat(128)
+            ))
+        )
+    );
     assert_eq!(snapshot.turns.len(), 12);
     assert!(snapshot.turns.capacity() <= 12);
     assert!(snapshot.turns.iter().all(|turn| turn.items.len() == 64));
@@ -400,6 +419,17 @@ fn metadata_thread(
     source_parent_id: Option<ThreadId>,
 ) -> Thread {
     Thread {
+        model: None,
+        reasoning_effort: None,
+
+        environments: None,
+        section: None,
+        section_entered_at: None,
+        project_id: None,
+        originator: None,
+        can_accept_direct_input: None,
+        daybreak_enabled: None,
+
         id: id.to_string(),
         extra: None,
         session_id: session_id.to_string(),

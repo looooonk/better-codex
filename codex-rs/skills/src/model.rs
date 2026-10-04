@@ -16,6 +16,7 @@ pub struct SkillMetadata {
     pub path_to_skills_md: AbsolutePathBuf,
     pub scope: SkillScope,
     pub plugin_id: Option<String>,
+    pub remote_plugin_id: Option<String>,
 }
 
 impl SkillMetadata {
@@ -89,6 +90,7 @@ pub struct SkillToolDependency {
     pub transport: Option<String>,
     pub command: Option<String>,
     pub url: Option<String>,
+    pub oauth_callback_port: Option<u16>,
 }
 
 fn matches_product_restriction(

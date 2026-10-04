@@ -48,6 +48,8 @@ use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
+    shell.pets.clear()?;
+    shell.refresh_terminal_title();
     if shell.terminal_clear_requested.get() {
         tui.terminal.clear()?;
         shell.terminal_clear_requested.set(false);
@@ -61,7 +63,14 @@ pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Res
             frame.set_cursor_style(SetCursorStyle::SteadyBar);
             frame.set_cursor_position(position);
         }
-    })
+    })?;
+    let size = tui.terminal.size()?;
+    shell.draw_pet_image(Rect::new(
+        /*x*/ 0,
+        /*y*/ 0,
+        size.width,
+        size.height,
+    ))
 }
 
 pub(super) struct ShellView<'a> {
@@ -85,6 +94,9 @@ impl ShellView<'_> {
             return;
         };
         self.render_header(layout.header, buf);
+        if let Some(area) = layout.status {
+            self.shell.render_status_surface(area, buf);
+        }
         render_transcript(
             self.shell,
             layout.transcript,
@@ -249,7 +261,7 @@ impl ShellView<'_> {
             model: &self.shell.model,
             reasoning_effort: &effort,
             service_tier,
-            status: &self.shell.status,
+            status: &self.shell.header_status(),
             status_spinner_frame: self
                 .shell
                 .status_spinner_active()
@@ -384,7 +396,7 @@ impl ShellView<'_> {
             model: &self.shell.model,
             reasoning_effort: &effort,
             service_tier,
-            status: &self.shell.status,
+            status: &self.shell.header_status(),
             status_spinner_frame: self
                 .shell
                 .status_spinner_active()
@@ -482,6 +494,20 @@ impl ShellView<'_> {
         } else {
             vec![format!("MESSAGE  {position}"), position.clone()]
         };
+        let titles =
+            if self.shell.composer.has_images() {
+                let attachments = self.shell.composer.image_summary();
+                let mut with_images = titles
+                    .iter()
+                    .map(|title| format!("{title}  {attachments}"))
+                    .collect::<Vec<_>>();
+                with_images.extend(titles.into_iter().map(|title| {
+                    format!("{title}  [{} images]", self.shell.composer.image_count())
+                }));
+                with_images
+            } else {
+                titles
+            };
         let title = titles
             .into_iter()
             .find(|title| UnicodeWidthStr::width(title.as_str()) <= title_width)
@@ -496,6 +522,24 @@ impl ShellView<'_> {
             usize::from(body.width).max(1),
             composer.selection_range(),
         );
+        if self.shell.composer.is_empty()
+            && self
+                .shell
+                .keybindings
+                .configured("editor", "insert_newline")
+        {
+            let hint = self
+                .shell
+                .keybindings
+                .hint("editor", "insert_newline", "Shift+Enter");
+            let text = format!("Type a message, {hint} for newline");
+            lines = super::composer_render::wrapped_composer_lines(
+                &text,
+                false,
+                0,
+                usize::from(body.width),
+            );
+        }
         if visible_height > 0 && lines.len() > visible_height {
             let max_start = lines.len().saturating_sub(visible_height);
             let cursor_line = composer_visual_cursor_line(

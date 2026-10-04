@@ -5,6 +5,7 @@
 
 use crate::app_server_session::AgentHistoryTask;
 use crate::app_server_session::TurnPermissionsOverride;
+use crate::app_theme::TuiAppTheme;
 use crate::clipboard_copy::ClipboardLease;
 use crate::goal_display::GOAL_USAGE;
 use crate::goal_display::goal_status_label;
@@ -37,7 +38,6 @@ use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnPlanStep;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
-use codex_config::types::TuiAppTheme;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -57,6 +57,8 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 
 mod account_auth;
+mod agents_overview;
+pub(crate) use agents_overview::run_agents_overview;
 mod agent_activity;
 mod agent_activity_controller;
 mod agent_activity_render;
@@ -76,12 +78,17 @@ mod composer;
 mod composer_layout;
 mod composer_navigation;
 mod composer_render;
+mod daemon;
+mod daemon_recovery;
+pub(crate) use daemon_recovery::DaemonRecovery;
+pub(crate) use daemon_recovery::recover_daemon;
 mod dashboard;
 mod dashboard_help;
 mod dashboard_rate_limits;
 mod dashboard_resize;
 mod dashboard_view;
 mod dashboard_workspace;
+mod daybreak;
 mod design;
 mod diff_horizontal_scroll;
 mod diff_metadata_view;
@@ -94,25 +101,42 @@ mod diff_view_controller;
 mod diff_view_view;
 mod elicitation;
 mod events;
+mod extension_commands;
 mod external_agent_import;
 mod goal_rate_limit_recovery;
+mod guardian_activity;
+mod guardian_denials;
 mod header;
+mod hook_activity;
+mod ide;
 mod input_request_layout;
 mod input_request_view;
 mod input_router;
+mod keybindings;
+mod transcript_find;
+pub(crate) use keybindings::validate_keymap;
+mod attachments;
+mod automatic_recap;
+mod bedrock;
+mod diagnostic_commands;
+mod file_mentions;
+mod inline_visualizations;
 mod integrations;
 mod interactive_requests;
 mod local_app_theme;
 mod login_method_availability;
+mod managed_worktree;
 mod mcp_management;
 mod modal_view;
 mod navigation;
 mod paste;
+mod pets;
 mod plugin_management;
 mod pointer;
 mod queued_message_popup_view;
 mod queued_messages;
 mod reasoning_ripple;
+mod recap;
 mod render;
 mod rewind;
 mod runtime;
@@ -130,6 +154,7 @@ mod sessions;
 mod settings;
 mod shell_command;
 mod shell_layout;
+mod side;
 mod slash_command_popup;
 mod slash_command_popup_view;
 mod slash_commands;
@@ -138,20 +163,32 @@ mod startup_availability_nux;
 mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
+mod status_surface_items;
+mod status_surface_metadata;
+mod status_surface_values;
+mod status_surfaces;
 mod terminal_output;
 mod text_selection;
 mod thread_revert;
 mod thread_usage;
+mod timeline;
 mod tool_output;
 mod tool_output_view;
+mod tool_payload;
 mod transcript_copy;
+mod transcript_export;
 mod transcript_render;
 mod transcript_selection;
 mod transcript_view;
 mod turn_timer;
 mod user_input;
 mod vim_input;
+mod voice;
+mod voice_session;
+mod voice_settings;
 mod workspace;
+mod workspace_commands;
+mod workspace_requests;
 use account_auth::AccountAuthState;
 use agent_activity::AgentActivityState;
 use agent_log::AgentLogState;
@@ -386,9 +423,22 @@ pub(crate) struct ResumeCwdRuntime {
     pub(crate) launch_cwd: std::path::PathBuf,
     pub(crate) explicit_cwd: Option<std::path::PathBuf>,
     pub(crate) uses_remote_workspace_or_environment: bool,
+    pub(crate) daemon_update_available: bool,
 }
 
 struct ShellState {
+    pets: pets::PetState,
+    status_surfaces: status_surfaces::StatusSurfaces,
+    warnings: diagnostic_commands::WarningHistory,
+    side_parent: Option<Box<ShellState>>,
+    recap: recap::RecapState,
+    automatic_recap: automatic_recap::AutomaticRecap,
+    can_accept_direct_input: bool,
+    daybreak_enabled: bool,
+    model_provider_id: String,
+    voice: voice::VoiceState,
+    worktree_loader: Option<crate::managed_worktree::WorktreeConfigLoader>,
+    pending_worktree: Option<managed_worktree::PendingWorktree>,
     thread_id: ThreadId,
     session_unavailable_reason: Option<&'static str>,
     thread_name: Option<String>,
@@ -446,6 +496,12 @@ struct ShellState {
     session_hydration: SessionHydrationState,
     goal_rate_limit_recovery: GoalRateLimitRecoveryState,
     exit_confirmation_pending: bool,
+    keybindings: keybindings::ShellKeymap,
+    transcript_find: Option<crate::text_input::EditableText>,
+    pending_update_action: Option<crate::UpdateAction>,
+    ide: ide::IdeState,
+    recent_guardian_denials:
+        std::collections::VecDeque<codex_protocol::approvals::GuardianAssessmentEvent>,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
     turn_started_at: Option<std::time::Instant>,
@@ -534,6 +590,18 @@ impl ShellState {
             session.model.clone()
         };
         let mut shell = Self {
+            pets: pets::PetState::default(),
+            status_surfaces: status_surfaces::StatusSurfaces::default(),
+            warnings: diagnostic_commands::WarningHistory::default(),
+            side_parent: None,
+            recap: recap::RecapState::default(),
+            automatic_recap: automatic_recap::AutomaticRecap::default(),
+            can_accept_direct_input: session.can_accept_direct_input,
+            daybreak_enabled: session.daybreak_enabled,
+            model_provider_id: session.model_provider_id,
+            voice: voice::VoiceState::default(),
+            worktree_loader: None,
+            pending_worktree: None,
             thread_id: session.thread_id,
             session_unavailable_reason: None,
             thread_name: session.thread_name,
@@ -591,6 +659,11 @@ impl ShellState {
             session_hydration: SessionHydrationState::default(),
             goal_rate_limit_recovery: GoalRateLimitRecoveryState::default(),
             exit_confirmation_pending: false,
+            keybindings: keybindings::ShellKeymap::default(),
+            transcript_find: None,
+            pending_update_action: None,
+            recent_guardian_denials: Default::default(),
+            ide: Default::default(),
             clipboard_lease: None,
             active_turn_id: None,
             turn_started_at: None,
@@ -716,6 +789,7 @@ impl ShellState {
         loop {
             match app_server
                 .mcp_server_status_list(ListMcpServerStatusParams {
+                    server_name: None,
                     cursor: cursor.clone(),
                     limit: Some(100),
                     detail: Some(McpServerStatusDetail::ToolsAndAuthOnly),
@@ -760,6 +834,7 @@ impl ShellState {
         };
         match app_server
             .plugin_list(PluginListParams {
+                force_refetch: false,
                 cwds: Some(vec![cwd]),
                 marketplace_kinds: None,
             })
@@ -982,19 +1057,32 @@ impl ShellState {
         S: AppShellBackend,
     {
         self.composer.remember_submission(&prompt);
-        self.composer.clear();
+        self.composer.clear_text();
         self.slash_command_popup.reset();
         let account_change_blocked = self.active_turn_id.is_some()
             || self.has_pending_shell_command()
             || self.has_pending_backend_actions()
             || self.composer.has_queued_messages();
         let outcome = match command {
+            LocalSlashCommand::Workspace(command, args) => {
+                self.run_workspace_command(command, &args, config, app_server)
+                    .await?;
+                if self.pending_update_action.is_some() {
+                    LocalSlashCommandOutcome::Exit
+                } else {
+                    LocalSlashCommandOutcome::Continue
+                }
+            }
             LocalSlashCommand::Clear => {
                 self.clear_visible_transcript();
                 LocalSlashCommandOutcome::Continue
             }
             LocalSlashCommand::Copy(request) => {
                 self.copy_response_request_with(request, crate::clipboard_copy::copy_to_clipboard);
+                LocalSlashCommandOutcome::Continue
+            }
+            LocalSlashCommand::Exit if self.side_parent.is_some() => {
+                self.return_from_side(app_server).await?;
                 LocalSlashCommandOutcome::Continue
             }
             LocalSlashCommand::Exit => LocalSlashCommandOutcome::Exit,
@@ -1159,6 +1247,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.reject_direct_input() {
+            return;
+        }
         if self.reject_oversized_input(prompt.len()) {
             return;
         }
@@ -1170,14 +1261,27 @@ impl ShellState {
             return;
         }
 
+        if self.reject_unsupported_images() {
+            return;
+        }
+        let cyber_access_program = match crate::daybreak::program_for_turn(
+            &self.available_models,
+            &self.model,
+            self.model_provider_id == "openai",
+            self.daybreak_enabled,
+        ) {
+            Ok(program) => program,
+            Err(error) => {
+                self.push_error(error);
+                return;
+            }
+        };
         let client_user_message_id = format!("better-codex-turn-{}", uuid::Uuid::new_v4());
         let params = AppShellTurnStart {
+            cyber_access_program,
             thread_id: self.thread_id,
             client_user_message_id,
-            items: vec![UserInput::Text {
-                text: prompt.clone(),
-                text_elements: Vec::new(),
-            }],
+            items: self.composer.submission_items(&prompt),
             cwd: self.cwd.clone().into(),
             approval_policy: self.approval_policy,
             approvals_reviewer: self.approvals_reviewer,
@@ -1191,16 +1295,7 @@ impl ShellState {
             personality: self.personality,
             output_schema: None,
         };
-        let request = app_server.turn_start_in_background(params.clone());
-        if self.start_backend_action(ActionGroup::TurnStart, "thinking", async move {
-            BackendActionResult::TurnStart {
-                params,
-                prompt,
-                submission,
-                result: request.await,
-            }
-        }) && submission == TurnSubmission::Interactive
-        {
+        if self.start_turn_with_ide(app_server, params, prompt, submission) {
             self.composer.clear();
         }
     }
@@ -1219,13 +1314,14 @@ impl ShellState {
             Ok(response) => response,
             Err(err) => {
                 self.composer.restore_failed_submission(&prompt);
+                self.composer.restore_input_images(&params.items);
                 self.report_action_error("failed to submit turn", err);
                 return;
             }
         };
         self.scroll_transcript_to_bottom();
         self.upsert_line(
-            TranscriptLine::new(TranscriptKind::User, prompt.clone())
+            TranscriptLine::new(TranscriptKind::User, format_user_inputs(&params.items))
                 .rewind_anchor(rewind::RewindAnchor {
                     before_turn_id: response.turn.id.clone(),
                 })
@@ -1262,6 +1358,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.reject_direct_input() || self.reject_unavailable_session_action() {
+            return Ok(());
+        }
         if self.reject_oversized_input(prompt.len()) {
             return Ok(());
         }
@@ -1269,21 +1368,34 @@ impl ShellState {
             self.submit_prompt(app_server, prompt);
             return Ok(());
         };
+        if self.reject_unsupported_images() {
+            return Ok(());
+        }
+        let items = self.composer.submission_items(&prompt);
+        if self.prepare_ide_steer(
+            AppShellTurnSteer {
+                thread_id: self.thread_id,
+                turn_id: turn_id.clone(),
+                client_user_message_id: format!("better-codex-steer-{}", uuid::Uuid::new_v4()),
+                items: items.clone(),
+            },
+            prompt.clone(),
+        ) {
+            return Ok(());
+        }
+        let display_text = format_user_inputs(&items);
         let client_user_message_id = format!("better-codex-steer-{}", uuid::Uuid::new_v4());
         app_server
             .turn_steer(AppShellTurnSteer {
                 thread_id: self.thread_id,
                 turn_id,
                 client_user_message_id: client_user_message_id.clone(),
-                items: vec![UserInput::Text {
-                    text: prompt.clone(),
-                    text_elements: Vec::new(),
-                }],
+                items,
             })
             .await
             .wrap_err("failed to steer active turn")?;
         self.scroll_transcript_to_bottom();
-        self.push_user_with_client_id(prompt.clone(), client_user_message_id);
+        self.push_user_with_client_id(display_text, client_user_message_id);
         self.composer.remember_submission(&prompt);
         self.composer.clear();
         self.status = "thinking".to_string();
@@ -1679,7 +1791,13 @@ impl ShellState {
                     self.push_status(format!("hook prompt: {text}"));
                 }
             }
-            ThreadItem::AgentMessage { id, text, .. } => {
+            ThreadItem::AgentMessage {
+                id,
+                text,
+                questions,
+                ..
+            } => {
+                let text = crate::assistant_message::with_questions(&text, questions.as_deref());
                 if self.streaming_assistant_item_id.as_deref() == Some(id.as_str())
                     || (self.streaming_assistant_item_id.is_none()
                         && self.streaming_assistant == text)
@@ -1688,6 +1806,19 @@ impl ShellState {
                 }
                 if !text.is_empty() {
                     self.push_assistant_for_item(id, text);
+                }
+            }
+            ThreadItem::FunctionCallOutput {
+                id,
+                name,
+                namespace,
+                output,
+            } => {
+                let title = namespace
+                    .map_or_else(|| name.clone(), |namespace| format!("{namespace}/{name}"));
+                self.push_tool_with_status_for_item(id.clone(), title, ToolBlockStatus::Success);
+                if let Some(text) = tool_payload::function_output(&output) {
+                    self.push_output_with_status_for_item(id, text, ToolBlockStatus::Success);
                 }
             }
             ThreadItem::Plan { id, text, .. } => {
@@ -1756,6 +1887,7 @@ impl ShellState {
                 tool,
                 status,
                 error,
+                result,
                 duration_ms,
                 ..
             } => {
@@ -1769,7 +1901,10 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id, title, tool_status);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status);
+                if let Some(output) = result.as_deref().and_then(tool_payload::mcp_output) {
+                    self.push_output_with_status_for_item(id, output, tool_status);
+                }
                 if let Some(error) = error {
                     self.push_error(format!("mcp error: {}", error.message));
                 }
@@ -1780,6 +1915,7 @@ impl ShellState {
                 tool,
                 status,
                 success,
+                content_items,
                 duration_ms,
                 ..
             } => {
@@ -1799,7 +1935,13 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id, title, tool_status);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status);
+                if let Some(output) = content_items
+                    .as_deref()
+                    .and_then(tool_payload::dynamic_output)
+                {
+                    self.push_output_with_status_for_item(id, output, tool_status);
+                }
             }
             ThreadItem::CollabAgentToolCall {
                 id,
@@ -1842,26 +1984,49 @@ impl ShellState {
                         .as_ref()
                         .map_or_else(|| "completed".to_string(), |action| format!("{action:?}")),
                 );
-                self.push_tool_with_status_for_item(item.id, title, ToolBlockStatus::Success);
+                self.push_tool_with_status_for_item(
+                    item.id.clone(),
+                    title,
+                    ToolBlockStatus::Success,
+                );
+                if let Some(output) = item.results.as_deref().and_then(tool_payload::web_results) {
+                    self.push_output_with_status_for_item(
+                        item.id,
+                        output,
+                        ToolBlockStatus::Success,
+                    );
+                }
             }
             ThreadItem::ImageView { id, path } => {
                 let title = format!("view image: {path}");
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
                 self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
             }
-            ThreadItem::Sleep { id, duration_ms } => {
+            ThreadItem::Sleep(item) => {
+                let codex_app_server_protocol::SleepItem {
+                    id, duration_ms, ..
+                } = item;
                 let title = format!("sleep {duration_ms}ms");
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
                 self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
             }
             ThreadItem::ImageGeneration(item) => {
+                let host = if self.resume_cwd_runtime.uses_remote_workspace_or_environment {
+                    tool_payload::ArtifactHost::Remote
+                } else {
+                    tool_payload::ArtifactHost::Local
+                };
+                let output = tool_payload::image_generation(&item, host);
                 let title = item
                     .saved_path
                     .map(|path| format!("image generation: {}", path.as_path().display()))
                     .unwrap_or_else(|| "image generation".to_string());
                 let tool_status = tool_status_from_str(&item.status);
                 self.upsert_tool_activity(item.id.clone(), title.clone(), item.status);
-                self.push_tool_with_status_for_item(item.id, title, tool_status);
+                self.push_tool_with_status_for_item(item.id.clone(), title, tool_status);
+                if let Some(output) = output {
+                    self.push_output_with_status_for_item(item.id, output, tool_status);
+                }
             }
             ThreadItem::EnteredReviewMode { review, .. } => {
                 self.push_status(format!("entered review mode: {review}"));
@@ -2191,6 +2356,18 @@ impl ShellState {
         let thread_id = ThreadId::from_string("01900000-0000-7000-8000-000000000001")
             .expect("valid snapshot thread id");
         let mut shell = Self {
+            pets: pets::PetState::default(),
+            status_surfaces: status_surfaces::StatusSurfaces::default(),
+            warnings: diagnostic_commands::WarningHistory::default(),
+            side_parent: None,
+            recap: recap::RecapState::default(),
+            automatic_recap: automatic_recap::AutomaticRecap::default(),
+            can_accept_direct_input: true,
+            daybreak_enabled: false,
+            model_provider_id: "openai".to_string(),
+            voice: voice::VoiceState::default(),
+            worktree_loader: None,
+            pending_worktree: None,
             thread_id,
             session_unavailable_reason: None,
             thread_name: Some("stage-one".to_string()),
@@ -2240,6 +2417,7 @@ impl ShellState {
                 launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
                 explicit_cwd: None,
                 uses_remote_workspace_or_environment: false,
+                daemon_update_available: false,
             },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
@@ -2259,6 +2437,11 @@ impl ShellState {
             session_hydration: SessionHydrationState::default(),
             goal_rate_limit_recovery: GoalRateLimitRecoveryState::default(),
             exit_confirmation_pending: false,
+            keybindings: keybindings::ShellKeymap::default(),
+            transcript_find: None,
+            pending_update_action: None,
+            recent_guardian_denials: Default::default(),
+            ide: Default::default(),
             clipboard_lease: None,
             active_turn_id: None,
             turn_started_at: None,
@@ -2475,6 +2658,18 @@ pub mod bench_support {
     fn bench_fixture() -> ShellState {
         let thread_id = ThreadId::new();
         let mut shell = ShellState {
+            pets: pets::PetState::default(),
+            status_surfaces: status_surfaces::StatusSurfaces::default(),
+            warnings: diagnostic_commands::WarningHistory::default(),
+            side_parent: None,
+            recap: recap::RecapState::default(),
+            automatic_recap: automatic_recap::AutomaticRecap::default(),
+            can_accept_direct_input: true,
+            daybreak_enabled: false,
+            model_provider_id: "openai".to_string(),
+            voice: voice::VoiceState::default(),
+            worktree_loader: None,
+            pending_worktree: None,
             thread_id,
             session_unavailable_reason: None,
             thread_name: Some("bench".to_string()),
@@ -2524,6 +2719,7 @@ pub mod bench_support {
                 launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
                 explicit_cwd: None,
                 uses_remote_workspace_or_environment: false,
+                daemon_update_available: false,
             },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
@@ -2543,6 +2739,11 @@ pub mod bench_support {
             session_hydration: SessionHydrationState::default(),
             goal_rate_limit_recovery: GoalRateLimitRecoveryState::default(),
             exit_confirmation_pending: false,
+            keybindings: keybindings::ShellKeymap::default(),
+            transcript_find: None,
+            pending_update_action: None,
+            recent_guardian_denials: Default::default(),
+            ide: Default::default(),
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),
             turn_started_at: Some(std::time::Instant::now()),
@@ -2669,8 +2870,8 @@ fn format_user_inputs(content: &[UserInput]) -> String {
     content
         .iter()
         .map(|input| match input {
-            UserInput::Text { text, .. } => text.clone(),
-            UserInput::Image { url, .. } => format!("[image {url}]"),
+            UserInput::Text { text, .. } => crate::ide_context::visible_request(text).to_string(),
+            UserInput::Image { .. } => "[image]".to_string(),
             UserInput::LocalImage { path, .. } => format!("[image {}]", path.display()),
             UserInput::Audio { .. } => "[audio]".to_string(),
             UserInput::LocalAudio { path } => format!("[audio {}]", path.display()),

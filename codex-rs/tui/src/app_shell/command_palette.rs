@@ -266,6 +266,24 @@ impl ShellState {
             return Ok(());
         };
         self.close_command_palette();
+        self.execute_workspace_action(action, config, app_server)
+            .await
+    }
+
+    pub(super) async fn execute_workspace_action<S: AppShellBackend>(
+        &mut self,
+        action: CommandPaletteAction,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<()> {
+        let enabled = self
+            .command_palette_entries()
+            .into_iter()
+            .any(|entry| entry.action == action && entry.enabled);
+        if !enabled {
+            self.push_status("finish active work before running this command");
+            return Ok(());
+        }
         match action {
             CommandPaletteAction::NewSession => {
                 self.start_new_session(config, app_server).await?;
@@ -292,7 +310,7 @@ impl ShellState {
                 self.set_dashboard_route(DashboardRoute::Status);
                 self.dashboard_scroll.set(0);
                 self.session_list.focused = false;
-                self.settings.focused = true;
+                self.settings.focused = self.dashboard_visible;
                 self.settings.focus_action(SettingsAction::Model);
                 self.open_model_selector();
             }
@@ -300,7 +318,7 @@ impl ShellState {
                 self.set_dashboard_route(DashboardRoute::Status);
                 self.dashboard_scroll.set(0);
                 self.session_list.focused = false;
-                self.settings.focused = true;
+                self.settings.focused = self.dashboard_visible;
                 self.settings.focus_action(SettingsAction::ApprovalPolicy);
                 self.open_approval_selector();
             }

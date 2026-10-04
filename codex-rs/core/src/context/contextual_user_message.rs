@@ -1,12 +1,12 @@
-use codex_protocol::ResponseItemId;
 use codex_protocol::items::HookPromptItem;
 use codex_protocol::items::parse_hook_prompt_fragment;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 
 use super::AdditionalContextUserFragment;
-use super::FragmentRegistration;
-use super::FragmentRegistrationProxy;
+use super::AgentMessageBoardNotification;
+use super::ContextualUserFragment;
+use super::GuardianRetainedInstructions;
 use super::InternalModelContextFragment;
 use super::LegacyApplyPatchExecCommandWarning;
 use super::LegacyModelMismatchWarning;
@@ -14,82 +14,77 @@ use super::LegacyUnifiedExecProcessLimitWarning;
 use super::RecommendedPluginsInstructions;
 use super::SubagentNotification;
 use super::TurnAborted;
+use super::UserGoalUpdate;
 use super::UserInstructions;
 use super::UserShellCommand;
 use super::world_state::EnvironmentsState;
 
-static USER_INSTRUCTIONS_REGISTRATION: FragmentRegistrationProxy<UserInstructions> =
-    FragmentRegistrationProxy::new();
-static ENVIRONMENT_CONTEXT_REGISTRATION: FragmentRegistrationProxy<EnvironmentsState> =
-    FragmentRegistrationProxy::new();
-static ADDITIONAL_CONTEXT_REGISTRATION: FragmentRegistrationProxy<AdditionalContextUserFragment> =
-    FragmentRegistrationProxy::new();
-struct SkillInstructionsRegistration;
-
-impl FragmentRegistration for SkillInstructionsRegistration {
-    fn matches_text(&self, text: &str) -> bool {
-        codex_skills_extension::is_skill_prompt_fragment(text)
-    }
-}
-
-static SKILL_INSTRUCTIONS_REGISTRATION: SkillInstructionsRegistration =
-    SkillInstructionsRegistration;
-static USER_SHELL_COMMAND_REGISTRATION: FragmentRegistrationProxy<UserShellCommand> =
-    FragmentRegistrationProxy::new();
-static TURN_ABORTED_REGISTRATION: FragmentRegistrationProxy<TurnAborted> =
-    FragmentRegistrationProxy::new();
-static SUBAGENT_NOTIFICATION_REGISTRATION: FragmentRegistrationProxy<SubagentNotification> =
-    FragmentRegistrationProxy::new();
-static INTERNAL_MODEL_CONTEXT_REGISTRATION: FragmentRegistrationProxy<
-    InternalModelContextFragment,
-> = FragmentRegistrationProxy::new();
-static RECOMMENDED_PLUGINS_REGISTRATION: FragmentRegistrationProxy<RecommendedPluginsInstructions> =
-    FragmentRegistrationProxy::new();
-static LEGACY_UNIFIED_EXEC_PROCESS_LIMIT_WARNING_REGISTRATION: FragmentRegistrationProxy<
-    LegacyUnifiedExecProcessLimitWarning,
-> = FragmentRegistrationProxy::new();
-static LEGACY_APPLY_PATCH_EXEC_COMMAND_WARNING_REGISTRATION: FragmentRegistrationProxy<
-    LegacyApplyPatchExecCommandWarning,
-> = FragmentRegistrationProxy::new();
-static LEGACY_MODEL_MISMATCH_WARNING_REGISTRATION: FragmentRegistrationProxy<
-    LegacyModelMismatchWarning,
-> = FragmentRegistrationProxy::new();
-
-static CONTEXTUAL_USER_FRAGMENTS: &[&dyn FragmentRegistration] = &[
-    &USER_INSTRUCTIONS_REGISTRATION,
-    &ENVIRONMENT_CONTEXT_REGISTRATION,
-    &ADDITIONAL_CONTEXT_REGISTRATION,
-    &SKILL_INSTRUCTIONS_REGISTRATION,
-    &USER_SHELL_COMMAND_REGISTRATION,
-    &TURN_ABORTED_REGISTRATION,
-    &SUBAGENT_NOTIFICATION_REGISTRATION,
-    &INTERNAL_MODEL_CONTEXT_REGISTRATION,
-    &RECOMMENDED_PLUGINS_REGISTRATION,
-    &LEGACY_UNIFIED_EXEC_PROCESS_LIMIT_WARNING_REGISTRATION,
-    &LEGACY_APPLY_PATCH_EXEC_COMMAND_WARNING_REGISTRATION,
-    &LEGACY_MODEL_MISMATCH_WARNING_REGISTRATION,
+const CONTEXTUAL_USER_FRAGMENT_MATCHERS: &[fn(&str) -> bool] = &[
+    UserInstructions::matches_text,
+    EnvironmentsState::matches_text,
+    AdditionalContextUserFragment::matches_text,
+    AgentMessageBoardNotification::matches_text,
+    codex_skills_extension::is_skill_prompt_fragment,
+    UserShellCommand::matches_text,
+    TurnAborted::matches_text,
+    SubagentNotification::matches_text,
+    InternalModelContextFragment::matches_text,
+    // compatibility for user-role recommendation messages in existing rollouts
+    RecommendedPluginsInstructions::matches_text,
+    LegacyUnifiedExecProcessLimitWarning::matches_text,
+    LegacyApplyPatchExecCommandWarning::matches_text,
+    LegacyModelMismatchWarning::matches_text,
 ];
 
-// Keep the Responses API's `msg_<UUID>` shape while reserving 48 random tail bits as durable
-// provenance. The remaining v7 timestamp and random bits still make IDs unique in practice.
-const EXPLICIT_USER_MESSAGE_ID_MAGIC: [u8; 6] = [0xc0, 0xde, 0xc0, 0xde, 0xfa, 0xce];
-
-pub(crate) fn new_explicit_user_message_id() -> ResponseItemId {
-    let mut bytes = uuid::Uuid::now_v7().into_bytes();
-    bytes[10..].copy_from_slice(&EXPLICIT_USER_MESSAGE_ID_MAGIC);
-    ResponseItemId::with_suffix("msg", uuid::Uuid::from_bytes(bytes))
+/// Hidden runtime context is not user authorization. Explicit user goal edits are.
+pub(crate) fn is_guardian_context_message(item: &ResponseItem) -> bool {
+    matches!(item, ResponseItem::Message { role, content, internal_chat_message_metadata_passthrough, .. }
+        if role == "user"
+            && (content.iter().any(is_contextual_user_fragment)
+                || internal_chat_message_metadata_passthrough.as_ref()
+                    .and_then(|metadata| metadata.content_item_kinds.as_ref())
+                    .is_some_and(|kinds| !kinds.is_empty() && kinds.len() == content.len()
+                        && kinds.iter().all(|kind| kind.0 == GuardianRetainedInstructions::KIND)))
+            && UserGoalUpdate::message_text(item).is_none())
 }
 
-fn is_explicit_user_message_id(id: Option<&str>) -> bool {
-    id.and_then(|id| id.strip_prefix("msg_"))
-        .and_then(|id| uuid::Uuid::parse_str(id).ok())
-        .is_some_and(|id| id.as_bytes()[10..] == EXPLICIT_USER_MESSAGE_ID_MAGIC)
+/// Uses host annotations rather than text markers to identify user authorization changes.
+pub(crate) fn is_user_authorization_message(item: &ResponseItem) -> bool {
+    let ResponseItem::Message {
+        role,
+        content,
+        internal_chat_message_metadata_passthrough,
+        ..
+    } = item
+    else {
+        return false;
+    };
+    role == "user"
+        && internal_chat_message_metadata_passthrough
+            .as_ref()
+            .and_then(|metadata| metadata.content_item_kinds.as_ref())
+            .is_none_or(|kinds| {
+                // Unknown, incomplete, and legacy messages remain conservative.
+                kinds.is_empty()
+                    || kinds.len() != content.len()
+                    || kinds.iter().any(|kind| {
+                        kind.0.starts_with("user.")
+                            || matches!(
+                                kind.0.as_str(),
+                                "" | "unknown"
+                                    // Media preparation can replace real user input.
+                                    | "images.preparation_error"
+                                    | "images.unsupported"
+                                    | "audio.unsupported"
+                            )
+                    })
+            })
 }
 
 fn is_standard_contextual_user_text(text: &str) -> bool {
-    CONTEXTUAL_USER_FRAGMENTS
+    CONTEXTUAL_USER_FRAGMENT_MATCHERS
         .iter()
-        .any(|fragment| fragment.matches_text(text))
+        .any(|matches_text| matches_text(text))
 }
 
 pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
@@ -99,29 +94,10 @@ pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
     parse_hook_prompt_fragment(text).is_some() || is_standard_contextual_user_text(text)
 }
 
-pub(crate) fn is_contextual_user_message(item: &ResponseItem) -> bool {
-    let ResponseItem::Message { content, .. } = item else {
-        return false;
-    };
-    !is_explicit_user_message(item) && content.iter().any(is_contextual_user_fragment)
-}
-
-pub(crate) fn is_explicit_user_message(item: &ResponseItem) -> bool {
-    matches!(
-        item,
-        ResponseItem::Message { id, role, .. }
-            if role == "user" && is_explicit_user_message_id(id.as_deref())
-    )
-}
-
 pub(crate) fn parse_visible_hook_prompt_message(
     id: Option<&str>,
     content: &[ContentItem],
 ) -> Option<HookPromptItem> {
-    if is_explicit_user_message_id(id) {
-        return None;
-    }
-
     let mut fragments = Vec::new();
 
     for content_item in content {

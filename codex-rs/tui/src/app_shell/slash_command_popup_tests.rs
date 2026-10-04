@@ -33,7 +33,6 @@ fn matching_names(marked_text: &str) -> Option<Vec<&'static str>> {
 fn suggestions_follow_the_first_command_token_and_cursor() {
     assert_eq!(
         [
-            matching_names("/|"),
             matching_names("/lo|"),
             matching_names("/cl|ear later"),
             matching_names("/goal |later"),
@@ -41,11 +40,8 @@ fn suggestions_follow_the_first_command_token_and_cursor() {
             matching_names("hello\n/|"),
         ],
         [
-            Some(vec![
-                "/clear", "/copy", "/goal", "/login", "/logout", "/vim", "/exit",
-            ]),
             Some(vec!["/login", "/logout"]),
-            Some(vec!["/clear"]),
+            Some(vec!["/clear", "/clean"]),
             None,
             None,
             None,

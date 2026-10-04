@@ -28,6 +28,7 @@ git apply /path/to/patches/zsh-exec-wrapper.patch
 make -j"$(nproc)"
 ```
 
-The upstream release workflow for publishing patched zsh artifacts has been
-removed from this fork. If the zsh commit or patch changes, document the local
-artifact build and update process with that change.
+Release artifacts are built by `.github/workflows/rust-release-zsh.yml` when a
+`codex-zsh-vX.Y.Z` tag is pushed. When the zsh commit or patch changes, publish
+the next version tag and update the checked-in DotSlash manifests to use the new
+release.

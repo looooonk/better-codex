@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 121
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  switched session                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ ERROR  This agent does not accept direct       │▎+ New session  Ctrl+N
+          messages. Send instructions through its │▎loading sessions
+          parent conversation.                    │
+                                                  │▎◆ THREAD
+                                                  │▎Approval reviewer
+                                                  │▎id 11111111-1111-4111-8111-111111111111
+                                                  │▎resume, fork, archive, delete in session list
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                  ││
+│> Type a message, Shift+Enter for newline       ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

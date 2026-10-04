@@ -1,0 +1,35 @@
+---
+source: tui/src/app_shell/pets_tests.rs
+assertion_line: 37
+expression: rendered
+---
+
+  Dashboard  ◆ BC                      gpt-5-codex ▾   default ▾   default ▾  ● thinking
+─────────────────────────────────────────────────────────────────────────────────────────
+                                       │
+ ◆ CONVERSATION                        │   Status   │  Agents   │  Sessions   │  Help
+ ▎ SYSTEM  Better Codex app shell      │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone T│▎◆ SESSIONS
+                                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ CODEX  Started a fullscreen app shel│▎+ New session  Ctrl+N
+ ▎ PLAN  1. Build shell                │▎loading sessions
+         2. Wire transcript            │▎◆ THREAD
+         3. Render dashboard           │▎stage-one
+                                       │▎id 01900000-0000-7000-8000-000000000001
+ ▌ tool exec just test -p codex-tui    │▎resume, fork, archive, delete in session list
+                                       │
+ ▌ edited 3 files +128 -24             │
+                                       │
+ ▎ CODEX  The new shell owns the fullsc│
+                                       │
+                                       │
+                                       │
+                                       │
+                                       │
+                                       │
+╭───────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                        │
+│> Summarize the new shell architecture                                                 │
+│                                                                                       │
+│                                                                                       │
+╰───────────────────────────────────────────────────────────────────────────────────────╯

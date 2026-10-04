@@ -46,11 +46,11 @@ cargo install --locked dotslash
 cargo install --locked cargo-nextest
 
 # Build the internal Cargo binary used by Better Codex.
-cargo build
+CARGO_INCREMENTAL=0 just build --profile dev-small
 
 # Launch the development build with a sample prompt. The Cargo target remains
 # named codex internally.
-cargo run --bin codex -- "explain this codebase to me"
+./target/dev-small/codex --no-daemon "explain this codebase to me"
 
 # From the repository root, format and lint the crate you changed.
 cd ..
@@ -61,9 +61,26 @@ just fix -p <crate-you-touched>
 just test -p codex-tui
 ```
 
-The root `justfile` runs Rust commands in `codex-rs` automatically. Use the
+The root `justfile` runs Rust commands in `codex-rs` automatically. Its Cargo
+run recipes default to `dev-small`; `CODEX_CARGO_PROFILE=dev just codex --no-daemon`
+selects the full development profile for the CLI and its helper together. Its Cargo
+recipes verify and cache the pinned sandbox-enabled V8 archive and matching Rust
+bindings under `codex-rs/target/rusty-v8`. The trusted release-manifest checksums
+live under `third_party/v8`. For direct Cargo commands, use
+`python3 ../scripts/rusty_v8.py -- cargo build ...` from `codex-rs`, or provide your
+own `RUSTY_V8_ARCHIVE` and `RUSTY_V8_SRC_BINDING_PATH`. The bootstrap preserves
+explicit overrides and source-build settings. Use the
 complete `just test` suite only when a shared-crate change requires it; routine
 `--all-features` runs consume substantially more build time and disk space.
+
+Realtime voice is packaged separately from the main CLI. Release builds use
+`bazel build -c opt //codex-rs/voice-host:codex-voice-host //third_party/voice:native_runtime`
+from the repository root, then verify and assemble the helper and its pinned
+GStreamer closure with the release packaging scripts. Voice requires macOS 14+
+or Linux glibc 2.28+; the regular terminal app retains the requirements above.
+Avoid building the entire Rust workspace merely to launch the app: the isolated
+voice host requires additional native development libraries, and workspace builds
+use more disk space.
 
 ## Tracing / verbose logging
 

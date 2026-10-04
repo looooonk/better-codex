@@ -1,0 +1,7 @@
+---
+source: tui/src/inline_visualization_tests.rs
+assertion_line: 313
+expression: "visible.replace(viewer_prefix.as_str(), \"file:///trusted-viewer/\")"
+---
+Open chart visualization in the browser
+file:///trusted-viewer/chart.html

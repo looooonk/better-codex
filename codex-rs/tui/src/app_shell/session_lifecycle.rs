@@ -1,5 +1,6 @@
 use super::DashboardRoute;
 use super::ShellState;
+use super::backend_actions::ActionGroup;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
@@ -101,7 +102,21 @@ impl ShellState {
         self.mark_active_session_unavailable(lifecycle);
     }
 
+    pub(super) fn reject_direct_input(&mut self) -> bool {
+        if self.can_accept_direct_input {
+            return false;
+        }
+        self.push_error("This agent does not accept direct messages. Send instructions through its parent conversation.");
+        true
+    }
+
     pub(super) fn reject_unavailable_session_action(&mut self) -> bool {
+        if self.has_pending_backend_action(ActionGroup::SessionSwitch)
+            || self.has_pending_backend_action(ActionGroup::ConversationBranch)
+        {
+            self.push_status("wait for the session transition before sending a message");
+            return true;
+        }
         if self.is_thread_revert_hydrating() {
             self.push_status("wait for the reverted session to refresh");
             return true;

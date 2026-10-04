@@ -27,24 +27,32 @@ use codex_protocol::protocol::MULTI_AGENT_MODE_OPEN_TAG;
 use codex_protocol::protocol::PLUGINS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::REALTIME_CONVERSATION_OPEN_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
+use codex_protocol::protocol::TOOLS_OPEN_TAG;
 use codex_protocol::user_input::UserInput;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::context::is_contextual_user_message;
+use crate::context::APPROVED_COMMAND_PREFIX_SAVED_MESSAGE_PREFIX;
+use crate::context::is_contextual_user_fragment;
 use crate::context::parse_visible_hook_prompt_message;
 use crate::web_search::web_search_action_detail;
 
 const CONTEXTUAL_DEVELOPER_PREFIXES: &[&str] = &[
     "<permissions instructions>",
+    APPROVED_COMMAND_PREFIX_SAVED_MESSAGE_PREFIX,
     "<model_switch>",
+    "<managed_developer_instructions>",
+    "<persistent_mode>",
     APPS_INSTRUCTIONS_OPEN_TAG,
     COLLABORATION_MODE_OPEN_TAG,
+    "<multi_agent_role>",
     MULTI_AGENT_MODE_OPEN_TAG,
     ENVIRONMENTS_INSTRUCTIONS_OPEN_TAG,
+    "<git_attribution>",
     PLUGINS_INSTRUCTIONS_OPEN_TAG,
     REALTIME_CONVERSATION_OPEN_TAG,
     SKILLS_INSTRUCTIONS_OPEN_TAG,
+    TOOLS_OPEN_TAG,
     "<personality_spec>",
     // Keep recognizing token-budget wrappers persisted by older versions.
     "<token_budget>",
@@ -52,6 +60,10 @@ const CONTEXTUAL_DEVELOPER_PREFIXES: &[&str] = &[
     CONTEXT_WINDOW_GUIDANCE_OPEN_TAG,
     "<rollout_budget>",
 ];
+
+pub(crate) fn is_contextual_user_message_content(message: &[ContentItem]) -> bool {
+    message.iter().any(is_contextual_user_fragment)
+}
 
 /// Returns true when a developer message contains any rollback-trimmable contextual fragment.
 ///
@@ -83,7 +95,11 @@ fn is_contextual_dev_fragment(content_item: &ContentItem) -> bool {
     })
 }
 
-fn parse_user_message(message: &[ContentItem]) -> UserMessageItem {
+fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
+    if is_contextual_user_message_content(message) {
+        return None;
+    }
+
     let mut content: Vec<UserInput> = Vec::new();
 
     for (idx, content_item) in message.iter().enumerate() {
@@ -110,9 +126,9 @@ fn parse_user_message(message: &[ContentItem]) -> UserMessageItem {
                     text_elements: Vec::new(),
                 });
             }
-            ContentItem::InputImage { image_url, detail } => {
+            ContentItem::InputImage { image, detail } => {
                 content.push(UserInput::Image {
-                    image_url: image_url.clone(),
+                    image: image.clone(),
                     detail: *detail,
                 });
             }
@@ -127,7 +143,7 @@ fn parse_user_message(message: &[ContentItem]) -> UserMessageItem {
         }
     }
 
-    UserMessageItem::new(&content)
+    Some(UserMessageItem::new(&content))
 }
 
 fn parse_agent_message(
@@ -157,6 +173,8 @@ fn parse_agent_message(
         content,
         phase,
         memory_citation: None,
+        delivery: None,
+        questions: None,
     }
 }
 
@@ -171,10 +189,7 @@ pub fn parse_turn_item(item: &ResponseItem) -> Option<TurnItem> {
         } => match role.as_str() {
             "user" => parse_visible_hook_prompt_message(id.as_deref(), content)
                 .map(TurnItem::HookPrompt)
-                .or_else(|| {
-                    (!is_contextual_user_message(item))
-                        .then(|| TurnItem::UserMessage(parse_user_message(content)))
-                }),
+                .or_else(|| parse_user_message(content).map(TurnItem::UserMessage)),
             "assistant" => Some(TurnItem::AgentMessage(parse_agent_message(
                 id.as_deref(),
                 content,

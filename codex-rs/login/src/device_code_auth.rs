@@ -149,11 +149,11 @@ async fn poll_for_token(
 fn device_code_prompt(verification_url: &str, code: &str) -> String {
     let version = env!("CARGO_PKG_VERSION");
     format!(
-        "\nWelcome to Better Codex [v{ANSI_GRAY}{version}{ANSI_RESET}]\n{ANSI_GRAY}A terminal coding agent built on OpenAI's Codex backend{ANSI_RESET}\n\
+        "\nWelcome to Codex [v{ANSI_GRAY}{version}{ANSI_RESET}]\n{ANSI_GRAY}OpenAI's command-line coding agent{ANSI_RESET}\n\
 \nFollow these steps to sign in with ChatGPT using device code authorization:\n\
 \n1. Open this link in your browser and sign in to your account\n   {ANSI_BLUE}{verification_url}{ANSI_RESET}\n\
 \n2. Enter this one-time code {ANSI_GRAY}(expires in 15 minutes){ANSI_RESET}\n   {ANSI_BLUE}{code}{ANSI_RESET}\n\
-\n{ANSI_GRAY}Continue only if you started this login in Better Codex. If a website or another person gave you this code, cancel.{ANSI_RESET}\n",
+\n{ANSI_GRAY}Continue only if you started this login in Codex. If a website or another person gave you this code, cancel.{ANSI_RESET}\n",
     )
 }
 
@@ -164,10 +164,11 @@ fn print_device_code_prompt(verification_url: &str, code: &str) {
 
 pub async fn request_device_code(opts: &ServerOptions) -> std::io::Result<DeviceCode> {
     let base_url = opts.issuer.trim_end_matches('/');
-    // The route selected for the issuer is reused for all device-auth endpoint paths; the endpoint
-    // paths are not resolved separately.
-    let client = create_raw_auth_client(base_url, opts.auth_route_config.as_ref())?;
     let api_base_url = format!("{base_url}/api/accounts");
+    let client = create_raw_auth_client(
+        &format!("{api_base_url}/deviceauth/usercode"),
+        &opts.auth_route_config,
+    )?;
     let uc = request_user_code(&client, &api_base_url, &opts.client_id).await?;
 
     Ok(DeviceCode {
@@ -183,8 +184,11 @@ pub async fn complete_device_code_login(
     device_code: DeviceCode,
 ) -> std::io::Result<()> {
     let base_url = opts.issuer.trim_end_matches('/');
-    let client = create_raw_auth_client(base_url, opts.auth_route_config.as_ref())?;
     let api_base_url = format!("{base_url}/api/accounts");
+    let client = create_raw_auth_client(
+        &format!("{api_base_url}/deviceauth/token"),
+        &opts.auth_route_config,
+    )?;
 
     let code_resp = poll_for_token(
         &client,
@@ -201,13 +205,13 @@ pub async fn complete_device_code_login(
     };
     let redirect_uri = format!("{base_url}/deviceauth/callback");
 
-    let tokens = crate::server::exchange_code_for_tokens(
+    let (tokens, _) = crate::server::exchange_code_for_tokens(
         base_url,
         &opts.client_id,
         &redirect_uri,
         &pkce,
         &code_resp.authorization_code,
-        opts.auth_route_config.as_ref(),
+        &opts.auth_route_config,
     )
     .await
     .map_err(|err| std::io::Error::other(format!("device code exchange failed: {err}")))?;

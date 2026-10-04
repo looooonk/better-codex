@@ -1,7 +1,7 @@
 use super::settings::app_theme_label;
 use super::settings::reasoning_effort_label;
+use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::AskForApproval;
-use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -42,6 +42,11 @@ pub(super) enum ServiceTierValue {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum SelectorValue {
+    StatusSurface(super::status_surfaces::SurfaceChange),
+    Keybinding(String),
+    TranscriptMatch(u64),
+    FileMention(String),
+    Pet(String),
     Model(String),
     ReasoningEffort(ReasoningEffortValue),
     ServiceTier(ServiceTierValue),
@@ -85,6 +90,7 @@ pub(super) struct SelectorState<T> {
     title: String,
     options: Vec<SelectorOption<T>>,
     selected: usize,
+    key_hints: Option<String>,
 }
 
 impl<T> SelectorState<T> {
@@ -97,7 +103,12 @@ impl<T> SelectorState<T> {
             title: title.into(),
             options,
             selected,
+            key_hints: None,
         }
+    }
+
+    pub(super) fn set_key_hints(&mut self, hints: String) {
+        self.key_hints = Some(hints);
     }
 
     pub(super) fn option_at(&self, area: Rect, position: Position) -> Option<usize> {
@@ -297,8 +308,8 @@ impl SelectorState<SelectorValue> {
             ),
             (
                 AskForApproval::UnlessTrusted,
-                "Unless trusted",
-                "Ask before commands that are not known to be safe.",
+                "Unless trusted (this session)",
+                "Ask before commands that are not known to be safe. Saved defaults stay unchanged.",
             ),
             (
                 AskForApproval::Never,

@@ -5,9 +5,10 @@ This keeps recipe bodies as normal shell snippets while giving the justfile one
 portable placeholder, `{args}`, for forwarding variadic recipe arguments.
 """
 
-from __future__ import annotations
-
 import os
+import re
+import shlex
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,12 @@ def main() -> int:
     command = sys.argv[1]
     recipe_name = sys.argv[2] if len(sys.argv) > 2 else ""
     recipe_args = sys.argv[3:]
+
+    if re.search(r"\bcargo\s+(?:build|run|clippy|nextest|bench)\b", command):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from rusty_v8 import prepare
+
+        os.environ.update(prepare([*shlex.split(command), *recipe_args]))
 
     if os.name == "nt":
         return run_powershell(command, recipe_name, recipe_args)

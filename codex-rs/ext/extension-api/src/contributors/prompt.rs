@@ -1,42 +1,42 @@
-use codex_context_fragments::ContextualUserFragment;
+// All this file should be replaced by the existing fragment implementation ofc
+
+use codex_context_fragments::AnnotatedContent;
+use codex_context_fragments::RenderedFragment;
+use codex_protocol::models::ContentItemKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PromptSlot {
     DeveloperPolicy,
     DeveloperCapabilities,
-    ContextualUser,
-    SeparateDeveloper,
+    /// Text inside the context-window message, supplied by `contribute_thread_context`.
+    ContextWindow,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PromptFragment {
     slot: PromptSlot,
-    fragment: Box<dyn ContextualUserFragment + Send>,
+    text: String,
+    content_kind: ContentItemKind,
 }
 
 impl PromptFragment {
     /// Creates a prompt fragment for the given slot.
-    ///
-    /// The slot determines which top-level message receives the rendered fragment.
-    pub fn new(slot: PromptSlot, fragment: impl ContextualUserFragment + Send + 'static) -> Self {
+    pub fn new(slot: PromptSlot, text: impl Into<String>, content_kind: ContentItemKind) -> Self {
         Self {
             slot,
-            fragment: Box::new(fragment),
+            text: text.into(),
+            content_kind,
         }
     }
 
     /// Creates a developer-policy prompt fragment.
-    pub fn developer_policy(fragment: impl ContextualUserFragment + Send + 'static) -> Self {
-        Self::new(PromptSlot::DeveloperPolicy, fragment)
+    pub fn developer_policy(text: impl Into<String>, content_kind: ContentItemKind) -> Self {
+        Self::new(PromptSlot::DeveloperPolicy, text, content_kind)
     }
 
     /// Creates a developer-capabilities prompt fragment.
-    pub fn developer_capability(fragment: impl ContextualUserFragment + Send + 'static) -> Self {
-        Self::new(PromptSlot::DeveloperCapabilities, fragment)
-    }
-
-    /// Creates a separate top-level developer prompt fragment.
-    pub fn separate_developer(fragment: impl ContextualUserFragment + Send + 'static) -> Self {
-        Self::new(PromptSlot::SeparateDeveloper, fragment)
+    pub fn developer_capability(text: impl Into<String>, content_kind: ContentItemKind) -> Self {
+        Self::new(PromptSlot::DeveloperCapabilities, text, content_kind)
     }
 
     /// Returns the target prompt slot.
@@ -44,12 +44,22 @@ impl PromptFragment {
         self.slot
     }
 
-    /// Returns the rendered model-visible fragment.
-    pub fn render(&self) -> String {
-        self.fragment.render()
+    /// Returns the model-visible text.
+    pub fn text(&self) -> &str {
+        &self.text
     }
 
-    pub fn into_context_fragment(self) -> Box<dyn ContextualUserFragment + Send> {
-        self.fragment
+    /// Returns the producer-owned classification of the model-visible text.
+    pub fn content_kind(&self) -> &ContentItemKind {
+        &self.content_kind
+    }
+}
+
+impl From<PromptFragment> for RenderedFragment {
+    fn from(fragment: PromptFragment) -> Self {
+        Self::new(
+            "developer",
+            AnnotatedContent::input_text(fragment.text, fragment.content_kind),
+        )
     }
 }
