@@ -6,6 +6,7 @@
 // inherited UI modules remain compiled for tests and staged removal work. Keep
 // binary builds warning-free without hiding those unused-code warnings from
 // test builds.
+#![recursion_limit = "256"]
 #![cfg_attr(not(test), allow(dead_code, unused_imports))]
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
