@@ -142,6 +142,13 @@ bindings use that same threshold; never pair a native 64-byte threshold with
 GN's size-zero binding constant. These are fixed platform choices, not additional
 developer build switches.
 
+The published 152.2.0 Unix bindings contain that stale zero despite their native
+archives using 64. Cargo's local artifact helper and Bazel's optional prebuilt
+binding selector run `correct_release_binding.py` on only the known original
+SHA-256 hashes, deriving a separate binding with that single constant corrected.
+The downloaded originals and archives stay unchanged. Windows keeps zero, and
+Bazel source bindings already use the native target's matching definition.
+
 Use a native Visual Studio Developer PowerShell with the C++ tools and Windows
 SDK available. The SDK supplies headers, libraries, `dumpbin.exe`, and the
 assembler. From the repo root, build the archive for that host:

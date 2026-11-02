@@ -9,6 +9,9 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from third_party.v8.correct_release_binding import correct_binding
+
 PROFILE = "ptrcomp_sandbox_release"
 
 
@@ -136,9 +139,15 @@ def prepare(arguments: list[str]) -> dict[str, str]:
         )
     for name, expected in artifacts.items():
         fetch_verified(f"{base}/{name}", cache / name, expected)
+    binding_path = correct_binding(
+        version,
+        target,
+        cache / binding,
+        cache / "corrected" / binding,
+    )
     return {
         "RUSTY_V8_ARCHIVE": str((cache / archive).resolve()),
-        "RUSTY_V8_SRC_BINDING_PATH": str((cache / binding).resolve()),
+        "RUSTY_V8_SRC_BINDING_PATH": str(binding_path.resolve()),
     }
 
 
