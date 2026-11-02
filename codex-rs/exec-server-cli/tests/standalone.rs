@@ -1,7 +1,10 @@
 //! Exercise the shipped executor through its public stdio interface, including child re-exec.
 
 use anyhow::Context;
+use codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
+use codex_exec_server::EnvironmentInfo;
 use codex_exec_server::FileSystemSandboxContext;
+use codex_exec_server::supports_capability_discovery_v2;
 #[cfg(unix)]
 use codex_protocol::models::PermissionProfile;
 #[cfg(unix)]
@@ -90,7 +93,13 @@ async fn standalone_initializes_reports_version_and_runs_helpers() -> anyhow::Re
         assert_eq!(response["id"], 1);
         assert!(response["result"]["sessionId"].is_string(), "{response}");
         let environment = response["result"]["environmentInfo"].clone();
-        assert_eq!(environment["executorVersion"], env!("CARGO_PKG_VERSION"));
+        let environment_info: EnvironmentInfo = serde_json::from_value(environment.clone())?;
+        assert_eq!(
+            environment_info.executor_version,
+            CODEX_BACKEND_COMPAT_VERSION
+        );
+        assert!(environment_info.capabilities.capability_discovery_v2);
+        assert!(supports_capability_discovery_v2(&environment_info));
         let initialized = json!({"method": "initialized", "params": {}});
         let info = json!({"id": 2, "method": "environment/info", "params": {}});
         stdin

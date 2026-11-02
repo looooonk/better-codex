@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Context;
+use codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
 use codex_exec_server::EnvironmentInfo;
 use codex_exec_server::EnvironmentStatus;
 use codex_exec_server::EnvironmentStatusKind;
@@ -217,6 +218,7 @@ async fn exec_server_runs_ordinary_requests_serially_by_default() -> anyhow::Res
     };
     assert_eq!(id, queued_environment_info_id);
     let mut expected_environment_info = EnvironmentInfo::local();
+    expected_environment_info.executor_version = CODEX_BACKEND_COMPAT_VERSION.to_string();
     expected_environment_info.provider_id = initialization
         .environment_info
         .and_then(|info| info.provider_id);

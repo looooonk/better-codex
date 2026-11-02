@@ -48,7 +48,7 @@ impl ConnectionProcessor {
         http_client_factory: HttpClientFactory,
         request_dispatch_mode: RequestDispatchMode,
     ) -> Self {
-        // Library callers may bypass CLI startup. Capture the version before serving clients.
+        // Library callers may bypass CLI startup. Capture build provenance before serving clients.
         let _ = BuildInfo::get();
         let capability_manager =
             CapabilityManager::new(LocalFileSystem::with_runtime_paths(runtime_paths.clone()));

@@ -12,6 +12,7 @@ use axum::extract::WebSocketUpgrade;
 use axum::response::IntoResponse;
 use axum::routing::any;
 use codex_api::AuthProvider;
+use codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
 #[cfg(unix)]
 use codex_exec_server::EnvironmentConnectionState;
 use codex_exec_server::EnvironmentInfo;
@@ -203,7 +204,10 @@ async fn accepted_websocket_interoperates_and_recovers_with_real_direct_executor
         .default_environment()
         .context("direct executor environment should be installed")?;
 
-    let expected_info = EnvironmentInfo::local();
+    let expected_info = EnvironmentInfo {
+        executor_version: CODEX_BACKEND_COMPAT_VERSION.to_string(),
+        ..EnvironmentInfo::local()
+    };
     assert_eq!(
         timeout(TEST_TIMEOUT, environment.force_info()).await??,
         expected_info

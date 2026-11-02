@@ -2,6 +2,7 @@ mod common;
 
 use anyhow::Context;
 use codex_build_info::BuildInfo;
+use codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
 use codex_build_info::build_id;
 use codex_exec_server::CAPABILITIES_DISCOVER_V2_METHOD;
 use codex_exec_server::DiscoverV2CapabilitiesRequest;
@@ -51,7 +52,7 @@ async fn exec_server_accepts_initialize(version: Option<&str>) -> anyhow::Result
     ]);
     let mut server = ExecServerHarness::start(command).await?;
 
-    // Updates after startup cannot change the advertised release version.
+    // Package metadata cannot change the advertised executor contract.
     std::fs::write(&manifest, r#"{"version":"9.9.9"}"#)?;
     let initialize_id = server
         .send_request(
@@ -71,7 +72,7 @@ async fn exec_server_accepts_initialize(version: Option<&str>) -> anyhow::Result
     let initialize_response: InitializeResponse = serde_json::from_value(result)?;
     Uuid::parse_str(&initialize_response.session_id)?;
     let mut expected_environment = EnvironmentInfo::local();
-    expected_environment.executor_version = version.unwrap_or("0.0.0").to_string();
+    expected_environment.executor_version = CODEX_BACKEND_COMPAT_VERSION.to_string();
     let build_info = BuildInfo::get();
     let target = build_info
         .target()

@@ -228,7 +228,7 @@ Response:
   "sessionId": "00000000-0000-4000-8000-000000000001",
   "environmentInfo": {
     "shell": { "name": "bash", "path": "/bin/bash" },
-    "executorVersion": "1.2.3-alpha.4",
+    "executorVersion": "0.166.0",
     "providerId": "sha256:fb4f62da3e84f6864dcec8ede7bc66f1c96ecaeaf55f8a786b85df994057c8ac",
     "cwd": "file:///workspace"
   }
@@ -238,7 +238,9 @@ Response:
 `environmentInfo` contains the same executor metadata returned by
 `environment/info`, so clients can use it without a second request.
 
-`executorVersion` is the executor's package release version, or `0.0.0` when unknown.
+`executorVersion` identifies the upstream Codex executor contract supported by Better
+Codex, independently of its package release. `codex-exec-server --version` reports
+the fork package version; `providerId` retains the compiled build identity.
 
 The executor caches optional `providerId` at startup using
 `codex_build_info::build_id(commit, target)`, which CI can also call for an

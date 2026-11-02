@@ -2,6 +2,7 @@
 
 mod common;
 
+use codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentStatus;
 use codex_exec_server::EnvironmentStatusKind;
@@ -39,7 +40,8 @@ async fn remote_environment_fetches_info_from_exec_server() -> anyhow::Result<()
 
     let remote_info = environment.info().await?;
     let mut local_info = Environment::default_for_tests().info().await?;
-    // Only the remote executor advertises its optional build identity.
+    // The remote executor advertises its compatibility version and build identity.
+    local_info.executor_version = CODEX_BACKEND_COMPAT_VERSION.to_string();
     local_info.provider_id = remote_info.provider_id.clone();
     assert_eq!(remote_info, local_info);
 

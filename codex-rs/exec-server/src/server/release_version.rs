@@ -1,12 +1,12 @@
-//! Include the startup-cached package release version in executor metadata.
+//! Advertise the supported upstream executor contract independently of the fork release.
 
-use codex_build_info::BuildInfo;
+use codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
 
 use crate::protocol::EnvironmentInfo;
 
 pub(super) fn local_environment_info() -> EnvironmentInfo {
     EnvironmentInfo {
-        executor_version: BuildInfo::get().version().to_string(),
+        executor_version: CODEX_BACKEND_COMPAT_VERSION.to_string(),
         ..EnvironmentInfo::local()
     }
 }

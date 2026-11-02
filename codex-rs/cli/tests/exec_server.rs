@@ -26,6 +26,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 use anyhow::Result;
+use codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
 use codex_exec_server::EnvironmentInfo;
 use codex_exec_server::ExecParams;
 use codex_exec_server::ExecServerClient;
@@ -575,7 +576,7 @@ metrics_exporter = {{ otlp-http = {{ endpoint = "{collector_url}/v1/metrics", pr
             )));
         }
     };
-    // Remote startup must capture the version before registration, not on the first initialize.
+    // Package metadata cannot change the advertised executor contract.
     std::fs::write(&manifest, r#"{"version":"9.9.9"}"#)?;
     let executor_public_key = registered_parent_lifetime_executor_public_key(&registry).await?;
     let harness_args = NoiseRendezvousConnectArgs {
@@ -616,7 +617,7 @@ metrics_exporter = {{ otlp-http = {{ endpoint = "{collector_url}/v1/metrics", pr
         vec![codex_path_dir.canonicalize()?]
     );
     let expected_info = EnvironmentInfo {
-        executor_version: "1.2.3-alpha.4".to_string(),
+        executor_version: CODEX_BACKEND_COMPAT_VERSION.to_string(),
         cwd: Some(PathUri::from_host_native_path(
             codex_home.path().canonicalize()?,
         )?),
