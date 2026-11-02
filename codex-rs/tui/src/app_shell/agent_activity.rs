@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::CollabAgentState;
 #[cfg(test)]
 use codex_app_server_protocol::CollabAgentStatus;
@@ -387,8 +388,8 @@ impl AgentActivityState {
     }
 
     fn reduce(&mut self, item: &ThreadItem, phase: AgentItemPhase) -> bool {
-        match item {
-            ThreadItem::CollabAgentToolCall {
+        match &item.payload {
+            ThreadItemPayload::CollabAgentToolCall {
                 id,
                 tool,
                 status,
@@ -409,17 +410,27 @@ impl AgentActivityState {
                 agents_states,
                 phase,
             ),
-            ThreadItem::SubAgentActivity {
+            ThreadItemPayload::SubAgentActivity {
                 id,
                 kind,
                 agent_thread_id,
                 agent_path,
+                model,
+                reasoning_effort,
             } => {
                 if self.is_root_thread(agent_thread_id) {
                     return true;
                 }
                 let agent = self.ensure_agent(agent_thread_id);
                 agent.set_path(agent_path);
+                if !agent.live_runtime_settings {
+                    if let Some(model) = model {
+                        agent.model = bounded_text(model, MAX_MODEL_CHARS);
+                    }
+                    if let Some(reasoning_effort) = reasoning_effort {
+                        agent.reasoning_effort = Some(runtime::bounded_effort(reasoning_effort));
+                    }
+                }
                 agent.status = match kind {
                     SubAgentActivityKind::Started | SubAgentActivityKind::Interacted => {
                         AgentLifecycleStatus::Running

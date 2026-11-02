@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use codex_app_server_protocol::CollabAgentState;
 use codex_app_server_protocol::CollabAgentStatus;
@@ -69,12 +70,14 @@ fn hierarchy_fixture() -> AgentActivityState {
         ("interrupted", "/root/test"),
         ("errored", "/root/test/failure"),
     ] {
-        state.reduce_completed(&ThreadItem::SubAgentActivity {
+        state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: format!("started-{id}"),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: id.to_string(),
             agent_path: path.to_string(),
-        });
+        }));
     }
     let states = [
         ("running", CollabAgentStatus::Running, "Reviewing layouts"),
@@ -97,7 +100,7 @@ fn hierarchy_fixture() -> AgentActivityState {
         )
     })
     .collect::<HashMap<_, _>>();
-    state.reduce_completed(&ThreadItem::CollabAgentToolCall {
+    state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
         id: "spawn-agents".to_string(),
         tool: CollabAgentTool::SpawnAgent,
         status: CollabAgentToolCallStatus::Completed,
@@ -107,7 +110,7 @@ fn hierarchy_fixture() -> AgentActivityState {
         model: Some("gpt-5-codex".to_string()),
         reasoning_effort: Some(ReasoningEffort::High),
         agents_states: states,
-    });
+    }));
     assert!(state.select_thread("errored"));
     state
 }
@@ -115,15 +118,17 @@ fn hierarchy_fixture() -> AgentActivityState {
 #[test]
 fn runtime_metadata_stays_above_task_and_activity_with_long_or_unknown_values() {
     let mut state = AgentActivityState::default();
-    state.reduce_completed(&ThreadItem::SubAgentActivity {
+    state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
         id: "started-review".into(),
         kind: SubAgentActivityKind::Started,
         agent_thread_id: "review".into(),
         agent_path: "/root/review".into(),
-    });
+    }));
     for known in [false, true] {
         if known {
-            state.reduce_completed(&ThreadItem::CollabAgentToolCall {
+            state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
                 id: "spawn-review".into(),
                 tool: CollabAgentTool::SpawnAgent,
                 status: CollabAgentToolCallStatus::Completed,
@@ -133,7 +138,7 @@ fn runtime_metadata_stays_above_task_and_activity_with_long_or_unknown_values() 
                 model: Some("provider/".repeat(12)),
                 reasoning_effort: Some(ReasoningEffort::Custom("deliberate".repeat(12))),
                 agents_states: HashMap::new(),
-            });
+            }));
         }
         let lines =
             agent_activity_inspector_lines(&state, /*width*/ 32, /*line_budget*/ 10);

@@ -1,11 +1,13 @@
+use std::cell::Cell;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 use codex_app_server_protocol::McpToolCallResult;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_protocol::ThreadId;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::AgentMessageItem;
@@ -314,7 +316,7 @@ async fn paginated_live_append_materializes_turn_items_and_state() {
         .append_items(AppendThreadItemsParams {
             thread_id,
             items: vec![
-                turn_started("turn-1"),
+                turn_started_with_root("turn-1", "root-1"),
                 completed_item(
                     thread_id,
                     "turn-1",
@@ -370,6 +372,7 @@ async fn paginated_live_append_materializes_turn_items_and_state() {
             Option<i64>,
             Option<String>,
             Option<String>,
+            Option<String>,
         ),
     >(
         r#"
@@ -383,7 +386,8 @@ SELECT
     completed_at,
     duration_ms,
     first_user_item_id,
-    final_agent_item_id
+    final_agent_item_id,
+    root_turn_id
 FROM thread_turns
 WHERE thread_id = ? AND turn_id = ?
         "#,
@@ -406,6 +410,7 @@ WHERE thread_id = ? AND turn_id = ?
             Some(10_000),
             Some("user-1".to_string()),
             Some("agent-1".to_string()),
+            Some("root-1".to_string()),
         )
     );
 
@@ -494,9 +499,9 @@ async fn paginated_command_history_caps_aggregated_output() {
     .fetch_one(&pool)
     .await
     .expect("read projected command");
-    let projected: ThreadItem =
+    let projected: ThreadItemPayload =
         serde_json::from_str(&item_json).expect("deserialize projected command");
-    let ThreadItem::CommandExecution {
+    let ThreadItemPayload::CommandExecution {
         aggregated_output: Some(output),
         ..
     } = projected
@@ -568,9 +573,9 @@ async fn paginated_mcp_history_caps_large_results() {
     .fetch_one(&pool)
     .await
     .expect("read projected MCP tool call");
-    let projected: ThreadItem =
+    let projected: ThreadItemPayload =
         serde_json::from_str(&item_json).expect("deserialize projected MCP tool call");
-    let ThreadItem::McpToolCall {
+    let ThreadItemPayload::McpToolCall {
         arguments: projected_arguments,
         result: Some(result),
         ..
@@ -749,6 +754,7 @@ async fn paginated_realtime_items_materialize_separately_in_rollout_order() {
     let legacy_thread_id = ThreadId::new();
     store
         .create_thread(CreateThreadParams {
+            attached_thread: false,
             creator_user_id: None,
             creator_account_id: None,
             session_id: legacy_thread_id.into(),
@@ -1672,8 +1678,8 @@ WHERE thread_id = ? AND turn_id = ? AND item_id = ?
     .expect("read projected item");
     assert_eq!((item.0, item.1, item.2), (2, 3, first_created_at_ms));
     assert_eq!(
-        serde_json::from_str::<ThreadItem>(item.3.as_str()).expect("parse projected item"),
-        ThreadItem::UserMessage {
+        serde_json::from_str::<ThreadItemPayload>(item.3.as_str()).expect("parse projected item"),
+        ThreadItemPayload::UserMessage {
             id: "user-1".to_string(),
             client_id: Some("updated".to_string()),
             content: Vec::new(),
@@ -1691,7 +1697,10 @@ async fn terminal_turn_does_not_change_after_later_records() {
     store
         .append_items(AppendThreadItemsParams {
             thread_id,
-            items: vec![turn_started("turn-1"), turn_completed("turn-1")],
+            items: vec![
+                turn_started_with_root("turn-1", "root-1"),
+                turn_completed("turn-1"),
+            ],
         })
         .await
         .expect("append terminal turn");
@@ -1699,7 +1708,7 @@ async fn terminal_turn_does_not_change_after_later_records() {
         .append_items(AppendThreadItemsParams {
             thread_id,
             items: vec![
-                turn_started("turn-1"),
+                turn_started_with_root("turn-1", "wrong-root"),
                 completed_item(
                     thread_id,
                     "turn-1",
@@ -1736,6 +1745,7 @@ async fn terminal_turn_does_not_change_after_later_records() {
             Option<i64>,
             String,
             Option<String>,
+            Option<String>,
         ),
     >(
         r#"
@@ -1745,7 +1755,8 @@ SELECT
     rollout_end_ordinal,
     rollout_end_byte_offset,
     status,
-    first_user_item_id
+    first_user_item_id,
+    root_turn_id
 FROM thread_turns
 WHERE thread_id = ? AND turn_id = ?
         "#,
@@ -1764,12 +1775,13 @@ WHERE thread_id = ? AND turn_id = ?
             Some(turn_end_byte_offset),
             "completed".to_string(),
             None,
+            Some("root-1".to_string()),
         )
     );
 }
 
 #[tokio::test]
-async fn summary_items_use_final_answers_and_ignore_commentary() {
+async fn summary_items_use_final_answers_and_ignore_nonterminal_messages() {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
     let thread_id = ThreadId::default();
@@ -1814,6 +1826,11 @@ async fn summary_items_use_final_answers_and_ignore_commentary() {
                     thread_id,
                     "turn-1",
                     agent_message("commentary-1", MessagePhase::Commentary),
+                ),
+                completed_item(
+                    thread_id,
+                    "turn-1",
+                    agent_message("partial-1", MessagePhase::PartialAnswer),
                 ),
                 completed_item(
                     thread_id,
@@ -1877,11 +1894,16 @@ WHERE thread_id = ? AND turn_id = ?
                     "turn-2",
                     agent_message("commentary-2", MessagePhase::Commentary),
                 ),
+                completed_item(
+                    thread_id,
+                    "turn-2",
+                    agent_message("partial-2", MessagePhase::PartialAnswer),
+                ),
                 turn_completed("turn-2"),
             ],
         })
         .await
-        .expect("append commentary-only turn");
+        .expect("append turn without a final answer");
 
     let summary = store
         .list_turns(ListTurnsParams {
@@ -2184,6 +2206,7 @@ async fn synchronized_catch_up_does_not_replay_old_rows() {
     assert_eq!(status, "sentinel");
 }
 
+/// Large records keep their byte positions and remain pending until their newline is durable.
 #[tokio::test]
 async fn catch_up_preserves_trailing_partial_line_boundaries() {
     let home = TempDir::new().expect("temp dir");
@@ -2201,8 +2224,12 @@ async fn catch_up_preserves_trailing_partial_line_boundaries() {
     .await
     .expect("open thread history db");
     let before = projection_state(&pool, thread_id).await;
-    let complete_line = rollout_line(Some(1), turn_started("turn-1"));
-    let partial_line = rollout_line(Some(2), turn_completed("turn-1"));
+    let padding = " ".repeat(64 * 1024);
+    let complete_line = format!("{}{padding}", rollout_line(Some(1), turn_started("turn-1")));
+    let partial_line = format!(
+        "{}{padding}",
+        rollout_line(Some(2), turn_completed("turn-1"))
+    );
     let complete_suffix = format!("{complete_line}\n");
     let rollout_path = store
         .live_rollout_path(thread_id)
@@ -2337,6 +2364,242 @@ async fn jsonl_failure_does_not_create_projection_database() {
     );
 }
 
+/// A failed batch rolls back atomically; retries start after the last committed complete record.
+#[tokio::test]
+async fn catch_up_preserves_committed_batches_on_reader_or_writer_failure() {
+    enum Failure {
+        Reader,
+        Writer,
+    }
+
+    for failure in [Failure::Reader, Failure::Writer] {
+        let home = TempDir::new().expect("temp dir");
+        let store = projection_store(home.path()).await;
+        let thread_id = ThreadId::default();
+        create_paginated_thread(&store, thread_id).await;
+        store
+            .persist_thread(thread_id, PersistContext::Standard)
+            .await
+            .expect("persist session metadata");
+        let pool = codex_state::open_thread_history_db(
+            &codex_state::SqliteConfig::new_for_testing(home.path().abs()),
+        )
+        .await
+        .expect("open thread history db");
+        let rollout_path = store
+            .live_rollout_path(thread_id)
+            .await
+            .expect("rollout path");
+        // More than the producer, queue and consumer can hold: failures exercise backpressure.
+        append_suffix(rollout_path.as_path(), "\nnot-json\n");
+        for index in 1..=2049 {
+            // The gap and following record cross the step limit, but must commit together.
+            let ordinal = if index >= 256 { index + 1 } else { index };
+            append_suffix(
+                rollout_path.as_path(),
+                &format!(
+                    "{}\n",
+                    rollout_line(Some(ordinal), turn_started(&format!("turn-{index}")))
+                ),
+            );
+        }
+        append_suffix(rollout_path.as_path(), "\n");
+        let valid_len = fs::metadata(rollout_path.as_path())
+            .expect("rollout metadata")
+            .len();
+        match failure {
+            Failure::Reader => append_suffix(
+                rollout_path.as_path(),
+                &format!(
+                    "{}\n",
+                    rollout_line(Some(u64::MAX), turn_started("overflow"))
+                ),
+            ),
+            Failure::Writer => {
+                sqlx::query(
+                    "CREATE TRIGGER reject_projection BEFORE INSERT ON thread_turns
+                     WHEN NEW.turn_id = 'turn-300'
+                     BEGIN SELECT RAISE(FAIL, 'reject projection'); END",
+                )
+                .execute(&pool)
+                .await
+                .expect("reject a later batch");
+            }
+        }
+        super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path())
+            .await
+            .expect_err("failed batch must not commit");
+        let turn_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM thread_turns WHERE thread_id = ?")
+                .bind(thread_id.to_string())
+                .fetch_one(&pool)
+                .await
+                .expect("count committed turns");
+        let committed_turns = match failure {
+            Failure::Reader => 2048,
+            Failure::Writer => 256,
+        };
+        let committed_ordinal = committed_turns + 1;
+        let (_, committed_offset) =
+            rollout_line_byte_offsets(rollout_path.as_path(), committed_ordinal);
+        assert_eq!(
+            (projection_state(&pool, thread_id).await, turn_count),
+            (
+                (committed_offset, committed_ordinal as i64 + 1),
+                committed_turns as i64
+            )
+        );
+
+        match failure {
+            Failure::Reader => fs::OpenOptions::new()
+                .write(true)
+                .open(rollout_path.as_path())
+                .expect("open rollout")
+                .set_len(valid_len)
+                .expect("remove invalid suffix"),
+            Failure::Writer => {
+                sqlx::query("DROP TRIGGER reject_projection")
+                    .execute(&pool)
+                    .await
+                    .expect("allow retry");
+            }
+        }
+        sqlx::query(
+            "CREATE TRIGGER reject_replay BEFORE INSERT ON thread_turns
+             WHEN NEW.turn_id = 'turn-1'
+             BEGIN SELECT RAISE(FAIL, 'replayed committed prefix'); END",
+        )
+        .execute(&pool)
+        .await
+        .expect("reject replay of committed rows");
+        super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path())
+            .await
+            .expect("retry uncommitted suffix");
+        let turn_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM thread_turns WHERE thread_id = ?")
+                .bind(thread_id.to_string())
+                .fetch_one(&pool)
+                .await
+                .expect("count committed turns");
+        assert_eq!(
+            (projection_state(&pool, thread_id).await, turn_count),
+            (
+                (i64::try_from(valid_len).expect("rollout length"), 2051),
+                2049
+            )
+        );
+    }
+}
+
+#[tokio::test]
+async fn paused_projection_releases_writer_and_retains_progress_when_stopped() {
+    enum Stop {
+        Disconnect,
+        Cancel,
+    }
+
+    for stop in [Stop::Disconnect, Stop::Cancel] {
+        let home = TempDir::new().expect("temp dir");
+        let store = Arc::new(projection_store(home.path()).await);
+        let thread_id = ThreadId::default();
+        let other_thread_id = ThreadId::default();
+        for id in [thread_id, other_thread_id] {
+            create_paginated_thread(&store, id).await;
+            store
+                .persist_thread(id, PersistContext::Standard)
+                .await
+                .expect("persist session metadata");
+        }
+        let pool = store.thread_history_db().await.expect("history db");
+        let before = projection_state(pool, thread_id).await;
+        let rollout_path = store
+            .live_rollout_path(thread_id)
+            .await
+            .expect("rollout path");
+        append_suffix(
+            rollout_path.as_path(),
+            &format!("{}\n", rollout_line(Some(1), turn_started("turn-1"))),
+        );
+        let (_, next_offset) =
+            rollout_line_byte_offsets(rollout_path.as_path(), /*ordinal*/ 1);
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        super::read_projection_batches(
+            rollout_path.as_path(),
+            before.0 as u64,
+            before.1 as u64,
+            thread_id,
+            /*subagent_history_start_ordinal*/ None,
+            || false,
+            |projections, next_offset| {
+                assert!(
+                    sender
+                        .try_send(super::pipeline::ProjectionMessage::Batch {
+                            projections,
+                            next_offset,
+                        })
+                        .is_ok(),
+                    "queue the complete record"
+                );
+                Ok(())
+            },
+        )
+        .expect("read batch");
+        let consumer_store = Arc::clone(&store);
+        let consumer = tokio::spawn(async move {
+            super::pipeline::apply_batches(
+                &consumer_store,
+                thread_id,
+                before.0 as u64,
+                /*initial_ordinal*/ 0,
+                receiver,
+            )
+            .await
+        });
+        // Keep the producer connected but idle until its first batch is visibly committed.
+        while projection_state(pool, thread_id).await == before {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(projection_state(pool, thread_id).await, (next_offset, 2));
+        store
+            .append_items(AppendThreadItemsParams {
+                thread_id: other_thread_id,
+                items: vec![turn_started("unrelated-turn")],
+            })
+            .await
+            .expect("append while the reader is idle");
+        store
+            .flush_thread(other_thread_id)
+            .await
+            .expect("flush unrelated writer");
+        assert_eq!(projection_state(pool, other_thread_id).await.1, 2);
+
+        match stop {
+            Stop::Disconnect => {
+                drop(sender);
+                consumer
+                    .await
+                    .expect("join consumer")
+                    .expect_err("missing completion");
+            }
+            Stop::Cancel => {
+                consumer.abort();
+                assert!(
+                    consumer
+                        .await
+                        .expect_err("cancelled consumer")
+                        .is_cancelled()
+                );
+                sender.closed().await;
+            }
+        }
+        assert_eq!(projection_state(pool, thread_id).await, (next_offset, 2));
+        super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path())
+            .await
+            .expect("resume after stopped producer");
+        assert_eq!(projection_state(pool, thread_id).await, (next_offset, 2));
+    }
+}
+
 #[tokio::test]
 async fn catch_up_rejects_missing_rollout_after_projection() {
     let home = TempDir::new().expect("temp dir");
@@ -2450,6 +2713,21 @@ async fn blank_and_rejected_rollout_lines_advance_projection() {
         .await
         .expect("queue valid retry");
     recorder.flush().await.expect("flush valid retry");
+
+    // Replay this small file, cancelling between records.
+    let checks = Cell::new(0);
+    assert!(
+        super::read_projection_batches(
+            rollout_path.as_path(),
+            /*start_offset*/ 0,
+            /*expected_ordinal*/ 0,
+            thread_id,
+            /*subagent_history_start_ordinal*/ None,
+            || checks.replace(checks.get() + 1) >= 6,
+            |_batch, _next_offset| Ok(()),
+        )
+        .is_err()
+    );
 
     super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path())
         .await
@@ -2791,6 +3069,7 @@ async fn create_paginated_subagent_thread(
 ) {
     store
         .create_thread(CreateThreadParams {
+            attached_thread: false,
             creator_user_id: None,
             creator_account_id: None,
             session_id: thread_id.into(),
@@ -2822,6 +3101,7 @@ async fn create_paginated_subagent_thread(
 
 fn turn_started(turn_id: &str) -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+        turn_attribution: None,
         turn_id: turn_id.to_string(),
         root_turn_id: None,
         trace_id: None,
@@ -2831,8 +3111,17 @@ fn turn_started(turn_id: &str) -> RolloutItem {
     }))
 }
 
+fn turn_started_with_root(turn_id: &str, root_turn_id: &str) -> RolloutItem {
+    let mut item = turn_started(turn_id);
+    if let RolloutItem::EventMsg(EventMsg::TurnStarted(event)) = &mut item {
+        event.root_turn_id = Some(root_turn_id.to_string());
+    }
+    item
+}
+
 fn turn_completed(turn_id: &str) -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
+        root_turn_id: None,
         turn_id: turn_id.to_string(),
         last_agent_message: None,
         error: None,
@@ -2846,6 +3135,8 @@ fn turn_completed(turn_id: &str) -> RolloutItem {
 fn user_message(message: &str) -> RolloutItem {
     RolloutItem::ResponseItem(
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {

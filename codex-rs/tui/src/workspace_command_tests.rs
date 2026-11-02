@@ -220,7 +220,7 @@ impl WorkspaceCommandExecutor for RecordingCancellableExecutor {
 async fn background_execution_returns_while_command_is_running() {
     let runner = RecordingCancellableExecutor::new(/*transient_terminate_failures*/ 0);
     let execution =
-        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"]));
+        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"], std::env::temp_dir()));
 
     runner.wait_until_started().await;
     assert!(!execution.is_finished());
@@ -241,7 +241,7 @@ async fn background_execution_returns_while_command_is_running() {
 async fn cancellation_retries_start_race_and_uses_the_same_process_id() {
     let runner = RecordingCancellableExecutor::new(/*transient_terminate_failures*/ 1);
     let mut execution =
-        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"]));
+        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"], std::env::temp_dir()));
     runner.wait_until_started().await;
 
     assert!(execution.cancel());
@@ -267,7 +267,7 @@ async fn cancellation_retries_start_race_and_uses_the_same_process_id() {
 async fn dropping_execution_requests_remote_termination() {
     let runner = RecordingCancellableExecutor::new(/*transient_terminate_failures*/ 0);
     let execution =
-        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"]));
+        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"], std::env::temp_dir()));
     runner.wait_until_started().await;
 
     drop(execution);
@@ -280,7 +280,7 @@ async fn dropping_execution_requests_remote_termination() {
 async fn unsupported_cancellation_preserves_the_running_future() {
     let runner = DefaultOnlyExecutor::new();
     let mut execution =
-        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"]));
+        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"], std::env::temp_dir()));
     runner.wait_until_started().await;
 
     assert!(execution.cancel());
@@ -300,7 +300,7 @@ async fn unsupported_cancellation_preserves_the_running_future() {
 async fn stalled_remote_termination_is_bounded() {
     let runner = RecordingCancellableExecutor::with_stalled_termination();
     let mut execution =
-        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"]));
+        WorkspaceCommandExecution::start(runner.clone(), WorkspaceCommand::new(["long-running"], std::env::temp_dir()));
     runner.wait_until_started().await;
 
     assert!(execution.cancel());

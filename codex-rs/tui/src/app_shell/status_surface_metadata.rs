@@ -145,7 +145,7 @@ impl WorkspaceCommandExecutor for MetadataRunner {
                                 .unwrap_or(5000)
                                 .min(5000),
                         ),
-                        cwd: command.cwd,
+                        cwd: Some(command.cwd),
                         env: Some(command.env),
                         size: None,
                         sandbox_policy: None,

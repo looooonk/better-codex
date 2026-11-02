@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 509
+expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
+---
+                                                            │
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                            │
+ ◆ CONVERSATION                                             │▎◆ SESSIONS
+ ▎ CODEX  Started a fullscreen app shell backed by app-   │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+          server turns.                                   │ │▎+ New session  Ctrl+N
+ ▎ PLAN  1. Build shell                                   ┃ │▎loading sessions
+         2. Wire transcript                               ┃ │
+         3. Render dashboard                              ┃ │▎◆ THREAD
+                                                          ┃ │▎stage-one
+ ▌ tool exec just test -p codex-tui                       ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                          ┃ │▎resume, fork, archive, delete in session list
+ ▌ edited 3 files +128 -24                                ┃ │
+                                                          ┃ │
+ ▎ CODEX  The new shell owns the fullscreen surface.      ┃ │
+                                                            │
+╭──────────────────────────────────────────────────────────╮│
+│◆ APPROVAL                                                ││
+│? Human approval required: Run command: cargo test -p     ││
+│codex-tui                                                 ││
+│  Reason: Needs network access                            ││
+│  Working directory: /workspace/better-codex              ││
+│> 1 Run once                                              ││
+│  2 Deny                                                  ││
+│  3 Deny and interrupt                                    ││
+│   e Edit   ? Explain                                     ││
+╰──────────────────────────────────────────────────────────╯│

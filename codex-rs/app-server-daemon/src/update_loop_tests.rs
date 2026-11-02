@@ -200,7 +200,7 @@ async fn explicit_update_migrates_running_and_stopped_installations() {
     for (running, local) in [(false, false), (true, false), (false, true), (true, true)] {
         let home = TempDir::new().unwrap();
         let (legacy, release) = manual_update_daemon(&home);
-        let root = home.path().join("packages/standalone");
+        let root = home.path().join("packages/better-codex");
         if local {
             let package = root.join("releases/local-development");
             std::fs::create_dir(&package).unwrap();
@@ -238,7 +238,7 @@ async fn explicit_update_migrates_running_and_stopped_installations() {
         );
         assert_eq!(
             crate::managed_install::package_root(home.path()),
-            home.path().join("packages/standalone")
+            home.path().join("packages/better-codex")
         );
         let settings = format!(
             r#"{{"updater":{{"autoUpdateEnabled":{running}}},"remoteControlEnabled":true}}"#
@@ -256,7 +256,7 @@ async fn explicit_update_migrates_running_and_stopped_installations() {
             None
         };
         let legacy_bin = std::fs::read(&legacy.managed_codex_bin).unwrap();
-        let dedicated = home.path().join("packages/app-server-daemon");
+        let dedicated = home.path().join("packages/better-codex-daemon");
         let old_installer = FakeInstallerHttp::new(InstallerResponse::Success(b"exit 99".to_vec()));
         assert!(
             super::migration::run(&old_installer, &legacy)
@@ -273,7 +273,7 @@ test "$CODEX_INSTALL_DEFER_SELECTION" = 1
 test "$CODEX_INSTALL_IF_CURRENT" = 0
 test "$CODEX_INSTALL_DAEMON_ONLY" = 1
 test "$CODEX_INSTALL_IF_LATEST" = 0
-root="$CODEX_HOME/packages/app-server-daemon"
+root="$CODEX_HOME/packages/better-codex-daemon"
 mkdir -p "$root/releases/{release}/bin"
 printf '#!/bin/sh\nif [ "$1" = --version ]; then echo codex 1.0.0; else exit 2; fi\n' > "$root/releases/{release}/bin/codex"
 chmod +x "$root/releases/{release}/bin/codex"
@@ -291,7 +291,7 @@ printf '{release}' > "$root/auto-update-version"
         assert!(!dedicated.join("current").exists());
         assert_eq!(
             crate::managed_install::package_root(home.path()),
-            home.path().join("packages/standalone")
+            home.path().join("packages/better-codex")
         );
         assert_eq!(
             (
@@ -378,7 +378,7 @@ async fn cancelling_installer_stops_children_and_releases_fallback_lock() {
     let home = tempfile::TempDir::new().expect("home");
     let ready = home.path().join("ready");
     let delayed = home.path().join("delayed");
-    let lock = home.path().join("packages/standalone/install.lock.d");
+    let lock = home.path().join("packages/better-codex/install.lock.d");
     let script = format!(
         "mkdir -p '{lock}'\necho $$ > '{lock}/pid'\n(trap '' TERM; echo ready > '{ready}'; sleep 4; echo late > '{delayed}') &\nwait\n",
         lock = lock.display(),
@@ -403,7 +403,7 @@ async fn cancelling_installer_stops_children_and_releases_fallback_lock() {
         super::run_installer_script(
             script.as_bytes(),
             super::InstallerMode::Update("0.150.0-test"),
-            &home.path().join("packages/standalone"),
+            &home.path().join("packages/better-codex"),
             async { cancelled.await.ok() },
         ),
     )
@@ -425,7 +425,7 @@ fn manual_update_daemon(home: &TempDir) -> (Daemon, String) {
         format!("{}-unknown-linux-musl", std::env::consts::ARCH)
     };
     let release = format!("1.0.0-{target}");
-    let standalone = home.path().join("packages/standalone");
+    let standalone = home.path().join("packages/better-codex");
     let bin = standalone.join("releases").join(&release).join("codex");
     std::fs::create_dir_all(bin.parent().expect("binary parent")).expect("release directory");
     codex_utils_cargo_bin::write_executable(
@@ -436,7 +436,7 @@ fn manual_update_daemon(home: &TempDir) -> (Daemon, String) {
     std::os::unix::fs::symlink(format!("releases/{release}"), standalone.join("current"))
         .expect("current release");
     std::fs::write(standalone.join("auto-update-version"), &release).expect("latest marker");
-    let state = home.path().join("app-server-daemon");
+    let state = home.path().join("better-codex-daemon");
     std::fs::create_dir(&state).unwrap();
     std::fs::write(state.join("app-server.stderr.log"), b"").unwrap();
     (
@@ -720,14 +720,33 @@ async fn test_control_server(
 #[tokio::test]
 async fn scheduled_no_op_preserves_daemon_and_hands_off_stale_updater() {
     let home = TempDir::new().expect("home");
-    let (daemon, _) = manual_update_daemon(&home);
+    let (mut daemon, release) = manual_update_daemon(&home);
+    let root = home.path().join("packages/better-codex-daemon");
+    std::fs::rename(home.path().join("packages/better-codex"), &root).unwrap();
+    daemon = daemon.current_installation().unwrap();
+    let stale = root
+        .join("releases")
+        .join(release.replace("1.0.0", "0.8.0"));
+    std::fs::create_dir_all(stale.join("bin")).unwrap();
+    std::fs::copy(&daemon.managed_codex_bin, stale.join("bin/codex")).unwrap();
+    std::fs::write(
+        stale.join("codex-package.json"),
+        serde_json::json!({
+            "version": "0.8.0",
+            "target": release.strip_prefix("1.0.0-").unwrap(),
+            "entrypoint": "bin/codex"
+        })
+        .to_string(),
+    )
+    .unwrap();
+    crate::release_pruning::record_selection(&root, /*previous*/ None).unwrap();
     let settings = crate::settings::DaemonSettings::default();
     let backend = crate::backend::pid_backend(daemon.backend_paths(&settings));
     backend.start().await.expect("start daemon");
     let server = test_control_server(&daemon, home.path()).await;
     let pid_record = std::fs::read(&daemon.pid_file).expect("daemon PID record");
     let no_op = FakeInstallerHttp::new(InstallerResponse::Success(
-        b"# CODEX_INSTALL_IF_LATEST\nexit 0\n".to_vec(),
+        b"# CODEX_INSTALL_IF_LATEST CODEX_INSTALL_DAEMON_ONLY\nexit 0\n".to_vec(),
     ));
 
     let outcome = super::update_once(
@@ -751,6 +770,8 @@ async fn scheduled_no_op_preserves_daemon_and_hands_off_stale_updater() {
         std::fs::read(&daemon.pid_file).expect("daemon PID record"),
         pid_record
     );
+    assert!(daemon.managed_codex_bin.is_file());
+    assert!(!stale.exists());
     backend.stop().await.expect("stop daemon");
     server.abort();
 }
@@ -765,7 +786,7 @@ async fn scheduled_resource_only_update_restarts_daemon() {
     backend.start().await.expect("start daemon");
     let server = test_control_server(&daemon, home.path()).await;
     let previous_pid_record = std::fs::read(&daemon.pid_file).expect("daemon PID record");
-    let root = home.path().join("packages/standalone");
+    let root = home.path().join("packages/better-codex");
     let next_release = release.replacen("1.0.0", "1.0.1", 1);
     let installer = FakeInstallerHttp::new(InstallerResponse::Success(
         format!(
@@ -805,7 +826,30 @@ async fn scheduled_resource_only_update_restarts_daemon() {
 #[cfg(unix)]
 #[tokio::test]
 async fn manual_update_restarts_managed_daemon_with_automatic_updates_disabled() {
-    check_manual_update_restart("standalone").await;
+    check_manual_update_restart("better-codex").await;
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn readiness_waits_for_a_slow_managed_daemon() {
+    let home = TempDir::new().unwrap();
+    let (daemon, _) = manual_update_daemon(&home);
+    let settings = crate::settings::DaemonSettings::default();
+    let backend = crate::backend::pid_backend(daemon.backend_paths(&settings));
+    backend.start().await.unwrap();
+
+    tokio::time::pause();
+    let (ready, listener) = tokio::join!(daemon.wait_until_ready(), async {
+        // Model a cold start that takes longer than the old Linux readiness deadline.
+        tokio::time::sleep(Duration::from_secs(15)).await;
+        tokio::time::resume();
+        test_control_server(&daemon, home.path())
+            .await
+            .abort_handle()
+    });
+    backend.stop().await.unwrap();
+    listener.abort();
+    assert_eq!(ready.unwrap().app_server_version, "1.0.0");
 }
 
 #[cfg(unix)]
@@ -869,7 +913,7 @@ async fn daemon_start_and_restart_preserve_launch_features() {
         );
         assert_eq!(std::fs::read_to_string(&args_path).unwrap(), expected);
         std::fs::remove_file(&args_path).unwrap();
-        let restarted = daemon.restart().await;
+        let restarted = daemon.restart(&std::collections::BTreeMap::new()).await;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(/*secs*/ 10);
         while std::fs::read_to_string(&args_path).ok().as_deref() != Some(expected)
             && tokio::time::Instant::now() < deadline
@@ -955,7 +999,7 @@ async fn confirmed_feature_restart_preserves_ownership_and_skips_matching_settin
 #[cfg(unix)]
 #[tokio::test]
 async fn manual_update_restarts_local_daemon_with_automatic_updates_disabled() {
-    check_manual_update_restart("app-server-daemon").await;
+    check_manual_update_restart("better-codex-daemon").await;
 }
 
 #[cfg(unix)]
@@ -963,12 +1007,12 @@ async fn check_manual_update_restart(package_directory: &str) {
     use tokio::io::AsyncReadExt;
     use tokio::io::AsyncWriteExt;
 
-    let local_package = package_directory == "app-server-daemon";
+    let local_package = package_directory == "better-codex-daemon";
     let home = TempDir::new().expect("home");
     let (mut daemon, mut release) = manual_update_daemon(&home);
     let standalone = home.path().join("packages").join(package_directory);
     if local_package {
-        std::fs::rename(home.path().join("packages/standalone"), &standalone).unwrap();
+        std::fs::rename(home.path().join("packages/better-codex"), &standalone).unwrap();
         let local = format!("local-development-{release}");
         std::fs::rename(
             standalone.join("releases").join(&release),
@@ -1146,7 +1190,7 @@ Test-Installer
     super::run_installer_script(
         &script,
         super::InstallerMode::RestoreProduction("0.150.0-x86_64-pc-windows-msvc"),
-        std::path::Path::new("packages/app-server-daemon"),
+        std::path::Path::new("packages/better-codex-daemon"),
     )
     .await
     .expect("installer succeeds");
@@ -1159,7 +1203,7 @@ Test-Installer
     let error = super::run_installer_script(
         &script,
         super::InstallerMode::RestoreProduction("0.150.0-x86_64-pc-windows-msvc"),
-        std::path::Path::new("packages/app-server-daemon"),
+        std::path::Path::new("packages/better-codex-daemon"),
     )
     .await
     .err()
@@ -1177,7 +1221,7 @@ async fn installer_failure_includes_stderr() {
     let error = super::run_installer_script(
         script.as_bytes(),
         super::InstallerMode::Update("0.150.0-x86_64-unknown-linux-gnu"),
-        std::path::Path::new("packages/app-server-daemon"),
+        std::path::Path::new("packages/better-codex-daemon"),
         futures::future::pending(),
     )
     .await
@@ -1196,7 +1240,7 @@ async fn installer_failure_preserves_stderr_before_drain_timeout() {
         super::run_installer_script(
             b"printf 'installer failed' >&2\nsleep 5 &\nexit 1\n",
             super::InstallerMode::Update("0.150.0-x86_64-unknown-linux-gnu"),
-            std::path::Path::new("packages/app-server-daemon"),
+            std::path::Path::new("packages/better-codex-daemon"),
             futures::future::pending(),
         ),
     )
@@ -1214,8 +1258,8 @@ async fn update_rejects_a_package_root_change_during_download() {
     impl InstallerHttp for ChangingRoot<'_> {
         async fn get(&self, _url: &str) -> anyhow::Result<InstallerResponse> {
             std::os::unix::fs::symlink(
-                self.0.join("packages/standalone"),
-                self.0.join("packages/app-server-daemon"),
+                self.0.join("packages/better-codex"),
+                self.0.join("packages/better-codex-daemon"),
             )?;
             Ok(InstallerResponse::Success(
                 b"# CODEX_INSTALL_IF_LATEST\nexit 99\n".to_vec(),
@@ -1244,8 +1288,8 @@ async fn update_rejects_a_package_root_change_during_download() {
 async fn daemon_owned_updates_require_and_request_an_isolated_installer() {
     let home = TempDir::new().unwrap();
     let (mut daemon, release) = manual_update_daemon(&home);
-    let root = home.path().join("packages/app-server-daemon");
-    std::fs::rename(home.path().join("packages/standalone"), &root).unwrap();
+    let root = home.path().join("packages/better-codex-daemon");
+    std::fs::rename(home.path().join("packages/better-codex"), &root).unwrap();
     daemon.managed_codex_bin = root.join("current/codex");
     let identity = executable_identity(&daemon.managed_codex_bin)
         .await
@@ -1280,7 +1324,7 @@ async fn daemon_owned_updates_require_and_request_an_isolated_installer() {
     .await
     .unwrap();
     assert_eq!(output.status, UpdateStatus::NoUpdate);
-    assert!(!home.path().join("packages/standalone").exists());
+    assert!(!home.path().join("packages/better-codex").exists());
 
     // Reuse the stopped daemon to verify explicit unpinning with either preference.
     let marker = root.join("auto-update-version");

@@ -151,10 +151,10 @@ impl fmt::Display for BuildInfo {
 }
 
 /// Upstream backend contract supported independently of the fork package version.
-pub const CODEX_BACKEND_COMPAT_VERSION: &str = "0.160.0";
+pub const CODEX_BACKEND_COMPAT_VERSION: &str = "0.166.0";
 
 /// Upstream model catalog supported independently of the fork package version.
-pub const CODEX_MODEL_CATALOG_VERSION: &str = "0.160.0";
+pub const CODEX_MODEL_CATALOG_VERSION: &str = "0.166.0";
 
 #[cfg(test)]
 #[path = "build_info_tests.rs"]

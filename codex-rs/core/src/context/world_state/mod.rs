@@ -56,6 +56,7 @@ pub(crate) use persistent_mode::PersistentModeState;
 pub(crate) use plugins_instructions::PluginsInstructionsState;
 pub(crate) use realtime::RealtimeState;
 pub(crate) use tools::ToolsState;
+pub(crate) use top_level_tools::IncrementalToolsHint;
 pub(crate) use top_level_tools::TopLevelToolsState;
 
 /// One contribution to model context and its placement policy.
@@ -180,7 +181,7 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
     }
 
     fn has_retained_fragment_matcher(&self) -> bool {
-        S::has_retained_fragment_matcher()
+        WorldStateSection::has_current_retained_fragment_matcher(self)
     }
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {
@@ -246,11 +247,20 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
         });
         let updates = fragment
             .into_iter()
+            .filter(|fragment| !self.0.is_window_prefix() || fragment.role() == "developer")
             .map(|fragment| {
-                WorldStateUpdate::fragment(WorldStateContextFragment {
+                let update = WorldStateUpdate::fragment(WorldStateContextFragment {
                     fragment,
                     content_kind: ContentItemKind(format!("{}.instructions", self.0.id())),
-                })
+                });
+                if self.0.is_window_prefix() {
+                    WorldStateUpdate {
+                        placement: Placement::Prefix,
+                        ..update
+                    }
+                } else {
+                    update
+                }
             })
             .collect();
         (snapshot, updates)
@@ -263,6 +273,10 @@ struct WorldStateContextFragment {
 }
 
 impl ContextualUserFragment for WorldStateContextFragment {
+    fn content_metadata(&self) -> codex_protocol::models::ContentItemMetadata {
+        self.fragment.metadata().clone()
+    }
+
     fn content_kind(&self) -> ContentItemKind {
         self.content_kind.clone()
     }
@@ -275,8 +289,8 @@ impl ContextualUserFragment for WorldStateContextFragment {
         self.fragment.markers()
     }
 
-    fn body(&self) -> String {
-        self.fragment.body().to_string()
+    fn body(&self) -> ContentItem {
+        self.fragment.body().clone()
     }
 
     fn type_markers() -> (&'static str, &'static str) {
@@ -326,6 +340,11 @@ pub(crate) trait WorldStateSection: Send + Sync + 'static {
         false
     }
 
+    /// Whether this instance requires its rendered fragment to survive in history.
+    fn has_current_retained_fragment_matcher(&self) -> bool {
+        Self::has_retained_fragment_matcher()
+    }
+
     /// Recognizes this section's rendered fragment in retained model history.
     fn matches_retained_fragment(_role: &str, _text: &str) -> bool {
         false
@@ -353,9 +372,21 @@ impl WorldStateHash {
 
     pub(crate) fn from_fragment(fragment: &(impl ContextualUserFragment + ?Sized)) -> Self {
         let mut hasher = Sha1::new();
-        hasher.update(b"codex-world-state-fragment-v1\0");
-        hash_component(&mut hasher, fragment.role());
-        hash_component(&mut hasher, &fragment.render());
+        match fragment.render() {
+            ContentItem::InputText { text } => {
+                hasher.update(b"codex-world-state-fragment-v1\0");
+                hash_component(&mut hasher, fragment.role());
+                hash_component(&mut hasher, &text);
+            }
+            content => {
+                let content = serde_json::to_vec(&content)
+                    .unwrap_or_else(|_| unreachable!("ContentItem always serializes"));
+                hasher.update(b"codex-world-state-fragment-v2\0");
+                hash_component(&mut hasher, fragment.role());
+                hasher.update((content.len() as u64).to_be_bytes());
+                hasher.update(content);
+            }
+        }
         Self(format!("{:x}", hasher.finalize()))
     }
 }
@@ -393,6 +424,34 @@ impl From<&Map<String, Value>> for WorldStateSnapshot {
 impl WorldStateSnapshot {
     pub(crate) fn into_object(self) -> Map<String, Value> {
         self.sections.into_iter().collect()
+    }
+
+    fn section(&self, id: &str) -> Option<&Value> {
+        let snapshot = self.sections.get(id)?;
+        if id == PluginsInstructionsState::ID
+            && snapshot == &Value::Bool(false)
+            && let Some(retired) = self
+                .sections
+                .get(plugins_instructions::RETIRED_CHECKPOINT_ID)
+            && plugins_instructions::is_retired_checkpoint(retired)
+        {
+            return Some(retired);
+        }
+        Some(snapshot)
+    }
+
+    fn insert_section(&mut self, id: &str, mut snapshot: Value) {
+        if id == PluginsInstructionsState::ID
+            && plugins_instructions::is_retired_checkpoint(&snapshot)
+        {
+            // Keep the original section readable by clients whose snapshot type is bool.
+            self.sections.insert(
+                plugins_instructions::RETIRED_CHECKPOINT_ID.to_string(),
+                snapshot,
+            );
+            snapshot = Value::Bool(false);
+        }
+        self.sections.insert(id.to_string(), snapshot);
     }
 
     /// Returns the RFC 7386 merge patch that advances `previous` to `self`.
@@ -444,7 +503,7 @@ impl WorldState {
     pub(crate) fn add_section<S: WorldStateSection>(&mut self, section: S) {
         let id = S::ID;
         assert!(
-            !self.sections.contains_key(id),
+            id != plugins_instructions::RETIRED_CHECKPOINT_ID && !self.sections.contains_key(id),
             "duplicate world-state section ID: {id}"
         );
         self.sections.insert(id, Box::new(section));
@@ -453,7 +512,7 @@ impl WorldState {
     pub(crate) fn add_extension_section(&mut self, section: WorldStateSectionContribution) {
         let id = section.id();
         assert!(
-            !self.sections.contains_key(id),
+            id != plugins_instructions::RETIRED_CHECKPOINT_ID && !self.sections.contains_key(id),
             "duplicate world-state section ID: {id}"
         );
         let section = Box::new(ExtensionWorldStateSection(section));
@@ -478,7 +537,7 @@ impl WorldState {
         items: impl IntoIterator<Item = &'a ResponseItem> + Clone,
     ) -> (WorldStateSnapshot, Vec<WorldStateUpdate>) {
         self.render_with(previous, |id, section| {
-            if let Some(previous) = previous.and_then(|previous| previous.sections.get(id)) {
+            if let Some(previous) = previous.and_then(|previous| previous.section(id)) {
                 if section.has_retained_fragment_matcher()
                     && !has_retained_fragment(items.clone(), section)
                 {
@@ -505,17 +564,12 @@ impl WorldState {
             let prior = previous(id, section.as_ref());
             let (section_snapshot, section_updates) = section.render_diff(prior);
             // A skipped snapshot retains stored state even if history required a fresh render.
-            let section_snapshot = section_snapshot.or_else(|| {
-                stored
-                    .and_then(|snapshot| snapshot.sections.get(*id))
-                    .cloned()
-            });
+            let section_snapshot = section_snapshot
+                .or_else(|| stored.and_then(|snapshot| snapshot.section(id)).cloned());
             if let Some(section_snapshot) = section_snapshot
                 && !section_snapshot.is_null()
             {
-                snapshot
-                    .sections
-                    .insert((*id).to_string(), section_snapshot);
+                snapshot.insert_section(id, section_snapshot);
             }
             updates.extend(section_updates);
         }

@@ -1,5 +1,60 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use pretty_assertions::assert_eq;
+
+#[tokio::test]
+async fn account_refresh_updates_both_shell_and_backend_catalogs() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    let models = shell.available_models.clone();
+    let refreshed = models.clone();
+    let thread_id = shell.thread_id;
+    shell.start_backend_action(ActionGroup::Workspace, "refreshing account", async move {
+        BackendActionResult::Workspace { thread_id, result: Ok(workspace_requests::WorkspaceResponse::AccountChanged { models: Ok(refreshed) }) }
+    });
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!((&shell.available_models, &*backend.available_models.lock().unwrap()), (&models, &models));
+}
+
+#[test]
+fn provider_selection_preserves_current_session_until_new() {
+    let mut shell = ShellState::snapshot_fixture();
+    let current = (shell.model_provider_id.clone(), shell.model.clone());
+    shell.complete_workspace_request(shell.thread_id, Ok(workspace_requests::WorkspaceResponse::ProviderSelected {
+        id: "gateway".into(), model: Some("gateway-model".into()),
+    }));
+    assert_eq!((shell.model_provider_id.clone(), shell.model.clone()), current);
+    assert_eq!((shell.next_model_provider.as_deref(), shell.next_provider_model.as_deref()), (Some("gateway"), Some("gateway-model")));
+    shell.dashboard_visible = false;
+    insta::assert_snapshot!("provider_selection", render_shell(&shell, Rect::new(0, 0, 100, 26)));
+}
+
+#[tokio::test]
+async fn new_session_applies_pending_provider_and_refreshes_its_catalog() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = None;
+    shell.composer.clear();
+    let mut backend = RecordingBackend::default();
+    shell.complete_workspace_request(shell.thread_id, Ok(workspace_requests::WorkspaceResponse::ProviderSelected {
+        id: "gateway".into(), model: Some("gateway-model".into()),
+    }));
+    shell.start_new_session(&test_config().await, &mut backend).await.unwrap();
+    assert_eq!(*backend.start_provider_overrides.lock().unwrap(), vec![Some("gateway".into())]);
+    let configs = backend.start_configs();
+    assert_eq!((configs[0].model.as_deref(), configs[0].model_reasoning_effort.as_ref()), (Some("gateway-model"), None));
+    assert_eq!((&shell.next_model_provider, &shell.next_provider_model), (&None, &None));
+    assert!(shell.has_pending_backend_action(ActionGroup::Workspace));
+}
+
+#[test]
+fn saved_account_reauthentication_uses_browser_controls() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.complete_workspace_request(shell.thread_id, Ok(workspace_requests::WorkspaceResponse::AccountLogin {
+        login_id: "saved-login".into(), auth_url: "https://auth.example.test/workspace".into(),
+    }));
+    assert!(shell.pending_account_auth.is_some());
+    insta::assert_snapshot!("saved_account_login", render_shell(&shell, Rect::new(0, 0, 100, 28)));
+}
 
 fn verification_request() -> ServerRequest {
     let mut request = mcp_url_elicitation_request();
@@ -105,14 +160,14 @@ async fn nonblocking_input_uses_native_deadline_and_user_interaction_snoozes_it(
 fn native_function_outputs_are_visible_in_the_transcript() {
     let mut shell = ShellState::snapshot_fixture();
     shell.ingest_completed_item(
-        ThreadItem::FunctionCallOutput {
+        ThreadItem::untimed(ThreadItemPayload::FunctionCallOutput {
             id: "native-function-output".to_string(),
             namespace: Some("functions".to_string()),
             name: "lookup".to_string(),
             output: codex_protocol::models::FunctionCallOutputBody::Text(
                 "Found the requested record.".to_string(),
             ),
-        },
+        }),
         CompletedItemOrigin::Live,
     );
     insta::assert_snapshot!(
@@ -133,7 +188,7 @@ fn hook_completion_updates_activity_with_its_output() {
         source_path: AbsolutePathBuf::from_absolute_path_checked(
             "/workspace/better-codex/config.toml",
         )
-        .unwrap(),
+        .unwrap().into(),
         source: codex_app_server_protocol::HookSource::Project,
         display_order: 0,
         status: codex_app_server_protocol::HookRunStatus::Running,
@@ -262,7 +317,7 @@ fn guardian_review_reports_terminal_decision_without_creating_duplicate_activity
 }
 
 #[test]
-fn daybreak_state_survives_session_replacement_and_blocks_unknown_model_access() {
+fn daybreak_state_survives_session_replacement_and_blocks_unsupported_model_access() {
     let mut shell = ShellState::snapshot_fixture();
     let backend = RecordingBackend::default();
     let mut started = started_thread(
@@ -272,7 +327,12 @@ fn daybreak_state_survives_session_replacement_and_blocks_unknown_model_access()
     );
     started.session.daybreak_enabled = true;
     shell.replace_started_session(started);
-    shell.available_models.clear();
+    let mut model: ModelPreset = codex_models_manager::bundled_models_response().unwrap().models.remove(0).into();
+    model.model = shell.model.clone();
+    model.available_access_programs = Some(codex_protocol::openai_models::ModelAccessPrograms {
+        cyber: vec![codex_protocol::turn_input::CyberAccessProgram::Standard],
+    });
+    shell.available_models = vec![model];
     shell.submit_prompt(&backend, "Inspect the findings".to_string());
     assert!(shell.daybreak_enabled);
     assert!(!shell.has_pending_backend_action(ActionGroup::TurnStart));
@@ -406,4 +466,86 @@ async fn workspace_actions_wait_for_session_transitions_and_settings() {
         std::future::pending::<BackendActionResult>(),
     );
     assert!(shell.block_session_switch_if_busy());
+}
+
+#[tokio::test]
+async fn config_command_focuses_native_settings() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.run_workspace_command(
+        crate::app_shell::workspace_commands::WorkspaceCommand::Config,
+        "",
+        &test_config().await,
+        &mut backend,
+    ).await.unwrap();
+    assert_eq!((shell.dashboard_route, shell.settings.focused), (DashboardRoute::Status, true));
+    insta::assert_snapshot!("config_command", render_shell(&shell, Rect::new(0, 0, 110, 28)));
+}
+
+#[test]
+fn preset_load_preserves_a_draft_entered_during_the_request() {
+    use crate::app_shell::workspace_requests::WorkspaceResponse;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.complete_workspace_request(shell.thread_id, Ok(WorkspaceResponse::Preset("Review changes".into())));
+    assert_eq!(shell.composer.text(), "Review changes");
+    shell.complete_workspace_request(shell.thread_id, Ok(WorkspaceResponse::Preset("Another preset".into())));
+    assert_eq!(shell.composer.text(), "Review changes");
+    insta::assert_snapshot!("preset_loaded", render_shell(&shell, Rect::new(0, 0, 110, 28)));
+}
+
+#[test]
+fn human_command_approvals_only_offer_one_time_decisions() {
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else { unreachable!() };
+    params.kind = codex_app_server_protocol::CommandExecutionApprovalKind::HumanCommand;
+    params.available_decisions = Some(vec![
+        CommandExecutionApprovalDecision::Accept,
+        CommandExecutionApprovalDecision::AcceptForSession,
+        CommandExecutionApprovalDecision::Decline,
+        CommandExecutionApprovalDecision::Cancel,
+    ]);
+    let pending = PendingApproval::from_request(&request).unwrap().unwrap();
+    assert_eq!((0..pending.option_count()).map(|index| pending.result(index).unwrap()).collect::<Vec<_>>(), vec![
+        json!({"decision":"accept"}), json!({"decision":"decline"}), json!({"decision":"cancel"}),
+    ]);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = Some(pending);
+    insta::assert_snapshot!("human_command_approval", render_shell(&shell, Rect::new(0, 0, 110, 28)));
+}
+
+#[test]
+fn agent_creation_exposes_model_and_reasoning_without_a_followup_settings_event() {
+    let mut state = AgentActivityState::default();
+    state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+        id: "started".into(),
+        kind: SubAgentActivityKind::Started,
+        agent_thread_id: "child".into(),
+        agent_path: "/root/review".into(),
+        model: Some("gpt-6-luna".into()),
+        reasoning_effort: Some(ReasoningEffort::High),
+    }));
+    let agent = state.agent("child").unwrap();
+    assert_eq!((agent.model.as_deref(), agent.reasoning_effort.clone()), (Some("gpt-6-luna"), Some(ReasoningEffort::High)));
+}
+
+#[tokio::test]
+async fn current_session_delete_uses_the_existing_confirmation_flow() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.active_turn_id = None;
+    let mut backend = RecordingBackend::default();
+    shell.run_workspace_command(
+        crate::app_shell::workspace_commands::WorkspaceCommand::Delete,
+        "",
+        &test_config().await,
+        &mut backend,
+    ).await.unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.pending_session_delete.as_ref().map(|pending| pending.thread_id), Some(shell.thread_id));
+    insta::assert_snapshot!("current_session_delete", render_shell(&shell, Rect::new(0, 0, 110, 28)));
+    shell.handle_session_delete_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut backend).await.unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
+    assert!(shell.session_unavailable_reason.is_some());
+    assert!(shell.pending_session_delete.is_none());
 }

@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::ShellState;
 use super::agent_activity::AgentChildEvent;
 use super::agent_activity::AgentItemPhase;
@@ -11,7 +12,6 @@ use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SessionSource;
-use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::TurnStatus;
@@ -95,6 +95,8 @@ impl ShellState {
                         | ServerNotification::ThreadArchived(_)
                         | ServerNotification::ThreadDeleted(_)
                         | ServerNotification::ThreadUnarchived(_)
+                        | ServerNotification::ThreadReadStateChanged(_)
+                        | ServerNotification::ThreadSectionChanged(_)
                 );
                 if refresh_session_list {
                     self.invalidate_session_list_refresh();
@@ -112,7 +114,16 @@ impl ShellState {
                 if reverted_current {
                     self.handle_current_thread_reverted(app_server).await;
                 }
+                let account_login_completed = matches!(&notification, ServerNotification::AccountLoginCompleted(login) if login.success);
                 self.handle_notification(notification);
+                if account_login_completed {
+                    let thread_id = self.thread_id;
+                    let request = app_server.workspace_request_in_background(thread_id,
+                        super::workspace_requests::WorkspaceRequest::Account(super::workspace_requests::AccountCommand::Refresh));
+                    self.start_backend_action(super::backend_actions::ActionGroup::Workspace, "refreshing account", async move {
+                        super::backend_actions::BackendActionResult::Workspace { thread_id, result: request.await }
+                    });
+                }
                 if refresh_session_list {
                     self.start_session_list_refresh(app_server);
                 }
@@ -365,7 +376,7 @@ impl ShellState {
                     if let Some(title) = item_activity_title(&started.item) {
                         let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
-                        if !matches!(&started.item, ThreadItem::SubAgentActivity { .. }) {
+                        if !matches!(&started.item.payload, ThreadItemPayload::SubAgentActivity { .. }) {
                             self.push_tool_with_status_for_item(
                                 item_id,
                                 title,
@@ -390,34 +401,34 @@ impl ShellState {
                     self.mark_thread_revert_hydration_stale();
                     self.mark_retry_recovered(&completed.turn_id);
                     self.mark_active_agent_threads(&completed.item);
-                    let rewind_anchor = match &completed.item {
-                        ThreadItem::UserMessage {
+                    let rewind_anchor = match &completed.item.payload {
+                        ThreadItemPayload::UserMessage {
                             client_id: None, ..
                         } => super::rewind::RewindAnchor::for_opening_item(
                             &completed.turn_id,
                             &completed.item,
                         ),
-                        ThreadItem::UserMessage {
+                        ThreadItemPayload::UserMessage {
                             client_id: Some(_), ..
                         }
-                        | ThreadItem::HookPrompt { .. }
-                        | ThreadItem::FunctionCallOutput { .. }
-                        | ThreadItem::AgentMessage { .. }
-                        | ThreadItem::Plan { .. }
-                        | ThreadItem::Reasoning { .. }
-                        | ThreadItem::CommandExecution { .. }
-                        | ThreadItem::FileChange { .. }
-                        | ThreadItem::McpToolCall { .. }
-                        | ThreadItem::DynamicToolCall { .. }
-                        | ThreadItem::CollabAgentToolCall { .. }
-                        | ThreadItem::WebSearch { .. }
-                        | ThreadItem::ImageView { .. }
-                        | ThreadItem::Sleep(_)
-                        | ThreadItem::ImageGeneration(_)
-                        | ThreadItem::SubAgentActivity { .. }
-                        | ThreadItem::EnteredReviewMode { .. }
-                        | ThreadItem::ExitedReviewMode { .. }
-                        | ThreadItem::ContextCompaction { .. } => None,
+                        | ThreadItemPayload::HookPrompt { .. }
+                        | ThreadItemPayload::FunctionCallOutput { .. }
+                        | ThreadItemPayload::AgentMessage { .. }
+                        | ThreadItemPayload::Plan { .. }
+                        | ThreadItemPayload::Reasoning { .. }
+                        | ThreadItemPayload::CommandExecution { .. }
+                        | ThreadItemPayload::FileChange { .. }
+                        | ThreadItemPayload::McpToolCall { .. }
+                        | ThreadItemPayload::DynamicToolCall { .. }
+                        | ThreadItemPayload::CollabAgentToolCall { .. }
+                        | ThreadItemPayload::WebSearch { .. }
+                        | ThreadItemPayload::ImageView { .. }
+                        | ThreadItemPayload::Sleep(_)
+                        | ThreadItemPayload::ImageGeneration(_)
+                        | ThreadItemPayload::SubAgentActivity { .. }
+                        | ThreadItemPayload::EnteredReviewMode { .. }
+                        | ThreadItemPayload::ExitedReviewMode { .. }
+                        | ThreadItemPayload::ContextCompaction { .. } => None,
                     };
                     self.ingest_completed_item_for_turn(
                         &completed.turn_id,
@@ -428,11 +439,11 @@ impl ShellState {
                     self.mark_agent_item_live(&completed.item);
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {
                     let changed_workspace = matches!(
-                        &completed.item,
-                        ThreadItem::FileChange { .. } | ThreadItem::CommandExecution { .. }
+                        &completed.item.payload,
+                        ThreadItemPayload::FileChange { .. } | ThreadItemPayload::CommandExecution { .. }
                     );
                     let incomplete_edit_history =
-                        matches!(&completed.item, ThreadItem::FileChange { .. });
+                        matches!(&completed.item.payload, ThreadItemPayload::FileChange { .. });
                     self.mark_active_agent_threads(&completed.item);
                     self.agent_activity.reduce_completed(&completed.item);
                     self.agent_activity.record_child_item(
@@ -648,6 +659,8 @@ impl ShellState {
                 }
             }
             ServerNotification::EnvironmentConnected(_)
+            | ServerNotification::ThreadReadStateChanged(_)
+            | ServerNotification::ThreadSectionChanged(_)
             | ServerNotification::EnvironmentDisconnected(_)
             | ServerNotification::GatewayOAuthChanged(_)
             | ServerNotification::McpServerEventStream(_)
@@ -842,24 +855,24 @@ fn token_usage_from_breakdown(breakdown: TokenUsageBreakdown) -> TokenUsage {
 }
 
 pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) -> Option<String> {
-    match item {
-        codex_app_server_protocol::ThreadItem::UserMessage { .. }
-        | codex_app_server_protocol::ThreadItem::HookPrompt { .. }
-        | codex_app_server_protocol::ThreadItem::FunctionCallOutput { .. }
-        | codex_app_server_protocol::ThreadItem::AgentMessage { .. }
-        | codex_app_server_protocol::ThreadItem::Plan { .. }
-        | codex_app_server_protocol::ThreadItem::Reasoning { .. }
-        | codex_app_server_protocol::ThreadItem::FileChange { .. }
-        | codex_app_server_protocol::ThreadItem::EnteredReviewMode { .. }
-        | codex_app_server_protocol::ThreadItem::ExitedReviewMode { .. }
-        | codex_app_server_protocol::ThreadItem::ContextCompaction { .. } => None,
-        codex_app_server_protocol::ThreadItem::CommandExecution { command, .. } => {
+    match &item.payload {
+        codex_app_server_protocol::ThreadItemPayload::UserMessage { .. }
+        | codex_app_server_protocol::ThreadItemPayload::HookPrompt { .. }
+        | codex_app_server_protocol::ThreadItemPayload::FunctionCallOutput { .. }
+        | codex_app_server_protocol::ThreadItemPayload::AgentMessage { .. }
+        | codex_app_server_protocol::ThreadItemPayload::Plan { .. }
+        | codex_app_server_protocol::ThreadItemPayload::Reasoning { .. }
+        | codex_app_server_protocol::ThreadItemPayload::FileChange { .. }
+        | codex_app_server_protocol::ThreadItemPayload::EnteredReviewMode { .. }
+        | codex_app_server_protocol::ThreadItemPayload::ExitedReviewMode { .. }
+        | codex_app_server_protocol::ThreadItemPayload::ContextCompaction { .. } => None,
+        codex_app_server_protocol::ThreadItemPayload::CommandExecution { command, .. } => {
             Some(super::command_display::summary(command))
         }
-        codex_app_server_protocol::ThreadItem::McpToolCall { server, tool, .. } => {
+        codex_app_server_protocol::ThreadItemPayload::McpToolCall { server, tool, .. } => {
             Some(format!("mcp {server}/{tool}"))
         }
-        codex_app_server_protocol::ThreadItem::DynamicToolCall {
+        codex_app_server_protocol::ThreadItemPayload::DynamicToolCall {
             namespace, tool, ..
         } => Some(
             namespace
@@ -867,23 +880,23 @@ pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) 
                 .map(|namespace| format!("tool {namespace}/{tool}"))
                 .unwrap_or_else(|| format!("tool {tool}")),
         ),
-        codex_app_server_protocol::ThreadItem::CollabAgentToolCall { tool, .. } => {
+        codex_app_server_protocol::ThreadItemPayload::CollabAgentToolCall { tool, .. } => {
             Some(format!("agent {tool:?}"))
         }
-        codex_app_server_protocol::ThreadItem::SubAgentActivity {
+        codex_app_server_protocol::ThreadItemPayload::SubAgentActivity {
             kind, agent_path, ..
         } => Some(format!("subagent {kind:?}: {agent_path}")),
-        codex_app_server_protocol::ThreadItem::WebSearch(item) => {
+        codex_app_server_protocol::ThreadItemPayload::WebSearch(item) => {
             Some(format!("web search: {}", item.query))
         }
-        codex_app_server_protocol::ThreadItem::ImageView { path, .. } => {
+        codex_app_server_protocol::ThreadItemPayload::ImageView { path, .. } => {
             Some(format!("view image: {path}"))
         }
-        codex_app_server_protocol::ThreadItem::Sleep(item) => {
+        codex_app_server_protocol::ThreadItemPayload::Sleep(item) => {
             let duration_ms = item.duration_ms;
             Some(format!("sleep {duration_ms}ms"))
         }
-        codex_app_server_protocol::ThreadItem::ImageGeneration(_) => {
+        codex_app_server_protocol::ThreadItemPayload::ImageGeneration(_) => {
             Some("image generation".to_string())
         }
     }

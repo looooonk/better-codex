@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::FileUpdateChange;
@@ -94,14 +95,15 @@ fn forked_agent_thread() -> Thread {
                 ],
             ),
             Turn {
+                root_turn_id: None,
                 id: "agent-turn".to_string(),
                 items: vec![
-                    ThreadItem::Reasoning {
+                    ThreadItem::untimed(ThreadItemPayload::Reasoning {
                         id: "reasoning".to_string(),
                         summary: vec!["Inspecting the relevant rendering path.".to_string()],
                         content: Vec::new(),
-                    },
-                    ThreadItem::CommandExecution {
+                    }),
+                    ThreadItem::untimed(ThreadItemPayload::CommandExecution {
                         model_context: None,
                         plugin_id: None,
                         sandbox_type: None,
@@ -132,8 +134,8 @@ fn forked_agent_thread() -> Thread {
                         ),
                         exit_code: Some(0),
                         duration_ms: Some(1_250),
-                    },
-                    ThreadItem::FileChange {
+                    }),
+                    ThreadItem::untimed(ThreadItemPayload::FileChange {
                         id: "edits".to_string(),
                         changes: vec![
                             FileUpdateChange {
@@ -150,8 +152,8 @@ fn forked_agent_thread() -> Thread {
                             },
                         ],
                         status: PatchApplyStatus::Completed,
-                    },
-                    ThreadItem::McpToolCall {
+                    }),
+                    ThreadItem::untimed(ThreadItemPayload::McpToolCall {
                         mcp_app_ui: None,
                         read_only_hint: None,
 
@@ -170,7 +172,7 @@ fn forked_agent_thread() -> Thread {
                         })),
                         error: None,
                         duration_ms: Some(240),
-                    },
+                    }),
                     agent_message(
                         "agent-answer",
                         "The agent log now emphasizes outcomes and concise activity.",
@@ -189,6 +191,7 @@ fn forked_agent_thread() -> Thread {
 
 fn turn(id: &str, items: Vec<ThreadItem>) -> Turn {
     Turn {
+        root_turn_id: None,
         id: id.to_string(),
         items,
         items_view: TurnItemsView::Full,
@@ -201,18 +204,18 @@ fn turn(id: &str, items: Vec<ThreadItem>) -> Turn {
 }
 
 fn user_message(id: &str, text: &str) -> ThreadItem {
-    ThreadItem::UserMessage {
+    ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: id.to_string(),
         client_id: None,
         content: vec![UserInput::Text {
             text: text.to_string(),
             text_elements: Vec::new(),
         }],
-    }
+    })
 }
 
 fn agent_message(id: &str, text: &str) -> ThreadItem {
-    ThreadItem::AgentMessage {
+    ThreadItem::untimed(ThreadItemPayload::AgentMessage {
         delivery: None,
         questions: None,
 
@@ -220,7 +223,7 @@ fn agent_message(id: &str, text: &str) -> ThreadItem {
         text: text.to_string(),
         phase: None,
         memory_citation: None,
-    }
+    })
 }
 
 fn plain_text(lines: &[Line<'static>]) -> String {

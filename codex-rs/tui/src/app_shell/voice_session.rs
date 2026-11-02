@@ -196,8 +196,8 @@ async fn run(
     let mut health = tokio::time::interval(Duration::from_millis(/*millis*/ 100));
     loop {
         health.tick().await;
-        if let Some(error) = native.handle.take_error() {
-            anyhow::bail!(error);
+        if let Some((error, detail)) = native.handle.take_error() {
+            anyhow::bail!("{error}: {detail}");
         }
     }
 }
@@ -225,6 +225,7 @@ fn start_params(
         realtime_end_instructions: None,
         prompt: None,
         realtime_session_id: None,
+        voice_session_id: None,
         transport: Some(ThreadRealtimeStartTransport::Webrtc { sdp }),
         version: Some(RealtimeConversationVersion::V3),
         voice,

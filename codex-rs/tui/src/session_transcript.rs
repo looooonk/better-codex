@@ -6,6 +6,7 @@ use crate::markdown_render::render_markdown_text_with_width_and_cwd;
 use crate::reasoning_summary::split_reasoning_summary_parts;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_protocol::ThreadId;
 use codex_protocol::items::UserMessageItem;
 use ratatui::style::Stylize as _;
@@ -62,8 +63,8 @@ pub(crate) fn thread_item_to_transcript_lines(
     thread: &Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
 ) -> TranscriptLines {
-    match item {
-        ThreadItem::UserMessage {
+    match &item.payload {
+        ThreadItemPayload::UserMessage {
             id,
             client_id,
             content,
@@ -83,7 +84,7 @@ pub(crate) fn thread_item_to_transcript_lines(
                 ratatui::style::Color::Cyan,
             )
         }
-        ThreadItem::AgentMessage {
+        ThreadItemPayload::AgentMessage {
             text, questions, ..
         } => {
             let text = crate::assistant_message::with_questions(text, questions.as_deref());
@@ -103,15 +104,15 @@ pub(crate) fn thread_item_to_transcript_lines(
                 lines
             }
         }
-        ThreadItem::FunctionCallOutput { name, output, .. } => prefixed_text(
+        ThreadItemPayload::FunctionCallOutput { name, output, .. } => prefixed_text(
             name,
             output.to_text().unwrap_or_default(),
             ratatui::style::Color::DarkGray,
         ),
-        ThreadItem::Plan { text, .. } => {
+        ThreadItemPayload::Plan { text, .. } => {
             prefixed_text("Plan", text.clone(), ratatui::style::Color::Green)
         }
-        ThreadItem::Reasoning {
+        ThreadItemPayload::Reasoning {
             summary, content, ..
         } => {
             let (header, text) =
@@ -136,7 +137,7 @@ pub(crate) fn thread_item_to_transcript_lines(
                 )
             }
         }
-        ThreadItem::HookPrompt { fragments, .. } => fragments
+        ThreadItemPayload::HookPrompt { fragments, .. } => fragments
             .iter()
             .map(|fragment| {
                 vec![
@@ -146,7 +147,7 @@ pub(crate) fn thread_item_to_transcript_lines(
                 .into()
             })
             .collect(),
-        ThreadItem::CommandExecution {
+        ThreadItemPayload::CommandExecution {
             command,
             status,
             aggregated_output,
@@ -175,14 +176,14 @@ pub(crate) fn thread_item_to_transcript_lines(
             }
             lines
         }
-        ThreadItem::FileChange {
+        ThreadItemPayload::FileChange {
             changes, status, ..
         } => vec![
             format!("file changes: {status:?} · {} changes", changes.len())
                 .dim()
                 .into(),
         ],
-        ThreadItem::McpToolCall {
+        ThreadItemPayload::McpToolCall {
             server,
             tool,
             status,
@@ -192,7 +193,7 @@ pub(crate) fn thread_item_to_transcript_lines(
                 .dim()
                 .into(),
         ],
-        ThreadItem::DynamicToolCall {
+        ThreadItemPayload::DynamicToolCall {
             namespace,
             tool,
             status,
@@ -204,19 +205,19 @@ pub(crate) fn thread_item_to_transcript_lines(
                 .unwrap_or_else(|| tool.clone());
             vec![format!("tool: {name} · {status:?}").dim().into()]
         }
-        ThreadItem::CollabAgentToolCall { tool, status, .. } => {
+        ThreadItemPayload::CollabAgentToolCall { tool, status, .. } => {
             vec![format!("agent tool: {tool:?} · {status:?}").dim().into()]
         }
-        ThreadItem::SubAgentActivity {
+        ThreadItemPayload::SubAgentActivity {
             kind, agent_path, ..
         } => vec![format!("agent {agent_path}: {kind:?}").dim().into()],
-        ThreadItem::WebSearch(item) => {
+        ThreadItemPayload::WebSearch(item) => {
             vec![vec!["web search: ".dim(), item.query.clone().into()].into()]
         }
-        ThreadItem::ImageView { path, .. } => {
+        ThreadItemPayload::ImageView { path, .. } => {
             vec![format!("image: {}", path.render_for_ui()).dim().into()]
         }
-        ThreadItem::ImageGeneration(item) => {
+        ThreadItemPayload::ImageGeneration(item) => {
             let saved = item
                 .saved_path
                 .as_ref()
@@ -228,14 +229,14 @@ pub(crate) fn thread_item_to_transcript_lines(
                     .into(),
             ]
         }
-        ThreadItem::EnteredReviewMode { review, .. } => {
+        ThreadItemPayload::EnteredReviewMode { review, .. } => {
             vec![vec!["review started: ".dim(), review.clone().into()].into()]
         }
-        ThreadItem::ExitedReviewMode { review, .. } => {
+        ThreadItemPayload::ExitedReviewMode { review, .. } => {
             vec![vec!["review finished: ".dim(), review.clone().into()].into()]
         }
-        ThreadItem::ContextCompaction { .. } => vec!["context compacted".dim().into()],
-        ThreadItem::Sleep(item) => {
+        ThreadItemPayload::ContextCompaction { .. } => vec!["context compacted".dim().into()],
+        ThreadItemPayload::Sleep(item) => {
             let duration_ms = item.duration_ms;
             vec![format!("sleep: {duration_ms} ms").dim().into()]
         }

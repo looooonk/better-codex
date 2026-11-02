@@ -85,7 +85,7 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
             extra_env={"CODEX_INSTALL_DAEMON_ONLY": "1"},
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        root = self.root / "home/.codex/packages/app-server-daemon"
+        root = self.root / "home/.codex/packages/better-codex-daemon"
         self.assertEqual((root / "current").resolve().name, f"{VERSION}-{self.target}")
         self.assertEqual(
             (root / "auto-update-version").read_text(), f"{VERSION}-{self.target}"
@@ -99,7 +99,7 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
             index_mode="available", api_mode="unexpected", extra_env=options
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        root = self.root / "home/.codex/packages/app-server-daemon"
+        root = self.root / "home/.codex/packages/better-codex-daemon"
         selected = (root / "current").resolve()
         guard = options | {
             "CODEX_RELEASE": "latest",
@@ -125,7 +125,7 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
             index_mode="available", api_mode="unexpected", extra_env=options
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        root = self.root / "home/.codex/packages/app-server-daemon"
+        root = self.root / "home/.codex/packages/better-codex-daemon"
         guard = options | {
             "CODEX_RELEASE": "latest",
             "CODEX_INSTALL_IF_CURRENT": "1",
@@ -169,7 +169,7 @@ class InstallReleaseDiscoveryTest(unittest.TestCase):
             },
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        root = self.root / "home/.codex/packages/app-server-daemon"
+        root = self.root / "home/.codex/packages/better-codex-daemon"
         self.assertFalse((root / "current").exists())
         self.assertTrue((root / ".migration-current/bin/codex").is_file())
         self.assertFalse((self.root / "launcher-bin").exists())

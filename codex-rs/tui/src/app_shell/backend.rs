@@ -88,10 +88,14 @@ pub(super) trait AppShellBackend {
     /// Waits for the next server event while preserving its original ordering.
     fn next_event(&mut self) -> impl std::future::Future<Output = Option<AppServerEvent>> + Send;
 
+    /// Keep new-session defaults synchronized with an account's refreshed model catalog.
+    fn replace_available_models(&self, models: Vec<codex_protocol::openai_models::ModelPreset>);
+
     fn start_thread_with_session_start_source(
         &mut self,
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
+        model_provider_override: Option<&str>,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
 
     fn resume_thread(
@@ -454,6 +458,10 @@ pub(super) struct AppShellTurnSteer {
 }
 
 impl AppShellBackend for AppServerSession {
+    fn replace_available_models(&self, models: Vec<codex_protocol::openai_models::ModelPreset>) {
+        AppServerSession::replace_available_models(self, models);
+    }
+
     fn workspace_request_in_background(
         &self,
         thread_id: ThreadId,
@@ -472,8 +480,9 @@ impl AppShellBackend for AppServerSession {
         &mut self,
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
+        model_provider_override: Option<&str>,
     ) -> Result<AppServerStartedThread> {
-        AppServerSession::start_thread_with_session_start_source(self, config, session_start_source)
+        AppServerSession::start_thread_with_session_start_source(self, config, session_start_source, model_provider_override)
             .await
     }
 
@@ -980,6 +989,7 @@ impl AppShellBackend for AppServerSession {
                 .request_typed(codex_app_server_protocol::ClientRequest::TurnSteer {
                     request_id: app_shell_request_id("app-shell-turn-steer"),
                     params: codex_app_server_protocol::TurnSteerParams {
+                        responsesapi_client_metadata_patch: None,
                         thread_id: params.thread_id.to_string(),
                         client_user_message_id: Some(params.client_user_message_id),
                         input: params.items,

@@ -1,7 +1,6 @@
 //! Genuine sender context stays reviewer-only and is replaced on every delivery.
 
 use anyhow::Result;
-use codex_core::StartThreadOptions;
 use codex_core::TurnInputRequest;
 use codex_core::config::Constrained;
 use codex_protocol::config_types::ApprovalsReviewer;
@@ -17,6 +16,7 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 #[test_case::test_case(None, "codex_app", "send_message_to_thread", 0; "default")]
+#[test_case::test_case(None, "codex_app", "create_thread", 0; "desktop create thread")]
 #[test_case::test_case(Some(false), "codex_app", "send_message_to_thread", 0; "retired opt out")]
 #[test_case::test_case(None, "codex_tui", "send_message_to_thread", 0; "tui")]
 #[test_case::test_case(None, "cloud_threads", "send_message", 0; "cloud threads")]
@@ -52,10 +52,7 @@ async fn guardian_receives_sender_user_messages_by_default(
     let sender = test.session_configured.thread_id;
     let receiver = test
         .thread_manager
-        .start_thread(StartThreadOptions {
-            environments: Some(test.codex.environment_selections().await),
-            ..StartThreadOptions::new(test.config.clone())
-        })
+        .start_thread(test.start_thread_options().await)
         .await?
         .thread;
     let done = || responses::sse(vec![responses::ev_completed("done")]);

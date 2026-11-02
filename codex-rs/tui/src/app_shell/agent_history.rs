@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::ShellState;
 use super::backend::AppShellBackend;
 use crate::app_server_session::AgentHistoryTask;
@@ -150,8 +151,8 @@ impl ShellState {
     }
 
     pub(super) fn mark_active_agent_threads(&mut self, item: &ThreadItem) {
-        match item {
-            ThreadItem::CollabAgentToolCall {
+        match &item.payload {
+            ThreadItemPayload::CollabAgentToolCall {
                 receiver_thread_ids,
                 agents_states,
                 ..
@@ -160,7 +161,7 @@ impl ShellState {
                     self.mark_active_agent_thread(thread_id);
                 }
             }
-            ThreadItem::SubAgentActivity {
+            ThreadItemPayload::SubAgentActivity {
                 agent_thread_id, ..
             } => {
                 self.mark_active_agent_thread(agent_thread_id);
@@ -170,8 +171,8 @@ impl ShellState {
     }
 
     pub(super) fn mark_agent_item_live(&mut self, item: &ThreadItem) {
-        match item {
-            ThreadItem::CollabAgentToolCall {
+        match &item.payload {
+            ThreadItemPayload::CollabAgentToolCall {
                 receiver_thread_ids,
                 agents_states,
                 ..
@@ -180,7 +181,7 @@ impl ShellState {
                     self.agent_activity.mark_live_thread(thread_id);
                 }
             }
-            ThreadItem::SubAgentActivity {
+            ThreadItemPayload::SubAgentActivity {
                 agent_thread_id, ..
             } => self.agent_activity.mark_live_thread(agent_thread_id),
             _ => {}

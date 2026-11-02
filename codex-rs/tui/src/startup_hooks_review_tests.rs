@@ -27,6 +27,7 @@ fn startup_hooks_review_style_grid(app_theme: TuiAppTheme) -> String {
 
 fn hook(key: &str, trust_status: HookTrustStatus) -> HookMetadata {
     HookMetadata {
+        environment_id: None,
         key: key.to_string(),
         event_name: HookEventName::PreToolUse,
         handler: HookHandlerMetadata::Command {

@@ -1,5 +1,6 @@
 use crate::app_server_approval_conversions::granted_permission_profile_from_request;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
+use codex_app_server_protocol::CommandExecutionApprovalKind;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::FileChangeApprovalDecision;
@@ -63,7 +64,7 @@ impl PendingApproval {
     pub(super) fn from_request(request: &ServerRequest) -> Result<Option<Self>, String> {
         match request {
             ServerRequest::CommandExecutionRequestApproval { request_id, params } => {
-                let title = params
+                let mut title = params
                     .command
                     .as_ref()
                     .map(|command| format!("Run command: {command}"))
@@ -77,6 +78,9 @@ impl PendingApproval {
                         })
                     })
                     .unwrap_or_else(|| "Run command".to_string());
+                if params.kind == CommandExecutionApprovalKind::HumanCommand {
+                    title = format!("Human approval required: {title}");
+                }
                 let mut details = context_details(
                     params.reason.as_deref(),
                     params
@@ -112,6 +116,15 @@ impl PendingApproval {
                     .clone()
                     .unwrap_or_else(|| default_command_decisions(params))
                     .into_iter()
+                    .filter(|decision| {
+                        params.kind != CommandExecutionApprovalKind::HumanCommand
+                            || matches!(
+                                decision,
+                                CommandExecutionApprovalDecision::Accept
+                                    | CommandExecutionApprovalDecision::Decline
+                                    | CommandExecutionApprovalDecision::Cancel
+                            )
+                    })
                     .map(|decision| ApprovalOption {
                         label: command_decision_label(&decision),
                         decision: ApprovalDecision::Command(decision),
@@ -483,6 +496,13 @@ fn protocol_label(protocol: NetworkApprovalProtocol) -> &'static str {
 fn default_command_decisions(
     params: &CommandExecutionRequestApprovalParams,
 ) -> Vec<CommandExecutionApprovalDecision> {
+    if params.kind == CommandExecutionApprovalKind::HumanCommand {
+        return vec![
+            CommandExecutionApprovalDecision::Accept,
+            CommandExecutionApprovalDecision::Decline,
+            CommandExecutionApprovalDecision::Cancel,
+        ];
+    }
     if params.network_approval_context.is_some() {
         let mut decisions = vec![
             CommandExecutionApprovalDecision::Accept,

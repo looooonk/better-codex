@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 
 #[test]
@@ -32,7 +33,7 @@ fn astra_catalog_drives_model_reasoning_and_fast_selectors() {
 fn astra_async_question_is_visible_while_the_turn_runs() {
     let mut shell = ShellState::snapshot_fixture();
     shell.ingest_completed_item(
-        ThreadItem::AgentMessage {
+        ThreadItem::untimed(ThreadItemPayload::AgentMessage {
             delivery: None,
             questions: Some(vec![codex_app_server_protocol::AsyncUserInputQuestion {
                 title: "Which approach?".to_string(),
@@ -43,7 +44,7 @@ fn astra_async_question_is_visible_while_the_turn_runs() {
             text: String::new(),
             phase: Some(codex_protocol::models::MessagePhase::Commentary),
             memory_citation: None,
-        },
+        }),
         CompletedItemOrigin::Live,
     );
     insta::assert_snapshot!(

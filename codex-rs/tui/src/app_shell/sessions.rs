@@ -70,6 +70,8 @@ impl SessionListState {
 
     fn list_params_with_cursor(&self, cursor: Option<String>) -> ThreadListParams {
         ThreadListParams {
+            attached_to_thread_id: None,
+            excluded_thread_ids: None,
             originators: None,
             project_id: None,
             section_id: None,
@@ -77,7 +79,7 @@ impl SessionListState {
             limit: Some(SESSION_LIST_LIMIT),
             sort_key: Some(ThreadSortKey::RecencyAt),
             sort_direction: None,
-            model_providers: None,
+            model_providers: Some(Vec::new()),
             source_kinds: Some(crate::resume_source_kinds(
                 /*include_non_interactive*/ true,
             )),

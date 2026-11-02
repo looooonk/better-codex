@@ -110,13 +110,6 @@ impl RouteAwareRequestError {
         if self.status() == Some(StatusCode::PROXY_AUTHENTICATION_REQUIRED) {
             return Some(RouteFailureClass::ProxyAuthenticationRequired);
         }
-        if let Self::Route(RouteAwareClientPoolError::Resolve(error)) = self
-            && let Some(source) = error.get_ref()
-            && source.is::<rustls::Error>()
-        {
-            return Some(RouteFailureClass::TlsError);
-        }
-
         let mut source: Option<&(dyn std::error::Error + 'static)> = Some(self);
         while let Some(error) = source {
             if error.downcast_ref::<rustls::Error>().is_some()
@@ -127,7 +120,14 @@ impl RouteAwareRequestError {
             if error.to_string() == "tunnel error: proxy authorization required" {
                 return Some(RouteFailureClass::ProxyAuthenticationRequired);
             }
-            source = error.source();
+            // io::Error::source skips its inner error, which may itself be the TLS error.
+            source = match error
+                .downcast_ref::<io::Error>()
+                .and_then(io::Error::get_ref)
+            {
+                Some(inner) => Some(inner),
+                None => error.source(),
+            };
         }
 
         match self {
@@ -293,6 +293,24 @@ impl RouteAwareClientPool {
             client_build: Arc::default(),
             rustls_clients: None,
         }
+    }
+
+    /// Builds the first transport now so fixed-destination callers still receive setup errors.
+    #[cfg(windows)]
+    pub(crate) fn with_builder_and_initial_route(
+        http_client_factory: HttpClientFactory,
+        route_class: ClientRouteClass,
+        client_builder: HttpClientBuilder,
+        route: OutboundProxyRoute,
+    ) -> Result<Self, BuildRouteAwareHttpClientError> {
+        let mut pool = Self::with_builder(http_client_factory, route_class, client_builder);
+        let client = pool.client_builder_for_route().build_for_resolved_route(
+            &pool.http_client_factory,
+            pool.route_class,
+            &route,
+        )?;
+        pool.clients = Arc::new(Mutex::new(HashMap::from([(route, client)])));
+        Ok(pool)
     }
 
     /// Starts a new account-scoped operation while sharing the existing connection cache.
@@ -495,11 +513,7 @@ impl RouteAwareClientPool {
                 return Ok((route, client.clone(), SelectedTlsBackend::TransportDefault));
             }
         }
-        let client_builder = if self.follows_redirects_manually() {
-            self.client_builder.clone().without_redirects()
-        } else {
-            self.client_builder.clone()
-        };
+        let client_builder = self.client_builder_for_route();
         let pool = self.clone();
         let build_route = route.clone();
         let client = tokio::task::spawn_blocking(move || {
@@ -550,7 +564,16 @@ impl RouteAwareClientPool {
             && (self.http_client_factory.outbound_proxy_policy()
                 == OutboundProxyPolicy::RespectSystemProxy
                 || self.http_client_factory.network_policy().is_managed()
+                || self.http_client_factory.protects_sensitive_headers()
                 || self.rustls_clients.is_some())
+    }
+
+    fn client_builder_for_route(&self) -> HttpClientBuilder {
+        if self.follows_redirects_manually() {
+            self.client_builder.clone().without_redirects()
+        } else {
+            self.client_builder.clone()
+        }
     }
 
     fn rustls_client_for_route(

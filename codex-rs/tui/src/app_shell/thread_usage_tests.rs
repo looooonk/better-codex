@@ -4,6 +4,7 @@ use pretty_assertions::assert_eq;
 #[test]
 fn formats_available_estimates_without_float_rounding() {
     let usage = ThreadUsage {
+        native_usage_usd_micros: None,
         thread_id: "thread-1".to_string(),
         estimated_usage_credits_micros: 5_200_000,
         estimated_usage_usd_micros: Some(1_824_000),
@@ -19,6 +20,7 @@ fn formats_available_estimates_without_float_rounding() {
 #[test]
 fn omits_unavailable_estimates() {
     let usage = ThreadUsage {
+        native_usage_usd_micros: None,
         thread_id: "thread-1".to_string(),
         estimated_usage_credits_micros: 0,
         estimated_usage_usd_micros: None,
@@ -32,4 +34,16 @@ fn omits_unavailable_estimates() {
 fn preserves_positive_sub_cent_estimates() {
     assert_eq!(format_positive_micros(1), "<0.01");
     assert_eq!(format_positive_micros(MICROS_PER_UNIT), "1");
+}
+
+#[test]
+fn native_dollars_stay_distinct_from_credit_estimates() {
+    let usage = ThreadUsage {
+        thread_id: "thread-1".into(),
+        estimated_usage_credits_micros: 1_200_000,
+        estimated_usage_usd_micros: Some(250_000),
+        native_usage_usd_micros: Some(750_000),
+        groups: Vec::new(),
+    };
+    insta::assert_snapshot!("native_thread_cost", thread_usage_line(&usage).unwrap().to_string());
 }

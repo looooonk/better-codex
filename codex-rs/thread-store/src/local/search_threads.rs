@@ -155,9 +155,13 @@ pub(super) async fn search_threads(
     let more_matches_available = matching_items.len() > params.page_size;
     matching_items.truncate(params.page_size);
     let next_cursor = if more_matches_available {
-        matching_items
-            .last()
-            .and_then(|item| cursor_from_thread_search_item(item, params.sort_key))
+        matching_items.last().and_then(|item| {
+            if scan_params.use_state_db_only {
+                cursor_from_thread_search_item(item, params.sort_key)
+            } else {
+                item.item.filesystem_cursor(sort_key)
+            }
+        })
     } else {
         None
     }
@@ -233,11 +237,7 @@ fn cursor_from_thread_search_item(
             .or(item.item.created_at.as_deref())?,
         ThreadSortKey::SectionPosition => return None,
     };
-    match sort_key {
-        ThreadSortKey::RecencyAt => parse_cursor(&format!("{timestamp}|{}", item.item.thread_id?)),
-        ThreadSortKey::CreatedAt | ThreadSortKey::UpdatedAt => parse_cursor(timestamp),
-        ThreadSortKey::SectionPosition => None,
-    }
+    parse_cursor(&format!("{timestamp}|{}", item.item.thread_id?))
 }
 
 async fn set_thread_search_result_names(
@@ -248,7 +248,13 @@ async fn set_thread_search_result_names(
         .iter()
         .map(|item| (item.thread.thread_id, item.thread.history_mode))
         .collect::<HashMap<_, _>>();
-    let names = resolve_thread_names(store, &thread_history_modes).await;
+    let names = resolve_thread_names(
+        store,
+        &thread_history_modes,
+        /*use_state_db_only*/ false,
+    )
+    .await
+    .unwrap_or_default();
     for item in items {
         if let Some(name) = names.get(&item.thread.thread_id).cloned() {
             set_thread_name(&mut item.thread, name);

@@ -43,7 +43,7 @@ use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey as AppServerThreadSortKey;
 use codex_app_server_protocol::ThreadSourceKind;
-use codex_cloud_config::cloud_config_bundle_loader_for_storage;
+use codex_cloud_config::chatgpt_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadError;
 use codex_config::LoaderOverrides;
@@ -116,6 +116,7 @@ mod app_theme;
 mod assistant_message;
 mod branch_summary;
 mod daemon_startup;
+pub use daemon_startup::uses_wsl_drvfs;
 mod ide_context;
 mod managed_worktree;
 mod terminal_title;
@@ -174,6 +175,8 @@ mod style;
 mod terminal_hyperlinks;
 mod terminal_palette;
 mod terminal_probe;
+mod terminal_program_status;
+mod terminal_size_telemetry;
 mod terminal_visualization_instructions;
 mod text_formatting;
 mod text_input;
@@ -269,7 +272,7 @@ impl AppServerTarget {
         if self.uses_remote_workspace() {
             Ok(CloudConfigBundleLoader::default())
         } else {
-            Ok(cloud_config_bundle_loader_for_storage(
+            Ok(chatgpt_config_bundle_loader_for_storage(
                 local_auth_config()?,
                 /*enable_codex_api_key_env*/ false,
             )
@@ -400,6 +403,7 @@ async fn connect_remote_app_server(
     endpoint: RemoteAppServerEndpoint,
 ) -> color_eyre::Result<AppServerClient> {
     let app_server = RemoteAppServerClient::connect(RemoteAppServerConnectArgs {
+        required_human_approval: true,
         endpoint,
         client_name: "codex-tui".to_string(),
         client_version: codex_build_info::CODEX_BACKEND_COMPAT_VERSION.to_string(),
@@ -560,6 +564,7 @@ where
     let mut config = config;
     embedded_network_policy.activate(&mut config);
     let client = start_client(InProcessClientStartArgs {
+        required_human_approval: true,
         arg0_paths,
         config: Arc::new(config),
         cli_overrides: cli_kv_overrides,
@@ -674,11 +679,19 @@ async fn lookup_session_target_with_app_server(
 }
 
 async fn lookup_latest_session_target_with_app_server(
+    action: resume_picker::SessionPickerAction,
     app_server: &mut AppServerSession,
     config: &Config,
     cwd_filter: Option<&Path>,
     include_non_interactive: bool,
 ) -> color_eyre::Result<Option<resume_picker::SessionTarget>> {
+    let model_providers = match action {
+        resume_picker::SessionPickerAction::Resume => Some(Vec::new()),
+        resume_picker::SessionPickerAction::Fork => app_server
+            .history_model_provider(config)
+            .await?
+            .map(|provider| vec![provider]),
+    };
     let uses_remote_workspace = app_server.uses_remote_workspace();
     for lookup_mode in [
         LatestSessionLookupMode::StateDbOnly,
@@ -686,21 +699,27 @@ async fn lookup_latest_session_target_with_app_server(
     ] {
         let response = app_server
             .thread_list(latest_session_lookup_params(
-                uses_remote_workspace,
-                config,
+                model_providers.clone(),
                 cwd_filter,
                 include_non_interactive,
                 lookup_mode,
             ))
-            .await?;
+            .await;
+        let response = match response {
+            Err(_) if lookup_mode == LatestSessionLookupMode::StateDbOnly => continue,
+            response => response?,
+        };
         let target = response
             .data
             .into_iter()
             .find_map(session_target_from_app_server_thread);
-        if target.as_ref().is_some_and(|target| {
-            uses_remote_workspace || target.path.as_deref().is_some_and(std::path::Path::exists)
-        }) {
-            return Ok(target);
+        if let Some(target) = target
+            && (uses_remote_workspace || match target.path.as_deref() {
+                Some(path) => codex_rollout::existing_rollout_path(path).await.is_some(),
+                None => false,
+            })
+        {
+            return Ok(Some(target));
         }
     }
     Ok(None)
@@ -713,13 +732,14 @@ enum LatestSessionLookupMode {
 }
 
 fn latest_session_lookup_params(
-    uses_remote_workspace: bool,
-    config: &Config,
+    model_providers: Option<Vec<String>>,
     cwd_filter: Option<&Path>,
     include_non_interactive: bool,
     lookup_mode: LatestSessionLookupMode,
 ) -> ThreadListParams {
     ThreadListParams {
+        attached_to_thread_id: None,
+        excluded_thread_ids: None,
         originators: None,
         project_id: None,
         section_id: None,
@@ -727,11 +747,7 @@ fn latest_session_lookup_params(
         limit: Some(1),
         sort_key: Some(AppServerThreadSortKey::UpdatedAt),
         sort_direction: None,
-        model_providers: if uses_remote_workspace {
-            None
-        } else {
-            Some(vec![config.model_provider_id.clone()])
-        },
+        model_providers,
         source_kinds: Some(resume_source_kinds(include_non_interactive)),
         archived: Some(false),
         parent_thread_id: None,
@@ -1189,13 +1205,16 @@ pub async fn run_main(
     if config
         .features
         .enabled(codex_features::Feature::DaemonAutoStart)
-        && !cli.agents_overview
         && daemon_exclusion.is_none()
         && !app_server_target.uses_remote_workspace()
         && !prepared_environment_manager.default_environment_is_remote()
         && !bedrock_onboarding
     {
         let launch = daemon_startup::start(&config, &cli_kv_overrides).await?;
+        app_server_target = launch.target;
+        daemon_startup_warning = launch.warning;
+    } else if let AppServerTarget::LocalDaemon { endpoint } = &app_server_target {
+        let launch = daemon_startup::validate_existing(endpoint.clone(), &config, &cli_kv_overrides).await;
         app_server_target = launch.target;
         daemon_startup_warning = launch.warning;
     }
@@ -1462,7 +1481,8 @@ async fn run_ratatui_app(
             return Err(err);
         }
     }
-    .with_remote_cwd_override(remote_cwd_override.clone());
+    .with_remote_cwd_override(remote_cwd_override.clone())
+    .with_launch_overrides(&overrides);
     if let Some(provider) = manually_selected_oss_provider.as_deref()
         && let Err(err) = config_update::write_config_batch(
             app_server_session.request_handle(),
@@ -1520,7 +1540,7 @@ async fn run_ratatui_app(
         // and rebuild config. This avoids missing newly available cloud-managed policy due to login
         // status detection edge cases.
         if !uses_remote_workspace {
-            cloud_config_bundle = cloud_config_bundle_loader_for_storage(
+            cloud_config_bundle = chatgpt_config_bundle_loader_for_storage(
                 initial_config.auth_config(),
                 /*enable_codex_api_key_env*/ false,
             )
@@ -1617,6 +1637,7 @@ async fn run_ratatui_app(
                 unreachable!("app server should be initialized for --fork --last");
             };
             match lookup_latest_session_target_with_app_server(
+                resume_picker::SessionPickerAction::Fork,
                 app_server, &config, filter_cwd, /*include_non_interactive*/ false,
             )
             .await?
@@ -1674,6 +1695,7 @@ async fn run_ratatui_app(
             unreachable!("app server should be initialized for --resume --last");
         };
         match lookup_latest_session_target_with_app_server(
+            resume_picker::SessionPickerAction::Resume,
             app_server,
             &config,
             filter_cwd,
@@ -1825,6 +1847,7 @@ async fn run_ratatui_app(
             Ok(app_server) => {
                 AppServerSession::new(app_server, app_server_target.thread_params_mode())
                     .with_remote_cwd_override(remote_cwd_override.clone())
+                    .with_launch_overrides(&overrides)
             }
             Err(err) => {
                 terminal_restore_guard.restore_silently();
@@ -2018,7 +2041,7 @@ async fn get_login_status(
     Ok(match account.account {
         Some(AppServerAccount::ApiKey {}) => LoginStatus::AuthMode(AuthMode::ApiKey),
         Some(AppServerAccount::Chatgpt { .. }) => LoginStatus::AuthMode(AuthMode::Chatgpt),
-        Some(AppServerAccount::AmazonBedrock { .. }) => LoginStatus::NotAuthenticated,
+        Some(AppServerAccount::AmazonBedrock { .. } | AppServerAccount::Gcp {}) => LoginStatus::NotAuthenticated,
         None => LoginStatus::NotAuthenticated,
     })
 }
@@ -2544,7 +2567,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn default_daemon_auto_connect_probes_socket_only() -> color_eyre::Result<()> {
-        let codex_home = TempDir::new()?;
+        let codex_home = TempDir::new_in("/tmp")?;
         let socket_path =
             codex_app_server_client::app_server_control_socket_path(codex_home.path())?;
         std::fs::create_dir_all(socket_path.as_path().parent().expect("socket parent"))?;
@@ -2736,8 +2759,7 @@ mod tests {
         let cwd = temp_dir.path().join("project");
 
         let params = latest_session_lookup_params(
-            /*uses_remote_workspace*/ false,
-            &config,
+            Some(vec![config.model_provider_id.clone()]),
             Some(cwd.as_path()),
             /*include_non_interactive*/ false,
             LatestSessionLookupMode::StateDbOnly,
@@ -2754,8 +2776,7 @@ mod tests {
         assert!(params.use_state_db_only);
 
         let scan_params = latest_session_lookup_params(
-            /*uses_remote_workspace*/ false,
-            &config,
+            Some(vec![config.model_provider_id.clone()]),
             Some(cwd.as_path()),
             /*include_non_interactive*/ false,
             LatestSessionLookupMode::ScanAndRepair,
@@ -2770,15 +2791,9 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let config = build_config(&temp_dir).await?;
         let cwd = temp_dir.path().join("project");
-        let target = AppServerTarget::LocalDaemon {
-            endpoint: RemoteAppServerEndpoint::UnixSocket {
-                socket_path: AbsolutePathBuf::relative_to_current_dir("codex.sock")?,
-            },
-        };
 
         let params = latest_session_lookup_params(
-            target.uses_remote_workspace(),
-            &config,
+            Some(vec![config.model_provider_id.clone()]),
             Some(cwd.as_path()),
             /*include_non_interactive*/ false,
             LatestSessionLookupMode::StateDbOnly,
@@ -2795,12 +2810,9 @@ mod tests {
     #[tokio::test]
     async fn latest_session_lookup_params_omit_local_filters_for_remote_sessions()
     -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
 
         let params = latest_session_lookup_params(
-            /*uses_remote_workspace*/ true,
-            &config,
+            /*model_providers*/ None,
             /*cwd_filter*/ None,
             /*include_non_interactive*/ false,
             LatestSessionLookupMode::StateDbOnly,
@@ -2814,12 +2826,9 @@ mod tests {
     #[tokio::test]
     async fn latest_session_lookup_params_can_include_non_interactive_sources()
     -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
 
         let params = latest_session_lookup_params(
-            /*uses_remote_workspace*/ true,
-            &config,
+            /*model_providers*/ None,
             /*cwd_filter*/ None,
             /*include_non_interactive*/ true,
             LatestSessionLookupMode::StateDbOnly,
@@ -2840,13 +2849,10 @@ mod tests {
     #[tokio::test]
     async fn latest_session_lookup_params_keep_explicit_cwd_filter_for_remote_sessions()
     -> std::io::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let config = build_config(&temp_dir).await?;
         let cwd = Path::new("repo/on/server");
 
         let params = latest_session_lookup_params(
-            /*uses_remote_workspace*/ true,
-            &config,
+            /*model_providers*/ None,
             Some(cwd),
             /*include_non_interactive*/ false,
             LatestSessionLookupMode::StateDbOnly,
@@ -2932,6 +2938,7 @@ mod tests {
             /*show_all*/ false,
         );
         let scoped_target = lookup_latest_session_target_with_app_server(
+            resume_picker::SessionPickerAction::Fork,
             &mut app_server,
             &config,
             filter_cwd,
@@ -2944,6 +2951,7 @@ mod tests {
             /*show_all*/ true,
         );
         let show_all_target = lookup_latest_session_target_with_app_server(
+            resume_picker::SessionPickerAction::Fork,
             &mut app_server,
             &config,
             show_all_filter_cwd,
@@ -2985,11 +2993,12 @@ mod tests {
             "2025-01-02T10-00-00",
             "2025-01-02T10:00:00Z",
             "legacy writer session",
-            config.model_provider_id.as_str(),
+            "previous-provider",
             &project_cwd,
         )?;
 
         let target = lookup_latest_session_target_with_app_server(
+            resume_picker::SessionPickerAction::Resume,
             &mut app_server,
             &config,
             Some(project_cwd.as_path()),

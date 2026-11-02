@@ -60,7 +60,7 @@ pub(crate) fn clear_managed_terminal_title() {
 }
 
 #[derive(Clone, Copy)]
-enum TitleEncoding {
+pub(crate) enum TitleEncoding {
     Unicode,
     Screen,
 }
@@ -150,7 +150,7 @@ impl Command for SetWindowTitle {
 /// This removes terminal control characters, strips invisible/bidi formatting
 /// characters, collapses any whitespace run into a single ASCII space, and
 /// truncates after [`MAX_TERMINAL_TITLE_CHARS`] emitted characters.
-fn sanitize_terminal_title(title: &str, encoding: TitleEncoding) -> String {
+pub(crate) fn sanitize_terminal_title(title: &str, encoding: TitleEncoding) -> String {
     let mut sanitized = String::new();
     let mut chars_written = 0;
     let mut pending_space = false;

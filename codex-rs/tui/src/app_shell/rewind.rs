@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::backend_actions::ActionGroup;
@@ -20,7 +21,7 @@ pub(super) struct RewindAnchor {
 
 impl RewindAnchor {
     pub(super) fn for_opening_item(turn_id: &str, item: &ThreadItem) -> Option<Self> {
-        let ThreadItem::UserMessage { content, .. } = item else {
+        let ThreadItemPayload::UserMessage { content, .. } = &item.payload else {
             return None;
         };
         match content.as_slice() {

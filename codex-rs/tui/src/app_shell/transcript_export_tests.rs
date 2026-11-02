@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use pretty_assertions::assert_eq;
 
@@ -10,14 +11,14 @@ fn markdown_export_preserves_message_formatting() {
         "source": "cli", "turns": [], "projectId": null
     }))
     .unwrap();
-    let item = ThreadItem::AgentMessage {
+    let item = ThreadItem::untimed(ThreadItemPayload::AgentMessage {
         id: "reply".to_string(),
         text: "**Done**\n\n```rust\nlet answer = 42;\n```".to_string(),
         phase: None,
         memory_citation: None,
         delivery: None,
         questions: None,
-    };
+    });
     let mut markdown = String::new();
     append_item(&mut markdown, &thread, &item).unwrap();
     assert_eq!(
@@ -77,14 +78,14 @@ fn page(text: &str, cursor: Option<&str>) -> Result<ThreadTimelineListResponse, 
         data: vec![ThreadTimelineEntry::Item {
             position: 1,
             turn_id: "turn".to_string(),
-            item: Box::new(ThreadItem::AgentMessage {
+            item: Box::new(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                 id: text.to_string(),
                 text: text.to_string(),
                 phase: None,
                 memory_citation: None,
                 delivery: None,
                 questions: None,
-            }),
+            })),
         }],
         next_cursor: cursor.map(str::to_string),
         active_realtime_session_at_page_start: None,
@@ -157,6 +158,7 @@ async fn older_server_export_uses_full_turn_history() {
             .into(),
         ),
         history: vec![codex_app_server_protocol::Turn {
+            root_turn_id: None,
             id: "turn".to_string(),
             items,
             status: codex_app_server_protocol::TurnStatus::Completed,

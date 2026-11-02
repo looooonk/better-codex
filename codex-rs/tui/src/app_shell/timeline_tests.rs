@@ -1,3 +1,5 @@
+use codex_app_server_protocol::ThreadItemPayload;
+use codex_app_server_protocol::ThreadItem;
 use super::*;
 use crate::app_shell::render::ShellView;
 use codex_app_server_protocol::ServerNotification;
@@ -11,14 +13,14 @@ fn resumed_speech_keeps_canonical_order_without_duplicate_turn_items() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.dashboard_visible = false;
-    let reply = ThreadItem::AgentMessage {
+    let reply = ThreadItem::untimed(ThreadItemPayload::AgentMessage {
         id: "reply".to_string(),
         text: "The fix is ready.".to_string(),
         phase: None,
         memory_citation: None,
         delivery: None,
         questions: None,
-    };
+    });
     let speech = ThreadRealtimeItem {
         id: "speech".to_string(),
         realtime_session_id: "voice".to_string(),
@@ -28,6 +30,7 @@ fn resumed_speech_keeps_canonical_order_without_duplicate_turn_items() {
         },
     };
     let turn = Turn {
+        root_turn_id: None,
         id: "turn".to_string(),
         items: vec![reply.clone()],
         items_view: TurnItemsView::Full,

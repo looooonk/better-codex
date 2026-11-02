@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
@@ -322,7 +323,7 @@ fn known_child_message_and_reasoning_updates_upsert_typed_activity() {
 
     assert!(state.record_child_item(
         "agent-1",
-        &ThreadItem::AgentMessage {
+        &ThreadItem::untimed(ThreadItemPayload::AgentMessage {
             delivery: None,
             questions: None,
 
@@ -330,7 +331,7 @@ fn known_child_message_and_reasoning_updates_upsert_typed_activity() {
             text: "Layout audit complete".to_string(),
             phase: None,
             memory_citation: None,
-        },
+        }),
         AgentItemPhase::Completed,
     ));
     assert!(state.record_child_progress(
@@ -429,12 +430,14 @@ fn child_turns_and_errors_update_typed_lifecycle_activity() {
 }
 
 fn subagent_item(id: &str, kind: SubAgentActivityKind, thread_id: &str, path: &str) -> ThreadItem {
-    ThreadItem::SubAgentActivity {
+    ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
         id: id.to_string(),
         kind,
         agent_thread_id: thread_id.to_string(),
         agent_path: path.to_string(),
-    }
+    })
 }
 
 fn tracked_agent() -> AgentActivityState {
@@ -449,7 +452,7 @@ fn tracked_agent() -> AgentActivityState {
 }
 
 fn command_item(status: CommandExecutionStatus, output: Option<&str>) -> ThreadItem {
-    ThreadItem::CommandExecution {
+    ThreadItem::untimed(ThreadItemPayload::CommandExecution {
         sandbox_type: None,
         model_context: None,
         plugin_id: None,
@@ -465,7 +468,7 @@ fn command_item(status: CommandExecutionStatus, output: Option<&str>) -> ThreadI
         aggregated_output: output.map(ToString::to_string),
         exit_code: None,
         duration_ms: None,
-    }
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -479,7 +482,7 @@ fn collab_item(
     effort: Option<ReasoningEffort>,
     agents_states: HashMap<String, CollabAgentState>,
 ) -> ThreadItem {
-    ThreadItem::CollabAgentToolCall {
+    ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
         id: id.to_string(),
         tool,
         status,
@@ -489,7 +492,7 @@ fn collab_item(
         model: model.map(ToString::to_string),
         reasoning_effort: effort,
         agents_states,
-    }
+    })
 }
 
 fn states(

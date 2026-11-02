@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use crate::app_shell::CompletedItemOrigin;
 use crate::app_shell::ShellState;
@@ -135,8 +136,8 @@ fn large_payloads_use_existing_viewer_limits_and_bound_structured_serialization(
 fn generated_remote_images_never_suggest_a_local_file_url() {
     let item = completed_items()
         .into_iter()
-        .find_map(|item| match item {
-            ThreadItem::ImageGeneration(item) if item.saved_path.is_some() => Some(item),
+        .find_map(|item| match item.payload {
+            ThreadItemPayload::ImageGeneration(item) if item.saved_path.is_some() => Some(item),
             _ => None,
         })
         .unwrap();

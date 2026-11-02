@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::workspace_requests::workspace_request_id;
 use crate::app_server_session::HistoryReader;
 use crate::app_server_session::read_thread_history;
@@ -195,15 +196,15 @@ pub(super) async fn export(
 }
 
 fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Result<()> {
-    match item {
-        ThreadItem::AgentMessage {
+    match &item.payload {
+        ThreadItemPayload::AgentMessage {
             text, questions, ..
         } => {
             let text = crate::assistant_message::with_questions(text, questions.as_deref());
             markdown.push_str(&format!("## Assistant\n\n{text}\n\n"));
         }
-        ThreadItem::Plan { text, .. } => markdown.push_str(&format!("## Plan\n\n{text}\n\n")),
-        ThreadItem::UserMessage { content, .. } => {
+        ThreadItemPayload::Plan { text, .. } => markdown.push_str(&format!("## Plan\n\n{text}\n\n")),
+        ThreadItemPayload::UserMessage { content, .. } => {
             use codex_app_server_protocol::ImageReference;
             use codex_app_server_protocol::UserInput;
             markdown.push_str("## You\n\n");
@@ -227,7 +228,12 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                     UserInput::LocalImage { path, .. } => {
                         append_attachment(markdown, "Image", &path.display().to_string())
                     }
-                    UserInput::Audio { url } => append_attachment(markdown, "Audio", url),
+                    UserInput::Audio { audio } => match audio {
+                        codex_app_server_protocol::AudioReference::Inline { url } => append_attachment(markdown, "Audio", url),
+                        codex_app_server_protocol::AudioReference::File { file_id } => {
+                            markdown.push_str(&format!("Audio attachment: {file_id}\n\n"));
+                        }
+                    },
                     UserInput::LocalAudio { path } => {
                         append_attachment(markdown, "Audio", &path.display().to_string())
                     }
@@ -238,7 +244,7 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 }
             }
         }
-        ThreadItem::CommandExecution {
+        ThreadItemPayload::CommandExecution {
             command,
             cwd,
             status,
@@ -257,7 +263,7 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 markdown.push_str(&format!("Exit code: {code}\n\n"));
             }
         }
-        ThreadItem::FileChange {
+        ThreadItemPayload::FileChange {
             changes, status, ..
         } => {
             markdown.push_str(&format!("## File changes ({status:?})\n\n"));
@@ -266,7 +272,7 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 append_code(markdown, "diff", &change.diff);
             }
         }
-        ThreadItem::McpToolCall {
+        ThreadItemPayload::McpToolCall {
             server,
             tool,
             status,
@@ -287,7 +293,7 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 append_code(markdown, "text", &error.message);
             }
         }
-        ThreadItem::DynamicToolCall {
+        ThreadItemPayload::DynamicToolCall {
             namespace,
             tool,
             status,
@@ -319,7 +325,7 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 markdown.push_str(&format!("Success: {success}\n\n"));
             }
         }
-        ThreadItem::FunctionCallOutput {
+        ThreadItemPayload::FunctionCallOutput {
             name,
             namespace,
             output,
@@ -338,7 +344,7 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 }
             }
         }
-        ThreadItem::CollabAgentToolCall {
+        ThreadItemPayload::CollabAgentToolCall {
             tool,
             status,
             sender_thread_id,
@@ -370,11 +376,11 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 );
             }
         }
-        ThreadItem::ImageView { path, .. } => {
+        ThreadItemPayload::ImageView { path, .. } => {
             markdown.push_str("## Viewed image\n\n");
             append_attachment(markdown, "Image", &path.to_string());
         }
-        ThreadItem::ImageGeneration(item) => {
+        ThreadItemPayload::ImageGeneration(item) => {
             markdown.push_str(&format!("## Image generation ({})\n\n", item.status));
             if let Some(prompt) = &item.revised_prompt {
                 markdown.push_str(&format!("{prompt}\n\n"));
@@ -388,11 +394,18 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                     "Generated image",
                     &path.as_path().display().to_string(),
                 );
-            } else if !item.result.is_empty() {
-                append_code(markdown, "text", &item.result);
+            } else {
+                match &item.image {
+                    codex_app_server_protocol::GeneratedImageRef::Inline { result }
+                        if !result.is_empty() => append_code(markdown, "text", result),
+                    codex_app_server_protocol::GeneratedImageRef::File { file_id } => {
+                        markdown.push_str(&format!("Generated image attachment: {file_id}\n\n"));
+                    }
+                    codex_app_server_protocol::GeneratedImageRef::Inline { .. } => {}
+                }
             }
         }
-        ThreadItem::WebSearch(item) => {
+        ThreadItemPayload::WebSearch(item) => {
             markdown.push_str(&format!("## Web search\n\n{}\n\n", item.query));
             if let Some(action) = &item.action {
                 append_code(markdown, "json", &serde_json::to_string_pretty(action)?);
@@ -401,13 +414,13 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                 append_code(markdown, "json", &serde_json::to_string_pretty(results)?);
             }
         }
-        ThreadItem::HookPrompt { .. }
-        | ThreadItem::Reasoning { .. }
-        | ThreadItem::SubAgentActivity { .. }
-        | ThreadItem::Sleep(_)
-        | ThreadItem::EnteredReviewMode { .. }
-        | ThreadItem::ExitedReviewMode { .. }
-        | ThreadItem::ContextCompaction { .. } => {
+        ThreadItemPayload::HookPrompt { .. }
+        | ThreadItemPayload::Reasoning { .. }
+        | ThreadItemPayload::SubAgentActivity { .. }
+        | ThreadItemPayload::Sleep(_)
+        | ThreadItemPayload::EnteredReviewMode { .. }
+        | ThreadItemPayload::ExitedReviewMode { .. }
+        | ThreadItemPayload::ContextCompaction { .. } => {
             let lines =
                 thread_item_to_transcript_lines(item, thread, RawReasoningVisibility::Hidden);
             if !lines.is_empty() {

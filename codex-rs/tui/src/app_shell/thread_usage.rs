@@ -16,6 +16,9 @@ pub(super) fn thread_usage_line(usage: &ThreadUsage) -> Option<Line<'static>> {
     if let Some(cost) = usage.estimated_usage_usd_micros.filter(|cost| *cost > 0) {
         values.push(format!("~${}", format_positive_micros(cost)));
     }
+    if let Some(cost) = usage.native_usage_usd_micros.filter(|cost| *cost > 0) {
+        values.push(format!("${} native", format_positive_micros(cost)));
+    }
     (!values.is_empty()).then(|| Line::from(values.join(" | ")))
 }
 

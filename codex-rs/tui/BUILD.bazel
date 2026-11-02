@@ -23,6 +23,15 @@ codex_rust_crate(
         "src/**/*.rs",
         "src/**/snapshots/**",
     ]),
+    unit_test_srcs = glob([
+        "src/**/*_test_support.rs",
+        "src/**/*_tests.rs",
+        "src/**/*_tests/**/*.rs",
+        "src/**/test_fixtures.rs",
+        "src/**/test_support.rs",
+        "src/**/tests.rs",
+        "src/**/tests/**/*.rs",
+    ]) + ["src/test_backend.rs"],
     test_shard_counts = {
         "tui-unit-tests": 8,
     },

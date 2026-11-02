@@ -2,6 +2,7 @@ use super::MAX_RESUMED_AGENT_THREAD_CANDIDATES;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -65,8 +66,8 @@ pub(super) fn referenced_agent_thread_ids(turns: &[Turn]) -> Vec<String> {
     let mut thread_ids = Vec::with_capacity(MAX_REFERENCED_AGENT_THREADS);
     // Candidate loading is bounded, so preserve the most recently encountered agents first.
     for item in turns.iter().rev().flat_map(|turn| turn.items.iter().rev()) {
-        match item {
-            ThreadItem::CollabAgentToolCall {
+        match &item.payload {
+            ThreadItemPayload::CollabAgentToolCall {
                 receiver_thread_ids,
                 agents_states,
                 ..
@@ -79,7 +80,7 @@ pub(super) fn referenced_agent_thread_ids(turns: &[Turn]) -> Vec<String> {
                     }
                 }
             }
-            ThreadItem::SubAgentActivity {
+            ThreadItemPayload::SubAgentActivity {
                 agent_thread_id, ..
             } if insert_reference(&mut thread_ids, &mut seen, agent_thread_id) => {
                 return thread_ids;
@@ -171,8 +172,8 @@ fn bounded_turns(mut turns: Vec<Turn>) -> Vec<Turn> {
 }
 
 fn bounded_item(mut item: ThreadItem) -> Option<ThreadItem> {
-    match &mut item {
-        ThreadItem::AgentMessage {
+    match &mut item.payload {
+        ThreadItemPayload::AgentMessage {
             id,
             text,
             memory_citation,
@@ -182,7 +183,7 @@ fn bounded_item(mut item: ThreadItem) -> Option<ThreadItem> {
             truncate(text, MAX_ITEM_TEXT_CHARS);
             *memory_citation = None;
         }
-        ThreadItem::Reasoning {
+        ThreadItemPayload::Reasoning {
             id,
             summary,
             content,
@@ -195,7 +196,7 @@ fn bounded_item(mut item: ThreadItem) -> Option<ThreadItem> {
             *summary = latest.into_iter().collect();
             *content = Vec::new();
         }
-        ThreadItem::CommandExecution {
+        ThreadItemPayload::CommandExecution {
             id,
             command,
             cwd,
@@ -215,7 +216,7 @@ fn bounded_item(mut item: ThreadItem) -> Option<ThreadItem> {
                 truncate(output, MAX_ITEM_TEXT_CHARS);
             }
         }
-        ThreadItem::CollabAgentToolCall {
+        ThreadItemPayload::CollabAgentToolCall {
             id,
             sender_thread_id,
             receiver_thread_ids,
@@ -254,12 +255,20 @@ fn bounded_item(mut item: ThreadItem) -> Option<ThreadItem> {
                 })
                 .collect();
         }
-        ThreadItem::SubAgentActivity {
+        ThreadItemPayload::SubAgentActivity {
             id,
             agent_thread_id,
             agent_path,
+            model,
+            reasoning_effort,
             ..
         } => {
+            if let Some(model) = model {
+                truncate(model, MAX_ITEM_ID_CHARS);
+            }
+            if let Some(ReasoningEffort::Custom(effort)) = reasoning_effort {
+                truncate(effort, MAX_ITEM_ID_CHARS);
+            }
             truncate(id, MAX_ITEM_ID_CHARS);
             if agent_thread_id.len() > MAX_ITEM_ID_CHARS {
                 return None;
@@ -267,20 +276,20 @@ fn bounded_item(mut item: ThreadItem) -> Option<ThreadItem> {
             truncate(agent_thread_id, MAX_ITEM_ID_CHARS);
             truncate(agent_path, MAX_AGENT_PATH_CHARS);
         }
-        ThreadItem::UserMessage { .. }
-        | ThreadItem::HookPrompt { .. }
-        | ThreadItem::Plan { .. }
-        | ThreadItem::FileChange { .. }
-        | ThreadItem::McpToolCall { .. }
-        | ThreadItem::DynamicToolCall { .. }
-        | ThreadItem::FunctionCallOutput { .. }
-        | ThreadItem::WebSearch(_)
-        | ThreadItem::ImageView { .. }
-        | ThreadItem::Sleep(_)
-        | ThreadItem::ImageGeneration(_)
-        | ThreadItem::EnteredReviewMode { .. }
-        | ThreadItem::ExitedReviewMode { .. }
-        | ThreadItem::ContextCompaction { .. } => return None,
+        ThreadItemPayload::UserMessage { .. }
+        | ThreadItemPayload::HookPrompt { .. }
+        | ThreadItemPayload::Plan { .. }
+        | ThreadItemPayload::FileChange { .. }
+        | ThreadItemPayload::McpToolCall { .. }
+        | ThreadItemPayload::DynamicToolCall { .. }
+        | ThreadItemPayload::FunctionCallOutput { .. }
+        | ThreadItemPayload::WebSearch(_)
+        | ThreadItemPayload::ImageView { .. }
+        | ThreadItemPayload::Sleep(_)
+        | ThreadItemPayload::ImageGeneration(_)
+        | ThreadItemPayload::EnteredReviewMode { .. }
+        | ThreadItemPayload::ExitedReviewMode { .. }
+        | ThreadItemPayload::ContextCompaction { .. } => return None,
     }
     Some(item)
 }

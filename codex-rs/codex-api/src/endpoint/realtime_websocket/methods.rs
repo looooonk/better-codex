@@ -38,10 +38,13 @@ use http::HeaderMap;
 use http::HeaderValue;
 use http::StatusCode;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::hash::BuildHasher;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -54,14 +57,13 @@ use tracing::error;
 use tracing::info;
 use tracing::trace;
 use tracing::warn;
+use tungstenite::protocol::CloseFrame;
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::protocol::frame::coding::CloseCode;
 use url::Url;
 
 const REALTIME_WIRE_LOG_TARGET: &str = "codex_api::realtime_websocket::wire";
 const OPENAI_REALTIME_API_BASE_URL: &str = "https://api.openai.com/v1";
-const MAX_ACTIVE_TRANSCRIPT_BYTES: usize = 8 * 1024;
-const TRUNCATED_TRANSCRIPT_PREFIX: &str = "…";
 
 struct WsStream {
     tx_command: mpsc::Sender<WsCommand>,
@@ -75,6 +77,7 @@ enum WsCommand {
         tx_result: oneshot::Sender<Result<(), WsError>>,
     },
     Close {
+        frame: Option<CloseFrame>,
         tx_result: oneshot::Sender<Result<(), WsError>>,
     },
 }
@@ -115,9 +118,9 @@ impl WsStream {
                                     break;
                                 }
                             }
-                            WsCommand::Close { tx_result } => {
+                            WsCommand::Close { frame, tx_result } => {
                                 info!("realtime websocket sending close");
-                                let result = inner.send(Message::Close(None)).await;
+                                let result = inner.send(Message::Close(frame)).await;
                                 if let Err(err) = &result {
                                     error!("realtime websocket close failed: {err}");
                                     report_write_policy_error(err);
@@ -225,8 +228,10 @@ impl WsStream {
             .await
     }
 
-    async fn close(&self) -> Result<(), WsError> {
-        self.request(|tx_result| WsCommand::Close { tx_result })
+    /// Ask the socket pump to send a close frame to the connected peer and
+    /// return the write result.
+    async fn close(&self, frame: Option<CloseFrame>) -> Result<(), WsError> {
+        self.request(|tx_result| WsCommand::Close { frame, tx_result })
             .await
     }
 }
@@ -267,8 +272,17 @@ pub struct RealtimeTranscriptState {
 #[derive(Default)]
 struct ActiveTranscriptState {
     entries: Vec<RealtimeTranscriptEntry>,
+    // Handoff input can echo an utterance already written to child history.
+    flushed_user_inputs: HashSet<u64>,
     new_input_entry: bool,
     new_output_entry: bool,
+}
+
+impl ActiveTranscriptState {
+    fn take_entries(&mut self) -> Vec<RealtimeTranscriptEntry> {
+        self.flushed_user_inputs.clear();
+        std::mem::take(&mut self.entries)
+    }
 }
 
 impl RealtimeWebsocketConnection {
@@ -455,7 +469,7 @@ impl RealtimeWebsocketWriter {
                 )));
             }
         }
-        if let Err(err) = self.stream.close().await
+        if let Err(err) = self.stream.close(/*frame*/ None).await
             && !matches!(err, WsError::ConnectionClosed | WsError::AlreadyClosed)
         {
             return Err(ApiError::Stream(format!(
@@ -463,6 +477,20 @@ impl RealtimeWebsocketWriter {
             )));
         }
         Ok(())
+    }
+
+    /// Detach an observer without ending the frontend-owned realtime session.
+    pub async fn close_transport(&self) -> Result<(), ApiError> {
+        if self.is_closed.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        self.stream
+            .close(Some(CloseFrame {
+                code: CloseCode::Normal,
+                reason: "".into(),
+            }))
+            .await
+            .map_err(|err| ApiError::Stream(format!("failed to close websocket transport: {err}")))
     }
 
     async fn send_json(&self, message: &RealtimeOutboundMessage) -> Result<(), ApiError> {
@@ -679,8 +707,8 @@ impl RealtimeWebsocketEvents {
                     self.event_parser == RealtimeEventParser::FramelessBidi;
             }
             RealtimeEvent::HandoffRequested(handoff) => {
-                append_handoff_input(&mut active_transcript.entries, &handoff.input_transcript);
-                handoff.active_transcript = std::mem::take(&mut active_transcript.entries);
+                append_handoff_input(&mut active_transcript, &handoff.input_transcript);
+                handoff.active_transcript = active_transcript.take_entries();
                 active_transcript.new_input_entry = true;
                 active_transcript.new_output_entry = true;
             }
@@ -699,46 +727,60 @@ impl RealtimeWebsocketEvents {
             | RealtimeEvent::HistoryTranscriptDelta { .. }
             | RealtimeEvent::HistoryItemCompleted(_) => {}
         }
-        truncate_active_transcript(&mut active_transcript.entries);
+    }
+
+    pub async fn take_completed_transcript(
+        &self,
+        event: &RealtimeEvent,
+        threshold: usize,
+    ) -> Vec<RealtimeTranscriptEntry> {
+        if self.event_parser != RealtimeEventParser::FramelessBidi
+            || !matches!(
+                event,
+                RealtimeEvent::InputTranscriptDone(_) | RealtimeEvent::OutputTranscriptDone(_)
+            )
+        {
+            return Vec::new();
+        }
+        let mut active = self.transcript_state.active.lock().await;
+        // Only the other speaker can still be open after turn.done. Keep their utterance
+        // and everything after it in place so history stays in conversation order.
+        let open_role = match event {
+            RealtimeEvent::InputTranscriptDone(_) if !active.new_output_entry => Some("assistant"),
+            RealtimeEvent::OutputTranscriptDone(_) if !active.new_input_entry => Some("user"),
+            _ => None,
+        };
+        let entries = &active.entries;
+        let end = open_role
+            .and_then(|role| entries.iter().rposition(|entry| entry.role == role))
+            .unwrap_or(entries.len());
+        if end == 0 || transcript_entries_bytes(entries) <= threshold {
+            return Vec::new();
+        }
+        let completed: Vec<_> = active.entries.drain(..end).collect();
+        let recorded = &mut active.flushed_user_inputs;
+        let hash = recorded.hasher().clone();
+        recorded.extend(
+            completed
+                .iter()
+                .filter(|entry| entry.role == "user")
+                .map(|entry| hash.hash_one(entry.text.trim())),
+        );
+        completed
     }
 }
 
 impl RealtimeTranscriptState {
     pub async fn take_transcript_tail(&self) -> Vec<RealtimeTranscriptEntry> {
-        std::mem::take(&mut self.active.lock().await.entries)
+        self.active.lock().await.take_entries()
     }
-}
-
-fn truncate_active_transcript(entries: &mut Vec<RealtimeTranscriptEntry>) {
-    let mut total_bytes = transcript_entries_bytes(entries);
-    while total_bytes > MAX_ACTIVE_TRANSCRIPT_BYTES && entries.len() > 1 {
-        total_bytes = total_bytes.saturating_sub(transcript_entry_bytes(&entries[0]));
-        entries.remove(0);
-    }
-    let Some(entry) = entries.first_mut() else {
-        return;
-    };
-    let entry_overhead = entry.role.len() + 3;
-    let max_text_bytes = MAX_ACTIVE_TRANSCRIPT_BYTES.saturating_sub(entry_overhead);
-    if entry.text.len() <= max_text_bytes {
-        return;
-    }
-    let mut start = entry
-        .text
-        .len()
-        .saturating_sub(max_text_bytes.saturating_sub(TRUNCATED_TRANSCRIPT_PREFIX.len()));
-    while !entry.text.is_char_boundary(start) {
-        start += 1;
-    }
-    entry.text = format!("{TRUNCATED_TRANSCRIPT_PREFIX}{}", &entry.text[start..]);
 }
 
 fn transcript_entries_bytes(entries: &[RealtimeTranscriptEntry]) -> usize {
-    entries.iter().map(transcript_entry_bytes).sum()
-}
-
-fn transcript_entry_bytes(entry: &RealtimeTranscriptEntry) -> usize {
-    entry.role.len() + entry.text.len() + 3
+    entries
+        .iter()
+        .map(|entry| entry.role.len() + entry.text.len() + 3)
+        .sum()
 }
 
 fn append_transcript_delta(
@@ -810,13 +852,17 @@ fn apply_transcript_done(
     });
 }
 
-fn append_handoff_input(entries: &mut Vec<RealtimeTranscriptEntry>, input: &str) {
+fn append_handoff_input(active: &mut ActiveTranscriptState, input: &str) {
     let input = input.trim();
-    if input.is_empty() || contains_transcript_entry(entries, "user", input) {
+    let recorded = &active.flushed_user_inputs;
+    if input.is_empty()
+        || contains_transcript_entry(&active.entries, "user", input)
+        || (!recorded.is_empty() && recorded.contains(&recorded.hasher().hash_one(input)))
+    {
         return;
     }
 
-    entries.push(RealtimeTranscriptEntry {
+    active.entries.push(RealtimeTranscriptEntry {
         role: "user".to_string(),
         text: input.to_string(),
     });
@@ -908,15 +954,28 @@ impl RealtimeWebsocketClient {
         default_headers: HeaderMap,
         transcript_state: RealtimeTranscriptState,
     ) -> Result<RealtimeWebsocketConnection, ApiError> {
-        self.connect_sideband(
-            config,
-            call_id,
-            extra_headers,
-            default_headers,
-            RealtimeSessionInitialization::ExistingCall,
-            transcript_state,
-        )
-        .await
+        // Instant Connect returns a call ID before ICE activates the call. Its sideband
+        // can briefly return 404 while the client connects media in parallel.
+        let mut activation_delays = [100, 300, 800].into_iter();
+        loop {
+            let result = self
+                .connect_sideband(
+                    config.clone(),
+                    call_id,
+                    extra_headers.clone(),
+                    default_headers.clone(),
+                    RealtimeSessionInitialization::ExistingCall,
+                    transcript_state.clone(),
+                )
+                .await;
+            if matches!(&result, Err(ApiError::Api { status, .. }) if *status == StatusCode::NOT_FOUND)
+                && let Some(delay_ms) = activation_delays.next()
+            {
+                sleep(Duration::from_millis(delay_ms)).await;
+                continue;
+            }
+            return result;
+        }
     }
 
     async fn connect_sideband(
@@ -1497,27 +1556,6 @@ mod tests {
             }]
         );
         assert_eq!(second_events.take_transcript_tail().await, vec![]);
-    }
-
-    #[tokio::test]
-    async fn active_transcript_retains_a_bounded_suffix() {
-        let (_tx_message, rx_message) = async_channel::unbounded();
-        let events = RealtimeWebsocketEvents {
-            rx_message,
-            pending_events: Arc::new(Mutex::new(VecDeque::new())),
-            transcript_state: RealtimeTranscriptState::default(),
-            event_parser: RealtimeEventParser::FramelessBidi,
-            is_closed: Arc::new(AtomicBool::new(false)),
-        };
-        let mut oversized = RealtimeEvent::InputTranscriptDelta(RealtimeTranscriptDelta {
-            delta: format!("old{}new", "x".repeat(MAX_ACTIVE_TRANSCRIPT_BYTES)),
-        });
-        events.update_active_transcript(&mut oversized).await;
-
-        let tail = events.take_transcript_tail().await;
-        assert!(transcript_entries_bytes(&tail) <= MAX_ACTIVE_TRANSCRIPT_BYTES);
-        assert!(tail[0].text.starts_with(TRUNCATED_TRANSCRIPT_PREFIX));
-        assert!(tail[0].text.ends_with("new"));
     }
 
     #[test]

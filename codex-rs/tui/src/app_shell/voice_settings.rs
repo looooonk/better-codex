@@ -40,7 +40,8 @@ pub(super) async fn execute(
                 }
                 let selected = if value == "default" { serde_json::Value::Null }
                     else {
-                        let voice = response.voices.v1.iter().find(|voice| voice.wire_name() == value)
+                        let voices = if response.voices.v3.is_empty() { &response.voices.v1 } else { &response.voices.v3 };
+                        let voice = voices.iter().find(|voice| voice.wire_name() == value)
                             .ok_or_else(|| eyre!("Unknown voice. Use /voice settings to list available voices."))?;
                         serde_json::json!(voice)
                     };
@@ -105,9 +106,8 @@ pub(super) fn settings_summary(
     response: &ThreadRealtimeListVoicesResponse,
     devices: &AudioDeviceSelection,
 ) -> String {
-    let names = response
-        .voices
-        .v1
+    let voices = if response.voices.v3.is_empty() { &response.voices.v1 } else { &response.voices.v3 };
+    let names = voices
         .iter()
         .map(|voice| voice.wire_name())
         .collect::<Vec<_>>()

@@ -167,13 +167,13 @@ async fn native_feature_toggles_validate_names_and_persist_the_configured_value(
     let enabled = execute(
         handle.clone(),
         id,
-        WorkspaceRequest::Experimental(Some(("worktrees".to_string(), true))),
+        WorkspaceRequest::Experimental(Some(("shell_snapshot".to_string(), true))),
     )
     .await?;
     let WorkspaceResponse::Notice(enabled) = enabled else {
         panic!("expected configured feature value");
     };
-    assert_eq!(enabled, "worktrees enabled in configuration");
+    assert_eq!(enabled, "shell_snapshot enabled in configuration");
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.transcript.clear();
@@ -198,15 +198,15 @@ async fn native_feature_toggles_validate_names_and_persist_the_configured_value(
     insta::assert_snapshot!("configured_feature_toggle", rendered);
     let persisted: toml::Value =
         toml::from_str(&std::fs::read_to_string(home.path().join("config.toml"))?)?;
-    assert_eq!(persisted["features"]["worktrees"].as_bool(), Some(true));
+    assert_eq!(persisted["features"]["shell_snapshot"].as_bool(), Some(true));
     let disabled = execute(
         handle,
         id,
-        WorkspaceRequest::Experimental(Some(("worktrees".to_string(), false))),
+        WorkspaceRequest::Experimental(Some(("shell_snapshot".to_string(), false))),
     )
     .await?;
     assert!(
-        matches!(disabled, WorkspaceResponse::Notice(message) if message == "worktrees disabled in configuration")
+        matches!(disabled, WorkspaceResponse::Notice(message) if message == "shell_snapshot disabled in configuration")
     );
     app_server.shutdown().await?;
     Ok(())

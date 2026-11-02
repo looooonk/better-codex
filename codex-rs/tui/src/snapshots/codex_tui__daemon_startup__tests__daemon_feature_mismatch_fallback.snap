@@ -1,0 +1,6 @@
+---
+source: tui/src/daemon_startup_tests.rs
+assertion_line: 146
+expression: warning
+---
+Running without the shared background server: This session requires api_key_model_discovery to be disabled.

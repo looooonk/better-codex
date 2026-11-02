@@ -24,7 +24,7 @@ pub(super) async fn run(http: &impl InstallerHttp, legacy: &Daemon) -> Result<Up
     let _operation_lock = legacy.acquire_operation_lock().await?;
     let previous = selected_release(legacy)?;
     anyhow::ensure!(
-        previous.0.ends_with("standalone") && super::manual_update::supported(legacy)?,
+        previous.0.ends_with("better-codex") && super::manual_update::supported(legacy)?,
         "daemon selection changed; retry the update"
     );
     let home = previous
@@ -32,7 +32,7 @@ pub(super) async fn run(http: &impl InstallerHttp, legacy: &Daemon) -> Result<Up
         .parent()
         .and_then(Path::parent)
         .context("package root has no Codex home")?;
-    let root = home.join("packages/app-server-daemon");
+    let root = home.join("packages/better-codex-daemon");
     let settings = legacy.load_settings().await?;
     let running = legacy.running_backend_instance(&settings).await?;
     if running.is_none() && client::probe(&legacy.socket_path).await.is_ok() {

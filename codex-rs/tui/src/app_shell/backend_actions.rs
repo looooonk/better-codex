@@ -349,6 +349,9 @@ impl ShellState {
                     .await
             }
             BackendActionResult::Workspace { thread_id, result } => {
+                if let Ok(super::workspace_requests::WorkspaceResponse::AccountChanged { models: Ok(models) }) = &result {
+                    app_server.replace_available_models(models.clone());
+                }
                 self.complete_workspace_request(thread_id, result);
             }
             BackendActionResult::TurnStart {

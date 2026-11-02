@@ -150,12 +150,14 @@ arboard = { workspace = true }
 app_test_support = { workspace = true }
 codex-cli = { workspace = true }
 codex-mcp = { workspace = true }
+codex-protocol-test-support = { workspace = true }
 core_test_support = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 assert_matches = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 divan = { workspace = true }
 insta = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 pretty_assertions = { workspace = true }
 rand = { workspace = true }
 serial_test = { workspace = true }

@@ -4,6 +4,7 @@ use pretty_assertions::assert_eq;
 
 fn turn(id: &str, status: TurnStatus) -> Turn {
     Turn {
+        root_turn_id: None,
         id: id.to_string(),
         items: Vec::new(),
         items_view: TurnItemsView::Full,

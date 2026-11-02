@@ -1,0 +1,6 @@
+---
+source: tui/src/app_shell/thread_usage_tests.rs
+assertion_line: 48
+expression: thread_usage_line(&usage).unwrap().to_string()
+---
+1.2 credits | ~$0.25 | $0.75 native

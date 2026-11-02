@@ -10,18 +10,20 @@ use crate::session::step_settings::ResolvedStepSettings;
 use crate::session::turn_context::TurnContext;
 use crate::session::turn_context::TurnEnvironment;
 use crate::tools::router::ToolRouter;
-use codex_exec_server::ExecutorCapabilityDiscoverySnapshot;
-use codex_exec_server::ResolvedSelectedCapabilityRoot;
 use codex_extension_api::ExtensionData;
 use codex_file_system::EnvironmentAccess;
 use codex_mcp::McpBinding;
 use codex_otel::SessionTelemetry;
+use codex_plugin::ExecutorPluginHookSource;
 use codex_protocol::items::ModelInvocationContext;
 use codex_protocol::protocol::TurnContextItem;
 use tokio_util::sync::CancellationToken;
 
 /// Request-scoped state that may change between model sampling requests.
+#[derive(Clone)]
 pub(crate) struct StepContext {
+    /// Final serving value for this invocation; retained by its code cell across waits.
+    pub(crate) serving_assessment: Option<Arc<crate::guardian::ServingAssessment>>,
     pub(crate) turn: Arc<TurnContext>,
     /// Preempts this request and yields its code-mode observations when user input arrives.
     pub(crate) preempt: Option<CancellationToken>,
@@ -34,12 +36,12 @@ pub(crate) struct StepContext {
     /// Telemetry context tagged with this sampling request's model.
     pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) environments: TurnEnvironmentSnapshot,
-    /// Capability roots bound to ready environments in this exact step.
-    pub(crate) selected_capability_roots: Vec<ResolvedSelectedCapabilityRoot>,
-    /// Executor-materialized capability files shared by MCP and skills in this exact step.
-    pub(crate) executor_capability_discovery: Option<Arc<ExecutorCapabilityDiscoverySnapshot>>,
+    /// Child bindings captured with this step; configured-only when opted in.
+    pub(crate) inherited_environments: TurnEnvironmentSnapshot,
+    /// Admitted executor hooks bound to this step's discovery, plugin policy, and MCP routing.
+    pub(crate) executor_hook_sources: Vec<ExecutorPluginHookSource>,
     /// Keeps the extension inputs used to build this step's tools for its World State as well.
-    pub(crate) extension_data: ExtensionData,
+    pub(crate) extension_data: Arc<ExtensionData>,
     /// The exact MCP connections, configuration, and catalog captured for this step.
     pub(crate) mcp: Arc<McpBinding>,
     /// The finalized tool plan advertised and executed for this exact sampling request.
@@ -49,7 +51,8 @@ pub(crate) struct StepContext {
 }
 
 impl StepContext {
-    pub(crate) fn uses_incremental_tools(&self) -> bool {
+    /// Whether new context windows should record tool declarations in history.
+    pub(crate) fn incremental_tools_enabled(&self) -> bool {
         self.settings.model_info.use_responses_lite
             && self
                 .turn
@@ -62,20 +65,24 @@ impl StepContext {
     pub(crate) fn environments(&self) -> Vec<(&TurnEnvironment, impl EnvironmentAccess + '_)> {
         self.environments
             .turn_environments()
-            .map(|environment| {
-                let grants = self
-                    .turn
-                    .granted_permissions(&environment.selection.environment_id);
-                (environment, environment.fs_accessor(grants))
-            })
+            .map(|environment| (environment, self.fs_accessor(environment)))
             .collect()
+    }
+
+    pub(crate) fn fs_accessor<'a>(
+        &self,
+        environment: &'a TurnEnvironment,
+    ) -> impl EnvironmentAccess + 'a + use<'a> {
+        let grants = self
+            .turn
+            .granted_permissions(&environment.selection.environment_id);
+        environment.fs_accessor(grants)
     }
 
     /// Persist the context captured for this request, even after a live update.
     pub(crate) fn to_turn_context_item(&self) -> TurnContextItem {
         let mut item = self.turn.to_turn_context_item();
         item.realtime_active = Some(self.realtime.active);
-        item.summary = self.settings.reasoning_summary;
         item
     }
 

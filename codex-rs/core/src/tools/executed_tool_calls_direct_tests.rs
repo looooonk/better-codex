@@ -188,6 +188,7 @@ async fn direct_pending_limit_releases_on_completion_or_dropped_future() {
             arguments: json!({ "argument": "kept" }).to_string(),
         },
         encrypted_function_args: None,
+        native_call: None,
     };
     let prepare = |recorder: &ExecutedToolCalls| {
         recorder.prepare_direct_call(&call, &ToolCallSource::Direct, &step)
@@ -245,7 +246,7 @@ async fn direct_pending_limit_releases_on_completion_or_dropped_future() {
 }
 
 #[tokio::test]
-async fn direct_budget_counts_the_encoded_argument_before_it_enters_history() {
+async fn direct_recording_preserves_encoded_arguments_in_history() {
     let (_, turn) = crate::session::tests::make_session_and_context().await;
     let step = StepContext::for_test(Arc::new(turn));
     let mut features = Features::default();
@@ -253,15 +254,15 @@ async fn direct_budget_counts_the_encoded_argument_before_it_enters_history() {
     let recorder = ExecutedToolCalls::new(&features, &InitialHistory::New);
     let invalid_json = "\"".repeat(5_000);
     let wire_bytes = serialized_json_bytes(&JsonValue::String(invalid_json.clone())).unwrap();
-    assert!(invalid_json.len() < MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES);
-    assert!(wire_bytes > MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES);
+    assert!(wire_bytes > 8 * 1024);
     let call = ToolCall {
         tool_name: codex_tools::ToolName::plain("test_tool"),
         call_id: "direct".to_string(),
         payload: ToolPayload::Function {
-            arguments: invalid_json,
+            arguments: invalid_json.clone(),
         },
         encrypted_function_args: None,
+        native_call: None,
     };
     let mut item = output("direct");
     let ordinary_output = serde_json::to_value(&item).unwrap()["output"].clone();
@@ -273,10 +274,7 @@ async fn direct_budget_counts_the_encoded_argument_before_it_enters_history() {
     assert_eq!(wire["output"], ordinary_output);
     let metadata = &wire["internal_chat_message_metadata_passthrough"];
     let arguments = &metadata["executed_tool_calls"][0]["arguments"];
-    assert!(serialized_json_bytes(arguments).unwrap() < MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES);
-    assert_eq!(
-        arguments["_codex_executed_tool_call_truncated"]["original_bytes"],
-        wire_bytes,
-    );
-    assert!(metadata.get("tool_calls_complete").is_none());
+    assert_eq!(arguments, &JsonValue::String(invalid_json));
+    assert_eq!(serialized_json_bytes(arguments).unwrap(), wire_bytes);
+    assert_eq!(metadata["tool_calls_complete"], true);
 }

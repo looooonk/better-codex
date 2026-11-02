@@ -3,6 +3,18 @@ use crate::app_shell::keybindings::ShellKeymap;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
+async fn configured_presets_key_reads_native_saved_prompts() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = None;
+    shell.dashboard_visible = false;
+    shell.keybindings = ShellKeymap::from_config(&toml::from_str("[chat]\nopen_presets = 'f18'").unwrap()).unwrap();
+    let mut backend = RecordingBackend::default();
+    shell.handle_key(KeyEvent::new(KeyCode::F(18), KeyModifiers::NONE), &config, &mut backend).await.unwrap();
+    assert!(shell.has_pending_backend_action(crate::app_shell::backend_actions::ActionGroup::Workspace));
+}
+
+#[tokio::test]
 async fn remapped_word_delete_reaches_the_composer_and_disables_legacy_aliases() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();

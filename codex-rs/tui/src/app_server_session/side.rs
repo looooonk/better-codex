@@ -58,6 +58,9 @@ impl AppServerSession {
             },
         );
         async move {
+            if mode == ThreadParamsMode::Cloud {
+                color_eyre::eyre::bail!("Cloud conversations cannot be forked in the TUI yet.");
+            }
             let mut params = thread_fork_params_from_config(
                 config.clone(),
                 thread_id,
@@ -82,6 +85,8 @@ impl AppServerSession {
             let mut started = started_thread_from_fork_response(response, &config, mode).await?;
             let side_id = started.session.thread_id.to_string();
             let boundary = ResponseItem::Message {
+                encrypted_content: None,
+                status: None,
                 id: None,
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {

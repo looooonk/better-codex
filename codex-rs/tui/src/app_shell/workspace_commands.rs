@@ -8,7 +8,6 @@ use super::workspace_requests::WorkspaceRequest;
 use super::workspace_requests::WorkspaceResponse;
 use crate::legacy_core::config::Config;
 use codex_app_server_protocol::ReviewTarget;
-use codex_app_server_protocol::ThreadMemoryMode;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
@@ -29,6 +28,10 @@ pub(super) enum WorkspaceCommand {
     Approve,
     Diagnostic(super::diagnostic_commands::DiagnosticCommand),
     New,
+    Archive,
+    Delete,
+    Config,
+    Presets,
     Worktree,
     Resume,
     Fork,
@@ -40,6 +43,9 @@ pub(super) enum WorkspaceCommand {
     Agents,
     Mcp,
     Plugins,
+    Apps,
+    Provider,
+    Account,
     Compact,
     Review,
     Plan,
@@ -112,6 +118,28 @@ impl ShellState {
             }
             WorkspaceCommand::Voice => return self.run_voice_command(args, app_server),
             WorkspaceCommand::New => Some(CommandPaletteAction::NewSession),
+            WorkspaceCommand::Config => {
+                self.dashboard_visible = true;
+                self.set_dashboard_route(DashboardRoute::Status);
+                self.dashboard_scroll.set(0);
+                self.session_list.focused = false;
+                self.settings.focused = true;
+                return Ok(());
+            }
+            WorkspaceCommand::Archive | WorkspaceCommand::Delete => {
+                if self.block_session_switch_if_busy() {
+                    return Ok(());
+                }
+                if command == WorkspaceCommand::Delete {
+                    self.inspect_session_delete(
+                        app_server,
+                        self.thread_id,
+                        self.thread_name.clone().unwrap_or_else(|| "current session".into()),
+                    );
+                    return Ok(());
+                }
+                None
+            }
             WorkspaceCommand::Resume => Some(CommandPaletteAction::ResumeThread),
             WorkspaceCommand::Fork => Some(CommandPaletteAction::ForkThread),
             WorkspaceCommand::Model => Some(CommandPaletteAction::SwitchModel),
@@ -163,6 +191,7 @@ impl ShellState {
             | WorkspaceCommand::Memory
             | WorkspaceCommand::Cd
             | WorkspaceCommand::Rename => None,
+            WorkspaceCommand::Presets | WorkspaceCommand::Apps | WorkspaceCommand::Provider | WorkspaceCommand::Account => None,
         };
         if let Some(action) = action {
             return self
@@ -176,6 +205,8 @@ impl ShellState {
                 return Ok(());
             }
         };
+        if matches!(request, WorkspaceRequest::Account(super::workspace_requests::AccountCommand::Switch { .. }) | WorkspaceRequest::Provider(super::workspace_requests::ProviderCommand::Use { .. }))
+            && self.block_session_switch_if_busy() { return Ok(()); }
         if matches!(request, WorkspaceRequest::Review(_))
             && (self.active_turn_id.is_some() || self.has_pending_backend_actions())
         {
@@ -199,6 +230,11 @@ impl ShellState {
 
     fn workspace_request(&self, command: WorkspaceCommand, args: &str) -> Result<WorkspaceRequest> {
         Ok(match command {
+            WorkspaceCommand::Archive => WorkspaceRequest::Archive,
+            WorkspaceCommand::Presets => WorkspaceRequest::Presets {
+                cwd: self.cwd.clone(),
+                command: super::workspace_requests::PresetCommand::parse(args)?,
+            },
             WorkspaceCommand::Mention => WorkspaceRequest::Mention {
                 cwd: self.cwd.clone(),
                 query: args.to_string(),
@@ -255,12 +291,10 @@ impl ShellState {
                 }
                 WorkspaceRequest::Rename(args.to_string())
             }
-            WorkspaceCommand::Memory => WorkspaceRequest::Memory(match args {
-                "" => None,
-                "on" => Some(ThreadMemoryMode::Enabled),
-                "off" => Some(ThreadMemoryMode::Disabled),
-                _ => bail!("usage: /memory [on|off]"),
-            }),
+            WorkspaceCommand::Memory => WorkspaceRequest::Memory { cwd: self.cwd.clone(), command: super::workspace_requests::MemoryCommand::parse(args)? },
+            WorkspaceCommand::Apps => WorkspaceRequest::Apps(super::workspace_requests::AppsCommand::parse(args)?),
+            WorkspaceCommand::Provider => WorkspaceRequest::Provider(super::workspace_requests::ProviderCommand::parse(args)?),
+            WorkspaceCommand::Account => WorkspaceRequest::Account(super::workspace_requests::AccountCommand::parse(args)?),
             WorkspaceCommand::Experimental => {
                 let parts = args.split_whitespace().collect::<Vec<_>>();
                 WorkspaceRequest::Experimental(match parts.as_slice() {
@@ -295,6 +329,8 @@ impl ShellState {
             | WorkspaceCommand::Diagnostic(_)
             | WorkspaceCommand::Worktree
             | WorkspaceCommand::New
+            | WorkspaceCommand::Delete
+            | WorkspaceCommand::Config
             | WorkspaceCommand::Resume
             | WorkspaceCommand::Fork
             | WorkspaceCommand::Model
@@ -338,7 +374,32 @@ impl ShellState {
             .to_string();
         }
         match result {
+            Ok(WorkspaceResponse::ProviderSelected { id, model }) => {
+                self.push_system(format!("Default provider: {id}. Use /new to start with this provider."));
+                self.next_model_provider = Some(id);
+                self.next_provider_model = model;
+            }
+            Ok(WorkspaceResponse::AccountLogin { login_id, auth_url }) => self.open_saved_account_login(login_id, auth_url),
+            Ok(WorkspaceResponse::AccountChanged { models }) => {
+                self.request_rate_limits_refresh();
+                match models {
+                    Ok(models) => { self.available_models = models; self.push_system("Available models refreshed; usage will refresh shortly."); }
+                    Err(error) => self.push_error(format!("Model refresh failed: {error}. Use /account refresh to retry.")),
+                }
+            }
             Ok(WorkspaceResponse::MentionFiles(files)) => self.open_file_mentions(files),
+            Ok(WorkspaceResponse::Archived) => self.handle_remote_thread_lifecycle(
+                &thread_id.to_string(),
+                super::session_lifecycle::RemoteThreadLifecycle::Archived,
+            ),
+            Ok(WorkspaceResponse::Preset(input)) => {
+                if self.composer.is_empty() {
+                    self.composer.set_text(input);
+                    self.push_status("preset loaded; press Enter to send");
+                } else {
+                    self.push_system(format!("Preset ready; your draft was kept:\n{input}"));
+                }
+            }
             Ok(WorkspaceResponse::GuardianApproved(id)) => {
                 self.recent_guardian_denials.retain(|event| event.id != id);
                 self.push_system(

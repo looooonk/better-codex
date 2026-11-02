@@ -41,6 +41,9 @@ class ReleasePackageTest(unittest.TestCase):
                 inputs / "codex-code-mode-host",
                 "#!/bin/sh\nexit 0\n",
             )
+            executor = self.write_executable(
+                inputs / "codex-exec-server", "#!/bin/sh\nprintf 'executor fixture\\n'\n"
+            )
             rg = self.write_executable(inputs / "rg", "#!/bin/sh\nexit 0\n")
             target = host_target()
             for name in ("COPYING", "LICENSE-MIT", "UNLICENSE"):
@@ -59,6 +62,8 @@ class ReleasePackageTest(unittest.TestCase):
                         str(codex),
                         "--code-mode-host-bin",
                         str(host),
+                        "--exec-server-bin",
+                        str(executor),
                         "--rg-bin",
                         str(rg),
                         "--rg-license-dir",
@@ -101,6 +106,7 @@ class ReleasePackageTest(unittest.TestCase):
                 expected_modes = {
                     "better-codex-package/bin/codex": 0o755,
                     "better-codex-package/bin/codex-code-mode-host": 0o755,
+                    "better-codex-package/bin/codex-exec-server": 0o755,
                     "better-codex-package/codex-path/rg": 0o755,
                 }
                 if "linux" in target:
@@ -148,6 +154,14 @@ class ReleasePackageTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(output, "better-codex 0.1.0-alpha.2\n")
+            self.assertEqual(
+                subprocess.check_output(
+                    [install_root / "current/bin/codex-exec-server", "--help"],
+                    env=upgrade_environment,
+                    text=True,
+                ),
+                "executor fixture\n",
+            )
             self.assertEqual(
                 (install_root / "current").resolve(),
                 (install_root / "releases" / f"0.1.0-alpha.2-{target}").resolve(),

@@ -1,6 +1,6 @@
 ---
 source: tui/src/app_shell/workspace_requests_tests.rs
-assertion_line: 83
+assertion_line: 198
 expression: rendered
 ---
 
@@ -8,7 +8,7 @@ expression: rendered
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ◆ CONVERSATION
- ▎ SYSTEM  worktrees enabled in configuration
+ ▎ SYSTEM  shell_snapshot enabled in configuration
  ▎ CODEX  The new shell owns the fullscreen surface.
 
 

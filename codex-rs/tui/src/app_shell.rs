@@ -32,6 +32,7 @@ use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnItemsView;
@@ -79,9 +80,6 @@ mod composer_layout;
 mod composer_navigation;
 mod composer_render;
 mod daemon;
-mod daemon_recovery;
-pub(crate) use daemon_recovery::DaemonRecovery;
-pub(crate) use daemon_recovery::recover_daemon;
 mod dashboard;
 mod dashboard_help;
 mod dashboard_rate_limits;
@@ -436,6 +434,8 @@ struct ShellState {
     can_accept_direct_input: bool,
     daybreak_enabled: bool,
     model_provider_id: String,
+    next_model_provider: Option<String>,
+    next_provider_model: Option<String>,
     voice: voice::VoiceState,
     worktree_loader: Option<crate::managed_worktree::WorktreeConfigLoader>,
     pending_worktree: Option<managed_worktree::PendingWorktree>,
@@ -599,6 +599,8 @@ impl ShellState {
             can_accept_direct_input: session.can_accept_direct_input,
             daybreak_enabled: session.daybreak_enabled,
             model_provider_id: session.model_provider_id,
+            next_model_provider: None,
+            next_provider_model: None,
             voice: voice::VoiceState::default(),
             worktree_loader: None,
             pending_worktree: None,
@@ -726,8 +728,8 @@ impl ShellState {
             let terminal_turn_has_in_progress_file_change = turn.status != TurnStatus::InProgress
                 && turn.items.iter().any(|item| {
                     matches!(
-                        item,
-                        ThreadItem::FileChange {
+                        &item.payload,
+                        ThreadItemPayload::FileChange {
                             status: PatchApplyStatus::InProgress,
                             ..
                         }
@@ -745,8 +747,8 @@ impl ShellState {
                 };
                 let origin = if turn.status != TurnStatus::InProgress
                     && matches!(
-                        &item,
-                        ThreadItem::FileChange {
+                        &item.payload,
+                        ThreadItemPayload::FileChange {
                             status: PatchApplyStatus::InProgress,
                             ..
                         }
@@ -1752,8 +1754,8 @@ impl ShellState {
         rewind_anchor: Option<rewind::RewindAnchor>,
     ) {
         self.agent_activity.reduce_completed(&item);
-        match item {
-            ThreadItem::UserMessage {
+        match item.payload {
+            ThreadItemPayload::UserMessage {
                 client_id, content, ..
             } => {
                 let text = format_user_inputs(&content);
@@ -1781,7 +1783,7 @@ impl ShellState {
                     }
                 }
             }
-            ThreadItem::HookPrompt { fragments, .. } => {
+            ThreadItemPayload::HookPrompt { fragments, .. } => {
                 let text = fragments
                     .into_iter()
                     .map(|fragment| fragment.text)
@@ -1791,7 +1793,7 @@ impl ShellState {
                     self.push_status(format!("hook prompt: {text}"));
                 }
             }
-            ThreadItem::AgentMessage {
+            ThreadItemPayload::AgentMessage {
                 id,
                 text,
                 questions,
@@ -1808,7 +1810,7 @@ impl ShellState {
                     self.push_assistant_for_item(id, text);
                 }
             }
-            ThreadItem::FunctionCallOutput {
+            ThreadItemPayload::FunctionCallOutput {
                 id,
                 name,
                 namespace,
@@ -1821,7 +1823,7 @@ impl ShellState {
                     self.push_output_with_status_for_item(id, text, ToolBlockStatus::Success);
                 }
             }
-            ThreadItem::Plan { id, text, .. } => {
+            ThreadItemPayload::Plan { id, text, .. } => {
                 if self.streaming_plan_item_id.as_deref() == Some(id.as_str())
                     || (self.streaming_plan_item_id.is_none() && self.streaming_plan == text)
                 {
@@ -1831,7 +1833,7 @@ impl ShellState {
                     self.push_plan_for_item(id, text);
                 }
             }
-            ThreadItem::Reasoning {
+            ThreadItemPayload::Reasoning {
                 summary, content, ..
             } => {
                 let text = if summary.is_empty() {
@@ -1844,7 +1846,7 @@ impl ShellState {
                     self.push_status(format!("reasoning: {text}"));
                 }
             }
-            ThreadItem::CommandExecution {
+            ThreadItemPayload::CommandExecution {
                 id,
                 command,
                 status,
@@ -1867,7 +1869,7 @@ impl ShellState {
                     self.update_output_status_for_item(&id, tool_status);
                 }
             }
-            ThreadItem::FileChange {
+            ThreadItemPayload::FileChange {
                 id,
                 changes,
                 status,
@@ -1881,7 +1883,7 @@ impl ShellState {
                     tool_status_from_debug(&status),
                 );
             }
-            ThreadItem::McpToolCall {
+            ThreadItemPayload::McpToolCall {
                 id,
                 server,
                 tool,
@@ -1909,7 +1911,7 @@ impl ShellState {
                     self.push_error(format!("mcp error: {}", error.message));
                 }
             }
-            ThreadItem::DynamicToolCall {
+            ThreadItemPayload::DynamicToolCall {
                 id,
                 namespace,
                 tool,
@@ -1943,7 +1945,7 @@ impl ShellState {
                     self.push_output_with_status_for_item(id, output, tool_status);
                 }
             }
-            ThreadItem::CollabAgentToolCall {
+            ThreadItemPayload::CollabAgentToolCall {
                 id,
                 tool,
                 status,
@@ -1966,7 +1968,7 @@ impl ShellState {
                     ),
                 }
             }
-            ThreadItem::SubAgentActivity {
+            ThreadItemPayload::SubAgentActivity {
                 id,
                 kind,
                 agent_path,
@@ -1975,7 +1977,7 @@ impl ShellState {
                 let title = format!("subagent {kind:?}: {agent_path}");
                 self.upsert_subagent_activity(id, title, "recorded".to_string());
             }
-            ThreadItem::WebSearch(item) => {
+            ThreadItemPayload::WebSearch(item) => {
                 let title = format!("web search: {}", item.query);
                 self.upsert_tool_activity(
                     item.id.clone(),
@@ -1997,12 +1999,12 @@ impl ShellState {
                     );
                 }
             }
-            ThreadItem::ImageView { id, path } => {
+            ThreadItemPayload::ImageView { id, path } => {
                 let title = format!("view image: {path}");
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
                 self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
             }
-            ThreadItem::Sleep(item) => {
+            ThreadItemPayload::Sleep(item) => {
                 let codex_app_server_protocol::SleepItem {
                     id, duration_ms, ..
                 } = item;
@@ -2010,7 +2012,7 @@ impl ShellState {
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
                 self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
             }
-            ThreadItem::ImageGeneration(item) => {
+            ThreadItemPayload::ImageGeneration(item) => {
                 let host = if self.resume_cwd_runtime.uses_remote_workspace_or_environment {
                     tool_payload::ArtifactHost::Remote
                 } else {
@@ -2028,13 +2030,13 @@ impl ShellState {
                     self.push_output_with_status_for_item(item.id, output, tool_status);
                 }
             }
-            ThreadItem::EnteredReviewMode { review, .. } => {
+            ThreadItemPayload::EnteredReviewMode { review, .. } => {
                 self.push_status(format!("entered review mode: {review}"));
             }
-            ThreadItem::ExitedReviewMode { review, .. } => {
+            ThreadItemPayload::ExitedReviewMode { review, .. } => {
                 self.push_status(format!("exited review mode: {review}"));
             }
-            ThreadItem::ContextCompaction { .. } => {
+            ThreadItemPayload::ContextCompaction { .. } => {
                 self.push_status("context compacted");
             }
         }
@@ -2050,11 +2052,11 @@ impl ShellState {
 
     fn record_item_activity(&mut self, item: &ThreadItem, title: String, status: &str) {
         let id = item.id().to_string();
-        match item {
-            ThreadItem::CollabAgentToolCall { .. } | ThreadItem::SubAgentActivity { .. } => {
+        match &item.payload {
+            ThreadItemPayload::CollabAgentToolCall { .. } | ThreadItemPayload::SubAgentActivity { .. } => {
                 self.upsert_subagent_activity(id, title, status.to_string());
             }
-            ThreadItem::FileChange { .. } => {}
+            ThreadItemPayload::FileChange { .. } => {}
             _ => self.upsert_tool_activity(id, title, status.to_string()),
         }
     }
@@ -2365,6 +2367,8 @@ impl ShellState {
             can_accept_direct_input: true,
             daybreak_enabled: false,
             model_provider_id: "openai".to_string(),
+            next_model_provider: None,
+            next_provider_model: None,
             voice: voice::VoiceState::default(),
             worktree_loader: None,
             pending_worktree: None,
@@ -2667,6 +2671,8 @@ pub mod bench_support {
             can_accept_direct_input: true,
             daybreak_enabled: false,
             model_provider_id: "openai".to_string(),
+            next_model_provider: None,
+            next_provider_model: None,
             voice: voice::VoiceState::default(),
             worktree_loader: None,
             pending_worktree: None,

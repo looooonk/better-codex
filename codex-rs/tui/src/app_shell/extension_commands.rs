@@ -83,7 +83,7 @@ pub(super) async fn execute(
             let response: HooksListResponse = client
                 .request_typed(ClientRequest::HooksList {
                     request_id: workspace_request_id("hook-config"),
-                    params: HooksListParams { cwds: vec![cwd] },
+                    params: HooksListParams { cwds: vec![cwd], thread_id: None },
                 })
                 .await?;
             let Some(hook) = response

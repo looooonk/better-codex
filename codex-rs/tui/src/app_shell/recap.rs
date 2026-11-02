@@ -231,6 +231,8 @@ impl ShellState {
                 .map(|profile| profile.id.clone()),
             mcp_server_names: config.mcp_servers.get().keys().cloned().collect(),
         };
+        let prompt = RecapPrompt::new(&history).render().into_text()
+            .ok_or_else(|| eyre!("Recap instructions must be text"))?.to_string();
         let cancellation = CancellationToken::new();
         let cancelled = cancellation.clone();
         let worker_client = client.clone();
@@ -248,7 +250,7 @@ impl ShellState {
             turn_revision: self.automatic_recap.revision,
             owner: self.thread_id,
             revision: self.recap_revision(),
-            prompt: RecapPrompt::new(&history).render(),
+            prompt,
             client,
             cancellation,
             stage: Some(stage),

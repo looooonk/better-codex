@@ -21,6 +21,9 @@ use codex_features::FEATURES;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::TrustLevel;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::LegacyAppPathString;
+use codex_utils_path_uri::PathConvention;
+use codex_utils_path_uri::PathUri;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use serde_json::Value as JsonValue;
@@ -296,9 +299,12 @@ pub(crate) async fn read_effective_config(
 
 pub(crate) async fn write_skill_enabled(
     request_handle: AppServerRequestHandle,
-    path: AbsolutePathBuf,
+    path: PathUri,
     enabled: bool,
 ) -> Result<()> {
+    // TODO(anp): Support foreign skill paths through skills/config/write and persisted config.
+    // Both still require host-native paths, so retain that restriction here.
+    let path = path.to_abs_path()?;
     let request_id = RequestId::String(format!("tui-skill-config-write-{}", Uuid::new_v4()));
     let _: SkillsConfigWriteResponse = request_handle
         .request_typed(ClientRequest::SkillsConfigWrite {

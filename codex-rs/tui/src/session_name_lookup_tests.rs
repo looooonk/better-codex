@@ -35,6 +35,7 @@ impl SessionNameReader for Reader {
 }
 fn page(cursor: Option<String>) -> ThreadListResponse {
     ThreadListResponse {
+        read_states: None,
         data: Vec::new(),
         next_cursor: cursor,
         backwards_cursor: None,
@@ -99,6 +100,7 @@ async fn exact_label_includes_exec_sessions_and_is_verified_before_use() {
     let mut partial = exact.clone();
     partial.name = Some("requested name suffix".into());
     let reader = reader([ThreadListResponse {
+        read_states: None,
         data: vec![partial, exact.clone()],
         next_cursor: None,
         backwards_cursor: None,
@@ -119,7 +121,8 @@ async fn exact_label_includes_exec_sessions_and_is_verified_before_use() {
             .map(|request| (
                 request.search_term.clone(),
                 request.cursor.clone(),
-                request.source_kinds.clone()
+                request.source_kinds.clone(),
+                request.model_providers.clone(),
             ))
             .collect::<Vec<_>>(),
         vec![(
@@ -127,7 +130,8 @@ async fn exact_label_includes_exec_sessions_and_is_verified_before_use() {
             None,
             Some(crate::resume_source_kinds(
                 /*include_non_interactive*/ true
-            ))
+            )),
+            Some(Vec::new()),
         )]
     );
 }
@@ -138,6 +142,7 @@ async fn duplicate_names_and_paginated_matches_require_uuid() {
     let mut second = first.clone();
     second.id = "01987b77-33b8-76e3-9a7f-a367513be005".into();
     let reader = reader([ThreadListResponse {
+        read_states: None,
         data: vec![first.clone(), second.clone()],
         next_cursor: None,
         backwards_cursor: None,
@@ -157,6 +162,7 @@ async fn duplicate_names_and_paginated_matches_require_uuid() {
     let reader = self::reader([
         page(Some("older".into())),
         ThreadListResponse {
+        read_states: None,
             data: vec![first.clone()],
             next_cursor: None,
             backwards_cursor: None,
@@ -178,6 +184,7 @@ async fn renamed_session_is_not_used_from_stale_list_metadata() {
     let mut current = listed.clone();
     current.name = Some("renamed in another client".into());
     let reader = reader([ThreadListResponse {
+        read_states: None,
         data: vec![listed],
         next_cursor: None,
         backwards_cursor: None,

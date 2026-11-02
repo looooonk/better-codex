@@ -58,6 +58,7 @@ async fn stalled_metadata_commands_keep_a_bounded_request_namespace() {
         client_name: "metadata-test".into(),
         client_version: "0.0.0".into(),
         experimental_api: true,
+        required_human_approval: true,
         mcp_server_openai_form_elicitation: false,
         opt_out_notification_methods: Vec::new(),
         channel_capacity: 32,
@@ -72,7 +73,7 @@ async fn stalled_metadata_commands_keep_a_bounded_request_namespace() {
     for _ in 0..16 {
         let runner = runner.clone();
         tasks.spawn(async move {
-            let mut command = WorkspaceCommand::new(["git", "status"]);
+            let mut command = WorkspaceCommand::new(["git", "status"], std::path::PathBuf::from("/workspace"));
             command.timeout = Duration::from_secs(60);
             command.output_bytes_cap = 1_000_000;
             tokio::time::timeout(Duration::from_secs(10), runner.run(command)).await

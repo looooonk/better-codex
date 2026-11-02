@@ -49,6 +49,7 @@ fn token_panel_renders_billions_and_trillions() {
 fn token_panel_includes_estimated_thread_usage() {
     let mut shell = ShellState::snapshot_fixture();
     shell.thread_usage = Some(codex_app_server_protocol::ThreadUsage {
+        native_usage_usd_micros: None,
         thread_id: shell.thread_id.to_string(),
         estimated_usage_credits_micros: 5_200_000,
         estimated_usage_usd_micros: Some(1_824_000),

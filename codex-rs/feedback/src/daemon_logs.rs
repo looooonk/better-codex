@@ -15,7 +15,7 @@ const LOG_NAMES: [&str; 2] = ["daemon-updater.stderr.log", "app-server-updater.s
 /// Collect at most two 256 KiB updater tails (512 KiB total) from the app-server host.
 /// Call only after feedback consent includes logs, on a blocking worker.
 pub fn daemon_log_attachments(codex_home: &Path) -> Vec<FeedbackAttachment> {
-    let directory = codex_home.join("app-server-daemon");
+    let directory = codex_home.join("better-codex-daemon");
     let mut attachments = Vec::new();
     for suffix in ["", ".previous"] {
         for name in LOG_NAMES {

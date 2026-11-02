@@ -71,7 +71,7 @@ fn long_text_and_file_image_delivery_is_lossless_bounded_and_fully_budgeted() {
     let context = ComposedContext {
         sections: vec![SectionOutput {
             id: "planned_action",
-            delivery: SectionDelivery::UserContent(vec![
+            delivery: SectionDelivery::user_content(vec![
                 Budgeted::required(ContentItem::InputText { text: text.clone() }),
                 Budgeted::required(ContentItem::InputImage {
                     image: file_image.clone(),
@@ -103,9 +103,8 @@ fn long_text_and_file_image_delivery_is_lossless_bounded_and_fully_budgeted() {
         .collect::<Vec<_>>();
     assert_eq!(parts.concat(), text);
     assert!(
-        parts
-            .iter()
-            .all(|part| part.len() <= TruncationPolicy::Tokens(9_000).byte_budget())
+        parts.iter().all(|part| part.len()
+            <= TruncationPolicy::Tokens(MAX_TEXT_PART_ESTIMATED_TOKENS).byte_budget())
     );
     assert!(estimated >= crate::estimate_input_tokens(&messages[0]));
     let mut expected_inputs = parts
@@ -144,7 +143,7 @@ fn sender_restrictions_survive_budget_trimming_for_both_reviewers() {
         }
         .compose(
             presentation,
-            RenderedTranscript {
+            PreparedTranscript {
                 items: vec![Budgeted::optional(
                     crate::TranscriptContent::Text("old tool output ".repeat(/*n*/ 2_000)),
                     BudgetPriority::Tool,
@@ -177,9 +176,11 @@ fn sender_restrictions_survive_budget_trimming_for_both_reviewers() {
         };
         assert_eq!(
             items,
-            vec![Budgeted::required(ContentItem::InputText {
-                text: sender[0].clone()
-            })]
+            vec![Budgeted::required(SectionContent::Other(
+                ContentItem::InputText {
+                    text: sender[0].clone()
+                }
+            ))]
         );
         assert!(matches!(
             context.enforce_budget(

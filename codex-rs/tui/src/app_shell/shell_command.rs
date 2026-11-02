@@ -33,8 +33,7 @@ impl ShellCommand {
     }
 
     pub(super) fn workspace_command(&self, cwd: &Path) -> WorkspaceCommand {
-        WorkspaceCommand::new(["sh", "-lc", self.command.as_str()])
-            .cwd(cwd)
+        WorkspaceCommand::new(["sh", "-lc", self.command.as_str()], cwd)
             .timeout(SHELL_COMMAND_TIMEOUT)
     }
 }

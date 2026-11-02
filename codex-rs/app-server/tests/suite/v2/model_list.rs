@@ -102,6 +102,31 @@ requires_openai_auth = true
         .with_env_overrides(&[("OPENAI_API_KEY", None), ("CODEX_API_KEY", None)])
         .build_initialized()
         .await?;
+    // Exercise runtime toggles after login has replaced the startup catalog manager.
+    if let Some(enabled) = app_enablement {
+        let _: ExperimentalFeatureEnablementSetResponse = mcp
+            .request(
+                |request_id| ClientRequest::ExperimentalFeatureEnablementSet {
+                    request_id,
+                    params: ExperimentalFeatureEnablementSetParams {
+                        enablement: [("api_key_model_discovery".to_string(), !enabled)].into(),
+                    },
+                },
+            )
+            .await?;
+    }
+    let config_path = codex_home.path().join("config.toml");
+    let config = std::fs::read_to_string(&config_path)?
+        .replace("name = \"OpenAI\"", "name = \"After login\"");
+    std::fs::write(config_path, config)?;
+    let login = mcp.send_login_account_api_key_request("test-key").await?;
+    let _: codex_app_server_protocol::LoginAccountResponse = mcp.read_response(login).await?;
+    let _: ModelListResponse = mcp
+        .request(|request_id| ClientRequest::ModelList {
+            request_id,
+            params: ModelListParams::default(),
+        })
+        .await?;
     let mut bundled = codex_models_manager::bundled_models_response()?.models;
     bundled.sort_by_key(|model| model.priority);
     let mut bundled = ModelPreset::filter_by_auth(
@@ -147,14 +172,7 @@ requires_openai_auth = true
     assert_eq!(
         response,
         ModelListResponse {
-            data: expected
-                .iter()
-                .map(|preset| Model {
-                    // These catalogs retain personality metadata; the cache fixture does not.
-                    supports_personality: preset.supports_personality,
-                    ..model_from_preset(preset)
-                })
-                .collect(),
+            data: expected.iter().map(model_from_preset).collect(),
             next_cursor: None,
         }
     );
@@ -202,10 +220,6 @@ fn model_from_preset(preset: &ModelPreset) -> Model {
             .collect(),
         default_reasoning_effort: preset.default_reasoning_effort.clone(),
         input_modalities: preset.input_modalities.clone(),
-        // `write_models_cache().await` round-trips through a simplified ModelInfo fixture that does not
-        // preserve personality placeholders in base instructions, so app-server list results from
-        // cache report `supports_personality = false`.
-        // todo(sayan): fix, maybe make roundtrip use ModelInfo only
         supports_personality: false,
         multi_agent_version: preset.multi_agent_version.map(Into::into),
         additional_speed_tiers: preset.additional_speed_tiers.clone(),

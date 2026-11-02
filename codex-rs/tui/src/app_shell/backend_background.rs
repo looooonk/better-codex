@@ -75,6 +75,8 @@ pub(super) async fn count_descendants(
                 .request_typed(ClientRequest::ThreadList {
                     request_id: app_shell_request_id("app-shell-descendants"),
                     params: ThreadListParams {
+            attached_to_thread_id: None,
+            excluded_thread_ids: None,
                         originators: None,
                         project_id: None,
                         section_id: None,
@@ -82,7 +84,7 @@ pub(super) async fn count_descendants(
                         limit: Some(DESCENDANT_PAGE_SIZE),
                         sort_key: None,
                         sort_direction: None,
-                        model_providers: None,
+                        model_providers: Some(Vec::new()),
                         source_kinds: Some(all_thread_source_kinds()),
                         archived: Some(archived),
                         cwd: None,
@@ -132,6 +134,9 @@ pub(super) async fn start_turn(
         .request_typed(ClientRequest::TurnStart {
             request_id: app_shell_request_id("app-shell-turn-start"),
             params: TurnStartParams {
+                parent_turn_id: None,
+                root_turn_id: None,
+                responsesapi_client_metadata_patch: None,
                 thread_id: params.thread_id.to_string(),
                 client_user_message_id: Some(params.client_user_message_id),
                 input: params.items,

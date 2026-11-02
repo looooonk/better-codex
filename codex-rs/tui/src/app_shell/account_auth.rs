@@ -203,6 +203,13 @@ impl AccountAuthState {
 }
 
 impl ShellState {
+    pub(super) fn open_saved_account_login(&mut self, login_id: String, auth_url: String) {
+        self.open_account_auth(LoginMethodAvailability::ChatGptOnly);
+        if let Some(state) = &mut self.pending_account_auth {
+            state.mode = AccountAuthMode::Browser { login_id, auth_url };
+        }
+    }
+
     pub(super) fn open_account_auth(&mut self, login_methods: LoginMethodAvailability) {
         self.close_agent_log();
         self.close_tool_output();

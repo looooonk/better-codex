@@ -1,0 +1,8 @@
+---
+source: tui/src/app_shell/workspace_requests/memory_tests.rs
+assertion_line: 25
+expression: message
+---
+Memory ready: 0 consolidated sessions.
+Use memories: off. Generate memories: on.
+/memory use on|off; /memory generate on|off; /memory on|off for this session; /memory read for its summary.

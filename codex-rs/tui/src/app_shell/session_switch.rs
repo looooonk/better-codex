@@ -26,13 +26,29 @@ impl ShellState {
             return Ok(());
         }
 
-        let session_config = self.current_session_config(config)?;
+        let mut session_config = self.current_session_config(config)?;
+        let refresh_catalog = self.next_model_provider.is_some();
+        if refresh_catalog {
+            session_config.model = self.next_provider_model.clone();
+            session_config.model_reasoning_effort = None;
+            session_config.service_tier = Some(codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE.to_string());
+        }
 
         self.finish_subscription_cleanup().await;
         let started = app_server
-            .start_thread_with_session_start_source(&session_config, Some(ThreadStartSource::Clear))
+            .start_thread_with_session_start_source(&session_config, Some(ThreadStartSource::Clear), self.next_model_provider.as_deref().or(Some(self.model_provider_id.as_str())))
             .await?;
+        self.next_model_provider = None;
+        self.next_provider_model = None;
         self.complete_session_switch(started, app_server).await;
+        if refresh_catalog {
+            let thread_id = self.thread_id;
+            let request = app_server.workspace_request_in_background(thread_id,
+                super::workspace_requests::WorkspaceRequest::Account(super::workspace_requests::AccountCommand::Refresh));
+            self.start_backend_action(ActionGroup::Workspace, "refreshing models", async move {
+                BackendActionResult::Workspace { thread_id, result: request.await }
+            });
+        }
         self.session_list.focused = false;
         self.settings.focused = false;
         self.agents_focused = false;
@@ -44,6 +60,7 @@ impl ShellState {
         session_config.tui_auto_recap = self.automatic_recap.enabled;
         session_config.daybreak_enabled = self.daybreak_enabled;
         session_config.model = Some(self.model.clone());
+        session_config.model_provider_id = self.model_provider_id.clone();
         session_config.model_reasoning_effort = self.reasoning_effort.clone();
         session_config.service_tier = self.service_tier.clone();
         session_config.personality = self.personality;

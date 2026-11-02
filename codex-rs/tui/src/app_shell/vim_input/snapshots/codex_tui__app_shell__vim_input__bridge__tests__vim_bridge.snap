@@ -41,8 +41,8 @@ function! s:RefreshSlashCommandHighlight() abort
   endif
   let l:boundary = match(l:remaining, s:RustWhitespaceAtom)
   let l:command = l:boundary < 0 ? l:remaining : strpart(l:remaining, 0, l:boundary)
-  let l:valid = index(['/find', '/keymap', '/statusline', '/title', '/pets', '/attach', '/detach', '/ide', '/mention', '/approve', '/export', '/recap', '/daybreak', '/worktree', '/usage', '/side', '/btw', '/daemon', '/copy', '/goal', '/review', '/plan', '/skills', '/hooks', '/experimental', '/memory', '/cd', '/rename', '/voice'], l:command) >= 0
-  if !l:valid && index(['/init', '/warnings', '/debug-config', '/rollout', '/clear', '/login', '/logout', '/vim', '/exit', '/new', '/resume', '/fork', '/model', '/permissions', '/status', '/agent', '/mcp', '/plugins', '/compact', '/ps', '/clean', '/pwd', '/diff', '/import', '/theme'], l:command) >= 0
+  let l:valid = index(['/presets', '/find', '/keymap', '/statusline', '/title', '/pets', '/attach', '/detach', '/ide', '/mention', '/approve', '/export', '/recap', '/daybreak', '/worktree', '/usage', '/side', '/btw', '/daemon', '/copy', '/goal', '/apps', '/provider', '/account', '/review', '/plan', '/skills', '/hooks', '/experimental', '/memory', '/cd', '/rename', '/voice'], l:command) >= 0
+  if !l:valid && index(['/config', '/archive', '/delete', '/init', '/warnings', '/debug-config', '/rollout', '/clear', '/login', '/logout', '/vim', '/exit', '/new', '/resume', '/fork', '/model', '/permissions', '/status', '/agent', '/mcp', '/plugins', '/compact', '/ps', '/clean', '/pwd', '/diff', '/import', '/theme'], l:command) >= 0
     let l:tail = strpart(l:remaining, strlen(l:command))
     let l:valid = matchend(l:tail, '^' . s:RustWhitespaceAtom . '*') == strlen(l:tail)
   endif

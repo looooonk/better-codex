@@ -1,14 +1,18 @@
 use anyhow::Result;
+use codex_config::types::Personality;
 use codex_core::TurnInputRequest;
 use codex_history::InitialHistory;
 use codex_history::ResumedHistory;
 use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
+use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::LoadThreadHistoryParams;
+use codex_thread_store::ThreadStoreResumePreparation;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
@@ -21,6 +25,51 @@ use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
+
+/// A supplied preparation must select the prepared store path instead of silently falling back to
+/// an ordinary resume.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_uses_prepared_store_path_when_preparation_is_present() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let initial = test_codex()
+        .with_thread_store(Arc::new(InMemoryThreadStore::default()))
+        .build_with_auto_env(&server)
+        .await?;
+    let thread_id = initial.session_configured.thread_id;
+    initial.codex.shutdown_and_wait().await?;
+    initial.thread_manager.remove_thread(&thread_id).await;
+    let context = initial
+        .thread_store
+        .load_latest_model_context(LoadThreadHistoryParams {
+            thread_id,
+            include_archived: true,
+        })
+        .await?;
+
+    let mut options = initial.start_thread_options().await;
+    options.initial_history = InitialHistory::Resumed(ResumedHistory {
+        history_revision: context.revision,
+        conversation_id: context.thread_id,
+        history: Arc::new(context.items),
+        rollout_path: None,
+    });
+    options.resume_preparation = Some(ThreadStoreResumePreparation::new(()));
+
+    let Err(err) = initial.thread_manager.start_thread(options).await else {
+        panic!("prepared resume unexpectedly used the ordinary store path");
+    };
+    assert!(
+        matches!(
+            err.details(),
+            CodexErrorDetails::UnsupportedOperation(message)
+                if message == "resume_thread_with_preparation is not supported yet"
+        ),
+        "unexpected prepared resume error: {err}"
+    );
+    Ok(())
+}
 
 #[test_case::test_case(None, ThreadHistoryMode::Paginated; "store default")]
 #[test_case::test_case(Some(ThreadHistoryMode::Legacy), ThreadHistoryMode::Legacy; "explicit legacy")]
@@ -128,9 +177,17 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_config(|config| {
-        config.model = Some("gpt-5.2".to_string());
-    });
+    let legacy_instructions = "Legacy model instructions\n# Personality\nBe pragmatic.";
+    let mut builder = test_codex()
+        .with_model_info_override("gpt-5.2", move |model| {
+            model
+                .model_messages
+                .get_or_insert_default()
+                .instructions_template = Some(legacy_instructions.to_string());
+        })
+        .with_config(|config| {
+            config.personality = Some(Personality::Pragmatic);
+        });
     let initial = builder.build(&server).await?;
     let codex = Arc::clone(&initial.codex);
 
@@ -148,12 +205,8 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
         }]))
         .await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
-    let initial_body = initial_mock.single_request().body_json();
-    let initial_instructions = initial_body
-        .get("instructions")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let initial_instructions = initial_mock.single_request().instructions_text();
+    assert_eq!(initial_instructions, legacy_instructions);
 
     let resumed_mock = mount_sse_sequence(
         &server,
@@ -174,8 +227,17 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
 
     let mut resume_builder = test_codex().with_config(|config| {
         config.model = Some("gpt-5.4".to_string());
+        config.personality = Some(Personality::None);
     });
     let resumed = resume_builder.restart(&server, &initial).await?;
+    assert_eq!(
+        resumed.session_configured.thread_id,
+        initial.session_configured.thread_id
+    );
+    assert_eq!(
+        resumed.codex.config_snapshot().await.personality,
+        Some(Personality::None)
+    );
     resumed
         .codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
@@ -205,6 +267,12 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
 
     let first_resumed = &requests[0];
     assert_eq!(first_resumed.instructions_text(), initial_instructions);
+    assert!(
+        first_resumed
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text == "Record initial instructions")
+    );
     let first_developer_texts = first_resumed.message_input_texts("developer");
     let first_model_switch_count = first_developer_texts
         .iter()

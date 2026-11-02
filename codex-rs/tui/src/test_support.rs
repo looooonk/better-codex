@@ -63,3 +63,4 @@ pub(crate) fn buffer_style_grid(buffer: &Buffer) -> String {
     }
     snapshot
 }
+

@@ -93,13 +93,14 @@ just build --release
 mkdir -p "$HOME/.local/bin"
 install -m 755 target/release/codex "$HOME/.local/bin/better-codex"
 install -m 755 target/release/codex-code-mode-host "$HOME/.local/bin/codex-code-mode-host"
+install -m 755 target/release/codex-exec-server "$HOME/.local/bin/codex-exec-server"
 ```
 
 The workspace pins its Rust toolchain, so `rustup` selects the expected version
 automatically. `just build`, `just test`, and the other Cargo recipes fetch
 checksum-pinned sandboxed V8 libraries and matching bindings from upstream Codex
 releases. Realtime voice also needs the separately packaged native helper
-and GStreamer runtime; building the two Rust binaries above does not bundle them.
+and GStreamer runtime; building the Rust binaries above does not bundle them.
 Source run commands such as `just codex --no-daemon` use the small development
 profile by default; set `CODEX_CARGO_PROFILE` to select another profile.
 See the [complete build guide](docs/install.md) for development
@@ -119,10 +120,10 @@ tools, test commands, and logging.
 | **Realtime voice**        | Talk with an agent through the isolated native voice helper; control microphone and playback from the workspace. |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
-GPT-6.1 Sol, GPT-6 Astra, GPT-6 Sol, and GPT-6 Luna are available through the
-model picker for supported OpenAI and Amazon Bedrock accounts.
-Reasoning levels and service tiers follow the provider's capabilities, including
-Ultra and Fast service for supported OpenAI accounts. Agents can ask questions
+The model picker reads the complete model catalog from the connected Codex
+backend, including newly available models for your account and provider.
+Reasoning levels and service tiers follow the backend's advertised capabilities
+and account policies. Agents can ask questions
 in the conversation while continuing their work; reply through the normal message
 composer, using a suggested answer or your own text.
 
@@ -165,6 +166,30 @@ opens realtime voice controls. `better-codex agents` opens sessions across the
 shared local background server, and `better-codex queue --thread SESSION --message "message"` queues
 work for an existing session. Pass `--no-daemon` to launch an independent session.
 
+Use `/config` to focus settings, `/archive` to archive the current session, and
+`/delete` to inspect and confirm permanent deletion. `/presets` lists saved
+prompts; `/presets save 1 <prompt>` saves a slot and `/presets 1` loads it for
+review before sending. Slots 1 through 9 are available, and `/presets delete 1`
+removes a saved prompt. Configured `chat.open_presets` shortcuts open this list.
+
+`/apps` lists connected apps separately from `/plugins`. Use `/apps access <id>`
+for its connection page, `/apps enable <id>` or `/apps disable <id>` to control
+availability, and `/apps tools <id>` to inspect tools. Set app-wide approvals
+with `/apps approval <id> auto|prompt|writes|approve`, or individual tools with
+`/apps tool <id> <tool> enable|disable|approval <mode>`. Managed settings continue
+to apply. `/memory use on|off` controls using saved memories;
+`/memory generate on|off` controls generating them. `/memory on|off` changes
+generation for only the current session, and `/memory read` shows its summary.
+
+`/provider` lists available providers and their editable fields. Select a default
+with `/provider use <id> [model]`, then `/new`; the current session keeps its
+provider. `/provider configure <id> field=value` updates gateway, AWS, or GCP
+settings, and `/provider add <name> <url> [key-environment-variable]` adds a
+gateway without putting an API key in the command. Quote values containing
+spaces; an empty value clears an optional field. `/account` lists saved ChatGPT
+accounts and workspaces; `/account switch <session-id> <workspace-id>` switches
+between them and refreshes the model catalog. Use `/login` to add an account.
+
 Use `/side` for a side conversation, `/recap` for a summary, and `/worktree new`
 or `/worktree fork` for work in a managed checkout. `/recap on|off` controls
 automatic recaps while the terminal is unfocused. `/daybreak` manages access for
@@ -202,7 +227,7 @@ Rerunning the installer works too. Either path activates the new verified
 release while keeping the launcher path stable.
 
 The background server has its own package under
-`$CODEX_HOME/packages/app-server-daemon`. `/daemon update latest` updates it from
+`$CODEX_HOME/packages/better-codex-daemon`. `/daemon update latest` updates it from
 Better Codex releases after the interface closes; `/daemon update from-cli`
 copies and pins the launching CLI package. Active work must finish first.
 Explicitly installed versions remain pinned until you choose the latest channel.

@@ -26,5 +26,6 @@ impl AppExitInfo {
 #[derive(Debug, Clone)]
 pub enum ExitReason {
     UserRequested,
+    TurnInterrupted,
     Fatal(String),
 }

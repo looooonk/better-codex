@@ -1,0 +1,7 @@
+---
+source: tui/src/app_shell/workspace_requests/apps_tests.rs
+assertion_line: 22
+expression: message
+---
+Connect or manage Docs in your browser:
+https://chatgpt.com/apps/docs

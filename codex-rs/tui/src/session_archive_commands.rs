@@ -87,6 +87,7 @@ pub async fn run_session_archive_command(
 pub async fn run_session_queue_command(
     target: String,
     message: String,
+    resume: bool,
     options: SessionArchiveCommandOptions,
 ) -> Result<String> {
     if options.cli.no_daemon && options.explicit_remote_endpoint.is_none() {
@@ -137,10 +138,49 @@ pub async fn run_session_queue_command(
                 eyre!(error).wrap_err("failed to queue session message")
             }
         })?;
-    Ok(format!(
+    let summary = format!(
         "Queued message {} for thread {}.",
         response.queued_submission.id, resolved.session_id
-    ))
+    );
+    if resume {
+        let resumed: Result<()> = async {
+            // Remote metadata may contain paths from a different operating system.
+            #[derive(serde::Deserialize)]
+            struct ThreadReadStatus {
+                thread: ThreadStatus,
+            }
+            #[derive(serde::Deserialize)]
+            struct ThreadStatus {
+                status: codex_app_server_protocol::ThreadStatus,
+            }
+            let response: ThreadReadStatus = app_server.request_handle().request_typed(
+                codex_app_server_protocol::ClientRequest::ThreadRead {
+                    request_id: codex_app_server_protocol::RequestId::String(uuid::Uuid::new_v4().to_string()),
+                    params: codex_app_server_protocol::ThreadReadParams {
+                        thread_id: resolved.session_id.to_string(),
+                        include_turns: false,
+                    },
+                },
+            ).await?;
+            if response.thread.status == codex_app_server_protocol::ThreadStatus::NotLoaded {
+                app_server.request_handle().request_typed::<serde::de::IgnoredAny>(
+                    codex_app_server_protocol::ClientRequest::ThreadResume {
+                        request_id: codex_app_server_protocol::RequestId::String(uuid::Uuid::new_v4().to_string()),
+                        params: codex_app_server_protocol::ThreadResumeParams {
+                            thread_id: resolved.session_id.to_string(),
+                            exclude_turns: true,
+                            ..Default::default()
+                        },
+                    },
+                ).await?;
+            }
+            Ok(())
+        }.await;
+        if let Err(error) = resumed {
+            eprintln!("Warning: the message is queued, but resuming the session failed: {error:#}");
+        }
+    }
+    Ok(summary)
 }
 
 async fn run_session_archive_action_with_app_server(

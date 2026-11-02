@@ -41,6 +41,30 @@ impl SlashCommandDefinition {
 
 pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
     SlashCommandDefinition {
+        id: SlashCommandId::Workspace(WorkspaceCommand::Config),
+        name: "/config",
+        description: "Configure model, permissions, appearance, and integrations",
+        accepts_arguments: false,
+    },
+    SlashCommandDefinition {
+        id: SlashCommandId::Workspace(WorkspaceCommand::Presets),
+        name: "/presets",
+        description: "List, load, save, or delete reusable prompts and commands",
+        accepts_arguments: true,
+    },
+    SlashCommandDefinition {
+        id: SlashCommandId::Workspace(WorkspaceCommand::Archive),
+        name: "/archive",
+        description: "Archive the current session",
+        accepts_arguments: false,
+    },
+    SlashCommandDefinition {
+        id: SlashCommandId::Workspace(WorkspaceCommand::Delete),
+        name: "/delete",
+        description: "Confirm permanent deletion of the current session",
+        accepts_arguments: false,
+    },
+    SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Find),
         name: "/find",
         description: "Search the text retained in this conversation",
@@ -275,6 +299,24 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
         accepts_arguments: false,
     },
     SlashCommandDefinition {
+        id: SlashCommandId::Workspace(WorkspaceCommand::Apps),
+        name: "/apps",
+        description: "List connected apps, manage access and tool permissions",
+        accepts_arguments: true,
+    },
+    SlashCommandDefinition {
+        id: SlashCommandId::Workspace(WorkspaceCommand::Provider),
+        name: "/provider",
+        description: "List, configure, or select a model provider for new sessions",
+        accepts_arguments: true,
+    },
+    SlashCommandDefinition {
+        id: SlashCommandId::Workspace(WorkspaceCommand::Account),
+        name: "/account",
+        description: "List and switch saved accounts and workspaces",
+        accepts_arguments: true,
+    },
+    SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Plugins),
         name: "/plugins",
         description: "Manage plugins and connected apps",
@@ -331,7 +373,7 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Memory),
         name: "/memory",
-        description: "Show memory status or set on/off for this session",
+        description: "Read memories or control their use and generation",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
@@ -407,11 +449,12 @@ impl LocalSlashCommand {
         let command = match parts.next()? {
             "/quit" => "/exit",
             "/pet" => "/pets",
-            "/apps" => "/plugins",
+            "/providers" => "/provider",
+            "/accounts" => "/account",
             "/agents" | "/subagents" => "/agent",
             "/memories" => "/memory",
             "/stop" => "/clean",
-            "/settings" => "/status",
+            "/settings" => "/config",
             "/cwd" => "/pwd",
             command => command,
         };

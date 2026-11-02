@@ -11,7 +11,7 @@ use super::is_unmodified_action_key;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::legacy_core::config::Config;
 use codex_app_server_protocol::ModelSafetyBufferingUpdatedNotification;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
@@ -534,8 +534,8 @@ fn safety_retry_additional_inputs(turns: &[Turn], turn_id: &str) -> Result<Vec<U
         ));
     }
 
-    let mut user_messages = turn.items.iter().filter_map(|item| match item {
-        ThreadItem::UserMessage { content, .. } => Some(content),
+    let mut user_messages = turn.items.iter().filter_map(|item| match &item.payload {
+        ThreadItemPayload::UserMessage { content, .. } => Some(content),
         _ => None,
     });
     user_messages.next();

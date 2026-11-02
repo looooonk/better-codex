@@ -1,6 +1,6 @@
 ---
 source: tui/src/app_shell/keybinding_dispatch_tests.rs
-assertion_line: 75
+assertion_line: 199
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
@@ -24,10 +24,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
  ▎ CODEX  The new she│       unbound - select to change                                 │
                      │   9 ○ global.toggle_side_conversation                            │
                      │       unbound - select to change                                 │
-                     │   · ○ chat.toggle_voice                                          │
+                     │   · ○ chat.open_presets                                          │
 ╭────────────────────│       unbound - select to change                                 │
 │◆ MESSAGE  1:37     │                                                                  │
-│> Summarize the new │  up / down move  f18 select  f19 cancel  1/54 ↓                  │
+│> Summarize the new │  up / down move  f18 select  f19 cancel  1/55 ↓                  │
 │                    ╰──────────────────────────────────────────────────────────────────╯
 │                                                          ││
 ╰──────────────────────────────────────────────────────────╯│

@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/voice_tests.rs
+assertion_line: 18
+expression: summary
+---
+Voice settings
+Voices: juniper, maple, spruce, ember, vale, breeze, arbor, sol, cove, aube, bubbie, haetsal, hanul, himari, leher, miko, neer, porto, rindo, rio, rivage, selva, sonna, tinta, viola
+Default voice: cove
+Microphone: system default
+Speaker: system default
+Microphone channels: all
+
+/voice settings voice <name|default>
+/voice settings devices
+/voice settings microphone <name|default>
+/voice settings speaker <name|default>
+/voice settings channels <1,2|default>
+/voice [on|off|mute|unmute]

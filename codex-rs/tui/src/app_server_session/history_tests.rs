@@ -39,6 +39,7 @@ fn page(id: &str, cursor: Option<&str>) -> ThreadTurnsListResponse {
     ThreadTurnsListResponse {
         data: vec![Turn {
             id: id.to_string(),
+            root_turn_id: None,
             items: vec![],
             status: TurnStatus::Completed,
             error: None,
@@ -113,4 +114,16 @@ async fn repeated_history_cursor_fails_instead_of_looping() {
             .to_string()
             .contains("repeated history cursor")
     );
+}
+
+#[tokio::test]
+async fn history_page_budget_reports_an_error_instead_of_returning_partial_turns() {
+    let reader = Reader {
+        pages: Mutex::new((0..100).map(|index| {
+            page(&index.to_string(), Some(&(index + 1).to_string()))
+        }).collect()),
+        requests: Default::default(),
+    };
+    assert!(read_thread_history(reader, ThreadId::new()).await.unwrap_err()
+        .to_string().contains("history limit"));
 }

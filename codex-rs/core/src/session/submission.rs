@@ -6,7 +6,6 @@ use codex_protocol::protocol::W3cTraceContext;
 use tokio::sync::OwnedRwLockReadGuard;
 
 #[derive(Debug)]
-#[expect(dead_code, reason = "Turn ancestry is retained in Debug diagnostics.")]
 pub(crate) struct Submission {
     pub id: String,
     pub op: Op,
@@ -18,4 +17,6 @@ pub(crate) struct Submission {
     pub root_turn_id: Option<String>,
     /// Keeps a V2 recipient resident until this submission is handled or dropped.
     pub residency_guard: Option<OwnedRwLockReadGuard<()>>,
+    /// Owns delivery until dispatch; failed or abandoned submissions discard it.
+    pub message_delivery: Option<crate::agent_communication::MessageDelivery>,
 }

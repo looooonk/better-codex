@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::design::markdown_styles;
 use super::design::palette;
 use crate::git_action_directives::parse_assistant_markdown;
@@ -91,7 +92,7 @@ fn local_activity_turns(thread: &Thread) -> &[Turn] {
 fn turn_contains_user_message(turn: &Turn) -> bool {
     turn.items
         .iter()
-        .any(|item| matches!(item, ThreadItem::UserMessage { .. }))
+        .any(|item| matches!(&item.payload, ThreadItemPayload::UserMessage { .. }))
 }
 
 fn render_turn<'a>(
@@ -143,9 +144,9 @@ fn agent_item_lines(
     thread: &Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
 ) -> TranscriptLines {
-    match item {
-        ThreadItem::UserMessage { .. } | ThreadItem::HookPrompt { .. } => Vec::new(),
-        ThreadItem::CommandExecution {
+    match &item.payload {
+        ThreadItemPayload::UserMessage { .. } | ThreadItemPayload::HookPrompt { .. } => Vec::new(),
+        ThreadItemPayload::CommandExecution {
             command,
             status,
             aggregated_output,
@@ -159,10 +160,10 @@ fn agent_item_lines(
             *exit_code,
             *duration_ms,
         ),
-        ThreadItem::FileChange {
+        ThreadItemPayload::FileChange {
             changes, status, ..
         } => file_change_lines(changes, status),
-        ThreadItem::McpToolCall {
+        ThreadItemPayload::McpToolCall {
             server,
             tool,
             status,
@@ -175,7 +176,7 @@ fn agent_item_lines(
             error.as_ref().map(|error| error.message.as_str()),
             *duration_ms,
         ),
-        ThreadItem::DynamicToolCall {
+        ThreadItemPayload::DynamicToolCall {
             namespace,
             tool,
             status,
@@ -193,13 +194,13 @@ fn agent_item_lines(
                 *duration_ms,
             )
         }
-        ThreadItem::CollabAgentToolCall {
+        ThreadItemPayload::CollabAgentToolCall {
             tool,
             status,
             receiver_thread_ids,
             ..
         } => collaboration_lines(tool, status, receiver_thread_ids.len()),
-        ThreadItem::SubAgentActivity {
+        ThreadItemPayload::SubAgentActivity {
             kind, agent_path, ..
         } => vec![
             vec![
@@ -211,7 +212,7 @@ fn agent_item_lines(
             ]
             .into(),
         ],
-        ThreadItem::AgentMessage { text, .. } => {
+        ThreadItemPayload::AgentMessage { text, .. } => {
             let parsed = parse_assistant_markdown(text, &thread.cwd);
             if parsed.visible_markdown.trim().is_empty() {
                 Vec::new()
@@ -229,10 +230,10 @@ fn agent_item_lines(
                 lines
             }
         }
-        ThreadItem::Plan { text, .. } => {
+        ThreadItemPayload::Plan { text, .. } => {
             themed_prefixed_text("Plan", text.clone(), palette::success())
         }
-        ThreadItem::Reasoning {
+        ThreadItemPayload::Reasoning {
             summary, content, ..
         } => {
             let (header, text) =
@@ -253,14 +254,14 @@ fn agent_item_lines(
                 palette::muted(),
             )
         }
-        ThreadItem::FunctionCallOutput { .. }
-        | ThreadItem::WebSearch(_)
-        | ThreadItem::ImageView { .. }
-        | ThreadItem::Sleep(_)
-        | ThreadItem::ImageGeneration(_)
-        | ThreadItem::EnteredReviewMode { .. }
-        | ThreadItem::ExitedReviewMode { .. }
-        | ThreadItem::ContextCompaction { .. } => {
+        ThreadItemPayload::FunctionCallOutput { .. }
+        | ThreadItemPayload::WebSearch(_)
+        | ThreadItemPayload::ImageView { .. }
+        | ThreadItemPayload::Sleep(_)
+        | ThreadItemPayload::ImageGeneration(_)
+        | ThreadItemPayload::EnteredReviewMode { .. }
+        | ThreadItemPayload::ExitedReviewMode { .. }
+        | ThreadItemPayload::ContextCompaction { .. } => {
             thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility)
         }
     }

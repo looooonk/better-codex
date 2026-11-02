@@ -18,6 +18,7 @@ pub(in crate::app_shell) enum ShellShortcut {
     Find,
     Activity,
     Side,
+    Presets,
     Warnings,
     ClearTerminal,
     Fast,
@@ -42,6 +43,7 @@ pub(super) fn target(id: KeymapActionId) -> Option<ShellShortcut> {
         (Global, "clear_terminal") => ShellShortcut::ClearTerminal,
         (Global, "toggle_fast_mode") => ShellShortcut::Fast,
         (Chat, "interrupt_turn") => ShellShortcut::Interrupt,
+        (Chat, "open_presets") => ShellShortcut::Presets,
         (Chat, "toggle_voice") => ShellShortcut::Voice,
         (Voice, "toggle_voice_mute") => ShellShortcut::VoiceMute,
         (Chat, "decrease_reasoning_effort") => ShellShortcut::Reasoning(-1),
@@ -156,6 +158,7 @@ impl ShellState {
             ShellShortcut::Transcript => self.select_latest_transcript_item(),
             ShellShortcut::Find => self.open_transcript_find(""),
             ShellShortcut::Side => self.run_side_command("", config, app_server).await?,
+            ShellShortcut::Presets => self.run_workspace_command(crate::app_shell::workspace_commands::WorkspaceCommand::Presets, "", config, app_server).await?,
             ShellShortcut::Activity => {
                 self.dashboard_visible = true;
                 self.set_dashboard_route(crate::app_shell::navigation::DashboardRoute::Agents);

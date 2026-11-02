@@ -276,10 +276,7 @@ fn unauthenticated_startup_honors_no_alt_screen_under_pty() {
     wait_for_pty_text(&mut child, &mut reader, &mut output, "ACCOUNT LOGIN");
 
     let mut writer = dup_file(pty.master.as_raw_fd());
-    writer.write_all(b"3").expect("select startup exit");
-    writer.flush().expect("flush startup exit selection");
-    std::thread::sleep(Duration::from_millis(/*millis*/ 25));
-    writer.write_all(b"\r").expect("submit startup exit");
+    writer.write_all(b"\x1b").expect("exit startup");
     writer.flush().expect("flush startup exit submission");
     let status = wait_for_child_with_pty_output(&mut child, &mut reader, &mut output);
     assert!(status.success(), "inline startup should exit cleanly");

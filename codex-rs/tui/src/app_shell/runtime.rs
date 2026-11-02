@@ -161,6 +161,10 @@ pub(crate) async fn run(
         .filter(|prompt| !prompt.trim().is_empty())
         .or_else(|| shell.composer.has_images().then(String::new));
     let has_initial_prompt = pending_initial_prompt.is_some();
+    let terminal_size_tags = if crate::terminal_size_telemetry::enabled(&config) {
+        vec![("backend", if app_server.uses_embedded_app_server() { "in_process" } else if app_server.uses_remote_workspace() { "remote" } else { "local_daemon" })]
+    } else { Vec::new() };
+    let mut last_observed_turn = None;
     draw_shell(tui, &shell)?;
     shell.start_initial_dashboard_hydration(&app_server);
     shell.request_queue_hydration(&app_server);
@@ -199,6 +203,12 @@ pub(crate) async fn run(
             shell.refresh_status_metadata(&app_server);
             shell.poll_automatic_recap(tui.is_focused(), &config, &app_server);
             let terminal_size = tui.terminal.size()?;
+            if let Some(turn_id) = shell.active_turn_id.as_ref()
+                && last_observed_turn.as_ref() != Some(&(shell.thread_id, turn_id.clone()))
+            {
+                crate::terminal_size_telemetry::record(&terminal_size_tags, &config, "turn_start", terminal_size);
+                last_observed_turn = Some((shell.thread_id, turn_id.clone()));
+            }
             if terminal_size_supported(terminal_size.width, terminal_size.height)
                 && let Some(prompt) = pending_initial_prompt.take()
             {
@@ -391,6 +401,7 @@ pub(crate) async fn run(
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Resize => {
+                            crate::terminal_size_telemetry::record(&terminal_size_tags, &config, "resize", size);
                             shell.cancel_dashboard_resize();
                             shell.clear_text_selections();
                             shell.clear_pointer_position();
@@ -538,6 +549,7 @@ where
                 .start_thread_with_session_start_source(
                     config,
                     Some(codex_app_server_protocol::ThreadStartSource::Startup),
+                    /*model_provider_override*/ None,
                 )
                 .await
         }

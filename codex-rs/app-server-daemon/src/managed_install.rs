@@ -18,16 +18,16 @@ use tokio::time::timeout;
 /// Preserve legacy launch state, including logs left after a daemon is stopped;
 /// settings, installer selections, and lock files alone do not prove a prior launch.
 pub(crate) fn package_root(codex_home: &Path) -> PathBuf {
-    let dedicated = codex_home.join("packages/app-server-daemon");
+    let dedicated = codex_home.join("packages/better-codex-daemon");
     if !matches!(dedicated.join("current").symlink_metadata(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound)
     {
         return dedicated;
     }
-    let state = codex_home.join("app-server-daemon");
+    let state = codex_home.join("better-codex-daemon");
     for (package, artifacts) in [
         (
-            "app-server-daemon",
+            "better-codex-daemon",
             [
                 crate::DAEMON_PID_FILE_NAME,
                 "daemon.stderr.log",
@@ -36,7 +36,7 @@ pub(crate) fn package_root(codex_home: &Path) -> PathBuf {
             ],
         ),
         (
-            "standalone",
+            "better-codex",
             [
                 crate::LEGACY_PID_FILE_NAME,
                 "app-server.stderr.log",
@@ -62,7 +62,7 @@ pub(crate) fn managed_codex_bin(codex_home: &Path) -> PathBuf {
     let packaged = current.join("bin").join(managed_codex_file_name());
     let legacy = current.join(managed_codex_file_name());
     if packaged.is_file()
-        || !legacy.is_file() && (cfg!(windows) || root.ends_with("app-server-daemon"))
+        || !legacy.is_file() && (cfg!(windows) || root.ends_with("better-codex-daemon"))
     {
         packaged
     } else {
@@ -86,7 +86,7 @@ pub(crate) fn is_stable_standalone_release(codex_home: &Path, codex_bin: &Path) 
         return false;
     };
     // GNU packages can seed the new directory; retain legacy updater eligibility.
-    if standalone.ends_with("standalone") && release_name.ends_with("-gnu") {
+    if standalone.ends_with("better-codex") && release_name.ends_with("-gnu") {
         return false;
     }
     let targets = [
@@ -182,10 +182,10 @@ pub(crate) async fn managed_codex_version(codex_bin: &Path) -> Result<String> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ExecutableIdentity {
-    digest: [u8; 32],
+    pub(crate) digest: [u8; 32],
     // Distinguish release generations whose executable bytes are identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    path_digest: Option<[u8; 32]>,
+    pub(crate) path_digest: Option<[u8; 32]>,
 }
 
 impl ExecutableIdentity {
@@ -221,7 +221,7 @@ pub(crate) fn executable_identity_from_reader(
     })
 }
 
-fn path_digest(path: &Path) -> [u8; 32] {
+pub(crate) fn path_digest(path: &Path) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     #[cfg(unix)]
     {

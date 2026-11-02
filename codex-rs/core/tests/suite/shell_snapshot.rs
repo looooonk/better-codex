@@ -55,7 +55,7 @@ use core_test_support::skip_if_remote;
 #[cfg(unix)]
 use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::TestCodexHarness;
-use core_test_support::test_codex::local_selections;
+use core_test_support::test_codex::local_requests;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::turn_permission_fields;
 use core_test_support::wait_for_event;
@@ -201,7 +201,7 @@ async fn run_snapshot_command_with_options(
                 text_elements: Vec::new(),
             }])
             .with_thread_settings(ThreadSettingsOverrides {
-                environments: Some(local_selections(cwd)),
+                environments: Some(local_requests(cwd)),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
@@ -277,7 +277,7 @@ async fn run_tool_turn_on_harness(
                 text_elements: Vec::new(),
             }])
             .with_thread_settings(ThreadSettingsOverrides {
-                environments: Some(local_selections(cwd)),
+                environments: Some(local_requests(cwd)),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,
@@ -299,13 +299,17 @@ async fn run_tool_turn_on_harness(
         _ => None,
     })
     .await;
-    let end = wait_for_event_match(&codex, |ev| match ev {
-        EventMsg::ExecCommandEnd(ev) if ev.call_id == call_id => Some(ev.clone()),
-        _ => None,
-    })
-    .await;
-    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
-    Ok(end)
+    let mut end = None;
+    let mut turn_completed = false;
+    // The tool can return before its background watcher emits command-end.
+    while end.is_none() || !turn_completed {
+        match wait_for_event(&codex, |_| true).await {
+            EventMsg::ExecCommandEnd(ev) if ev.call_id == call_id => end = Some(ev),
+            EventMsg::TurnComplete(_) => turn_completed = true,
+            _ => {}
+        }
+    }
+    Ok(end.expect("command-end should have arrived before completing the wait"))
 }
 
 fn normalize_newlines(text: &str) -> String {
@@ -378,6 +382,64 @@ async fn run_no_shell_turn(harness: &TestCodexHarness) -> Result<()> {
     })
     .await;
     response.single_request();
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shell_snapshot_v2_returns_before_inherited_output_closes() -> Result<()> {
+    use std::io::Write;
+
+    skip_if_remote!(Ok(()), "tests the local executor's inherited output pipes");
+    let profile_home = tempfile::tempdir()?;
+    let gate_path = profile_home.path().join("output-gate");
+    let status = std::process::Command::new("mkfifo")
+        .arg(&gate_path)
+        .status()?;
+    anyhow::ensure!(status.success(), "failed to create output gate");
+    let mut gate = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&gate_path)?;
+    let harness = TestCodexHarness::with_auto_env_builder(shell_snapshot_v2_prewarm_builder(
+        profile_home.path(),
+    ))
+    .await?;
+
+    // The foreground shell exits, but its descendant retains stdout until we release the FIFO.
+    // Wait for the public command-end and turn-complete notifications, not polled process state.
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        run_tool_turn_on_harness(
+            &harness,
+            "run a command whose descendant retains stdout",
+            "inherited-output",
+            "exec_command",
+            json!({
+                "cmd": "(read -r release < \"$HOME/output-gate\") & printf 'foreground output'; exit 7",
+                "yield_time_ms": 30_000,
+                "tty": false,
+            }),
+        ),
+    )
+    .await;
+
+    // Release the descendant even when completion timed out on the broken path.
+    gate.write_all(b"release\n")?;
+    harness.test().codex.shutdown_and_wait().await?;
+    let end =
+        result.expect("tool response should complete before the inherited pipe is released")?;
+    assert_eq!(
+        (end.exit_code, end.aggregated_output),
+        (7, "foreground output".to_string()),
+    );
+    let output = harness.function_call_stdout("inherited-output").await;
+    assert!(output.contains("Process exited with code 7"), "{output}");
+    assert!(
+        !output.contains("Process running with session ID"),
+        "{output}"
+    );
+    assert!(output.ends_with("foreground output"), "{output}");
     Ok(())
 }
 
@@ -641,9 +703,10 @@ async fn shell_snapshot_v2_guardian_uses_its_resolved_permissions_and_tools(
 ) -> Result<()> {
     skip_if_remote!(Ok(()), "profile fixture uses a host-local HOME directory");
     let profile_home = tempfile::tempdir()?;
+    // Appending detects any successful reviewer write, even with the wrong thread ID.
     fs::write(
         profile_home.path().join(".bashrc"),
-        "printf capture > \"$HOME/$CODEX_THREAD_ID\"\n",
+        "printf '%s\\n' \"$CODEX_THREAD_ID\" >> \"$HOME/captures\"\n",
     )
     .await?;
     let builder =
@@ -654,6 +717,12 @@ async fn shell_snapshot_v2_guardian_uses_its_resolved_permissions_and_tools(
                 .expect("set parent permissions");
             config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
             config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+            // Read the fixture's .bashrc instead of an inherited startup hook.
+            config
+                .permissions
+                .shell_environment_policy
+                .r#set
+                .insert("BASH_ENV".to_string(), String::new());
             let rules = config.codex_home.join("rules");
             std::fs::create_dir_all(&rules).expect("create rules directory");
             std::fs::write(
@@ -695,10 +764,11 @@ async fn shell_snapshot_v2_guardian_uses_its_resolved_permissions_and_tools(
         ],
     )
     .await;
-    let mut environments = local_selections(test.config.cwd.clone());
-    environments.environments[0].config = EnvironmentConfigState::Ready(EnvironmentConfig {
+    let mut requests = local_requests(test.config.cwd.clone());
+    requests.environment_requests[0].config = EnvironmentConfigState::Ready(EnvironmentConfig {
+        environment_hooks: Default::default(),
         allow_login_shell: true,
-        workspace_roots: environments.environments[0].workspace_roots.clone(),
+        workspace_roots: requests.environment_requests[0].workspace_roots.clone(),
         permission_profile: PermissionProfileSnapshot::legacy(PermissionProfile::Disabled),
         shell_environment_policy: test.config.permissions.shell_environment_policy.clone(),
         windows_sandbox_level: WindowsSandboxLevel::from_config(&test.config),
@@ -716,7 +786,7 @@ async fn shell_snapshot_v2_guardian_uses_its_resolved_permissions_and_tools(
                 text_elements: Vec::new(),
             }])
             .with_thread_settings(ThreadSettingsOverrides {
-                environments: Some(environments),
+                environments: Some(requests),
                 ..Default::default()
             }),
         )
@@ -741,15 +811,10 @@ async fn shell_snapshot_v2_guardian_uses_its_resolved_permissions_and_tools(
         .expect("Guardian thread ID")
         .to_string();
     assert_ne!(guardian_id, test.session_configured.thread_id.to_string());
-    assert!(
-        profile_home
-            .path()
-            .join(test.session_configured.thread_id.to_string())
-            .exists()
-    );
-    assert!(
-        !profile_home.path().join(guardian_id).exists(),
-        "Guardian profile must not inherit writable owner permissions"
+    assert_eq!(
+        fs::read_to_string(profile_home.path().join("captures")).await?,
+        format!("{}\n", test.session_configured.thread_id),
+        "only the parent may write; Guardian must not inherit writable owner permissions"
     );
     Ok(())
 }
@@ -1077,7 +1142,7 @@ async fn unified_exec_snapshot_still_intercepts_apply_patch() -> Result<()> {
                 text_elements: Vec::new(),
             }])
             .with_thread_settings(ThreadSettingsOverrides {
-                environments: Some(local_selections(cwd.clone())),
+                environments: Some(local_requests(cwd.clone())),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,

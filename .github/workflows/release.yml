@@ -123,7 +123,8 @@ jobs:
           set -euo pipefail
           cargo build --locked --target "${{ matrix.target }}" --release \
             --bin codex \
-            --bin codex-code-mode-host
+            --bin codex-code-mode-host \
+            --bin codex-exec-server
 
       - name: Strip binaries
         shell: bash
@@ -131,11 +132,12 @@ jobs:
           set -euo pipefail
           release_dir="target/${{ matrix.target }}/release"
           if [[ "${{ runner.os }}" == "macOS" ]]; then
-            strip -S -x "$release_dir/codex" "$release_dir/codex-code-mode-host"
+            strip -S -x "$release_dir/codex" "$release_dir/codex-code-mode-host" "$release_dir/codex-exec-server"
           else
             strip --strip-debug --strip-unneeded \
               "$release_dir/codex" \
-              "$release_dir/codex-code-mode-host"
+              "$release_dir/codex-code-mode-host" \
+              "$release_dir/codex-exec-server"
           fi
 
       - name: Set up Bazel for native voice
@@ -184,6 +186,7 @@ jobs:
             --version "$VERSION"
             --codex-bin "target/${TARGET}/release/codex"
             --code-mode-host-bin "target/${TARGET}/release/codex-code-mode-host"
+            --exec-server-bin "target/${TARGET}/release/codex-exec-server"
             --voice-host-bin "${RUNNER_TEMP}/better-codex-voice/codex-voice-host"
             --voice-runtime-dir "${RUNNER_TEMP}/better-codex-voice/runtime"
             --build-commit "$STABLE_GIT_COMMIT"
@@ -208,6 +211,7 @@ jobs:
             -C "$smoke_dir" --strip-components 1
           "$smoke_dir/bin/codex" --version | grep -F "$VERSION"
           test -x "$smoke_dir/bin/codex-code-mode-host"
+          "$smoke_dir/bin/codex-exec-server" --help >/dev/null
           test -x "$smoke_dir/codex-path/rg"
           test -x "$smoke_dir/codex-resources/voice/bin/codex-voice-host"
           test "$("$smoke_dir/codex-resources/voice/bin/codex-voice-host" --build-commit)" = "$STABLE_GIT_COMMIT"

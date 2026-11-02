@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use crate::app_shell::ShellState;
 use crate::app_shell::agent_log_view::render_agent_log;
@@ -302,14 +303,15 @@ fn themed_thread() -> Thread {
         git_info: None,
         name: None,
         turns: vec![Turn {
+            root_turn_id: None,
             id: "turn-1".to_string(),
             items: vec![
-                ThreadItem::Reasoning {
+                ThreadItem::untimed(ThreadItemPayload::Reasoning {
                     id: "reasoning-1".to_string(),
                     summary: vec!["Hidden summary".to_string()],
                     content: vec!["Reasoning follows the active palette.".to_string()],
-                },
-                ThreadItem::AgentMessage {
+                }),
+                ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                     delivery: None,
                     questions: None,
 
@@ -317,12 +319,12 @@ fn themed_thread() -> Thread {
                     text: "Use `themed code` and [themed links](https://example.com).".to_string(),
                     phase: None,
                     memory_citation: None,
-                },
-                ThreadItem::Plan {
+                }),
+                ThreadItem::untimed(ThreadItemPayload::Plan {
                     id: "plan-1".to_string(),
                     text: "Ship the themed agent log.".to_string(),
-                },
-                ThreadItem::FileChange {
+                }),
+                ThreadItem::untimed(ThreadItemPayload::FileChange {
                     id: "edit-1".to_string(),
                     changes: vec![FileUpdateChange {
                         path: "tui/src/app_shell/agent_log.rs".to_string(),
@@ -332,7 +334,7 @@ fn themed_thread() -> Thread {
                         diff: String::new(),
                     }],
                     status: codex_app_server_protocol::PatchApplyStatus::Completed,
-                },
+                }),
             ],
             items_view: TurnItemsView::Full,
             status: TurnStatus::Completed,

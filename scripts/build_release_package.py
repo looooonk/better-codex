@@ -59,6 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--version", required=True)
     parser.add_argument("--codex-bin", required=True, type=Path)
     parser.add_argument("--code-mode-host-bin", required=True, type=Path)
+    parser.add_argument("--exec-server-bin", required=True, type=Path)
     parser.add_argument("--bwrap-bin", type=Path)
     parser.add_argument("--voice-host-bin", type=Path)
     parser.add_argument("--voice-runtime-dir", type=Path)
@@ -147,7 +148,7 @@ def add_path(tar: tarfile.TarFile, name: str, path: Path, mode: int) -> None:
 def validate_inputs(args: argparse.Namespace) -> None:
     if not VERSION_PATTERN.fullmatch(args.version):
         raise ValueError(f"invalid release version: {args.version}")
-    for path in (args.codex_bin, args.code_mode_host_bin):
+    for path in (args.codex_bin, args.code_mode_host_bin, args.exec_server_bin):
         if not path.is_file():
             raise ValueError(f"required binary not found: {path}")
     is_linux = "linux" in args.target
@@ -212,6 +213,12 @@ def build_base_package(args: argparse.Namespace) -> None:
                     tar,
                     f"{PACKAGE_ROOT}/bin/codex-code-mode-host",
                     args.code_mode_host_bin,
+                    0o755,
+                )
+                add_path(
+                    tar,
+                    f"{PACKAGE_ROOT}/bin/codex-exec-server",
+                    args.exec_server_bin,
                     0o755,
                 )
                 if isinstance(rg, Path):

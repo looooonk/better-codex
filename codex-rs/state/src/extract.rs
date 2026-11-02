@@ -39,7 +39,9 @@ pub fn apply_rollout_item(
         | RolloutItem::InterAgentCommunicationMetadata { .. } => {}
         RolloutItem::Compacted(_) => {}
         RolloutItem::WorldState(_) => {}
-        RolloutItem::RetainedContext(_) | RolloutItem::SecurityRiskScore(_) => {}
+        RolloutItem::DynamicToolsUpdated { .. }
+        | RolloutItem::RetainedContext(_)
+        | RolloutItem::SecurityRiskScore(_) => {}
         RolloutItem::RealtimeItem(_) => {}
         RolloutItem::TokenUsageRecord(_) => {}
     }
@@ -73,6 +75,7 @@ pub fn rollout_item_affects_thread_metadata(item: &RolloutItem) -> bool {
         | RolloutItem::Compacted(_)
         | RolloutItem::RealtimeItem(_)
         | RolloutItem::RetainedContext(_)
+        | RolloutItem::DynamicToolsUpdated { .. }
         | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::TokenUsageRecord(_)
         | RolloutItem::WorldState(_) => false,
@@ -94,6 +97,10 @@ fn apply_session_meta_from_item(metadata: &mut ThreadMetadata, meta_line: &Sessi
         .take()
         .or_else(|| meta_line.meta.creator_account_id.clone());
     metadata.id = meta_line.meta.id;
+    metadata.attached_thread_parent_id = meta_line
+        .meta
+        .forked_from_id
+        .filter(|_| meta_line.meta.attached_thread);
     metadata.source = enum_to_string(&meta_line.meta.source);
     if metadata.originator.is_none() && !meta_line.meta.originator.is_empty() {
         metadata.originator = Some(meta_line.meta.originator.clone());
@@ -258,6 +265,8 @@ mod tests {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::ResponseItem(
             ResponseItem::Message {
+                status: None,
+                encrypted_content: None,
                 id: None,
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
@@ -363,7 +372,7 @@ mod tests {
         let mut metadata =
             ThreadMetadataBuilder::new(thread_id, PathBuf::new(), Utc::now(), source.clone())
                 .build("test-provider");
-        let session_meta = RolloutItem::SessionMeta(SessionMetaLine {
+        let session_meta = RolloutItem::SessionMeta(Box::new(SessionMetaLine {
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
@@ -371,7 +380,7 @@ mod tests {
                 ..Default::default()
             },
             git: None,
-        });
+        }));
         apply_rollout_item(&mut metadata, &session_meta, "test-provider");
         let mut expected = metadata.clone();
         expected.title = super::GUARDIAN_THREAD_TITLE.to_string();
@@ -523,9 +532,10 @@ mod tests {
 
         apply_rollout_item(
             &mut metadata,
-            &RolloutItem::SessionMeta(SessionMetaLine {
+            &RolloutItem::SessionMeta(Box::new(SessionMetaLine {
                 meta: SessionMeta {
                     creator_user_id: None,
+                    attached_thread: false,
                     creator_account_id: None,
                     session_id: thread_id.into(),
                     id: thread_id,
@@ -556,7 +566,7 @@ mod tests {
                     context_window: None,
                 },
                 git: None,
-            }),
+            })),
             "test-provider",
         );
         apply_rollout_item(
@@ -571,26 +581,20 @@ mod tests {
                         .join("parent/workspace")
                 ))
                 .expect("absolute parent cwd"),
-                workspace_roots: None,
-                current_date: None,
-                timezone: None,
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: None,
                 sandbox_policy: SandboxPolicy::DangerFullAccess,
                 permission_profile: None,
                 active_permission_profile: None,
-                network: None,
                 file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
-                personality: None,
                 collaboration_mode: None,
                 multi_agent_version: None,
-                multi_agent_mode: None,
                 realtime_active: None,
                 cyber_access_program: None,
                 effort: None,
-                summary: codex_protocol::config_types::ReasoningSummary::Auto,
+                summary: Some(codex_protocol::config_types::ReasoningSummary::Auto),
             }),
             "test-provider",
         );
@@ -621,26 +625,20 @@ mod tests {
                         .join("workspace")
                 ))
                 .expect("absolute workspace cwd"),
-                workspace_roots: None,
-                current_date: None,
-                timezone: None,
                 approval_policy: AskForApproval::OnRequest,
                 approvals_reviewer: None,
                 sandbox_policy: SandboxPolicy::DangerFullAccess,
                 permission_profile: Some(permission_profile.clone()),
                 active_permission_profile: None,
-                network: None,
                 file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
-                personality: None,
                 collaboration_mode: None,
                 multi_agent_version: None,
-                multi_agent_mode: None,
                 realtime_active: None,
                 cyber_access_program: None,
                 effort: None,
-                summary: codex_protocol::config_types::ReasoningSummary::Auto,
+                summary: Some(codex_protocol::config_types::ReasoningSummary::Auto),
             }),
             "test-provider",
         );
@@ -667,26 +665,20 @@ mod tests {
                 disabled_plugin_ids: None,
                 cwd: serde_json::from_value(serde_json::json!(&fallback_cwd))
                     .expect("absolute fallback cwd"),
-                workspace_roots: None,
-                current_date: None,
-                timezone: None,
                 approval_policy: AskForApproval::OnRequest,
                 approvals_reviewer: None,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 permission_profile: None,
                 active_permission_profile: None,
-                network: None,
                 file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
-                personality: None,
                 collaboration_mode: None,
                 multi_agent_version: None,
-                multi_agent_mode: None,
                 realtime_active: None,
                 cyber_access_program: None,
                 effort: Some(ReasoningEffort::High),
-                summary: codex_protocol::config_types::ReasoningSummary::Auto,
+                summary: Some(codex_protocol::config_types::ReasoningSummary::Auto),
             }),
             "test-provider",
         );
@@ -710,26 +702,20 @@ mod tests {
                         .join("fallback/workspace")
                 ))
                 .expect("absolute fallback cwd"),
-                workspace_roots: None,
-                current_date: None,
-                timezone: None,
                 approval_policy: AskForApproval::OnRequest,
                 approvals_reviewer: None,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
                 permission_profile: None,
                 active_permission_profile: None,
-                network: None,
                 file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
-                personality: None,
                 collaboration_mode: None,
                 multi_agent_version: None,
-                multi_agent_mode: None,
                 realtime_active: None,
                 cyber_access_program: None,
                 effort: Some(ReasoningEffort::High),
-                summary: codex_protocol::config_types::ReasoningSummary::Auto,
+                summary: Some(codex_protocol::config_types::ReasoningSummary::Auto),
             }),
             "test-provider",
         );
@@ -797,9 +783,10 @@ mod tests {
 
         apply_rollout_item(
             &mut metadata,
-            &RolloutItem::SessionMeta(SessionMetaLine {
+            &RolloutItem::SessionMeta(Box::new(SessionMetaLine {
                 meta: SessionMeta {
                     creator_user_id: None,
+                    attached_thread: false,
                     creator_account_id: None,
                     session_id: thread_id.into(),
                     id: thread_id,
@@ -828,7 +815,7 @@ mod tests {
                     context_window: None,
                 },
                 git: None,
-            }),
+            })),
             "test-provider",
         );
 
@@ -842,6 +829,7 @@ mod tests {
         let created_at = DateTime::<Utc>::from_timestamp(1_735_689_600, 0).expect("timestamp");
         ThreadMetadata {
             creator_user_id: None,
+            attached_thread_parent_id: None,
             creator_account_id: None,
             originator: None,
             id,

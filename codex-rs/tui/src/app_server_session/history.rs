@@ -90,7 +90,7 @@ pub(crate) async fn read_thread_history(
             bail!("server returned a repeated history cursor");
         }
     }
-    bail!("thread exceeds the 10,000-turn history limit")
+    bail!("thread exceeds the 10,000-turn history limit");
 }
 
 #[cfg(test)]

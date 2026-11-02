@@ -62,6 +62,7 @@ class VoicePackageTest(unittest.TestCase):
                     version="0.1.0-alpha.15",
                     codex_bin=binary,
                     code_mode_host_bin=binary,
+                    exec_server_bin=binary,
                     bwrap_bin=binary if "linux" in target else None,
                     rg_bin=binary,
                     rg_license_dir=root,
@@ -76,6 +77,9 @@ class VoicePackageTest(unittest.TestCase):
                 self.assertEqual(args.output.read_bytes(), first)
                 with tarfile.open(args.output, "r:gz") as archive:
                     prefix = "better-codex-package/"
+                    executor = archive.getmember(prefix + "bin/codex-exec-server")
+                    self.assertEqual(executor.mode, 0o755)
+                    self.assertEqual(archive.extractfile(executor).read(), b"executable")
                     manifest = json.load(
                         archive.extractfile(
                             prefix + "codex-resources/voice/manifest.json"

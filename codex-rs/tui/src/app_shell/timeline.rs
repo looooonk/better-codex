@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::CompletedItemOrigin;
 use super::ShellState;
 use super::TranscriptKind;
@@ -5,7 +6,6 @@ use super::TranscriptLine;
 use super::rewind::RewindAnchor;
 use crate::app_server_session::ThreadTimeline;
 use codex_app_server_protocol::PatchApplyStatus;
-use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadRealtimeItem;
 use codex_app_server_protocol::ThreadRealtimeItemContent;
 use codex_app_server_protocol::ThreadRealtimeSessionOutcome;
@@ -58,8 +58,8 @@ impl ShellState {
                         .get(turn_id.as_str())
                         .is_some_and(|status| **status != TurnStatus::InProgress)
                         && matches!(
-                            *item,
-                            ThreadItem::FileChange {
+                            item.payload,
+                            ThreadItemPayload::FileChange {
                                 status: PatchApplyStatus::InProgress,
                                 ..
                             }

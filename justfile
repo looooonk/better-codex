@@ -14,20 +14,18 @@ python := if os_family() == "windows" { "python" } else { "python3" }
 help:
     just -l
 
-# Build the CLI and its isolated JavaScript helper using audited V8 artifacts.
+# Build the CLI and its execution helpers using audited V8 artifacts.
 build *args:
-    cargo build -p codex-cli -p codex-code-mode-host {args}
+    cargo build -p codex-cli -p codex-code-mode-host -p codex-exec-server-cli {args}
 
 # `codex`
 alias c := codex
 codex *args:
-    cargo build --profile {{ quote(cargo_profile) }} -p codex-code-mode-host --bin codex-code-mode-host
-    cargo run --profile {{ quote(cargo_profile) }} --bin codex -- {args}
+    {{ python }} ../scripts/run_source.py --profile {{ quote(cargo_profile) }} -- {args}
 
 # `codex exec`
 exec *args:
-    cargo build --profile {{ quote(cargo_profile) }} -p codex-code-mode-host --bin codex-code-mode-host
-    cargo run --profile {{ quote(cargo_profile) }} --bin codex -- exec {args}
+    {{ python }} ../scripts/run_source.py --profile {{ quote(cargo_profile) }} -- exec {args}
 
 # Start `codex exec-server` and run codex-tui.
 [no-cd]
@@ -165,7 +163,7 @@ bazel-argument-comment-lint:
 
 # Regenerate the json schema for config.toml from the current config types.
 write-config-schema:
-    cargo run -p codex-config-schema --bin codex-write-config-schema
+    cargo run --profile {{ quote(cargo_profile) }} -p codex-config-schema --bin codex-write-config-schema
 
 # Regenerate vendored app-server protocol schema artifacts.
 write-app-server-schema *args:

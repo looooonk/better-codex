@@ -1,5 +1,6 @@
 use super::step_settings::ResolvedStepSettings;
 use super::*;
+use codex_protocol::openai_models::ModelOrigin;
 
 /// Spawn a review thread using the given prompt.
 pub(super) async fn spawn_review_thread(
@@ -32,12 +33,6 @@ pub(super) async fn spawn_review_thread(
     let _ = review_features.disable(Feature::WebSearchCached);
     let _ = review_features.disable(Feature::Goals);
     let review_web_search_mode = WebSearchMode::Disabled;
-    let unified_exec_shell_mode = UnifiedExecShellMode::for_session(
-        review_features.get(),
-        crate::tools::tool_user_shell_type(sess.services.user_shell.as_ref()),
-        sess.services.shell_zsh_path.as_ref(),
-        sess.services.main_execve_wrapper_exe.as_ref(),
-    );
 
     let review_prompt = resolved.prompt.clone();
     let model_info = review_model_info.clone();
@@ -51,7 +46,7 @@ pub(super) async fn spawn_review_thread(
     per_turn_config.features = review_features.clone();
     if let Some(current_effort) = reasoning_effort.as_ref()
         && review_model_info.slug != parent_turn_context.model_info().slug
-        && !review_model_info.used_fallback_model_metadata
+        && review_model_info.origin != ModelOrigin::Synthetic
         && !review_model_info
             .supported_reasoning_levels
             .iter()
@@ -99,7 +94,7 @@ pub(super) async fn spawn_review_thread(
     let step_settings = Arc::new(ResolvedStepSettings::new(
         Arc::new(selected),
         Arc::new(model_info.clone()),
-        review_features.enabled(Feature::FastMode),
+        &review_features,
     ));
     per_turn_config.model = Some(model);
     per_turn_config.model_reasoning_effort = reasoning_effort;
@@ -142,7 +137,6 @@ pub(super) async fn spawn_review_thread(
         per_turn_config,
         step_settings,
         available_models,
-        unified_exec_shell_mode,
         turn_metadata_state,
     );
 
@@ -165,11 +159,8 @@ pub(super) async fn spawn_review_thread(
         tc.turn_metadata_state
             .spawn_git_enrichment_task(Arc::clone(&sess.services.git_root_discovery));
     }
-    // TODO(ccunningham): Review turns currently rely on `spawn_task` for TurnComplete but do not
-    // emit a parent TurnStarted. Consider giving review a full parent turn lifecycle
-    // (TurnStarted + TurnComplete) for consistency with other standalone tasks.
-    sess.spawn_task(Arc::clone(&tc), input, ReviewTask::new())
-        .await;
+    sess.abort_all_tasks(TurnAbortReason::Replaced).await;
+    sess.clear_connector_selection().await;
 
     // Announce entering review mode so UIs can switch modes.
     let item = TurnItem::EnteredReviewMode(EnteredReviewModeItem {
@@ -179,4 +170,10 @@ pub(super) async fn spawn_review_thread(
     });
     sess.emit_turn_item_started(&tc, &item).await;
     sess.emit_turn_item_completed(&tc, item).await;
+
+    // TODO(ccunningham): Review turns currently rely on `spawn_task` for TurnComplete but do not
+    // emit a parent TurnStarted. Consider giving review a full parent turn lifecycle
+    // (TurnStarted + TurnComplete) for consistency with other standalone tasks.
+    sess.start_task(Arc::clone(&tc), input, ReviewTask::new())
+        .await;
 }

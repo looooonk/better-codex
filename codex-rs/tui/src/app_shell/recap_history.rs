@@ -3,7 +3,6 @@
 
 use super::super::TranscriptKind;
 use super::super::TranscriptLine;
-use codex_context_fragments::ContextualUserFragment;
 use codex_context_fragments::RecapPrompt;
 use std::collections::VecDeque;
 
@@ -15,7 +14,7 @@ const EXCERPT_MARKER: &str = "\n[... excerpted ...]\n";
 pub(super) fn recap_history(cells: &VecDeque<TranscriptLine>) -> String {
     // Include native instructions in the byte ceiling, independent of token estimates.
     let history_budget = RECAP_PROMPT_MAX_BYTES
-        .saturating_sub(RecapPrompt::new("").render().len())
+        .saturating_sub(RecapPrompt::MAX_BYTES - RecapPrompt::HISTORY_MAX_BYTES)
         .min(RecapPrompt::HISTORY_MAX_BYTES);
     if history_budget < OMITTED_HISTORY.len() {
         return String::new();

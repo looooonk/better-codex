@@ -2,8 +2,6 @@ use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::HooksListParams;
 use codex_app_server_protocol::HooksListResponse;
-use codex_app_server_protocol::MemoryStatusParams;
-use codex_app_server_protocol::MemoryStatusResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ReviewDelivery;
 use codex_app_server_protocol::ReviewStartParams;
@@ -15,9 +13,6 @@ use codex_app_server_protocol::ThreadBackgroundTerminalsCleanParams;
 use codex_app_server_protocol::ThreadBackgroundTerminalsCleanResponse;
 use codex_app_server_protocol::ThreadBackgroundTerminalsListParams;
 use codex_app_server_protocol::ThreadBackgroundTerminalsListResponse;
-use codex_app_server_protocol::ThreadMemoryMode;
-use codex_app_server_protocol::ThreadMemoryModeSetParams;
-use codex_app_server_protocol::ThreadMemoryModeSetResponse;
 use codex_app_server_protocol::ThreadSetNameParams;
 use codex_app_server_protocol::ThreadSetNameResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
@@ -31,8 +26,21 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
+mod accounts;
+mod apps;
+mod memory;
+mod providers;
+pub(super) use accounts::AccountCommand;
+pub(super) use apps::AppsCommand;
+pub(super) use memory::MemoryCommand;
+pub(super) use providers::ProviderCommand;
+mod presets;
+pub(super) use presets::PresetCommand;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum WorkspaceRequest {
+    Archive,
+    Presets { cwd: String, command: PresetCommand },
     Mention { cwd: String, query: String },
     GuardianApproval(Box<codex_protocol::approvals::GuardianAssessmentEvent>),
     Diagnostic(super::diagnostic_commands::DiagnosticRequest),
@@ -46,7 +54,10 @@ pub(super) enum WorkspaceRequest {
     Experimental(Option<(String, bool)>),
     Background,
     Clean,
-    Memory(Option<ThreadMemoryMode>),
+    Memory { cwd: String, command: MemoryCommand },
+    Apps(AppsCommand),
+    Provider(ProviderCommand),
+    Account(AccountCommand),
     Plan(CollaborationMode),
     Cwd(PathBuf),
     Rename(String),
@@ -54,6 +65,11 @@ pub(super) enum WorkspaceRequest {
 
 #[derive(Debug)]
 pub(super) enum WorkspaceResponse {
+    Archived,
+    ProviderSelected { id: String, model: Option<String> },
+    AccountChanged { models: std::result::Result<Vec<codex_protocol::openai_models::ModelPreset>, String> },
+    AccountLogin { login_id: String, auth_url: String },
+    Preset(String),
     MentionFiles(Vec<codex_app_server_protocol::FuzzyFileSearchResult>),
     GuardianApproved(String),
     AutomaticRecap(bool),
@@ -77,13 +93,17 @@ pub(super) async fn execute(
 ) -> Result<WorkspaceResponse> {
     let read_only = matches!(
         &request,
-        WorkspaceRequest::Mention { .. }
+        WorkspaceRequest::Presets { command: PresetCommand::List | PresetCommand::Load(_), .. }
+            | WorkspaceRequest::Mention { .. }
             | WorkspaceRequest::Diagnostic(_)
             | WorkspaceRequest::Skills(_)
             | WorkspaceRequest::Hooks(_)
             | WorkspaceRequest::Experimental(None)
             | WorkspaceRequest::Background
-            | WorkspaceRequest::Memory(None)
+            | WorkspaceRequest::Memory { command: MemoryCommand::Status | MemoryCommand::Read, .. }
+            | WorkspaceRequest::Apps(AppsCommand::List(_) | AppsCommand::Access(_) | AppsCommand::Tools(_))
+            | WorkspaceRequest::Provider(ProviderCommand::List)
+            | WorkspaceRequest::Account(AccountCommand::List | AccountCommand::Refresh)
             | WorkspaceRequest::Extension(super::extension_commands::ExtensionCommand::Usage {
                 reset: false
             })
@@ -126,6 +146,16 @@ async fn execute_inner(
     let thread_id = thread_id.to_string();
     let mut lines = Vec::new();
     match request {
+        WorkspaceRequest::Presets { cwd, command } => return presets::execute(client, cwd, command).await,
+        WorkspaceRequest::Archive => {
+            let _: codex_app_server_protocol::ThreadArchiveResponse = client.request_typed(
+                ClientRequest::ThreadArchive {
+                    request_id,
+                    params: codex_app_server_protocol::ThreadArchiveParams { thread_id },
+                },
+            ).await?;
+            return Ok(WorkspaceResponse::Archived);
+        }
         WorkspaceRequest::Mention { cwd, query } => {
             return super::file_mentions::search(client, cwd, query)
                 .await
@@ -201,7 +231,7 @@ async fn execute_inner(
             let response: HooksListResponse = client
                 .request_typed(ClientRequest::HooksList {
                     request_id,
-                    params: HooksListParams { cwds: vec![cwd] },
+                    params: HooksListParams { cwds: vec![cwd], thread_id: None },
                 })
                 .await?;
             lines
@@ -312,34 +342,10 @@ async fn execute_inner(
                 .await?;
             lines.push("Background terminals stopped".to_string());
         }
-        WorkspaceRequest::Memory(Some(mode)) => {
-            let _: ThreadMemoryModeSetResponse = client
-                .request_typed(ClientRequest::ThreadMemoryModeSet {
-                    request_id,
-                    params: ThreadMemoryModeSetParams { thread_id, mode },
-                })
-                .await?;
-            lines.push(format!("Session memory: {mode:?}"));
-        }
-        WorkspaceRequest::Memory(None) => {
-            let response: MemoryStatusResponse = client
-                .request_typed(ClientRequest::MemoryStatus {
-                    request_id,
-                    params: MemoryStatusParams {
-                        min_consolidated_threads: None,
-                    },
-                })
-                .await?;
-            let status = if response.v2_ready {
-                "ready"
-            } else {
-                "building"
-            };
-            lines.push(format!(
-                "Memory {status}: {} consolidated sessions. Use /memory on|off for this session.",
-                response.v2_consolidated_threads
-            ));
-        }
+        WorkspaceRequest::Memory { cwd, command } => return memory::execute(client, thread_id, cwd, command).await,
+        WorkspaceRequest::Apps(command) => return apps::execute(client, thread_id, command).await,
+        WorkspaceRequest::Provider(command) => return providers::execute(client, command).await,
+        WorkspaceRequest::Account(command) => return accounts::execute(client, command).await,
         WorkspaceRequest::Cwd(cwd) => {
             let _: ThreadSettingsUpdateResponse = client
                 .request_typed(ClientRequest::ThreadSettingsUpdate {
@@ -386,3 +392,6 @@ mod tests;
 #[cfg(test)]
 #[path = "workspace_request_limits_tests.rs"]
 mod limits_tests;
+
+#[cfg(test)]
+mod test_support;

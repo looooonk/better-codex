@@ -185,9 +185,9 @@ bin_dir=${BETTER_CODEX_BIN_DIR:-"$HOME/.local/bin"}
 if [ "$daemon_only" = 1 ] || [ "$guard_latest" = 1 ] || [ "$guard_current" = 1 ]; then
     codex_home=${CODEX_HOME:-"$HOME/.codex"}
     if [ "$daemon_only" = 1 ]; then
-        install_root="$codex_home/packages/app-server-daemon"
+        install_root="$codex_home/packages/better-codex-daemon"
     else
-        install_root="$codex_home/packages/standalone"
+        install_root="$codex_home/packages/better-codex"
     fi
 fi
 selection=current

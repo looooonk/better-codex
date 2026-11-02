@@ -182,8 +182,8 @@ pub(super) async fn load_git_status(
                 ]
                 .into_iter()
                 .chain(candidate_roots),
-            )
-            .cwd(cwd),
+                cwd,
+            ),
         )
         .await
     else {

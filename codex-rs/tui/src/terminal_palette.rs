@@ -3,7 +3,7 @@ use codex_terminal_detection::TerminalName;
 use codex_terminal_detection::terminal_info;
 use ratatui::style::Color;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum StdoutColorLevel {
     TrueColor,
     Ansi256,
@@ -40,7 +40,7 @@ pub fn best_color_for_level(target: (u8, u8, u8), color_level: StdoutColorLevel)
     best_color_for_color_level(target, color_level)
 }
 
-fn effective_stdout_color_level() -> StdoutColorLevel {
+pub(crate) fn effective_stdout_color_level() -> StdoutColorLevel {
     stdout_color_level_for_terminal(
         stdout_color_level(),
         terminal_info().name,

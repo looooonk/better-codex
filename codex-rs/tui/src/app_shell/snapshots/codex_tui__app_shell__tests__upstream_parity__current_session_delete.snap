@@ -1,0 +1,33 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+assertion_line: 541
+expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
+---
+                                                            │
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                            │
+ ◆ CONVERSATION                                             │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Create a divergent standalone TUI.                  │▎+ New session  Ctrl+N
+                                                            │▎loading sessions
+ ▎ CODEX  Started a╭──────────────────────────────────────────────────────────────────────╮
+          server tu│◆ DELETE SESSION                                                      │
+ ▎ PLAN  1. Build s│Delete session: stage-one                                             │
+         2. Wire tr│Session ID: 01900000-0000-7000-8000-000000000001                      │0000000001
+         3. Render │No spawned descendants will be deleted.                               │ in session list
+                   │This permanently deletes all persisted history in that subtree.       │
+ ▌ tool exec just t│                                                                      │
+                   │> Delete permanently Enter/y                                          │
+ ▌ edited 3 files +│  Cancel Esc/n                                                        │
+                   │                                                                      │
+ ▎ CODEX  The new s╰──────────────────────────────────────────────────────────────────────╯
+                                                            │
+                                                            │
+                                                            │
+╭──────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                            ││
+│> Type a message, Shift+Enter for newline                 ││
+│                                                          ││
+│                                                          ││
+╰──────────────────────────────────────────────────────────╯│

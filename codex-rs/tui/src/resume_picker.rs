@@ -39,6 +39,7 @@ use chrono::Utc;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
@@ -160,6 +161,7 @@ enum PickerLoadRequest {
 #[derive(Clone)]
 enum ProviderFilter {
     Any,
+    All,
     MatchDefault(String),
 }
 
@@ -358,7 +360,7 @@ async fn run_resume_picker_with_launch_context(
         app_server.remote_cwd_override(),
     );
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_workspace);
-    let provider_filter = picker_provider_filter(config, uses_remote_workspace);
+    let provider_filter = ProviderFilter::All;
     let runtime_keymap = picker_runtime_keymap(config)?;
     let request_handle = app_server.request_handle();
     let options = SessionPickerRunOptions {
@@ -402,7 +404,8 @@ pub async fn run_fork_picker_with_app_server(
         app_server.remote_cwd_override(),
     );
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_workspace);
-    let provider_filter = picker_provider_filter(config, uses_remote_workspace);
+    let provider_filter = app_server.history_model_provider(config).await?
+        .map_or(ProviderFilter::Any, ProviderFilter::MatchDefault);
     let runtime_keymap = picker_runtime_keymap(config)?;
     let request_handle = app_server.request_handle();
     let options = SessionPickerRunOptions {
@@ -534,14 +537,6 @@ fn local_picker_cwd_filter(
         None
     } else {
         cwd_filter.clone()
-    }
-}
-
-fn picker_provider_filter(config: &Config, uses_remote_workspace: bool) -> ProviderFilter {
-    if uses_remote_workspace {
-        ProviderFilter::Any
-    } else {
-        ProviderFilter::MatchDefault(config.model_provider_id.to_string())
     }
 }
 
@@ -797,8 +792,8 @@ async fn load_transcript_preview(
         .turns
         .iter()
         .flat_map(|turn| turn.items.iter())
-        .filter_map(|item| match item {
-            ThreadItem::UserMessage { content, .. } => Some(TranscriptPreviewLine {
+        .filter_map(|item| match &item.payload {
+            ThreadItemPayload::UserMessage { content, .. } => Some(TranscriptPreviewLine {
                 speaker: TranscriptPreviewSpeaker::User,
                 text: content
                     .iter()
@@ -811,7 +806,7 @@ async fn load_transcript_preview(
                     .collect::<Vec<_>>()
                     .join(" "),
             }),
-            ThreadItem::AgentMessage { text, .. } => Some(TranscriptPreviewLine {
+            ThreadItemPayload::AgentMessage { text, .. } => Some(TranscriptPreviewLine {
                 speaker: TranscriptPreviewSpeaker::Assistant,
                 text: parse_assistant_markdown(text, cwd).visible_markdown,
             }),
@@ -1849,6 +1844,8 @@ fn thread_list_params(
     include_non_interactive: bool,
 ) -> ThreadListParams {
     ThreadListParams {
+        attached_to_thread_id: None,
+        excluded_thread_ids: None,
         originators: None,
         project_id: None,
         section_id: None,
@@ -1858,6 +1855,7 @@ fn thread_list_params(
         sort_direction: None,
         model_providers: match provider_filter {
             ProviderFilter::Any => None,
+            ProviderFilter::All => Some(Vec::new()),
             ProviderFilter::MatchDefault(default_provider) => Some(vec![default_provider]),
         },
         source_kinds: Some(crate::resume_source_kinds(include_non_interactive)),
@@ -5890,18 +5888,19 @@ session_picker_view = "dense"
             git_info: None,
             name: None,
             turns: vec![codex_app_server_protocol::Turn {
+                root_turn_id: None,
                 id: String::from("turn-1"),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
                 items: vec![
-                    ThreadItem::UserMessage {
+                    ThreadItem::untimed(ThreadItemPayload::UserMessage {
                         id: String::from("user-1"),
                         client_id: None,
                         content: vec![codex_app_server_protocol::UserInput::Text {
                             text: String::from("hello from user"),
                             text_elements: Vec::new(),
                         }],
-                    },
-                    ThreadItem::AgentMessage {
+                    }),
+                    ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                         delivery: None,
                         questions: None,
 
@@ -5909,11 +5908,11 @@ session_picker_view = "dense"
                         text: String::from("hello from assistant"),
                         phase: None,
                         memory_citation: None,
-                    },
-                    ThreadItem::Plan {
+                    }),
+                    ThreadItem::untimed(ThreadItemPayload::Plan {
                         id: String::from("plan-1"),
                         text: String::from("1. Do the thing"),
-                    },
+                    }),
                 ],
                 status: codex_app_server_protocol::TurnStatus::Completed,
                 error: None,
@@ -5975,13 +5974,14 @@ session_picker_view = "dense"
             git_info: None,
             name: None,
             turns: vec![codex_app_server_protocol::Turn {
+                root_turn_id: None,
                 id: String::from("turn-1"),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
-                items: vec![ThreadItem::Reasoning {
+                items: vec![ThreadItem::untimed(ThreadItemPayload::Reasoning {
                     id: String::from("reasoning-1"),
                     summary: Vec::new(),
                     content: vec![String::from("private raw chain of thought")],
-                }],
+                })],
                 status: codex_app_server_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,
@@ -6045,13 +6045,14 @@ session_picker_view = "dense"
             git_info: None,
             name: None,
             turns: vec![codex_app_server_protocol::Turn {
+                root_turn_id: None,
                 id: String::from("turn-1"),
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
-                items: vec![ThreadItem::Reasoning {
+                items: vec![ThreadItem::untimed(ThreadItemPayload::Reasoning {
                     id: String::from("reasoning-1"),
                     summary: vec![String::from("public summary")],
                     content: vec![String::from("raw reasoning content")],
-                }],
+                })],
                 status: codex_app_server_protocol::TurnStatus::Completed,
                 error: None,
                 started_at: None,

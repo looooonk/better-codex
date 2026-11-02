@@ -20,6 +20,7 @@ use codex_protocol::mcp::is_node_repl_backed_connector;
 use codex_protocol::openai_models::GuardianReviewMode;
 use codex_protocol::openai_models::GuardianScope;
 use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::turn_input::CyberAccessProgram;
 
 use super::action::ActionRenderError;
 use super::action::GuardianAction;
@@ -37,6 +38,18 @@ use super::score::GuardianV2ScoreProgress;
 use codex_protocol::openai_models::GuardianUnscoredAction as UnscoredAction;
 
 impl GuardianV2Extension {
+    #[tracing::instrument(
+        name = "guardian_scoring_observation",
+        level = "debug",
+        skip_all,
+        fields(
+            thread_id = input.thread_store.level_id(),
+            turn_id = input.turn_id,
+            call_id = input.call_id,
+            tool_name = %input.tool_name,
+            tool_call_index = tracing::field::Empty,
+        )
+    )]
     pub(super) async fn score_tool(&self, input: ToolStartInput<'_>) {
         // Polling a code cell does not introduce another action or age its score.
         if input.tool_name.is_default_namespace() && input.tool_name.name == "wait" {
@@ -52,6 +65,30 @@ impl GuardianV2Extension {
         let Some(score_progress) = input.thread_store.get::<GuardianV2ScoreProgress>() else {
             return;
         };
+        let is_js_execution = input.mcp_tool.is_some_and(|tool| {
+            let info = tool.tool_info();
+            is_node_repl_backed_connector(&info.server_name, info.connector_id.as_deref())
+                && if info.server_name == "codex_apps" {
+                    info.tool
+                        .meta
+                        .as_ref()
+                        .and_then(|meta| meta.get("_codex_apps"))
+                        .and_then(|meta| meta.get("resource_uri"))
+                        .and_then(serde_json::Value::as_str)
+                        .and_then(|uri| uri.trim_matches('/').rsplit('/').next())
+                        == Some("js")
+                } else {
+                    info.tool.name == "js"
+                }
+        });
+        if input.serving_assessment.is_some() {
+            if is_js_execution {
+                score_progress.observe_js_execution();
+            }
+            let index = score_progress.observe(&input);
+            score_progress.invalidate(index);
+            return;
+        }
         let parent_model = input.thread_store.get::<ModelInfo>();
         let policy = guardian_config.policy_for_model(parent_model.as_deref());
         if !policy.scoring_enabled() {
@@ -62,6 +99,16 @@ impl GuardianV2Extension {
             .map(|tool| {
                 let info = tool.tool_info();
                 GuardianScope::for_mcp_connector(&info.server_name, info.connector_id.as_deref())
+            })
+            .or_else(|| {
+                if guardian_config.review_multi_agent_calls {
+                    GuardianScope::for_multi_agent_tool(
+                        input.tool_name,
+                        guardian_config.multi_agent_namespace.as_deref(),
+                    )
+                } else {
+                    None
+                }
             })
             .or_else(|| GuardianScope::for_tool(input.tool_name));
         // Model policies review nested actions; the Code Mode wrapper leaves their scores alone.
@@ -100,35 +147,22 @@ impl GuardianV2Extension {
             }
             return;
         }
-        if input.mcp_tool.is_some_and(|tool| {
-            let info = tool.tool_info();
-            is_node_repl_backed_connector(&info.server_name, info.connector_id.as_deref())
-                && if info.server_name == "codex_apps" {
-                    info.tool
-                        .meta
-                        .as_ref()
-                        .and_then(|meta| meta.get("_codex_apps"))
-                        .and_then(|meta| meta.get("resource_uri"))
-                        .and_then(serde_json::Value::as_str)
-                        .and_then(|uri| uri.trim_matches('/').rsplit('/').next())
-                        == Some("js")
-                } else {
-                    info.tool.name == "js"
-                }
-        }) {
+        if is_js_execution {
             score_progress.observe_js_execution();
         }
         let metrics = score_progress.metrics.clone();
         let context_mode = GuardianContextMode::from_history(input.conversation_history.as_ref());
         let analytics = input.session_store.get::<AnalyticsEventsClient>();
         let sampled_at = SystemTime::now();
-        let (tool_call_index, reservation) = match input.thread_store.get::<ConversationBackend>() {
-            Some(conversation) => {
-                let (index, reservation) = conversation.reserve(|| score_progress.observe(&input));
-                (index, reservation.map(Some))
-            }
-            None => (score_progress.observe(&input), Ok(None)),
+        let Some(conversation) = input.thread_store.get::<ConversationBackend>() else {
+            let index = score_progress.observe(&input);
+            score_progress.invalidate(index);
+            score_progress.fail_closed(sampled_at);
+            return;
         };
+        let (tool_call_index, reservation) =
+            conversation.reserve(|| score_progress.observe(&input));
+        tracing::Span::current().record("tool_call_index", tool_call_index);
         let reservation = match reservation {
             Ok(reservation) => reservation,
             Err(error) => {
@@ -148,6 +182,10 @@ impl GuardianV2Extension {
         let thread_id = input.thread_store.level_id().to_owned();
         let turn_id = input.turn_id.to_owned();
         let root_turn_id = input.root_turn_id.map(str::to_owned);
+        let cyber_access_program = input
+            .turn_store
+            .get::<CyberAccessProgram>()
+            .map(|program| *program);
         let parent_response_id = input
             .turn_store
             .get::<codex_api::ResponseId>()
@@ -252,11 +290,20 @@ impl GuardianV2Extension {
         ) {
             Ok(compaction) => compaction,
             Err(error) => {
-                let (outcome, failure_reason) = if error == ParentCompactionError::RequiresSync {
-                    score_progress.invalidate(tool_call_index);
-                    ("skipped", None)
-                } else {
-                    ("failure", Some("parent_compaction_error"))
+                let (outcome, failure_reason) = match error {
+                    ParentCompactionError::RequiresSync => {
+                        score_progress.invalidate(tool_call_index);
+                        ("skipped", None)
+                    }
+                    ParentCompactionError::Serialization => {
+                        ("failure", Some("parent_compaction_serialization"))
+                    }
+                    ParentCompactionError::Oversized => {
+                        ("failure", Some("parent_compaction_oversized"))
+                    }
+                    ParentCompactionError::Unusable => {
+                        ("failure", Some("parent_compaction_unusable"))
+                    }
                 };
                 score_progress.fail_closed(sampled_at);
                 record_classification(
@@ -270,7 +317,6 @@ impl GuardianV2Extension {
             }
         };
         let parent_compaction = selected_compaction.item;
-        let parent_compaction_hash = selected_compaction.model_hash;
         let call_id = input.call_id.to_owned();
         let mcp_tool = input.mcp_tool.cloned();
         let action = GuardianAction {
@@ -352,7 +398,6 @@ impl GuardianV2Extension {
         let classification = Classification {
             reservation,
             classification_started_at,
-            sampler,
             decisions_sampler: input
                 .thread_store
                 .get::<super::decisions::DecisionsSampler>(),
@@ -367,13 +412,13 @@ impl GuardianV2Extension {
             thread_id,
             turn_id,
             root_turn_id,
+            cyber_access_program,
             parent_response_id,
             manager,
             thread,
             config,
             context_mode,
             parent_compaction,
-            parent_compaction_hash,
             call_id,
             mcp_tool,
             planned_action,

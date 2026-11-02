@@ -1,17 +1,17 @@
 ---
 source: tui/src/markdown_render/web_links_tests.rs
-assertion_line: 254
+assertion_line: 255
 expression: presentations
 ---
 [
     Text::from_iter([
         Line::from_iter([
             Span::from("plain "),
-            Span::from("plain").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("plain").fg(Color::Rgb(137, 180, 250)).underlined(),
             Span::from(" "),
             Span::from("code").fg(Color::Rgb(166, 227, 161)),
             Span::from(" "),
-            Span::from("code").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("code").fg(Color::Rgb(137, 180, 250)).underlined(),
         ]),
         Line::default(),
         Line::from_iter([
@@ -21,23 +21,23 @@ expression: presentations
         Line::from(Span::from("━━━━━━━━━━").dim()),
         Line::from_iter([
             Span::from(" "),
-            Span::from("docs").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("docs").fg(Color::Rgb(137, 180, 250)).underlined(),
         ]),
     ]),
     Text::from_iter([
         Line::from_iter([
             Span::from("plain "),
-            Span::from("plain").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("plain").fg(Color::Rgb(137, 180, 250)).underlined(),
             Span::from(" ("),
-            Span::from("https://example.com").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("https://example.com").fg(Color::Rgb(137, 180, 250)).underlined(),
             Span::from(")"),
             Span::from(" "),
             Span::from("code").fg(Color::Rgb(166, 227, 161)),
         ]),
         Line::from_iter([
-            Span::from("code").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("code").fg(Color::Rgb(137, 180, 250)).underlined(),
             Span::from(" ("),
-            Span::from("https://example.com").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("https://example.com").fg(Color::Rgb(137, 180, 250)).underlined(),
             Span::from(")"),
         ]),
         Line::default(),
@@ -48,9 +48,9 @@ expression: presentations
         Line::from(Span::from("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").dim()),
         Line::from_iter([
             Span::from(" "),
-            Span::from("docs").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("docs").fg(Color::Rgb(137, 180, 250)).underlined(),
             Span::from(" ("),
-            Span::from("https://example.com/docs").fg(Color::Rgb(122, 162, 247)).underlined(),
+            Span::from("https://example.com/docs").fg(Color::Rgb(137, 180, 250)).underlined(),
             Span::from(")"),
         ]),
     ]),

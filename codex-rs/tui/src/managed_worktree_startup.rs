@@ -79,8 +79,10 @@ pub(crate) async fn prepare_startup(
         if cli.cwd.is_none() {
             let fallback = thread.cwd.into_path_buf();
             let latest = if let Some(path) = thread.path {
+                let cancelled = tokio_util::sync::CancellationToken::new();
+                let _cancel_on_drop = cancelled.clone().drop_guard();
                 tokio::task::spawn_blocking(move || {
-                    let reader = codex_rollout::open_rollout_seekable_reader(&path).ok()?;
+                    let reader = codex_rollout::open_rollout_seekable_reader(&path, || cancelled.is_cancelled()).ok()?;
                     let mut scanner = codex_rollout::ReverseJsonlScanner::new(reader).ok()?;
                     while let Some(outcome) = scanner.scan_next_rollout_line().ok()? {
                         if let codex_rollout::ScanOutcome::Parsed(codex_rollout::RolloutLine {

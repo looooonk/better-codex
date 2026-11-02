@@ -65,8 +65,7 @@ impl ShellState {
             self.push_status("no session selected");
             return;
         };
-        if self.session_list.selected_is_current(self.thread_id) {
-            self.push_error("cannot delete the active session");
+        if thread_id == self.thread_id && self.block_session_switch_if_busy() {
             return;
         }
         let title = self
@@ -74,6 +73,15 @@ impl ShellState {
             .selected_title()
             .unwrap_or("untitled thread")
             .to_string();
+        self.inspect_session_delete(app_server, thread_id, title);
+    }
+
+    pub(super) fn inspect_session_delete<S: AppShellBackend>(
+        &mut self,
+        app_server: &S,
+        thread_id: ThreadId,
+        title: String,
+    ) {
         let request = app_server.thread_descendant_count_in_background(thread_id);
         self.start_backend_action(
             ActionGroup::SessionDelete,
@@ -119,11 +127,10 @@ impl ShellState {
         let Some(pending) = self.pending_session_delete.as_ref() else {
             return;
         };
-        if pending.thread_id == self.thread_id {
-            self.push_error("cannot delete the active session");
+        let thread_id = pending.thread_id;
+        if thread_id == self.thread_id && self.block_session_switch_if_busy() {
             return;
         }
-        let thread_id = pending.thread_id;
         let request = app_server.thread_delete_in_background(thread_id);
         self.start_backend_action(ActionGroup::SessionDelete, "deleting session", async move {
             BackendActionResult::SessionDelete {
@@ -159,6 +166,12 @@ impl ShellState {
                 self.pending_session_delete = None;
                 self.invalidate_session_list_refresh();
                 self.session_list.remove_thread(thread_id);
+                if thread_id == self.thread_id {
+                    self.handle_remote_thread_lifecycle(
+                        &thread_id.to_string(),
+                        super::session_lifecycle::RemoteThreadLifecycle::Deleted,
+                    );
+                }
                 self.push_status(format!("deleted session {thread_id}"));
             }
             Err(err) => self.report_action_error("failed to delete session", err),

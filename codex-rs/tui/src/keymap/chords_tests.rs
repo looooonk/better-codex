@@ -190,6 +190,17 @@ fn allows_shared_prefixes_with_distinct_completions() {
 }
 
 #[test]
+fn allows_super_modified_character_prefixes_and_leaders() {
+    let mut config = TuiKeymap::default();
+    config.global.leader = Some(binding("super-k"));
+    config.global.open_transcript = Some(binding("leader super-t"));
+    config.global.copy = Some(binding("super-o super-c"));
+
+    RuntimeKeymap::from_config(&config)
+        .expect("Super-modified characters do not intercept ordinary text input");
+}
+
+#[test]
 fn allows_plain_prefixes_in_vim_and_repeated_chords_in_all_contexts() {
     let mut config = TuiKeymap::default();
     config.vim_normal.move_line_start = Some(binding("g g"));
@@ -623,4 +634,27 @@ fn warning_context_keeps_local_chords_ahead_of_copy_and_hides_unreachable_hints(
     };
     assert!(runtime.list.jump_bottom.is_pressed(event));
     assert!(!runtime.app.copy.is_pressed(event));
+}
+
+#[test]
+fn copy_only_pager_context_dispatches_copy_without_transcript_actions() {
+    let config = serde_json::from_value(serde_json::json!({
+        "global": {"copy": "leader c"}
+    }))
+    .unwrap();
+    let runtime = RuntimeKeymap::from_config(&config).unwrap();
+    let contexts = KeymapContextSet::new(KeymapContext::Pager).with_copy();
+    let mut matcher = KeyChordMatcher::default();
+    let prefix = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL);
+    assert!(matches!(
+        matcher.advance(prefix, &runtime.chords, contexts),
+        KeyChordMatch::Pending(_)
+    ));
+    let KeyChordMatch::Completed(event) =
+        matcher.advance(KeyCode::Char('c').into(), &runtime.chords, contexts)
+    else {
+        panic!("copy chord should complete")
+    };
+    assert!(runtime.app.copy.is_pressed(event));
+    assert!(!runtime.app.select_transcript.is_pressed(event));
 }

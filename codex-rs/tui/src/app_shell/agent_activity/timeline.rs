@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 use super::text::MAX_LATEST_MESSAGE_CHARS;
 use super::text::bounded_text;
 use super::text::concise_summary;
@@ -153,18 +154,18 @@ impl AgentTimelineEntry {
 }
 
 pub(super) fn child_item_summary(item: &ThreadItem) -> (AgentChildEvent, Option<String>) {
-    match item {
-        ThreadItem::AgentMessage { text, .. } => (
+    match &item.payload {
+        ThreadItemPayload::AgentMessage { text, .. } => (
             AgentChildEvent::Message,
             bounded_text(text, MAX_LATEST_MESSAGE_CHARS),
         ),
-        ThreadItem::Reasoning { summary, .. } => (
+        ThreadItemPayload::Reasoning { summary, .. } => (
             AgentChildEvent::Reasoning,
             summary
                 .last()
                 .and_then(|text| bounded_text(text, MAX_LATEST_MESSAGE_CHARS)),
         ),
-        ThreadItem::CommandExecution {
+        ThreadItemPayload::CommandExecution {
             command,
             aggregated_output,
             ..

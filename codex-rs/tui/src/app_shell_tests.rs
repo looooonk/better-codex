@@ -1,3 +1,4 @@
+use codex_app_server_protocol::ThreadItemPayload;
 #[path = "app_shell/agent_runtime_tests.rs"]
 mod agent_runtime;
 
@@ -429,7 +430,7 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     let thread_id = shell.thread_id;
     let mut retained_turn = prompt_turn("retained-turn", "retained prompt");
     retained_turn.items.extend([
-        ThreadItem::AgentMessage {
+        ThreadItem::untimed(ThreadItemPayload::AgentMessage {
             delivery: None,
             questions: None,
 
@@ -437,8 +438,8 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
             text: "retained response".to_string(),
             phase: None,
             memory_citation: None,
-        },
-        ThreadItem::FileChange {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::FileChange {
             id: "retained-file".to_string(),
             changes: vec![FileUpdateChange {
                 path: "src/retained.rs".to_string(),
@@ -446,8 +447,8 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
                 diff: "retained\n".to_string(),
             }],
             status: codex_app_server_protocol::PatchApplyStatus::Completed,
-        },
-        ThreadItem::CommandExecution {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::CommandExecution {
             sandbox_type: None,
             model_context: None,
             plugin_id: None,
@@ -463,7 +464,7 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
             aggregated_output: Some("authoritative command output\n".to_string()),
             exit_code: None,
             duration_ms: None,
-        },
+        }),
     ]);
     let mut retained_thread = thread_fixture(thread_id, Some("retained session"), "retained");
     retained_thread.history_mode = codex_app_server_protocol::ThreadHistoryMode::Paginated;
@@ -520,14 +521,14 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     assert!(shell.is_thread_revert_hydrating());
 
     let mut active_turn = test_turn("current-turn", TurnStatus::InProgress);
-    active_turn.items.push(ThreadItem::UserMessage {
+    active_turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: "current-prompt".to_string(),
         client_id: Some("current-client".to_string()),
         content: vec![ApiUserInput::Text {
             text: "current queued follower".to_string(),
             text_elements: Vec::new(),
         }],
-    });
+    }));
     {
         let mut threads = backend.threads.lock().expect("threads should lock");
         threads[0].status = ThreadStatus::Active {
@@ -562,9 +563,9 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
             .iter_mut()
             .find(|item| item.id() == "current-command")
             .expect("retained command should remain in history");
-        let ThreadItem::CommandExecution {
+        let ThreadItemPayload::CommandExecution {
             aggregated_output, ..
-        } = command
+        } = &mut command.payload
         else {
             panic!("retained command should remain in history");
         };
@@ -1424,7 +1425,7 @@ fn active_turn_progress_recovers_retrying_status() {
             thread_id: thread_id.clone(),
             turn_id: "turn-active".to_string(),
             started_at_ms: 0,
-            item: ThreadItem::AgentMessage {
+            item: ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                 delivery: None,
                 questions: None,
 
@@ -1432,15 +1433,15 @@ fn active_turn_progress_recovers_retrying_status() {
                 text: String::new(),
                 phase: None,
                 memory_citation: None,
-            },
+            }),
         }),
         ServerNotification::ItemCompleted(ItemCompletedNotification {
             thread_id,
             turn_id: "turn-active".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::ContextCompaction {
+            item: ThreadItem::untimed(ThreadItemPayload::ContextCompaction {
                 id: "compaction-1".to_string(),
-            },
+            }),
         }),
     ];
 
@@ -2575,16 +2576,16 @@ fn rewind_anchors_only_opening_text_only_prompts() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     let mut turn = prompt_turn("turn-one", "Opening prompt");
-    turn.items.push(ThreadItem::UserMessage {
+    turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: "steer".to_string(),
         client_id: Some("steer-client".to_string()),
         content: vec![ApiUserInput::Text {
             text: "Steered follow-up".to_string(),
             text_elements: Vec::new(),
         }],
-    });
+    }));
     let mut rich_turn = test_turn("turn-two", TurnStatus::Completed);
-    rich_turn.items.push(ThreadItem::UserMessage {
+    rich_turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: "rich".to_string(),
         client_id: None,
         content: vec![
@@ -2599,10 +2600,10 @@ fn rewind_anchors_only_opening_text_only_prompts() {
                 },
             },
         ],
-    });
+    }));
     let mut automatic_turn = test_turn("turn-three", TurnStatus::Completed);
     automatic_turn.items.extend([
-        ThreadItem::AgentMessage {
+        ThreadItem::untimed(ThreadItemPayload::AgentMessage {
             delivery: None,
             questions: None,
 
@@ -2610,15 +2611,15 @@ fn rewind_anchors_only_opening_text_only_prompts() {
             text: "Continue the active goal.".to_string(),
             phase: None,
             memory_citation: None,
-        },
-        ThreadItem::UserMessage {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::UserMessage {
             id: "late-steer".to_string(),
             client_id: Some("late-steer-client".to_string()),
             content: vec![ApiUserInput::Text {
                 text: "Steer the automatic turn".to_string(),
                 text_elements: Vec::new(),
             }],
-        },
+        }),
     ]);
 
     shell.ingest_turn_history(vec![turn, rich_turn, automatic_turn]);
@@ -2852,12 +2853,14 @@ fn renders_agents_dashboard_snapshot() {
         let thread_id = test_thread_id(thread_id);
         shell
             .agent_activity
-            .reduce_completed(&ThreadItem::SubAgentActivity {
+            .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
                 id: format!("activity-{thread_id}"),
                 kind: SubAgentActivityKind::Started,
                 agent_thread_id: thread_id.to_string(),
                 agent_path: path.to_string(),
-            });
+            }));
         shell
             .agent_activity
             .hydrate_threads(vec![subagent_thread_fixture(
@@ -2873,7 +2876,7 @@ fn renders_agents_dashboard_snapshot() {
     .map(str::to_string);
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::CollabAgentToolCall {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
             id: "spawn-agents".to_string(),
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::Completed,
@@ -2915,7 +2918,7 @@ fn renders_agents_dashboard_snapshot() {
                 )
             })
             .collect(),
-        });
+        }));
     shell.agent_activity.select_thread(&agent_ids[3]);
 
     insta::assert_snapshot!(render_shell(
@@ -2982,12 +2985,14 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
     shell.composer.clear();
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::SubAgentActivity {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/full-log".to_string(),
-        });
+        }));
 
     let mut child = thread_fixture(child_id, /*name*/ None, "child log");
     child.turns = (0..13)
@@ -3000,7 +3005,7 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
             } else {
                 format!("middle history item {index}")
             };
-            turn.items.push(ThreadItem::AgentMessage {
+            turn.items.push(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                 delivery: None,
                 questions: None,
 
@@ -3008,10 +3013,10 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
                 text,
                 phase: None,
                 memory_citation: None,
-            });
+            }));
             if index == 12 {
                 turn.items.extend([
-                    ThreadItem::AgentMessage {
+                    ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                         delivery: None,
                         questions: None,
 
@@ -3019,8 +3024,8 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
                         text: "::git-stage{cwd=\"/workspace/better-codex\"}".to_string(),
                         phase: None,
                         memory_citation: None,
-                    },
-                    ThreadItem::FileChange {
+                    }),
+                    ThreadItem::untimed(ThreadItemPayload::FileChange {
                         id: "full-log-file-change".to_string(),
                         changes: vec![FileUpdateChange {
                             path: "src/full_log.rs".to_string(),
@@ -3028,8 +3033,8 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
                             diff: "@@ full diff sentinel @@".to_string(),
                         }],
                         status: codex_app_server_protocol::PatchApplyStatus::Completed,
-                    },
-                    ThreadItem::McpToolCall {
+                    }),
+                    ThreadItem::untimed(ThreadItemPayload::McpToolCall {
                         mcp_app_ui: None,
                         read_only_hint: None,
 
@@ -3048,7 +3053,7 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
                         })),
                         error: None,
                         duration_ms: Some(42),
-                    },
+                    }),
                 ]);
                 turn.status = TurnStatus::Failed;
                 turn.error = Some(TurnError {
@@ -3104,12 +3109,14 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
     let other_child_id = test_thread_id("01900000-0000-7000-8000-000000000094");
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::SubAgentActivity {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "other-child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: other_child_id.to_string(),
             agent_path: "/root/other-log".to_string(),
-        });
+        }));
     assert!(
         shell
             .agent_activity
@@ -3154,12 +3161,14 @@ async fn agent_log_reports_full_history_read_failure() {
     shell.agents_focused = true;
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::SubAgentActivity {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/missing-log".to_string(),
-        });
+        }));
     let backend = RecordingBackend::default();
 
     shell.open_selected_agent_log(&config, &backend);
@@ -3190,12 +3199,14 @@ async fn agent_log_rejects_partial_turn_history() {
     shell.agents_focused = true;
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::SubAgentActivity {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/partial-log".to_string(),
-        });
+        }));
     let mut child = thread_fixture(child_id, /*name*/ None, "partial log");
     let mut turn = test_turn("summary-turn", TurnStatus::Completed);
     turn.items_view = TurnItemsView::Summary;
@@ -3228,12 +3239,14 @@ async fn replacing_session_discards_pending_agent_log_result() {
     let mut shell = ShellState::snapshot_fixture();
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::SubAgentActivity {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/stale-log".to_string(),
-        });
+        }));
     let backend = RecordingBackend::with_threads(vec![thread_fixture(
         child_id,
         /*name*/ None,
@@ -3911,12 +3924,14 @@ async fn interactive_requests_from_replaced_sessions_are_rejected() {
     let mut backend = RecordingBackend::default();
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::SubAgentActivity {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "historical-agent".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: "01900000-0000-7000-8000-000000000099".to_string(),
             agent_path: "/root/historical".to_string(),
-        });
+        }));
     let mut request = command_approval_request();
     let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
         panic!("command approval fixture should keep its request type");
@@ -3947,12 +3962,14 @@ fn notifications_from_historical_inactive_agents_are_ignored() {
     let thread_id = "01900000-0000-7000-8000-000000000098";
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::SubAgentActivity {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "historical-agent".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: thread_id.to_string(),
             agent_path: "/root/historical".to_string(),
-        });
+        }));
     let before = shell.agent_activity.agent(thread_id).cloned();
 
     shell.handle_notification(ServerNotification::AgentMessageDelta(
@@ -6256,14 +6273,14 @@ fn duplicate_completed_user_message_is_suppressed() {
     shell.push_user("hello from user");
 
     shell.ingest_completed_item(
-        ThreadItem::UserMessage {
+        ThreadItem::untimed(ThreadItemPayload::UserMessage {
             id: "user-1".to_string(),
             client_id: None,
             content: vec![UserInput::Text {
                 text: "hello from user".to_string(),
                 text_elements: Vec::new(),
             }],
-        },
+        }),
         CompletedItemOrigin::Live,
     );
 
@@ -6280,7 +6297,7 @@ fn completed_agent_message_replaces_matching_stream() {
     shell.streaming_assistant = "hello from codex".to_string();
 
     shell.ingest_completed_item(
-        ThreadItem::AgentMessage {
+        ThreadItem::untimed(ThreadItemPayload::AgentMessage {
             delivery: None,
             questions: None,
 
@@ -6288,7 +6305,7 @@ fn completed_agent_message_replaces_matching_stream() {
             text: "hello from codex".to_string(),
             phase: None,
             memory_citation: None,
-        },
+        }),
         CompletedItemOrigin::Live,
     );
     shell.finish_streaming_assistant();
@@ -6321,7 +6338,7 @@ fn completed_agent_message_reconciles_a_mismatched_stream_by_item_id() {
             thread_id: thread_id.clone(),
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::AgentMessage {
+            item: ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                 delivery: None,
                 questions: None,
 
@@ -6329,7 +6346,7 @@ fn completed_agent_message_reconciles_a_mismatched_stream_by_item_id() {
                 text: "The authoritative first answer.".to_string(),
                 phase: None,
                 memory_citation: None,
-            },
+            }),
         },
     ));
     shell.handle_notification(ServerNotification::AgentMessageDelta(
@@ -6395,10 +6412,10 @@ fn completed_plan_reconciles_a_mismatched_stream_by_item_id() {
             thread_id,
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::Plan {
+            item: ThreadItem::untimed(ThreadItemPayload::Plan {
                 id: "plan-1".to_string(),
                 text: "The authoritative plan".to_string(),
-            },
+            }),
         },
     ));
 
@@ -6425,14 +6442,14 @@ fn completed_reasoning_hides_empty_generated_summary_parts() {
     shell.transcript.clear();
 
     shell.ingest_completed_item(
-        ThreadItem::Reasoning {
+        ThreadItem::untimed(ThreadItemPayload::Reasoning {
             id: "reasoning-1".to_string(),
             summary: vec![
                 "**Checking the first thing**\n\n<!-- -->".to_string(),
                 "**Checking the second thing**\n\n<!-- -->".to_string(),
             ],
             content: vec!["raw reasoning must not replace an empty summary".to_string()],
-        },
+        }),
         CompletedItemOrigin::Live,
     );
 
@@ -6445,7 +6462,7 @@ fn completed_reasoning_uses_summary_without_interleaving_raw_content() {
     shell.transcript.clear();
 
     shell.ingest_completed_item(
-        ThreadItem::Reasoning {
+        ThreadItem::untimed(ThreadItemPayload::Reasoning {
             id: "reasoning-1".to_string(),
             summary: vec![
                 "**Plan**\n\ndone".to_string(),
@@ -6455,7 +6472,7 @@ fn completed_reasoning_uses_summary_without_interleaving_raw_content() {
                 "raw reasoning one".to_string(),
                 "raw reasoning two".to_string(),
             ],
-        },
+        }),
         CompletedItemOrigin::Live,
     );
 
@@ -6476,16 +6493,16 @@ fn completed_extension_items_render_as_successful_tools() {
     shell.tool_activity.clear();
 
     shell.ingest_completed_item(
-        ThreadItem::WebSearch(WebSearchItem {
+        ThreadItem::untimed(ThreadItemPayload::WebSearch(WebSearchItem {
             id: "web-1".to_string(),
             query: "latest protocol changes".to_string(),
             action: None,
             results: None,
-        }),
+        })),
         CompletedItemOrigin::Live,
     );
     shell.ingest_completed_item(
-        ThreadItem::ImageGeneration(ImageGenerationItem {
+        ThreadItem::untimed(ThreadItemPayload::ImageGeneration(ImageGenerationItem {
             transparent_background: None,
             failure: None,
             imagegen_request_id: None,
@@ -6493,9 +6510,10 @@ fn completed_extension_items_render_as_successful_tools() {
             id: "image-1".to_string(),
             status: "completed".to_string(),
             revised_prompt: None,
-            result: String::new(),
+            image: codex_app_server_protocol::GeneratedImageRef::Inline { result: String::new() },
+            input_images: Vec::new(),
             saved_path: None,
-        }),
+        })),
         CompletedItemOrigin::Live,
     );
 
@@ -6535,32 +6553,32 @@ async fn safety_buffering_retry_preserves_steered_input_and_notices_queued_follo
     let retry_thread_id = test_thread_id("01900000-0000-7000-8000-000000000202");
     let mut source_thread = thread_fixture(source_thread_id, Some("source"), "source preview");
     let mut prior_turn = test_turn("turn-prior", TurnStatus::Completed);
-    prior_turn.items.push(ThreadItem::UserMessage {
+    prior_turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: "prior-user".to_string(),
         client_id: None,
         content: vec![UserInput::Text {
             text: "Earlier context".to_string(),
             text_elements: Vec::new(),
         }],
-    });
+    }));
     let mut interrupted_turn = test_turn("turn-submit", TurnStatus::Interrupted);
     interrupted_turn.items.extend([
-        ThreadItem::UserMessage {
+        ThreadItem::untimed(ThreadItemPayload::UserMessage {
             id: "retry-user".to_string(),
             client_id: None,
             content: vec![UserInput::Text {
                 text: "Explain the request".to_string(),
                 text_elements: Vec::new(),
             }],
-        },
-        ThreadItem::UserMessage {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::UserMessage {
             id: "retry-steer".to_string(),
             client_id: None,
             content: vec![UserInput::Text {
                 text: "Also keep this clarification".to_string(),
                 text_elements: Vec::new(),
             }],
-        },
+        }),
     ]);
     source_thread.turns = vec![prior_turn, interrupted_turn];
     let mut backend = RecordingBackend::with_threads(vec![source_thread]);
@@ -9157,7 +9175,7 @@ fn subagent_items_route_to_subagent_activity() {
         thread_id,
         turn_id: "turn-1".to_string(),
         started_at_ms: 0,
-        item: ThreadItem::CollabAgentToolCall {
+        item: ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
             id: "agent-tool-1".to_string(),
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::InProgress,
@@ -9167,7 +9185,7 @@ fn subagent_items_route_to_subagent_activity() {
             model: Some("gpt-5-codex".to_string()),
             reasoning_effort: None,
             agents_states: Default::default(),
-        },
+        }),
     }));
     assert_eq!(shell.tool_activity, VecDeque::new());
     assert_eq!(
@@ -9185,12 +9203,14 @@ fn subagent_lifecycle_records_do_not_create_permanent_running_tool_cards() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.subagent_activity.clear();
-    let lifecycle_item = ThreadItem::SubAgentActivity {
+    let lifecycle_item = ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
         id: "agent-started".to_string(),
         kind: SubAgentActivityKind::Started,
         agent_thread_id: "agent-thread".to_string(),
         agent_path: "/root/reviewer".to_string(),
-    };
+    });
 
     shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
         thread_id: shell.thread_id.to_string(),
@@ -9229,7 +9249,7 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
         thread_id: root_thread_id,
         turn_id: "turn-1".to_string(),
         started_at_ms: 0,
-        item: ThreadItem::CollabAgentToolCall {
+        item: ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
             id: "agent-tool-1".to_string(),
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::InProgress,
@@ -9239,7 +9259,7 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
             model: Some("gpt-5-codex".to_string()),
             reasoning_effort: Some(ReasoningEffort::High),
             agents_states: Default::default(),
-        },
+        }),
     }));
     let root_transcript = shell.transcript.clone();
     shell.handle_notification(ServerNotification::AgentMessageDelta(
@@ -9262,11 +9282,11 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
         thread_id: child_thread_id.clone(),
         turn_id: "child-turn".to_string(),
         started_at_ms: 1,
-        item: ThreadItem::Reasoning {
+        item: ThreadItem::untimed(ThreadItemPayload::Reasoning {
             id: "reasoning-1".to_string(),
             summary: Vec::new(),
             content: Vec::new(),
-        },
+        }),
     }));
     assert_eq!(
         shell
@@ -9336,7 +9356,7 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
             thread_id: child_thread_id.clone(),
             turn_id: "child-turn".to_string(),
             completed_at_ms: 2,
-            item: ThreadItem::AgentMessage {
+            item: ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                 delivery: None,
                 questions: None,
 
@@ -9344,7 +9364,7 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
                 text: "Review complete.".to_string(),
                 phase: None,
                 memory_citation: None,
-            },
+            }),
         },
     ));
 
@@ -9420,7 +9440,7 @@ fn child_turn_start_reactivates_a_stopped_agent() {
     let child_thread_id = "agent-thread".to_string();
     shell
         .agent_activity
-        .reduce_completed(&ThreadItem::CollabAgentToolCall {
+        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
             id: "agent-state".to_string(),
             tool: CollabAgentTool::Wait,
             status: CollabAgentToolCallStatus::Completed,
@@ -9436,7 +9456,7 @@ fn child_turn_start_reactivates_a_stopped_agent() {
                     message: None,
                 },
             )]),
-        });
+        }));
     shell
         .active_agent_thread_ids
         .insert(child_thread_id.clone());
@@ -9469,19 +9489,21 @@ fn child_notifications_discover_nested_agents() {
             thread_id: root_thread_id,
             turn_id: "root-turn".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::SubAgentActivity {
+            item: ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
                 id: "child-started".to_string(),
                 kind: SubAgentActivityKind::Started,
                 agent_thread_id: child_thread_id.clone(),
                 agent_path: "/root/child".to_string(),
-            },
+            }),
         },
     ));
     shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
         thread_id: child_thread_id.clone(),
         turn_id: "child-turn".to_string(),
         started_at_ms: 2,
-        item: ThreadItem::CollabAgentToolCall {
+        item: ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
             id: "nested-spawn".to_string(),
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::InProgress,
@@ -9491,19 +9513,21 @@ fn child_notifications_discover_nested_agents() {
             model: Some("gpt-5-codex".to_string()),
             reasoning_effort: Some(ReasoningEffort::High),
             agents_states: Default::default(),
-        },
+        }),
     }));
     shell.handle_notification(ServerNotification::ItemCompleted(
         ItemCompletedNotification {
             thread_id: child_thread_id,
             turn_id: "child-turn".to_string(),
             completed_at_ms: 3,
-            item: ThreadItem::SubAgentActivity {
+            item: ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
                 id: "grandchild-started".to_string(),
                 kind: SubAgentActivityKind::Started,
                 agent_thread_id: grandchild_thread_id.clone(),
                 agent_path: "/root/child/grandchild".to_string(),
-            },
+            }),
         },
     ));
 
@@ -9529,15 +9553,15 @@ fn non_tool_item_starts_do_not_render_as_tool_calls() {
     let thread_id = shell.thread_id.to_string();
 
     for item in [
-        ThreadItem::UserMessage {
+        ThreadItem::untimed(ThreadItemPayload::UserMessage {
             id: "user-start".to_string(),
             client_id: None,
             content: vec![UserInput::Text {
                 text: "hello".to_string(),
                 text_elements: Vec::new(),
             }],
-        },
-        ThreadItem::AgentMessage {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::AgentMessage {
             delivery: None,
             questions: None,
 
@@ -9545,12 +9569,12 @@ fn non_tool_item_starts_do_not_render_as_tool_calls() {
             text: "working".to_string(),
             phase: None,
             memory_citation: None,
-        },
-        ThreadItem::Reasoning {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::Reasoning {
             id: "reasoning-start".to_string(),
             summary: vec!["thinking".to_string()],
             content: Vec::new(),
-        },
+        }),
     ] {
         shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
             thread_id: thread_id.clone(),
@@ -9633,10 +9657,10 @@ fn long_command_tool_calls_are_truncated() {
         CommandExecutionStatus::InProgress,
         /*exit_code*/ None,
     );
-    let ThreadItem::CommandExecution {
+    let ThreadItemPayload::CommandExecution {
         command: started_command,
         ..
-    } = &mut started
+    } = &mut started.payload
     else {
         panic!("expected a command execution item");
     };
@@ -9660,11 +9684,11 @@ fn long_command_tool_calls_are_truncated() {
         CommandExecutionStatus::Completed,
         /*exit_code*/ Some(17),
     );
-    let ThreadItem::CommandExecution {
+    let ThreadItemPayload::CommandExecution {
         command: completed_command,
         duration_ms,
         ..
-    } = &mut completed
+    } = &mut completed.payload
     else {
         panic!("expected a command execution item");
     };
@@ -9762,7 +9786,7 @@ fn command_output_deltas_update_one_output_block() {
             thread_id,
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::CommandExecution {
+            item: ThreadItem::untimed(ThreadItemPayload::CommandExecution {
                 sandbox_type: None,
                 model_context: None,
                 plugin_id: None,
@@ -9780,7 +9804,7 @@ fn command_output_deltas_update_one_output_block() {
                 aggregated_output: Some("pytest 100%\n".to_string()),
                 exit_code: Some(0),
                 duration_ms: Some(42),
-            },
+            }),
         },
     ));
 
@@ -9819,10 +9843,10 @@ fn rapid_command_outputs_stay_grouped_with_their_tool_calls() {
             CommandExecutionStatus::InProgress,
             /*exit_code*/ None,
         );
-        let ThreadItem::CommandExecution {
+        let ThreadItemPayload::CommandExecution {
             command: item_command,
             ..
-        } = &mut item
+        } = &mut item.payload
         else {
             panic!("expected a command execution item");
         };
@@ -10128,7 +10152,7 @@ async fn clicking_running_output_opens_a_live_full_output_popup() {
             thread_id,
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::CommandExecution {
+            item: ThreadItem::untimed(ThreadItemPayload::CommandExecution {
                 sandbox_type: None,
                 model_context: None,
                 plugin_id: None,
@@ -10146,7 +10170,7 @@ async fn clicking_running_output_opens_a_live_full_output_popup() {
                 aggregated_output: Some(completed_output.clone()),
                 exit_code: Some(0),
                 duration_ms: Some(42),
-            },
+            }),
         },
     ));
     let open = shell
@@ -10389,11 +10413,11 @@ fn active_child_file_change_notifications_invalidate_workspace_status() {
             thread_id: child_thread_id.clone(),
             turn_id: "child-turn".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::FileChange {
+            item: ThreadItem::untimed(ThreadItemPayload::FileChange {
                 id: "child-file".to_string(),
                 changes,
                 status: codex_app_server_protocol::PatchApplyStatus::Completed,
-            },
+            }),
         },
     ));
 
@@ -10653,22 +10677,22 @@ fn file_change_notifications_render_only_the_edited_log_snapshot() {
         thread_id: thread_id.clone(),
         turn_id: "turn-1".to_string(),
         started_at_ms: 0,
-        item: ThreadItem::FileChange {
+        item: ThreadItem::untimed(ThreadItemPayload::FileChange {
             id: "file-1".to_string(),
             changes: changes.clone(),
             status: codex_app_server_protocol::PatchApplyStatus::InProgress,
-        },
+        }),
     }));
     shell.handle_notification(ServerNotification::ItemCompleted(
         ItemCompletedNotification {
             thread_id,
             turn_id: "turn-1".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::FileChange {
+            item: ThreadItem::untimed(ThreadItemPayload::FileChange {
                 id: "file-1".to_string(),
                 changes: changes.clone(),
                 status: codex_app_server_protocol::PatchApplyStatus::Completed,
-            },
+            }),
         },
     ));
 
@@ -10938,7 +10962,7 @@ fn mouse_wheel_routes_between_diff_files_and_content_in_both_layouts() {
 fn historical_edits_hydrate_and_session_switch_clears_them() {
     let mut shell = ShellState::snapshot_fixture();
     let mut turn = test_turn("historical-turn", TurnStatus::Completed);
-    turn.items.push(ThreadItem::FileChange {
+    turn.items.push(ThreadItem::untimed(ThreadItemPayload::FileChange {
         id: "historical-file".to_string(),
         changes: vec![FileUpdateChange {
             path: "src/history.rs".to_string(),
@@ -10946,7 +10970,7 @@ fn historical_edits_hydrate_and_session_switch_clears_them() {
             diff: "first\nsecond\n".to_string(),
         }],
         status: codex_app_server_protocol::PatchApplyStatus::Completed,
-    });
+    }));
     let mut started = started_thread(
         "history",
         test_thread_id("01900000-0000-7000-8000-000000000421"),
@@ -10999,7 +11023,7 @@ fn terminal_history_with_an_in_progress_file_change_is_incomplete() {
         let mut shell = ShellState::snapshot_fixture();
         shell.diff_store.clear();
         let mut turn = test_turn("persisted-patch", turn_status);
-        turn.items.push(ThreadItem::FileChange {
+        turn.items.push(ThreadItem::untimed(ThreadItemPayload::FileChange {
             id: "unfinished-file".to_string(),
             changes: vec![FileUpdateChange {
                 path: "src/history.rs".to_string(),
@@ -11007,7 +11031,7 @@ fn terminal_history_with_an_in_progress_file_change_is_incomplete() {
                 diff: "unfinished\n".to_string(),
             }],
             status: codex_app_server_protocol::PatchApplyStatus::InProgress,
-        });
+        }));
 
         shell.ingest_turn_history(vec![turn]);
         (
@@ -11492,14 +11516,14 @@ async fn live_opening_user_message_is_rendered_once_with_rewind_anchor() {
         .expect("optimistic user message should have a client id");
     assert!(client_user_message_id.starts_with("better-codex-turn-"));
     shell.push_status("skills budget loaded");
-    let opening_item = ThreadItem::UserMessage {
+    let opening_item = ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: "opening-user".to_string(),
         client_id: Some(client_user_message_id.clone()),
         content: vec![ApiUserInput::Text {
             text: prompt.to_string(),
             text_elements: Vec::new(),
         }],
-    };
+    });
     let thread_id = shell.thread_id.to_string();
     let opening_notification = |item| {
         ServerNotification::ItemCompleted(ItemCompletedNotification {
@@ -11571,14 +11595,14 @@ async fn steered_message_is_rendered_once() {
             thread_id: shell.thread_id.to_string(),
             turn_id: "turn-active".to_string(),
             completed_at_ms: 1,
-            item: ThreadItem::UserMessage {
+            item: ThreadItem::untimed(ThreadItemPayload::UserMessage {
                 id: "user-steer".to_string(),
                 client_id: Some(client_user_message_id.clone()),
                 content: vec![ApiUserInput::Text {
                     text: prompt.to_string(),
                     text_elements: Vec::new(),
                 }],
-            },
+            }),
         },
     ));
 
@@ -14456,7 +14480,7 @@ fn command_execution_item(
     status: CommandExecutionStatus,
     exit_code: Option<i32>,
 ) -> ThreadItem {
-    ThreadItem::CommandExecution {
+    ThreadItem::untimed(ThreadItemPayload::CommandExecution {
         sandbox_type: None,
         model_context: None,
         plugin_id: None,
@@ -14472,7 +14496,7 @@ fn command_execution_item(
         aggregated_output: None,
         exit_code,
         duration_ms: Some(42),
-    }
+    })
 }
 
 fn test_absolute_path(tail: &str) -> AbsolutePathBuf {
@@ -14490,6 +14514,7 @@ fn mcp_status_fixture<const N: usize>(
     tools: [&str; N],
 ) -> McpServerStatus {
     McpServerStatus {
+        tool_list_meta: None,
         http_origin: None,
         plugin_id: None,
         runtime_status: None,
@@ -15232,7 +15257,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
                     "/workspace".to_string(),
                     "/".to_string(),
                 ],
-                Some(PathBuf::from("/workspace/better-codex")),
+                PathBuf::from("/workspace/better-codex"),
             ),
             (
                 vec![
@@ -15244,7 +15269,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
                     "/workspace".to_string(),
                     "/".to_string(),
                 ],
-                Some(PathBuf::from("/workspace/better-codex")),
+                PathBuf::from("/workspace/better-codex"),
             ),
         ]
     );
@@ -15427,6 +15452,7 @@ fn newer_session_list_refresh_rejects_an_older_completion() {
         current_revision,
         session_hydration::SessionListLoad::Replace,
         Ok(ThreadListResponse {
+            read_states: None,
             data: vec![thread_fixture(current_id, Some("current"), "newer result")],
             next_cursor: None,
             backwards_cursor: None,
@@ -15436,6 +15462,7 @@ fn newer_session_list_refresh_rejects_an_older_completion() {
         stale_revision,
         session_hydration::SessionListLoad::Replace,
         Ok(ThreadListResponse {
+            read_states: None,
             data: vec![thread_fixture(stale_id, Some("stale"), "older result")],
             next_cursor: None,
             backwards_cursor: None,
@@ -15600,6 +15627,7 @@ async fn completed_turn_refreshes_canonical_thread_usage() {
     let mut shell = ShellState::snapshot_fixture();
     let backend = RecordingBackend::default();
     backend.set_thread_usage(Some(ThreadUsage {
+        native_usage_usd_micros: None,
         thread_id: shell.thread_id.to_string(),
         estimated_usage_credits_micros: 1_000_000,
         estimated_usage_usd_micros: None,
@@ -15609,6 +15637,7 @@ async fn completed_turn_refreshes_canonical_thread_usage() {
     finish_session_hydration(&mut shell, &backend).await;
 
     backend.set_thread_usage(Some(ThreadUsage {
+        native_usage_usd_micros: None,
         thread_id: shell.thread_id.to_string(),
         estimated_usage_credits_micros: 2_000_000,
         estimated_usage_usd_micros: Some(500_000),
@@ -15627,6 +15656,7 @@ async fn completed_turn_refreshes_canonical_thread_usage() {
     assert_eq!(
         shell.thread_usage,
         Some(ThreadUsage {
+            native_usage_usd_micros: None,
             thread_id: shell.thread_id.to_string(),
             estimated_usage_credits_micros: 2_000_000,
             estimated_usage_usd_micros: Some(500_000),
@@ -16069,7 +16099,7 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
     });
     child.thread_source = Some(codex_app_server_protocol::ThreadSource::Subagent);
     let mut turn = test_turn("child-turn", TurnStatus::Completed);
-    turn.items.push(ThreadItem::AgentMessage {
+    turn.items.push(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
         delivery: None,
         questions: None,
 
@@ -16077,12 +16107,12 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
         text: "private child result".to_string(),
         phase: None,
         memory_citation: None,
-    });
+    }));
     child.turns.push(turn);
     started.agent_threads.push(child);
     let mut root_turn = test_turn("root-turn", TurnStatus::Completed);
     root_turn.items.extend([
-        ThreadItem::CollabAgentToolCall {
+        ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
             id: "historical-wait".to_string(),
             tool: CollabAgentTool::Wait,
             status: CollabAgentToolCallStatus::Completed,
@@ -16098,13 +16128,15 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
                     message: Some("stale active snapshot".to_string()),
                 },
             )]),
-        },
-        ThreadItem::SubAgentActivity {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+model: None,
+reasoning_effort: None,
             id: "historical-child-start".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/alpha".to_string(),
-        },
+        }),
     ]);
     started.turns.push(root_turn);
     let mut shell = ShellState::snapshot_fixture();
@@ -17419,11 +17451,13 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
 
 #[derive(Clone)]
 struct RecordingBackend {
+    available_models: Arc<Mutex<Vec<ModelPreset>>>,
     calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
     disconnect_when_events_empty: bool,
     events: Arc<Mutex<VecDeque<AppServerEvent>>>,
     resolved_requests: Arc<Mutex<Vec<(RequestId, serde_json::Value)>>>,
     start_configs: Arc<Mutex<Vec<Config>>>,
+    start_provider_overrides: Arc<Mutex<Vec<Option<String>>>>,
     threads: Arc<Mutex<Vec<Thread>>>,
     mcp_statuses: Arc<Mutex<Vec<McpServerStatus>>>,
     plugin_response: Arc<Mutex<Option<PluginListResponse>>>,
@@ -17459,11 +17493,13 @@ struct RecordingBackend {
 impl Default for RecordingBackend {
     fn default() -> Self {
         Self {
+            available_models: Arc::new(Mutex::new(Vec::new())),
             calls: Arc::new(Mutex::new(Vec::new())),
             disconnect_when_events_empty: false,
             events: Arc::new(Mutex::new(VecDeque::new())),
             resolved_requests: Arc::new(Mutex::new(Vec::new())),
             start_configs: Arc::new(Mutex::new(Vec::new())),
+            start_provider_overrides: Arc::new(Mutex::new(Vec::new())),
             threads: Arc::new(Mutex::new(Vec::new())),
             mcp_statuses: Arc::new(Mutex::new(Vec::new())),
             plugin_response: Arc::new(Mutex::new(None)),
@@ -17807,6 +17843,10 @@ enum RecordedBackendCall {
 }
 
 impl backend::AppShellBackend for RecordingBackend {
+    fn replace_available_models(&self, models: Vec<ModelPreset>) {
+        *self.available_models.lock().unwrap() = models;
+    }
+
     fn workspace_request_in_background(
         &self,
         _thread_id: ThreadId,
@@ -17843,8 +17883,10 @@ impl backend::AppShellBackend for RecordingBackend {
         &mut self,
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
+        model_provider_override: Option<&str>,
     ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
         self.push(RecordedBackendCall::Start(session_start_source));
+        self.start_provider_overrides.lock().unwrap().push(model_provider_override.map(str::to_owned));
         self.start_configs
             .lock()
             .expect("start configs should lock")
@@ -18015,6 +18057,7 @@ impl backend::AppShellBackend for RecordingBackend {
         let next_offset = offset.saturating_add(data.len());
         let next_cursor = (next_offset < total).then(|| next_offset.to_string());
         let response = ThreadListResponse {
+            read_states: None,
             data,
             next_cursor,
             backwards_cursor: None,
@@ -18223,6 +18266,8 @@ impl backend::AppShellBackend for RecordingBackend {
             for archived in [false, true] {
                 let response = backend
                     .thread_list(ThreadListParams {
+                        attached_to_thread_id: None,
+                        excluded_thread_ids: None,
                         originators: None,
                         project_id: None,
                         section_id: None,
@@ -19378,6 +19423,7 @@ fn queued_message_texts(shell: &ShellState) -> Vec<String> {
 fn test_turn(id: &str, status: TurnStatus) -> Turn {
     let is_complete = status != TurnStatus::InProgress;
     Turn {
+        root_turn_id: None,
         id: id.to_string(),
         items: Vec::new(),
         items_view: TurnItemsView::default(),
@@ -19391,14 +19437,14 @@ fn test_turn(id: &str, status: TurnStatus) -> Turn {
 
 fn prompt_turn(id: &str, prompt: &str) -> Turn {
     let mut turn = test_turn(id, TurnStatus::Completed);
-    turn.items.push(ThreadItem::UserMessage {
+    turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: format!("item-{id}"),
         client_id: None,
         content: vec![ApiUserInput::Text {
             text: prompt.to_string(),
             text_elements: Vec::new(),
         }],
-    });
+    }));
     turn
 }
 
@@ -19432,7 +19478,7 @@ fn test_thread_id(value: &str) -> codex_protocol::ThreadId {
 fn format_user_inputs_renders_audio_without_embedding_payloads() {
     let inputs = vec![
         ApiUserInput::Audio {
-            url: "data:audio/wav;base64,YXVkaW8=".to_string(),
+            audio: codex_app_server_protocol::AudioReference::Inline { url: "data:audio/wav;base64,YXVkaW8=".to_string() },
         },
         ApiUserInput::LocalAudio {
             path: PathBuf::from("recordings/note.mp3"),

@@ -9,6 +9,8 @@ mod ssh_config_dependencies;
 pub mod environment_transport;
 #[cfg(any(windows, test))]
 mod launch_environment;
+#[cfg(any(windows, test))]
+mod setup_acl_error;
 
 use std::fmt;
 use std::sync::Arc;
@@ -263,7 +265,9 @@ pub use conpty::spawn_conpty_process_as_user;
 pub use deny_read_acl::apply_deny_read_acls;
 #[cfg(target_os = "windows")]
 pub use deny_read_acl::plan_deny_read_acl_paths;
+pub use deny_read_resolver::GLOB_SCAN_PROGRAM;
 pub use deny_read_resolver::resolve_windows_deny_read_paths;
+pub use deny_read_resolver::resolve_windows_deny_read_paths_in_environment;
 #[cfg(target_os = "windows")]
 pub use deny_read_state::sync_persistent_deny_read_acls;
 #[cfg(target_os = "windows")]
@@ -372,6 +376,8 @@ pub use provisioning_client::refresh_registered_core_via_service;
 #[cfg(target_os = "windows")]
 pub use provisioning_client::register_desktop_installation;
 #[cfg(target_os = "windows")]
+pub use provisioning_client::start_windows_sandbox_service_for_setup;
+#[cfg(target_os = "windows")]
 pub use provisioning_protocol::FramedProvisioningMessage;
 #[cfg(target_os = "windows")]
 pub use provisioning_protocol::PROVISIONING_PROTOCOL_VERSION;
@@ -395,6 +401,8 @@ pub use provisioning_protocol::write_provisioning_frame;
 pub use resolved_permissions::ResolvedWindowsSandboxPermissions;
 #[cfg(target_os = "windows")]
 pub use resolved_permissions::WindowsSandboxTokenMode;
+#[cfg(target_os = "windows")]
+pub use resolved_permissions::resolve_workload_temp_paths;
 #[cfg(target_os = "windows")]
 pub use resolved_permissions::token_mode_for_permission_profile;
 #[cfg(target_os = "windows")]

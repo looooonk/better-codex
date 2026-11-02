@@ -133,6 +133,7 @@ async fn background_fork_dispatches_boundary_and_hydrates_parent_title() {
     let before_turn_id = "turn-before-branch";
     let turns = vec![Turn {
         id: "turn-kept".to_string(),
+        root_turn_id: None,
         items: Vec::new(),
         items_view: TurnItemsView::Full,
         status: TurnStatus::Completed,
@@ -179,6 +180,7 @@ async fn background_fork_dispatches_boundary_and_hydrates_parent_title() {
         },
         read_response: ThreadReadResponse {
             thread: parent_thread,
+            read_state: None,
         },
     };
     let expected_fork_params = ThreadForkParams {

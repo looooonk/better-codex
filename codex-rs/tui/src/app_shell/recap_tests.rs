@@ -32,7 +32,7 @@ fn recap_history_is_bounded_and_keeps_both_ends_of_recent_corrections() {
     let history = history::recap_history(&transcript);
     assert!(history.contains("BEGIN") && history.contains("END"));
     assert!(history.ends_with("Pending user request: Do not publish yet"));
-    assert!(RecapPrompt::new(&history).render().len() <= history::RECAP_PROMPT_MAX_BYTES);
+    assert!(RecapPrompt::new(&history).render().into_text().unwrap().len() <= history::RECAP_PROMPT_MAX_BYTES);
 }
 
 #[test]
@@ -52,7 +52,8 @@ fn recap_history_budget_includes_labels_for_many_large_exchanges() {
             ]
         })
         .collect();
-    let rendered = RecapPrompt::new(&history::recap_history(&transcript)).render();
+    let content = RecapPrompt::new(&history::recap_history(&transcript)).render();
+    let rendered = content.into_text().unwrap();
     assert!(rendered.len() <= history::RECAP_PROMPT_MAX_BYTES);
     assert!(rendered.contains("Request 19:") && rendered.contains("Answer 19:"));
     assert!(!rendered.contains("Request 0:"));

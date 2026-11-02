@@ -107,8 +107,8 @@ impl Drop for WorkspaceCommandExecution {
 pub(crate) struct WorkspaceCommand {
     /// Program and arguments to execute without shell interpolation.
     pub(crate) argv: Vec<String>,
-    /// Working directory for the command, if different from app-server's session cwd.
-    pub(crate) cwd: Option<PathBuf>,
+    /// Explicit working directory on the host that executes the command.
+    pub(crate) cwd: PathBuf,
     /// Environment overrides where `None` removes a variable.
     pub(crate) env: HashMap<String, Option<String>>,
     /// Maximum wall-clock duration before app-server cancels the command.
@@ -121,21 +121,18 @@ pub(crate) struct WorkspaceCommand {
 
 impl WorkspaceCommand {
     /// Creates a workspace command with conservative defaults for metadata probes.
-    pub(crate) fn new(argv: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub(crate) fn new(
+        argv: impl IntoIterator<Item = impl Into<String>>,
+        cwd: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             argv: argv.into_iter().map(Into::into).collect(),
-            cwd: None,
+            cwd: cwd.into(),
             env: HashMap::new(),
             timeout: Duration::from_secs(/*secs*/ 5),
             output_bytes_cap: 64 * 1024,
             disable_output_cap: false,
         }
-    }
-
-    /// Sets the command working directory.
-    pub(crate) fn cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
-        self.cwd = Some(cwd.into());
-        self
     }
 
     /// Adds or replaces one environment variable override.
@@ -374,7 +371,7 @@ impl AppServerWorkspaceCommandRunner {
                         disable_output_cap: command.disable_output_cap,
                         disable_timeout: false,
                         timeout_ms: Some(timeout_ms),
-                        cwd: command.cwd,
+                        cwd: Some(command.cwd),
                         env,
                         size: None,
                         sandbox_policy: None,

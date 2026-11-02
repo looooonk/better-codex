@@ -9,6 +9,15 @@ use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
+#[test]
+fn voice_settings_expose_current_v3_voice_catalog() {
+    let response = ThreadRealtimeListVoicesResponse { voices: RealtimeVoicesList::builtin() };
+    let summary = voice_settings::settings_summary(&response, &AudioDeviceSelection::default());
+    assert!(summary.contains("aube"));
+    assert!(summary.contains("viola"));
+    insta::assert_snapshot!("v3_voice_settings", summary);
+}
+
 #[tokio::test]
 async fn completed_settings_update_preferences_and_render_controls() {
     let mut shell = ShellState::snapshot_fixture();
@@ -23,6 +32,7 @@ async fn completed_settings_update_preferences_and_render_controls() {
         voices: RealtimeVoicesList {
             v1: vec![RealtimeVoice::Juniper, RealtimeVoice::Sol],
             v2: vec![],
+            v3: vec![],
             default_v1: RealtimeVoice::Juniper,
             default_v2: RealtimeVoice::Cedar,
         },

@@ -6,6 +6,7 @@ use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::ThreadStatus;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStatus;
 use codex_protocol::ThreadId;
@@ -21,7 +22,7 @@ use tokio::sync::oneshot;
 #[test]
 fn referenced_threads_are_deduplicated_across_agent_items() {
     let turns = vec![turn(vec![
-        ThreadItem::CollabAgentToolCall {
+        ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
             id: "spawn".to_string(),
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::Completed,
@@ -37,7 +38,7 @@ fn referenced_threads_are_deduplicated_across_agent_items() {
                     message: None,
                 },
             )]),
-        },
+        }),
         activity("activity", "agent-b"),
     ])];
 
@@ -49,7 +50,7 @@ fn referenced_threads_are_deduplicated_across_agent_items() {
 
 #[test]
 fn agent_free_history_has_no_hydration_candidates() {
-    let turns = vec![turn(vec![ThreadItem::AgentMessage {
+    let turns = vec![turn(vec![ThreadItem::untimed(ThreadItemPayload::AgentMessage {
         delivery: None,
         questions: None,
 
@@ -57,7 +58,7 @@ fn agent_free_history_has_no_hydration_candidates() {
         text: "no delegated work".to_string(),
         phase: None,
         memory_citation: None,
-    }])];
+    })])];
 
     assert_eq!(referenced_agent_thread_ids(&turns), Vec::<String>::new());
 }
@@ -225,7 +226,7 @@ fn activity_snapshots_bound_turn_items_and_text() {
         .map(|turn_index| {
             let mut turn = turn(
                 (0..130)
-                    .map(|item_index| ThreadItem::AgentMessage {
+                    .map(|item_index| ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                         delivery: None,
                         questions: None,
 
@@ -233,7 +234,7 @@ fn activity_snapshots_bound_turn_items_and_text() {
                         text: "x".repeat(2_000),
                         phase: None,
                         memory_citation: None,
-                    })
+                    }))
                     .collect(),
             );
             turn.id = format!("turn-{turn_index}");
@@ -263,7 +264,7 @@ fn activity_snapshots_bound_turn_items_and_text() {
             .all(|turn| turn.items.capacity() <= 64)
     );
     assert!(snapshot.turns.iter().flat_map(|turn| &turn.items).all(
-        |item| matches!(item, ThreadItem::AgentMessage { text, .. } if text.chars().count() == 512 && text.capacity() <= 512)
+        |item| matches!(&item.payload, ThreadItemPayload::AgentMessage { text, .. } if text.chars().count() == 512 && text.capacity() <= 512)
     ));
 }
 
@@ -391,17 +392,20 @@ fn lineage_waits_for_unaccepted_parents_and_rejects_invalid_metadata() {
 }
 
 fn activity(id: &str, thread_id: &str) -> ThreadItem {
-    ThreadItem::SubAgentActivity {
+    ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
+        model: None,
+        reasoning_effort: None,
         id: id.to_string(),
         kind: SubAgentActivityKind::Started,
         agent_thread_id: thread_id.to_string(),
         agent_path: format!("/root/{thread_id}"),
-    }
+    })
 }
 
 fn turn(items: Vec<ThreadItem>) -> Turn {
     Turn {
         id: "turn".to_string(),
+        root_turn_id: None,
         items,
         items_view: TurnItemsView::default(),
         status: TurnStatus::Completed,

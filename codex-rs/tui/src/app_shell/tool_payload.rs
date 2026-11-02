@@ -147,15 +147,22 @@ pub(super) fn image_generation(
                 body.reference("Saved on remote host", &saved.display().to_string())
             }
         }
-    } else if !item.result.is_empty() {
-        // The extension's result may contain raw base64, never a display-ready message.
-        if item.result.starts_with("https://")
-            || item.result.starts_with("http://")
-            || item.result.starts_with("data:")
-        {
-            body.media("Image", &item.result);
-        } else {
-            body.text("[Generated image content; no saved path provided]");
+    } else {
+        match &item.image {
+            codex_app_server_protocol::GeneratedImageRef::File { file_id } => {
+                body.reference("Image attachment", file_id);
+            }
+            codex_app_server_protocol::GeneratedImageRef::Inline { result } if !result.is_empty() => {
+                if result.starts_with("https://")
+                    || result.starts_with("http://")
+                    || result.starts_with("data:")
+                {
+                    body.media("Image", result);
+                } else {
+                    body.text("[Generated image content; no saved path provided]");
+                }
+            }
+            codex_app_server_protocol::GeneratedImageRef::Inline { .. } => {}
         }
     }
     if item.transparent_background == Some(true) {

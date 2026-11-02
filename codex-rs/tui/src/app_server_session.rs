@@ -11,7 +11,18 @@ mod side;
 pub(crate) use history::HistoryReader;
 pub(crate) use history::read_thread_history;
 mod managed_worktree;
+mod models;
+pub(crate) use models::load_models;
+mod resume_settings;
+use resume_settings::ResumeModelSettings;
+mod resume_permissions;
+use resume_permissions::ResumePermissions;
+mod provider_selection;
 mod timeline;
+mod web_search;
+#[cfg(test)]
+#[path = "app_server_session/lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 pub(crate) use agent_history::AgentHistorySnapshot;
 pub(crate) use agent_history::AgentHistoryTask;
@@ -23,6 +34,7 @@ pub(crate) use timeline::ThreadTimeline;
 pub(crate) use timeline::load_thread_timeline;
 
 use crate::legacy_core::config::Config;
+use crate::legacy_core::config::ConfigOverrides;
 use crate::permission_compat::legacy_compatible_permission_profile;
 use crate::service_tier_resolution;
 use crate::session_state::MessageHistoryMetadata;
@@ -53,9 +65,6 @@ use codex_app_server_protocol::LoginAccountParams;
 use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::LogoutAccountResponse;
 use codex_app_server_protocol::MemoryResetResponse;
-use codex_app_server_protocol::Model as ApiModel;
-use codex_app_server_protocol::ModelListParams;
-use codex_app_server_protocol::ModelListResponse;
 use codex_app_server_protocol::NewThreadModelDefaults;
 use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::RequestId;
@@ -124,17 +133,14 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
+use codex_config::ConfigLayerSource;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::openai_models::ModelAvailabilityNux;
 use codex_protocol::openai_models::ModelPreset;
-use codex_protocol::openai_models::ModelServiceTier;
-use codex_protocol::openai_models::ModelUpgrade;
-use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use color_eyre::eyre::ContextCompat;
@@ -192,9 +198,9 @@ pub(crate) struct AppServerSession {
     remote_cwd_override: Option<PathBuf>,
     thread_params_mode: ThreadParamsMode,
     thread_settings_update_supported: Arc<AtomicBool>,
-    default_model: Option<String>,
-    available_models: Vec<ModelPreset>,
+    available_models: std::sync::RwLock<Vec<ModelPreset>>,
     managed_new_thread_defaults: Option<NewThreadModelDefaults>,
+    launch_overrides: ConfigOverrides,
     external_agent_config_import_completion_pending: AtomicBool,
 }
 
@@ -202,13 +208,22 @@ pub(crate) struct AppServerSession {
 pub(crate) enum ThreadParamsMode {
     Embedded,
     Remote,
+    Cloud,
 }
 
 impl ThreadParamsMode {
+    fn workspace_roots_from_config(self, config: &Config) -> Option<Vec<AbsolutePathBuf>> {
+        match self {
+            Self::Embedded => Some(config.workspace_roots.clone()),
+            Self::Remote | Self::Cloud => None,
+        }
+    }
+
     fn model_provider_from_config(self, config: &Config) -> Option<String> {
         match self {
             Self::Embedded => Some(config.model_provider_id.clone()),
-            Self::Remote => None,
+            Self::Remote => provider_selection::explicit_provider(config),
+            Self::Cloud => None,
         }
     }
 }
@@ -235,6 +250,11 @@ pub(crate) enum TurnPermissionsOverride {
 
 impl AppServerSession {
     pub(crate) fn new(client: AppServerClient, thread_params_mode: ThreadParamsMode) -> Self {
+        let thread_params_mode = if matches!(&client, AppServerClient::Cloud(_)) {
+            ThreadParamsMode::Cloud
+        } else {
+            thread_params_mode
+        };
         Self {
             client,
             deferred_events: Default::default(),
@@ -242,9 +262,9 @@ impl AppServerSession {
             remote_cwd_override: None,
             thread_params_mode,
             thread_settings_update_supported: Arc::new(AtomicBool::new(true)),
-            default_model: None,
-            available_models: Vec::new(),
+            available_models: std::sync::RwLock::default(),
             managed_new_thread_defaults: None,
+            launch_overrides: ConfigOverrides::default(),
             external_agent_config_import_completion_pending: AtomicBool::new(false),
         }
     }
@@ -259,7 +279,7 @@ impl AppServerSession {
     }
 
     pub(crate) fn uses_remote_workspace(&self) -> bool {
-        matches!(self.thread_params_mode, ThreadParamsMode::Remote)
+        matches!(self.thread_params_mode, ThreadParamsMode::Remote | ThreadParamsMode::Cloud)
     }
 
     pub(crate) fn uses_embedded_app_server(&self) -> bool {
@@ -282,43 +302,35 @@ impl AppServerSession {
 
     pub(crate) async fn bootstrap(&mut self, config: &Config) -> Result<AppServerBootstrap> {
         let requirements_request_id = self.next_request_id();
-        let requirements: ConfigRequirementsReadResponse = self
+        let requirements = match self
             .client
-            .request_typed(ClientRequest::ConfigRequirementsRead {
+            .request_typed::<ConfigRequirementsReadResponse>(ClientRequest::ConfigRequirementsRead {
                 request_id: requirements_request_id,
                 params: None,
             })
             .await
-            .map_err(|err| {
-                bootstrap_request_error("configRequirements/read failed during TUI bootstrap", err)
-            })?;
+        {
+            Ok(requirements) => Some(requirements),
+            Err(TypedRequestError::Server { source, .. })
+                if self.thread_params_mode == ThreadParamsMode::Cloud
+                    && source.code == JSONRPC_METHOD_NOT_FOUND => None,
+            Err(error) => return Err(bootstrap_request_error(
+                "configRequirements/read failed during TUI bootstrap", error,
+            )),
+        };
         self.managed_new_thread_defaults = requirements
-            .requirements
-            .and_then(|requirements| requirements.models)
-            .and_then(|models| models.new_thread);
-        let model_request_id = self.next_request_id();
-        let models: ModelListResponse = self
-            .client
-            .request_typed(ClientRequest::ModelList {
-                request_id: model_request_id,
-                params: ModelListParams {
-                    cursor: None,
-                    limit: None,
-                    include_hidden: Some(true),
-                },
-            })
-            .await
-            .map_err(|err| {
-                bootstrap_request_error("model/list failed during TUI bootstrap", err)
-            })?;
-        let available_models = models
-            .data
-            .into_iter()
-            .map(model_preset_from_api_model)
-            .collect::<Vec<_>>();
+            .as_ref()
+            .and_then(|response| response.requirements.as_ref())
+            .and_then(|requirements| requirements.models.as_ref())
+            .and_then(|models| models.new_thread.clone());
+        let mut available_models = load_models(self.request_handle()).await?;
+        if let Some(requirements) = &requirements {
+            service_tier_resolution::constrain_server_service_tiers(&mut available_models, requirements);
+        }
         let default_model = config
             .model
             .clone()
+            .filter(|_| self.thread_params_mode != ThreadParamsMode::Cloud)
             .or_else(|| {
                 available_models
                     .iter()
@@ -327,8 +339,7 @@ impl AppServerSession {
             })
             .or_else(|| available_models.first().map(|model| model.model.clone()))
             .wrap_err("model/list returned no models for TUI bootstrap")?;
-        self.default_model = Some(default_model.clone());
-        self.available_models = available_models.clone();
+        self.replace_available_models(available_models.clone());
 
         Ok(AppServerBootstrap {
             default_model,
@@ -467,7 +478,8 @@ impl AppServerSession {
 
     #[cfg(test)]
     pub(crate) async fn start_thread(&mut self, config: &Config) -> Result<AppServerStartedThread> {
-        self.start_thread_with_session_start_source(config, /*session_start_source*/ None)
+        self.start_thread_with_session_start_source(config, /*session_start_source*/ None,
+            /*model_provider_override*/ None)
             .await
     }
 
@@ -475,19 +487,27 @@ impl AppServerSession {
         &mut self,
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
+        model_provider_override: Option<&str>,
     ) -> Result<AppServerStartedThread> {
         let request_id = self.next_request_id();
         let session_config = self.session_config_with_effective_service_tier(config);
+        let mut params = thread_start_params_from_config(
+            &session_config,
+            self.thread_params_mode(),
+            self.remote_cwd_override.as_deref(),
+            session_start_source,
+        );
+        if self.thread_params_mode != ThreadParamsMode::Cloud
+            && let Some(provider) = model_provider_override.or(self.launch_overrides.model_provider.as_deref())
+        {
+            params.model_provider = Some(config.config_layer_stack.required_model_provider()
+                .unwrap_or(provider).to_owned());
+        }
         let response: ThreadStartResponse = self
             .client
             .request_typed(ClientRequest::ThreadStart {
                 request_id,
-                params: thread_start_params_from_config(
-                    &session_config,
-                    self.thread_params_mode(),
-                    self.remote_cwd_override.as_deref(),
-                    session_start_source,
-                ),
+                params,
             })
             .await
             .map_err(|err| {
@@ -502,16 +522,22 @@ impl AppServerSession {
         thread_id: ThreadId,
     ) -> Result<AppServerStartedThread> {
         let request_id = self.next_request_id();
-        let session_config = self.session_config_with_effective_service_tier(&config);
-        background::resume_thread(
-            self.request_handle(),
+        let settings = self.resume_settings(&config);
+        let session_config = if settings.model == ResumeModelSettings::RestoreFromThread {
+            config.clone()
+        } else {
+            self.session_config_with_effective_service_tier(&config)
+        };
+        background::resume_thread(background::BackgroundThreadResume {
+            request_handle: self.request_handle(),
             config,
             session_config,
             thread_id,
-            self.thread_params_mode(),
-            self.remote_cwd_override.clone(),
+            thread_params_mode: self.thread_params_mode(),
+            remote_cwd_override: self.remote_cwd_override.clone(),
             request_id,
-        )
+            settings,
+        })
         .await
     }
 
@@ -552,6 +578,9 @@ impl AppServerSession {
         boundary: ThreadForkBoundary,
         goal_continuation: ForkGoalContinuation,
     ) -> Result<AppServerStartedThread> {
+        if self.thread_params_mode == ThreadParamsMode::Cloud {
+            color_eyre::eyre::bail!("Cloud conversations cannot be forked in the TUI yet.");
+        }
         let before_turn_id = match boundary {
             ThreadForkBoundary::FullHistory => None,
             ThreadForkBoundary::BeforeTurn(turn_id) => Some(turn_id),
@@ -595,15 +624,23 @@ impl AppServerSession {
         self.thread_params_mode
     }
 
+    pub(crate) fn replace_available_models(&self, models: Vec<ModelPreset>) {
+        *self.available_models.write().unwrap_or_else(std::sync::PoisonError::into_inner) = models;
+    }
+
     fn session_config_with_effective_service_tier(&self, config: &Config) -> Config {
-        let Some(model) = config.model.as_deref().or(self.default_model.as_deref()) else {
+        let available_models = self.available_models.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(model) = config.model.as_deref().or_else(|| {
+            available_models.iter().find(|model| model.is_default)
+                .or_else(|| available_models.first()).map(|model| model.model.as_str())
+        }) else {
             return config.clone();
         };
         let mut session_config = config.clone();
         match service_tier_resolution::service_tier_update_for_core(
             config,
             model,
-            &self.available_models,
+            &available_models,
         ) {
             Some(Some(service_tier)) => {
                 session_config.service_tier = Some(service_tier);
@@ -808,39 +845,31 @@ impl AppServerSession {
         output_schema: Option<serde_json::Value>,
     ) -> Result<TurnStartResponse> {
         let request_id = self.next_request_id();
-        let (sandbox_policy, permissions) =
-            turn_permissions_overrides(permissions_override, cwd.as_path());
+        let mut params = TurnStartParams {
+            thread_id: thread_id.to_string(),
+            client_user_message_id: Some(client_user_message_id),
+            input: items,
+            output_schema,
+            ..TurnStartParams::default()
+        };
+        if self.thread_params_mode != ThreadParamsMode::Cloud {
+            let (sandbox_policy, permissions) =
+                turn_permissions_overrides(permissions_override, cwd.as_path());
+            params.cwd = Some(cwd);
+            params.runtime_workspace_roots = Some(workspace_roots.to_vec());
+            params.approval_policy = Some(approval_policy);
+            params.approvals_reviewer = Some(approvals_reviewer.into());
+            params.sandbox_policy = sandbox_policy;
+            params.permissions = permissions;
+            params.model = Some(model);
+            params.service_tier = service_tier;
+            params.effort = effort;
+            params.summary = summary;
+            params.personality = personality;
+            params.collaboration_mode = collaboration_mode;
+        }
         self.client
-            .request_typed(ClientRequest::TurnStart {
-                request_id,
-                params: TurnStartParams {
-                    thread_id: thread_id.to_string(),
-                    client_user_message_id: Some(client_user_message_id),
-                    input: items,
-                    responsesapi_client_metadata: None,
-                    additional_context: None,
-                    environments: None,
-                    cwd: Some(cwd),
-                    runtime_workspace_roots: Some(workspace_roots.to_vec()),
-                    approval_policy: Some(approval_policy),
-                    approvals_reviewer: Some(approvals_reviewer.into()),
-                    sandbox_policy,
-                    permissions,
-                    model: Some(model),
-                    service_tier,
-                    effort,
-                    summary,
-                    personality,
-                    output_schema,
-                    collaboration_mode,
-                    multi_agent_mode: None,
-                    disabled_plugin_ids: None,
-                    turn_trigger: None,
-                    tool_output: None,
-                    service_tier_for_turn: None,
-                    cyber_access_program: None,
-                },
-            })
+            .request_typed(ClientRequest::TurnStart { request_id, params })
             .await
             .wrap_err("turn/start failed in TUI")
     }
@@ -889,6 +918,7 @@ impl AppServerSession {
                     responsesapi_client_metadata: None,
                     additional_context: None,
                     expected_turn_id: turn_id,
+                    ..TurnSteerParams::default()
                 },
             })
             .await
@@ -1206,69 +1236,6 @@ pub(crate) async fn start_thread_with_request_handle(
     started_thread_from_start_response(response, &config, thread_params_mode).await
 }
 
-fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
-    let upgrade = model.upgrade.map(|upgrade_id| {
-        let upgrade_info = model.upgrade_info.clone();
-        ModelUpgrade {
-            id: upgrade_id,
-            migration_config_key: model.model.clone(),
-            retirement_at: model
-                .upgrade_info
-                .as_ref()
-                .and_then(|info| info.retirement_at)
-                .and_then(|timestamp| chrono::DateTime::from_timestamp(timestamp, 0)),
-            model_link: upgrade_info
-                .as_ref()
-                .and_then(|info| info.model_link.clone()),
-            upgrade_copy: upgrade_info
-                .as_ref()
-                .and_then(|info| info.upgrade_copy.clone()),
-            migration_markdown: upgrade_info.and_then(|info| info.migration_markdown),
-        }
-    });
-
-    ModelPreset {
-        id: model.id,
-        model: model.model,
-        display_name: model.display_name,
-        description: model.description,
-        model_specialty: model.model_specialty,
-        available_access_programs: model.available_access_programs.map(Into::into),
-        default_reasoning_effort: model.default_reasoning_effort,
-        supported_reasoning_efforts: model
-            .supported_reasoning_efforts
-            .into_iter()
-            .map(|effort| ReasoningEffortPreset {
-                effort: effort.reasoning_effort,
-                description: effort.description,
-            })
-            .collect(),
-        supports_personality: model.supports_personality,
-        additional_speed_tiers: model.additional_speed_tiers,
-        service_tiers: model
-            .service_tiers
-            .into_iter()
-            .map(|service_tier| ModelServiceTier {
-                id: service_tier.id,
-                name: service_tier.name,
-                description: service_tier.description,
-            })
-            .collect(),
-        default_service_tier: model.default_service_tier,
-        is_default: model.is_default,
-        upgrade,
-        show_in_picker: !model.hidden,
-        availability_nux: model.availability_nux.map(|nux| ModelAvailabilityNux {
-            message: nux.message,
-        }),
-        // `model/list` already returns models filtered for the active client/auth context.
-        supported_in_api: true,
-        input_modalities: model.input_modalities,
-        multi_agent_version: model
-            .multi_agent_version
-            .map(codex_app_server_protocol::MultiAgentVersion::to_core),
-    }
-}
 
 fn approvals_reviewer_override_from_config(
     config: &Config,
@@ -1278,8 +1245,38 @@ fn approvals_reviewer_override_from_config(
 
 fn config_request_overrides_from_config(
     config: &Config,
+    thread_params_mode: ThreadParamsMode,
 ) -> Option<HashMap<String, serde_json::Value>> {
-    let mut overrides = HashMap::new();
+    let mut session_config = toml::Value::Table(toml::Table::new());
+    for layer in config.config_layer_stack.layers_low_to_high() {
+        if matches!(&layer.name, ConfigLayerSource::SessionFlags) {
+            codex_config::merge_toml_values(&mut session_config, &layer.config);
+        }
+    }
+    let mut overrides: HashMap<_, _> = session_config
+        .as_table()
+        .into_iter()
+        .flatten()
+        .filter(|(key, _)| {
+            matches!(
+                key.as_str(),
+                "allow_login_shell"
+                    | "default_permissions"
+                    | "features"
+                    | "network"
+                    | "permissions"
+                    | "personality"
+                    | "sandbox_workspace_write"
+                    | "shell_environment_policy"
+                    | "suppress_unstable_features_warning"
+            )
+        })
+        .filter_map(|(key, value)| {
+            serde_json::to_value(value)
+                .ok()
+                .map(|value| (key.clone(), value))
+        })
+        .collect();
     let mut insert = |key: &str, value: Option<String>| {
         if let Some(value) = value {
             overrides.insert(key.to_string(), serde_json::Value::String(value));
@@ -1292,38 +1289,59 @@ fn config_request_overrides_from_config(
             .as_ref()
             .map(std::string::ToString::to_string),
     );
-    insert(
-        "model_reasoning_summary",
-        config
-            .model_reasoning_summary
-            .map(|summary| summary.to_string()),
+    // Only winning launch choices may replace server defaults or saved thread settings.
+    let origins = config.config_layer_stack.origins();
+    let effective = config.config_layer_stack.effective_config();
+    web_search::apply_launch_override(
+        config,
+        thread_params_mode,
+        &effective,
+        &origins,
+        &mut overrides,
     );
-    insert(
-        "model_verbosity",
-        config
-            .model_verbosity
-            .map(|verbosity| verbosity.to_string()),
-    );
-    insert(
-        "personality",
-        config
-            .personality
-            .map(|personality| personality.to_string()),
-    );
-    insert(
-        "web_search",
-        Some(config.web_search_mode.value().to_string()),
-    );
+    let is_launch = |key: &str| {
+        origins.get(key).is_some_and(|origin| {
+            matches!(
+                origin.name,
+                ConfigLayerSource::SessionFlags
+                    | ConfigLayerSource::User {
+                        profile: Some(_),
+                        ..
+                    }
+            )
+        })
+    };
+    for key in ["model_reasoning_summary", "model_verbosity"] {
+        if is_launch(key) {
+            overrides.insert(key.to_string(), serde_json::json!(effective[key]));
+        }
+    }
+    if is_launch("features.concurrent_reasoning_summaries") {
+        overrides
+            .entry("features".to_string())
+            .or_insert_with(|| serde_json::json!({}))["concurrent_reasoning_summaries"] =
+            serde_json::json!(effective["features"]["concurrent_reasoning_summaries"]);
+    }
     if config.bypass_hook_trust {
         overrides.insert("bypass_hook_trust".to_string(), true.into());
     }
-    if config.suppress_unstable_features_warning {
-        overrides.insert(
-            "suppress_unstable_features_warning".to_string(),
-            true.into(),
-        );
-    }
     Some(overrides)
+}
+
+fn remove_permission_config_overrides(config: &mut Option<HashMap<String, serde_json::Value>>) {
+    if let Some(overrides) = config.as_mut() {
+        for key in [
+            "default_permissions",
+            "permissions",
+            "network",
+            "sandbox_workspace_write",
+        ] {
+            overrides.remove(key);
+        }
+    }
+    if config.as_ref().is_some_and(HashMap::is_empty) {
+        *config = None;
+    }
 }
 
 fn service_tier_override_from_config(config: &Config) -> Option<Option<String>> {
@@ -1395,7 +1413,7 @@ fn permissions_selection_from_config(
     config: &Config,
     thread_params_mode: ThreadParamsMode,
 ) -> Option<String> {
-    if matches!(thread_params_mode, ThreadParamsMode::Remote) {
+    if matches!(thread_params_mode, ThreadParamsMode::Remote | ThreadParamsMode::Cloud) {
         return None;
     }
 
@@ -1411,6 +1429,9 @@ fn thread_start_params_from_config(
     remote_cwd_override: Option<&std::path::Path>,
     session_start_source: Option<ThreadStartSource>,
 ) -> ThreadStartParams {
+    if thread_params_mode == ThreadParamsMode::Cloud {
+        return ThreadStartParams::default();
+    }
     let permissions = permissions_selection_from_config(config, thread_params_mode);
     let sandbox = permissions
         .is_none()
@@ -1426,12 +1447,12 @@ fn thread_start_params_from_config(
         model_provider: thread_params_mode.model_provider_from_config(config),
         service_tier: service_tier_override_from_config(config),
         cwd: thread_cwd_from_config(config, thread_params_mode, remote_cwd_override),
-        runtime_workspace_roots: Some(config.workspace_roots.clone()),
+        runtime_workspace_roots: thread_params_mode.workspace_roots_from_config(config),
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(config),
         sandbox,
         permissions,
-        config: config_request_overrides_from_config(config),
+        config: config_request_overrides_from_config(config, thread_params_mode),
         ephemeral: Some(config.ephemeral),
         daybreak_enabled: (config.daybreak_enabled && !config.ephemeral).then_some(true),
         session_start_source,
@@ -1448,7 +1469,15 @@ fn thread_resume_params_from_config(
     thread_id: ThreadId,
     thread_params_mode: ThreadParamsMode,
     remote_cwd_override: Option<&std::path::Path>,
+    model_settings: ResumeModelSettings,
+    permission_overrides: ResumePermissions,
 ) -> ThreadResumeParams {
+    if thread_params_mode == ThreadParamsMode::Cloud {
+        return ThreadResumeParams {
+            thread_id: thread_id.to_string(),
+            ..ThreadResumeParams::default()
+        };
+    }
     let permissions = permissions_selection_from_config(&config, thread_params_mode);
     let sandbox = permissions
         .is_none()
@@ -1459,23 +1488,47 @@ fn thread_resume_params_from_config(
             )
         })
         .flatten();
-    ThreadResumeParams {
+    let restore_saved = model_settings == ResumeModelSettings::RestoreFromThread;
+    let mut config_overrides = config_request_overrides_from_config(&config, thread_params_mode);
+    if restore_saved && let Some(overrides) = config_overrides.as_mut() {
+        overrides.remove("model_reasoning_effort");
+        if overrides.is_empty() {
+            config_overrides = None;
+        }
+    }
+    let mut params = ThreadResumeParams {
         thread_id: thread_id.to_string(),
-        model: config.model.clone(),
-        model_provider: thread_params_mode.model_provider_from_config(&config),
-        service_tier: service_tier_override_from_config(&config),
+        model: (!restore_saved).then(|| config.model.clone()).flatten(),
+        model_provider: (!restore_saved).then(|| provider_selection::explicit_provider(&config)).flatten(),
+        service_tier: (!restore_saved || resume_settings::explicitly_selected(&config, &["service_tier"]))
+            .then(|| service_tier_override_from_config(&config)).flatten(),
         cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
-        runtime_workspace_roots: Some(config.workspace_roots.clone()),
+        runtime_workspace_roots: thread_params_mode.workspace_roots_from_config(&config),
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(&config),
         sandbox,
         permissions,
-        config: config_request_overrides_from_config(&config),
+        config: config_overrides,
         developer_instructions: with_terminal_visualization_instructions(
             &config, /*control_instructions*/ None,
         ),
         ..ThreadResumeParams::default()
+    };
+    if thread_params_mode == ThreadParamsMode::Remote || !permission_overrides.approval_policy {
+        params.approval_policy = None;
     }
+    if thread_params_mode == ThreadParamsMode::Remote || !permission_overrides.approvals_reviewer {
+        params.approvals_reviewer = None;
+    }
+    if thread_params_mode == ThreadParamsMode::Remote || !permission_overrides.profile {
+        params.sandbox = None;
+        params.permissions = None;
+        remove_permission_config_overrides(&mut params.config);
+    }
+    if !permission_overrides.workspace_roots {
+        params.runtime_workspace_roots = None;
+    }
+    params
 }
 
 fn thread_fork_params_from_config(
@@ -1500,13 +1553,16 @@ fn thread_fork_params_from_config(
         model_provider: thread_params_mode.model_provider_from_config(&config),
         service_tier: service_tier_override_from_config(&config),
         cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
-        runtime_workspace_roots: Some(config.workspace_roots.clone()),
+        runtime_workspace_roots: thread_params_mode.workspace_roots_from_config(&config),
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(&config),
         sandbox,
         permissions,
-        config: config_request_overrides_from_config(&config),
-        base_instructions: config.base_instructions.clone(),
+        config: config_request_overrides_from_config(&config, thread_params_mode),
+        base_instructions: config.base_instructions.clone().filter(|_| {
+            !matches!(config.base_instructions_provenance,
+                Some(codex_protocol::models::BaseInstructionsProvenance::Model { .. }))
+        }),
         developer_instructions: with_terminal_visualization_instructions(
             &config,
             config.developer_instructions.clone(),
@@ -1524,7 +1580,7 @@ fn thread_cwd_from_config(
 ) -> Option<String> {
     match thread_params_mode {
         ThreadParamsMode::Embedded => Some(config.cwd.to_string_lossy().to_string()),
-        ThreadParamsMode::Remote => {
+        ThreadParamsMode::Remote | ThreadParamsMode::Cloud => {
             remote_cwd_override.map(|cwd| cwd.to_string_lossy().to_string())
         }
     }
@@ -1718,7 +1774,7 @@ fn display_permission_profile_from_thread_response(
 ) -> PermissionProfile {
     match thread_params_mode {
         ThreadParamsMode::Embedded => config.permissions.effective_permission_profile(),
-        ThreadParamsMode::Remote => {
+        ThreadParamsMode::Remote | ThreadParamsMode::Cloud => {
             PermissionProfile::from_legacy_sandbox_policy_for_cwd(&sandbox.to_core(), cwd)
         }
     }
@@ -2060,7 +2116,7 @@ mod tests {
             &config.permissions.effective_permission_profile(),
             config.cwd.as_path(),
         );
-        let expected_runtime_workspace_roots = Some(config.workspace_roots.clone());
+        let expected_runtime_workspace_roots = None;
 
         let start = thread_start_params_from_config(
             &config,
@@ -2073,7 +2129,9 @@ mod tests {
             thread_id,
             ThreadParamsMode::Remote,
             /*remote_cwd_override*/ None,
-        );
+        ResumeModelSettings::OverrideFromCurrentConfig,
+        ResumePermissions::CURRENT_CONFIG,
+    );
         let fork = thread_fork_params_from_config(
             config,
             thread_id,
@@ -2100,7 +2158,7 @@ mod tests {
         assert_eq!(resume.model_provider, None);
         assert_eq!(fork.model_provider, None);
         assert_eq!(start.sandbox, expected_sandbox);
-        assert_eq!(resume.sandbox, expected_sandbox);
+        assert_eq!(resume.sandbox, None);
         assert_eq!(fork.sandbox, expected_sandbox);
         assert_eq!(start.permissions, None);
         assert_eq!(resume.permissions, None);
@@ -2200,7 +2258,9 @@ mod tests {
             thread_id,
             ThreadParamsMode::Remote,
             Some(remote_cwd.as_path()),
-        );
+        ResumeModelSettings::OverrideFromCurrentConfig,
+        ResumePermissions::CURRENT_CONFIG,
+    );
         let fork = thread_fork_params_from_config(
             config,
             thread_id,
@@ -2215,7 +2275,7 @@ mod tests {
         assert_eq!(resume.model_provider, None);
         assert_eq!(fork.model_provider, None);
         assert_eq!(start.sandbox, expected_sandbox);
-        assert_eq!(resume.sandbox, expected_sandbox);
+        assert_eq!(resume.sandbox, None);
         assert_eq!(fork.sandbox, expected_sandbox);
         assert_eq!(start.permissions, None);
         assert_eq!(resume.permissions, None);
@@ -2225,10 +2285,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remote_resume_params_keep_local_roots_with_cross_platform_cwd_override() {
+    async fn remote_resume_params_preserve_server_roots_with_cross_platform_cwd_override() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let config = build_config(&temp_dir).await;
-        let expected_workspace_roots = config.workspace_roots.clone();
         let remote_cwd = if cfg!(windows) {
             std::path::PathBuf::from("/srv/remote/project")
         } else {
@@ -2240,19 +2299,30 @@ mod tests {
             ThreadId::new(),
             ThreadParamsMode::Remote,
             Some(remote_cwd.as_path()),
-        );
+        ResumeModelSettings::OverrideFromCurrentConfig,
+        ResumePermissions::CURRENT_CONFIG,
+    );
 
         assert_eq!(resume.cwd, Some(remote_cwd.to_string_lossy().to_string()));
         assert_eq!(
             resume.runtime_workspace_roots,
-            Some(expected_workspace_roots)
+            None
         );
     }
 
     #[tokio::test]
     async fn thread_lifecycle_params_forward_config_overrides_and_service_tier() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
-        let mut config = build_config(&temp_dir).await;
+        let mut config = ConfigBuilder::default()
+            .codex_home(temp_dir.path().to_path_buf())
+            .cli_overrides(vec![
+                ("model_reasoning_summary".to_string(), "detailed".into()),
+                ("model_verbosity".to_string(), "low".into()),
+                ("personality".to_string(), "pragmatic".into()),
+                ("web_search".to_string(), "disabled".into()),
+                ("suppress_unstable_features_warning".to_string(), true.into()),
+            ])
+            .build().await.expect("config should build");
         config.model_reasoning_effort = Some(ReasoningEffort::High);
         config.model_reasoning_summary = Some(ReasoningSummary::Detailed);
         config.model_verbosity = Some(Verbosity::Low);
@@ -2277,7 +2347,9 @@ mod tests {
             thread_id,
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
-        );
+        ResumeModelSettings::OverrideFromCurrentConfig,
+        ResumePermissions::CURRENT_CONFIG,
+    );
         let fork = thread_fork_params_from_config(
             config,
             thread_id,
@@ -2314,13 +2386,16 @@ mod tests {
         config.personality = None;
 
         let implicit_overrides =
-            config_request_overrides_from_config(&config).expect("config overrides");
+            config_request_overrides_from_config(&config, ThreadParamsMode::Embedded).expect("config overrides");
 
         assert!(!implicit_overrides.contains_key("personality"));
 
-        config.personality = Some(Personality::None);
+        let config = ConfigBuilder::default()
+            .codex_home(temp_dir.path().to_path_buf())
+            .cli_overrides(vec![("personality".to_string(), "none".into())])
+            .build().await.expect("config should build");
         let explicit_overrides =
-            config_request_overrides_from_config(&config).expect("config overrides");
+            config_request_overrides_from_config(&config, ThreadParamsMode::Embedded).expect("config overrides");
 
         assert_eq!(
             explicit_overrides.get("personality"),
@@ -2368,7 +2443,9 @@ mod tests {
             thread_id,
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
-        );
+        ResumeModelSettings::OverrideFromCurrentConfig,
+        ResumePermissions::CURRENT_CONFIG,
+    );
         let control_fork = thread_fork_params_from_config(
             config.clone(),
             thread_id,
@@ -2397,7 +2474,9 @@ mod tests {
             thread_id,
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
-        );
+        ResumeModelSettings::OverrideFromCurrentConfig,
+        ResumePermissions::CURRENT_CONFIG,
+    );
         let treatment_fork = thread_fork_params_from_config(
             config,
             thread_id,
@@ -2472,17 +2551,18 @@ mod tests {
                 name: None,
                 turns: vec![Turn {
                     id: "turn-1".to_string(),
+                    root_turn_id: None,
                     items_view: codex_app_server_protocol::TurnItemsView::Full,
                     items: vec![
-                        codex_app_server_protocol::ThreadItem::UserMessage {
+                        codex_app_server_protocol::ThreadItem::untimed(codex_app_server_protocol::ThreadItemPayload::UserMessage {
                             id: "user-1".to_string(),
                             client_id: None,
                             content: vec![codex_app_server_protocol::UserInput::Text {
                                 text: "hello from history".to_string(),
                                 text_elements: Vec::new(),
                             }],
-                        },
-                        codex_app_server_protocol::ThreadItem::AgentMessage {
+                        }),
+                        codex_app_server_protocol::ThreadItem::untimed(codex_app_server_protocol::ThreadItemPayload::AgentMessage {
                             questions: None,
                             delivery: None,
 
@@ -2490,7 +2570,7 @@ mod tests {
                             text: "assistant reply".to_string(),
                             phase: None,
                             memory_citation: None,
-                        },
+                        }),
                     ],
                     status: TurnStatus::InProgress,
                     error: None,

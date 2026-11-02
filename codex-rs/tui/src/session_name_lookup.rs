@@ -88,6 +88,8 @@ async fn lookup_with_reader(
         let response = tokio::time::timeout_at(
             deadline,
             client.list(ThreadListParams {
+        attached_to_thread_id: None,
+        excluded_thread_ids: None,
                 cursor,
                 limit: Some(PAGE_SIZE),
                 sort_key: Some(ThreadSortKey::UpdatedAt),
@@ -97,7 +99,7 @@ async fn lookup_with_reader(
                 archived: Some(archived),
                 search_term: None,
                 sort_direction: None,
-                model_providers: None,
+                model_providers: Some(Vec::new()),
                 originators: None,
                 section_id: None,
                 project_id: None,
@@ -153,7 +155,7 @@ async fn lookup_with_reader(
         }
         cursor = Some(next);
     }
-    bail!("session name lookup exceeded 10,000 results; use the session UUID")
+    bail!("session name lookup exceeded 10,000 results; use the session UUID");
 }
 
 #[cfg(test)]

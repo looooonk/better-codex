@@ -1,4 +1,4 @@
-//! Saves terminal speech in model and client history before realtime closure, without inference.
+//! Records realtime transcript chunks in model and client history without inference.
 
 use crate::session::new_submission_id;
 use crate::session::session::Session;
@@ -37,6 +37,7 @@ pub(super) async fn record(session: &Session, text: String) -> std::io::Result<(
     let now = chrono::Utc::now();
     if recording_turn {
         let started = EventMsg::TurnStarted(TurnStartedEvent {
+            turn_attribution: None,
             turn_id: turn.sub_id.clone(),
             root_turn_id: Some(turn.sub_id.clone()),
             trace_id: turn.trace_id.clone(),
@@ -47,7 +48,9 @@ pub(super) async fn record(session: &Session, text: String) -> std::io::Result<(
         session
             .persist_rollout_items(&[RolloutItem::EventMsg(started)])
             .await;
-        session.record_started_turn(&turn.sub_id).await;
+        session
+            .record_started_turn(&turn.sub_id, /*attribution*/ None)
+            .await;
     }
     let item = session.response_item_from_user_input(content.clone());
     session
@@ -70,6 +73,7 @@ pub(super) async fn record(session: &Session, text: String) -> std::io::Result<(
     if recording_turn {
         events.push(EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: turn.sub_id.clone(),
+            root_turn_id: Some(turn.sub_id.clone()),
             last_agent_message: None,
             error: None,
             started_at: Some(now.timestamp()),

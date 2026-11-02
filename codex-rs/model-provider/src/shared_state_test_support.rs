@@ -73,11 +73,13 @@ pub fn seed_gateway_auth(
     let runtime = primary.runtime_config();
     let oauth = GatewayAuthConfig {
         authorization_url: config.authorization_url,
+        device_authorization_url: None,
         token_url: config.token_url,
         client_id: config.client_id,
         resource: config.resource,
         scopes: config.scopes,
         redirect_port: config.redirect_port,
+        credentials_store: config.credentials_store,
     };
     // Repeated fixtures sharing a Codex home must use the same encryption key.
     let keyring = Arc::new(TestKeyring(Mutex::new(Some(

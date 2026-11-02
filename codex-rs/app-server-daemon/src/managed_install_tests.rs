@@ -58,7 +58,7 @@ async fn executable_identity_uses_path_and_binary_contents() {
 #[test]
 fn latest_channel_prerelease_requires_matching_selection_and_binary() {
     let home = tempfile::tempdir().unwrap();
-    let root = home.path().join("packages/app-server-daemon");
+    let root = home.path().join("packages/better-codex-daemon");
     let name = "0.1.0-alpha.15-aarch64-apple-darwin";
     let release = root.join("releases").join(name);
     std::fs::create_dir_all(release.join("bin")).unwrap();
