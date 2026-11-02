@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    reason = "Socket fixture setup must fail immediately if a private directory cannot be created."
+)]
+
 use super::*;
 #[cfg(unix)]
 use pretty_assertions::assert_eq;
@@ -162,7 +167,8 @@ fn fetch_ide_context_falls_back_to_uid_zero_legacy_socket() {
         .into_iter()
         .next()
         .expect("UID-0 legacy socket path");
-    std::fs::DirBuilder::new().mode(0o700)
+    std::fs::DirBuilder::new()
+        .mode(0o700)
         .create(legacy_socket_path.parent().expect("legacy parent"))
         .expect("create legacy parent");
     let legacy_listener = UnixListener::bind(&legacy_socket_path).expect("bind legacy");
@@ -191,7 +197,8 @@ fn fetch_ide_context_falls_back_to_pre_migration_uid_zero_legacy_socket() {
     let pre_migration_socket_path = legacy_socket_paths
         .last()
         .expect("pre-migration UID-0 legacy socket path");
-    std::fs::DirBuilder::new().mode(0o700)
+    std::fs::DirBuilder::new()
+        .mode(0o700)
         .create(pre_migration_socket_path.parent().expect("legacy parent"))
         .expect("create legacy parent");
     let legacy_listener =

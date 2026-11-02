@@ -1,4 +1,8 @@
-use codex_app_server_protocol::ThreadItemPayload;
+#![expect(
+    clippy::disallowed_methods,
+    reason = "Rendered style assertions verify the full-screen theme's exact RGB palette."
+)]
+
 use super::*;
 use crate::app_shell::ShellState;
 use crate::app_shell::agent_log_view::render_agent_log;
@@ -7,6 +11,7 @@ use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;

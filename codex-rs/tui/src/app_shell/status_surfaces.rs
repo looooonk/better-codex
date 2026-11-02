@@ -372,7 +372,7 @@ impl ShellState {
             .status_surfaces
             .title
             .lock()
-            .expect("terminal title state");
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let revision = crate::terminal_title::managed_title_revision();
         if managed.last.as_ref() == Some(&title) && managed.revision == revision {
             return;

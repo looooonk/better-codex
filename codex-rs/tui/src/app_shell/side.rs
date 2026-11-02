@@ -159,6 +159,10 @@ impl ShellState {
             .has_images()
             .then(|| (draft.submission_text(), draft.submission_items("")));
         let status_surfaces = self.status_surfaces.clone();
+        #[expect(
+            clippy::expect_used,
+            reason = "The entry guard checks the parent and intervening operations preserve it."
+        )]
         let parent = self.side_parent.take().expect("side parent exists");
         *self = *parent;
         self.status_surfaces = status_surfaces;

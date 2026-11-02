@@ -521,14 +521,16 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     assert!(shell.is_thread_revert_hydrating());
 
     let mut active_turn = test_turn("current-turn", TurnStatus::InProgress);
-    active_turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
-        id: "current-prompt".to_string(),
-        client_id: Some("current-client".to_string()),
-        content: vec![ApiUserInput::Text {
-            text: "current queued follower".to_string(),
-            text_elements: Vec::new(),
-        }],
-    }));
+    active_turn
+        .items
+        .push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
+            id: "current-prompt".to_string(),
+            client_id: Some("current-client".to_string()),
+            content: vec![ApiUserInput::Text {
+                text: "current queued follower".to_string(),
+                text_elements: Vec::new(),
+            }],
+        }));
     {
         let mut threads = backend.threads.lock().expect("threads should lock");
         threads[0].status = ThreadStatus::Active {
@@ -2576,31 +2578,34 @@ fn rewind_anchors_only_opening_text_only_prompts() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     let mut turn = prompt_turn("turn-one", "Opening prompt");
-    turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
-        id: "steer".to_string(),
-        client_id: Some("steer-client".to_string()),
-        content: vec![ApiUserInput::Text {
-            text: "Steered follow-up".to_string(),
-            text_elements: Vec::new(),
-        }],
-    }));
-    let mut rich_turn = test_turn("turn-two", TurnStatus::Completed);
-    rich_turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
-        id: "rich".to_string(),
-        client_id: None,
-        content: vec![
-            ApiUserInput::Text {
-                text: "Inspect this image".to_string(),
+    turn.items
+        .push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
+            id: "steer".to_string(),
+            client_id: Some("steer-client".to_string()),
+            content: vec![ApiUserInput::Text {
+                text: "Steered follow-up".to_string(),
                 text_elements: Vec::new(),
-            },
-            ApiUserInput::Image {
-                detail: None,
-                image: codex_app_server_protocol::ImageReference::Inline {
-                    url: "https://example.test/image.png".to_string(),
+            }],
+        }));
+    let mut rich_turn = test_turn("turn-two", TurnStatus::Completed);
+    rich_turn
+        .items
+        .push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
+            id: "rich".to_string(),
+            client_id: None,
+            content: vec![
+                ApiUserInput::Text {
+                    text: "Inspect this image".to_string(),
+                    text_elements: Vec::new(),
                 },
-            },
-        ],
-    }));
+                ApiUserInput::Image {
+                    detail: None,
+                    image: codex_app_server_protocol::ImageReference::Inline {
+                        url: "https://example.test/image.png".to_string(),
+                    },
+                },
+            ],
+        }));
     let mut automatic_turn = test_turn("turn-three", TurnStatus::Completed);
     automatic_turn.items.extend([
         ThreadItem::untimed(ThreadItemPayload::AgentMessage {
@@ -2851,16 +2856,16 @@ fn renders_agents_dashboard_snapshot() {
         ),
     ] {
         let thread_id = test_thread_id(thread_id);
-        shell
-            .agent_activity
-            .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+        shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+            ThreadItemPayload::SubAgentActivity {
+                model: None,
+                reasoning_effort: None,
                 id: format!("activity-{thread_id}"),
                 kind: SubAgentActivityKind::Started,
                 agent_thread_id: thread_id.to_string(),
                 agent_path: path.to_string(),
-            }));
+            },
+        ));
         shell
             .agent_activity
             .hydrate_threads(vec![subagent_thread_fixture(
@@ -2874,9 +2879,8 @@ reasoning_effort: None,
         "01900000-0000-7000-8000-000000000014",
     ]
     .map(str::to_string);
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::CollabAgentToolCall {
             id: "spawn-agents".to_string(),
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::Completed,
@@ -2918,7 +2922,8 @@ reasoning_effort: None,
                 )
             })
             .collect(),
-        }));
+        },
+    ));
     shell.agent_activity.select_thread(&agent_ids[3]);
 
     insta::assert_snapshot!(render_shell(
@@ -2983,16 +2988,16 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
     shell.dashboard_route = DashboardRoute::Agents;
     shell.agents_focused = true;
     shell.composer.clear();
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::SubAgentActivity {
+            model: None,
+            reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/full-log".to_string(),
-        }));
+        },
+    ));
 
     let mut child = thread_fixture(child_id, /*name*/ None, "child log");
     child.turns = (0..13)
@@ -3005,15 +3010,16 @@ reasoning_effort: None,
             } else {
                 format!("middle history item {index}")
             };
-            turn.items.push(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
-                delivery: None,
-                questions: None,
+            turn.items
+                .push(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                    delivery: None,
+                    questions: None,
 
-                id: format!("child-message-{index}"),
-                text,
-                phase: None,
-                memory_citation: None,
-            }));
+                    id: format!("child-message-{index}"),
+                    text,
+                    phase: None,
+                    memory_citation: None,
+                }));
             if index == 12 {
                 turn.items.extend([
                     ThreadItem::untimed(ThreadItemPayload::AgentMessage {
@@ -3107,16 +3113,16 @@ reasoning_effort: None,
     );
 
     let other_child_id = test_thread_id("01900000-0000-7000-8000-000000000094");
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::SubAgentActivity {
+            model: None,
+            reasoning_effort: None,
             id: "other-child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: other_child_id.to_string(),
             agent_path: "/root/other-log".to_string(),
-        }));
+        },
+    ));
     assert!(
         shell
             .agent_activity
@@ -3159,16 +3165,16 @@ async fn agent_log_reports_full_history_read_failure() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Agents;
     shell.agents_focused = true;
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::SubAgentActivity {
+            model: None,
+            reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/missing-log".to_string(),
-        }));
+        },
+    ));
     let backend = RecordingBackend::default();
 
     shell.open_selected_agent_log(&config, &backend);
@@ -3197,16 +3203,16 @@ async fn agent_log_rejects_partial_turn_history() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Agents;
     shell.agents_focused = true;
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::SubAgentActivity {
+            model: None,
+            reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/partial-log".to_string(),
-        }));
+        },
+    ));
     let mut child = thread_fixture(child_id, /*name*/ None, "partial log");
     let mut turn = test_turn("summary-turn", TurnStatus::Completed);
     turn.items_view = TurnItemsView::Summary;
@@ -3237,16 +3243,16 @@ async fn replacing_session_discards_pending_agent_log_result() {
     let config = test_config().await;
     let child_id = test_thread_id("01900000-0000-7000-8000-000000000095");
     let mut shell = ShellState::snapshot_fixture();
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::SubAgentActivity {
+            model: None,
+            reasoning_effort: None,
             id: "child-started".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
             agent_path: "/root/stale-log".to_string(),
-        }));
+        },
+    ));
     let backend = RecordingBackend::with_threads(vec![thread_fixture(
         child_id,
         /*name*/ None,
@@ -3924,16 +3930,16 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
 async fn interactive_requests_from_replaced_sessions_are_rejected() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::SubAgentActivity {
+            model: None,
+            reasoning_effort: None,
             id: "historical-agent".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: "01900000-0000-7000-8000-000000000099".to_string(),
             agent_path: "/root/historical".to_string(),
-        }));
+        },
+    ));
     let mut request = command_approval_request();
     let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
         panic!("command approval fixture should keep its request type");
@@ -3962,16 +3968,16 @@ reasoning_effort: None,
 fn notifications_from_historical_inactive_agents_are_ignored() {
     let mut shell = ShellState::snapshot_fixture();
     let thread_id = "01900000-0000-7000-8000-000000000098";
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::SubAgentActivity {
+            model: None,
+            reasoning_effort: None,
             id: "historical-agent".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: thread_id.to_string(),
             agent_path: "/root/historical".to_string(),
-        }));
+        },
+    ));
     let before = shell.agent_activity.agent(thread_id).cloned();
 
     shell.handle_notification(ServerNotification::AgentMessageDelta(
@@ -6512,7 +6518,9 @@ fn completed_extension_items_render_as_successful_tools() {
             id: "image-1".to_string(),
             status: "completed".to_string(),
             revised_prompt: None,
-            image: codex_app_server_protocol::GeneratedImageRef::Inline { result: String::new() },
+            image: codex_app_server_protocol::GeneratedImageRef::Inline {
+                result: String::new(),
+            },
             input_images: Vec::new(),
             saved_path: None,
         })),
@@ -6555,14 +6563,16 @@ async fn safety_buffering_retry_preserves_steered_input_and_notices_queued_follo
     let retry_thread_id = test_thread_id("01900000-0000-7000-8000-000000000202");
     let mut source_thread = thread_fixture(source_thread_id, Some("source"), "source preview");
     let mut prior_turn = test_turn("turn-prior", TurnStatus::Completed);
-    prior_turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
-        id: "prior-user".to_string(),
-        client_id: None,
-        content: vec![UserInput::Text {
-            text: "Earlier context".to_string(),
-            text_elements: Vec::new(),
-        }],
-    }));
+    prior_turn
+        .items
+        .push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
+            id: "prior-user".to_string(),
+            client_id: None,
+            content: vec![UserInput::Text {
+                text: "Earlier context".to_string(),
+                text_elements: Vec::new(),
+            }],
+        }));
     let mut interrupted_turn = test_turn("turn-submit", TurnStatus::Interrupted);
     interrupted_turn.items.extend([
         ThreadItem::untimed(ThreadItemPayload::UserMessage {
@@ -7182,7 +7192,7 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
-                current_account_only: true,
+            current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -9207,8 +9217,8 @@ fn subagent_lifecycle_records_do_not_create_permanent_running_tool_cards() {
     shell.transcript.clear();
     shell.subagent_activity.clear();
     let lifecycle_item = ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+        model: None,
+        reasoning_effort: None,
         id: "agent-started".to_string(),
         kind: SubAgentActivityKind::Started,
         agent_thread_id: "agent-thread".to_string(),
@@ -9441,9 +9451,8 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
 fn child_turn_start_reactivates_a_stopped_agent() {
     let mut shell = ShellState::snapshot_fixture();
     let child_thread_id = "agent-thread".to_string();
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::CollabAgentToolCall {
             id: "agent-state".to_string(),
             tool: CollabAgentTool::Wait,
             status: CollabAgentToolCallStatus::Completed,
@@ -9459,7 +9468,8 @@ fn child_turn_start_reactivates_a_stopped_agent() {
                     message: None,
                 },
             )]),
-        }));
+        },
+    ));
     shell
         .active_agent_thread_ids
         .insert(child_thread_id.clone());
@@ -9493,8 +9503,8 @@ fn child_notifications_discover_nested_agents() {
             turn_id: "root-turn".to_string(),
             completed_at_ms: 1,
             item: ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+                model: None,
+                reasoning_effort: None,
                 id: "child-started".to_string(),
                 kind: SubAgentActivityKind::Started,
                 agent_thread_id: child_thread_id.clone(),
@@ -9524,8 +9534,8 @@ reasoning_effort: None,
             turn_id: "child-turn".to_string(),
             completed_at_ms: 3,
             item: ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+                model: None,
+                reasoning_effort: None,
                 id: "grandchild-started".to_string(),
                 kind: SubAgentActivityKind::Started,
                 agent_thread_id: grandchild_thread_id.clone(),
@@ -10965,15 +10975,16 @@ fn mouse_wheel_routes_between_diff_files_and_content_in_both_layouts() {
 fn historical_edits_hydrate_and_session_switch_clears_them() {
     let mut shell = ShellState::snapshot_fixture();
     let mut turn = test_turn("historical-turn", TurnStatus::Completed);
-    turn.items.push(ThreadItem::untimed(ThreadItemPayload::FileChange {
-        id: "historical-file".to_string(),
-        changes: vec![FileUpdateChange {
-            path: "src/history.rs".to_string(),
-            kind: PatchChangeKind::Add,
-            diff: "first\nsecond\n".to_string(),
-        }],
-        status: codex_app_server_protocol::PatchApplyStatus::Completed,
-    }));
+    turn.items
+        .push(ThreadItem::untimed(ThreadItemPayload::FileChange {
+            id: "historical-file".to_string(),
+            changes: vec![FileUpdateChange {
+                path: "src/history.rs".to_string(),
+                kind: PatchChangeKind::Add,
+                diff: "first\nsecond\n".to_string(),
+            }],
+            status: codex_app_server_protocol::PatchApplyStatus::Completed,
+        }));
     let mut started = started_thread(
         "history",
         test_thread_id("01900000-0000-7000-8000-000000000421"),
@@ -11026,15 +11037,16 @@ fn terminal_history_with_an_in_progress_file_change_is_incomplete() {
         let mut shell = ShellState::snapshot_fixture();
         shell.diff_store.clear();
         let mut turn = test_turn("persisted-patch", turn_status);
-        turn.items.push(ThreadItem::untimed(ThreadItemPayload::FileChange {
-            id: "unfinished-file".to_string(),
-            changes: vec![FileUpdateChange {
-                path: "src/history.rs".to_string(),
-                kind: PatchChangeKind::Add,
-                diff: "unfinished\n".to_string(),
-            }],
-            status: codex_app_server_protocol::PatchApplyStatus::InProgress,
-        }));
+        turn.items
+            .push(ThreadItem::untimed(ThreadItemPayload::FileChange {
+                id: "unfinished-file".to_string(),
+                changes: vec![FileUpdateChange {
+                    path: "src/history.rs".to_string(),
+                    kind: PatchChangeKind::Add,
+                    diff: "unfinished\n".to_string(),
+                }],
+                status: codex_app_server_protocol::PatchApplyStatus::InProgress,
+            }));
 
         shell.ingest_turn_history(vec![turn]);
         (
@@ -14852,7 +14864,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
-                current_account_only: true,
+            current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -14998,7 +15010,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
-                current_account_only: true,
+            current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -15976,7 +15988,7 @@ async fn session_switch_waits_for_the_active_turn_to_finish() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
-                current_account_only: true,
+            current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -16011,7 +16023,7 @@ async fn session_switch_waits_for_pending_agent_input() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
-                current_account_only: true,
+            current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -16047,7 +16059,7 @@ async fn session_switch_preserves_nonempty_composer_draft() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
-                current_account_only: true,
+            current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -16095,7 +16107,7 @@ async fn session_switch_preserves_an_empty_unsaved_queued_edit() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
-                current_account_only: true,
+            current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -16122,15 +16134,16 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
     });
     child.thread_source = Some(codex_app_server_protocol::ThreadSource::Subagent);
     let mut turn = test_turn("child-turn", TurnStatus::Completed);
-    turn.items.push(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
-        delivery: None,
-        questions: None,
+    turn.items
+        .push(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+            delivery: None,
+            questions: None,
 
-        id: "child-message".to_string(),
-        text: "private child result".to_string(),
-        phase: None,
-        memory_citation: None,
-    }));
+            id: "child-message".to_string(),
+            text: "private child result".to_string(),
+            phase: None,
+            memory_citation: None,
+        }));
     child.turns.push(turn);
     started.agent_threads.push(child);
     let mut root_turn = test_turn("root-turn", TurnStatus::Completed);
@@ -16153,8 +16166,8 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
             )]),
         }),
         ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+            model: None,
+            reasoning_effort: None,
             id: "historical-child-start".to_string(),
             kind: SubAgentActivityKind::Started,
             agent_thread_id: child_id.to_string(),
@@ -16849,6 +16862,10 @@ async fn native_settings_pages_write_config_and_validate_edits() {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "The ripple regression verifies exact RGB blending against the theme background."
+)]
 async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum SettingsPath {
@@ -17910,7 +17927,10 @@ impl backend::AppShellBackend for RecordingBackend {
         model_provider_override: Option<&str>,
     ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
         self.push(RecordedBackendCall::Start(session_start_source));
-        self.start_provider_overrides.lock().unwrap().push(model_provider_override.map(str::to_owned));
+        self.start_provider_overrides
+            .lock()
+            .unwrap()
+            .push(model_provider_override.map(str::to_owned));
         self.start_configs
             .lock()
             .expect("start configs should lock")
@@ -19463,14 +19483,15 @@ fn test_turn(id: &str, status: TurnStatus) -> Turn {
 
 fn prompt_turn(id: &str, prompt: &str) -> Turn {
     let mut turn = test_turn(id, TurnStatus::Completed);
-    turn.items.push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
-        id: format!("item-{id}"),
-        client_id: None,
-        content: vec![ApiUserInput::Text {
-            text: prompt.to_string(),
-            text_elements: Vec::new(),
-        }],
-    }));
+    turn.items
+        .push(ThreadItem::untimed(ThreadItemPayload::UserMessage {
+            id: format!("item-{id}"),
+            client_id: None,
+            content: vec![ApiUserInput::Text {
+                text: prompt.to_string(),
+                text_elements: Vec::new(),
+            }],
+        }));
     turn
 }
 
@@ -19504,7 +19525,9 @@ fn test_thread_id(value: &str) -> codex_protocol::ThreadId {
 fn format_user_inputs_renders_audio_without_embedding_payloads() {
     let inputs = vec![
         ApiUserInput::Audio {
-            audio: codex_app_server_protocol::AudioReference::Inline { url: "data:audio/wav;base64,YXVkaW8=".to_string() },
+            audio: codex_app_server_protocol::AudioReference::Inline {
+                url: "data:audio/wav;base64,YXVkaW8=".to_string(),
+            },
         },
         ApiUserInput::LocalAudio {
             path: PathBuf::from("recordings/note.mp3"),

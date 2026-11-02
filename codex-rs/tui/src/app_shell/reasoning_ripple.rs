@@ -182,6 +182,10 @@ impl ReasoningRippleFrame {
                     | None => base_rgb,
                 };
                 let (red, green, blue) = blend(ripple_rgb, background_rgb, alpha);
+                #[expect(
+                    clippy::disallowed_methods,
+                    reason = "The ripple blends RGB values from the full-screen theme palette."
+                )]
                 cell.set_bg(Color::Rgb(red, green, blue));
             }
         }

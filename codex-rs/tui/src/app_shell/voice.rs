@@ -192,13 +192,11 @@ impl ShellState {
         if stop_delayed {
             self.push_error("Voice capture has stopped; waiting for the server to close the conversation before restarting.");
         }
-        if self
+        if let Some(mut session) = self
             .voice
             .session
-            .as_ref()
-            .is_some_and(|session| session.worker.is_finished())
+            .take_if(|session| session.worker.is_finished())
         {
-            let mut session = self.voice.session.take().expect("finished voice session");
             match (&mut session.worker).await {
                 Ok(Ok(())) => self.push_system("Voice ended"),
                 Ok(Err(error)) => self.push_error(format!("Voice ended: {error}")),
@@ -206,19 +204,12 @@ impl ShellState {
             }
             changed = true;
         }
-        if self
+        if let Some(settings) = self
             .voice
             .settings
-            .as_ref()
-            .is_some_and(JoinHandle::is_finished)
+            .take_if(|settings| settings.is_finished())
         {
-            match self
-                .voice
-                .settings
-                .take()
-                .expect("finished settings request")
-                .await
-            {
+            match settings.await {
                 Ok(Ok(result)) => {
                     self.voice.devices = result.devices;
                     self.push_system(result.message);

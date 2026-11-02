@@ -18,6 +18,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use ratatui::layout::Rect;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::MutexGuard;
 
 #[derive(Clone, Default)]
 pub(super) struct PetState(Arc<Mutex<PetRuntime>>);
@@ -67,8 +68,16 @@ impl Drop for PetRuntime {
 }
 
 impl PetState {
+    #[expect(
+        clippy::expect_used,
+        reason = "A panic while mutating pet rendering state leaves it unusable."
+    )]
+    fn lock(&self) -> MutexGuard<'_, PetRuntime> {
+        self.0.lock().expect("pet state")
+    }
+
     pub(super) fn configure(&self, config: &Config, requester: FrameRequester) {
-        let mut state = self.0.lock().expect("pet state");
+        let mut state = self.lock();
         state.config = Some(PetConfig {
             home: config.codex_home.clone(),
             path: super::local_app_theme::selected_config_path(config),
@@ -94,11 +103,11 @@ impl PetState {
     }
 
     pub(super) fn has_work(&self) -> bool {
-        self.0.lock().expect("pet state").pending.is_some()
+        self.lock().pending.is_some()
     }
 
     pub(super) fn content_area(&self, area: Rect) -> Rect {
-        let state = self.0.lock().expect("pet state");
+        let state = self.lock();
         let Some(pet) = state.pet.as_ref().filter(|pet| pet.image_enabled()) else {
             return area;
         };
@@ -116,7 +125,7 @@ impl PetState {
     }
 
     pub(super) fn clear(&self) -> std::io::Result<()> {
-        let state = self.0.lock().expect("pet state");
+        let state = self.lock();
         state
             .render
             .draw(&mut std::io::stdout(), /*request*/ None)
@@ -195,7 +204,7 @@ impl ShellState {
         }
         let home = self.codex_home.clone();
         let thread_id = self.thread_id;
-        let mut state = self.pets.0.lock().expect("pet state");
+        let mut state = self.pets.lock();
         if state.pending.is_some() {
             drop(state);
             self.push_status("pet selection is still loading");
@@ -220,7 +229,7 @@ impl ShellState {
             );
             return;
         }
-        let mut state = self.pets.0.lock().expect("pet state");
+        let mut state = self.pets.lock();
         let Some(config) = &state.config else {
             drop(state);
             self.push_error("terminal pet settings are unavailable");
@@ -241,22 +250,18 @@ impl ShellState {
 
     pub(super) async fn poll_pets(&mut self) -> bool {
         let task = {
-            let mut state = self.pets.0.lock().expect("pet state");
-            if !state
-                .pending
-                .as_ref()
-                .is_some_and(tokio::task::JoinHandle::is_finished)
-            {
-                return false;
+            let mut state = self.pets.lock();
+            match state.pending.take_if(|task| task.is_finished()) {
+                Some(task) => task,
+                None => return false,
             }
-            state.pending.take().expect("finished pet task")
         };
         match task.await {
             Ok(Ok(PetUpdate::Catalog { thread_id, choices })) => {
                 if thread_id != self.thread_id || self.active_input_route().is_some() {
                     return true;
                 }
-                let current = self.pets.0.lock().expect("pet state").selected.clone();
+                let current = self.pets.lock().selected.clone();
                 self.open_selector(SelectorState::new(
                     "TERMINAL PETS",
                     choices
@@ -282,7 +287,7 @@ impl ShellState {
                 layers,
                 overridden,
             })) => {
-                let mut state = self.pets.0.lock().expect("pet state");
+                let mut state = self.pets.lock();
                 state.selected = Some(id.clone());
                 state.pet = pet;
                 state.notification = None;
@@ -313,9 +318,7 @@ impl ShellState {
         let content = self.pets.content_area(area);
         let composer_anchor = self
             .pets
-            .0
             .lock()
-            .expect("pet state")
             .config
             .as_ref()
             .is_some_and(|config| config.anchor == TuiPetAnchor::Composer);
@@ -325,7 +328,7 @@ impl ShellState {
         } else {
             area.bottom()
         };
-        let mut state = self.pets.0.lock().expect("pet state");
+        let mut state = self.pets.lock();
         if let Some(pet) = &mut state.pet {
             pet.set_animations_enabled(self.animations);
         }

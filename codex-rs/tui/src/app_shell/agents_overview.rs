@@ -166,6 +166,10 @@ impl Overview {
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "The select guard only polls an active refresh future."
+)]
 pub(crate) async fn run_agents_overview(
     tui: &mut Tui,
     app_server: &mut AppServerSession,

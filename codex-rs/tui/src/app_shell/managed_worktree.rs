@@ -146,17 +146,12 @@ impl ShellState {
         config: &mut Config,
         app_server: &S,
     ) -> bool {
-        if !self
+        let Some(pending) = self
             .pending_worktree
-            .as_ref()
-            .is_some_and(PendingWorktree::is_finished)
-        {
+            .take_if(|pending| pending.is_finished())
+        else {
             return false;
-        }
-        let pending = self
-            .pending_worktree
-            .take()
-            .expect("completed worktree operation");
+        };
         let same_source = self.thread_id == pending.thread_id && self.cwd == pending.cwd;
         match pending.task {
             WorktreeTask::Creating(task) => {

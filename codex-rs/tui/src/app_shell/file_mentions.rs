@@ -51,6 +51,10 @@ impl ShellState {
     }
 
     pub(super) fn insert_file_mention(&mut self, path: &str) {
+        #[expect(
+            clippy::expect_used,
+            reason = "JSON serialization of a string cannot fail."
+        )]
         let path = if path
             .chars()
             .any(|character| character.is_whitespace() || matches!(character, '"' | '\\'))

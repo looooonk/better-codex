@@ -714,10 +714,11 @@ async fn lookup_latest_session_target_with_app_server(
             .into_iter()
             .find_map(session_target_from_app_server_thread);
         if let Some(target) = target
-            && (uses_remote_workspace || match target.path.as_deref() {
-                Some(path) => codex_rollout::existing_rollout_path(path).await.is_some(),
-                None => false,
-            })
+            && (uses_remote_workspace
+                || match target.path.as_deref() {
+                    Some(path) => codex_rollout::existing_rollout_path(path).await.is_some(),
+                    None => false,
+                })
         {
             return Ok(Some(target));
         }
@@ -1215,7 +1216,8 @@ pub async fn run_main(
         app_server_target = launch.target;
         daemon_startup_warning = launch.warning;
     } else if let AppServerTarget::LocalDaemon { endpoint } = &app_server_target {
-        let launch = daemon_startup::validate_existing(endpoint.clone(), &config, &cli_kv_overrides).await;
+        let launch =
+            daemon_startup::validate_existing(endpoint.clone(), &config, &cli_kv_overrides).await;
         app_server_target = launch.target;
         daemon_startup_warning = launch.warning;
     }
@@ -1639,7 +1641,10 @@ async fn run_ratatui_app(
             };
             match lookup_latest_session_target_with_app_server(
                 resume_picker::SessionPickerAction::Fork,
-                app_server, &config, filter_cwd, /*include_non_interactive*/ false,
+                app_server,
+                &config,
+                filter_cwd,
+                /*include_non_interactive*/ false,
             )
             .await?
             {
@@ -2042,7 +2047,9 @@ async fn get_login_status(
     Ok(match account.account {
         Some(AppServerAccount::ApiKey {}) => LoginStatus::AuthMode(AuthMode::ApiKey),
         Some(AppServerAccount::Chatgpt { .. }) => LoginStatus::AuthMode(AuthMode::Chatgpt),
-        Some(AppServerAccount::AmazonBedrock { .. } | AppServerAccount::Gcp {}) => LoginStatus::NotAuthenticated,
+        Some(AppServerAccount::AmazonBedrock { .. } | AppServerAccount::Gcp {}) => {
+            LoginStatus::NotAuthenticated
+        }
         None => LoginStatus::NotAuthenticated,
     })
 }
@@ -2777,7 +2784,7 @@ mod tests {
         assert!(params.use_state_db_only);
 
         let scan_params = latest_session_lookup_params(
-            Some(vec![config.model_provider_id.clone()]),
+            Some(vec![config.model_provider_id]),
             Some(cwd.as_path()),
             /*include_non_interactive*/ false,
             LatestSessionLookupMode::ScanAndRepair,
@@ -2811,7 +2818,6 @@ mod tests {
     #[tokio::test]
     async fn latest_session_lookup_params_omit_local_filters_for_remote_sessions()
     -> std::io::Result<()> {
-
         let params = latest_session_lookup_params(
             /*model_providers*/ None,
             /*cwd_filter*/ None,
@@ -2827,7 +2833,6 @@ mod tests {
     #[tokio::test]
     async fn latest_session_lookup_params_can_include_non_interactive_sources()
     -> std::io::Result<()> {
-
         let params = latest_session_lookup_params(
             /*model_providers*/ None,
             /*cwd_filter*/ None,

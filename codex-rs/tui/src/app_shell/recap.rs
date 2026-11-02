@@ -231,8 +231,10 @@ impl ShellState {
                 .map(|profile| profile.id.clone()),
             mcp_server_names: config.mcp_servers.get().keys().cloned().collect(),
         };
-        let prompt = RecapPrompt::new(&history).render().into_text()
-            .ok_or_else(|| eyre!("Recap instructions must be text"))?.to_string();
+        let prompt = RecapPrompt::new(&history)
+            .render()
+            .into_text()
+            .ok_or_else(|| eyre!("Recap instructions must be text"))?;
         let cancellation = CancellationToken::new();
         let cancelled = cancellation.clone();
         let worker_client = client.clone();

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "The full-screen themes define matching foreground and background RGB palettes."
+)]
+
 use ratatui::style::Color;
 use std::cell::Cell;
 use std::marker::PhantomData;

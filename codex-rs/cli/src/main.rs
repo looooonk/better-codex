@@ -2513,12 +2513,10 @@ async fn run_interactive_tui(
     remote_auth_token_env: Option<String>,
     arg0_paths: Arg0DispatchPaths,
 ) -> std::io::Result<AppExitInfo> {
-    if interactive.no_daemon {
-        if remote.is_some() {
-            return Ok(AppExitInfo::fatal(
-                "--no-daemon cannot be used with --remote.",
-            ));
-        }
+    if interactive.no_daemon && remote.is_some() {
+        return Ok(AppExitInfo::fatal(
+            "--no-daemon cannot be used with --remote.",
+        ));
     }
     if interactive.worktree && remote.is_some() {
         return Err(std::io::Error::other(

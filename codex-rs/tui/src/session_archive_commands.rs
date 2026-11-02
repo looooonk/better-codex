@@ -153,31 +153,48 @@ pub async fn run_session_queue_command(
             struct ThreadStatus {
                 status: codex_app_server_protocol::ThreadStatus,
             }
-            let response: ThreadReadStatus = app_server.request_handle().request_typed(
-                codex_app_server_protocol::ClientRequest::ThreadRead {
-                    request_id: codex_app_server_protocol::RequestId::String(uuid::Uuid::new_v4().to_string()),
+            let response: ThreadReadStatus = app_server
+                .request_handle()
+                .request_typed(codex_app_server_protocol::ClientRequest::ThreadRead {
+                    request_id: codex_app_server_protocol::RequestId::String(
+                        uuid::Uuid::new_v4().to_string(),
+                    ),
                     params: codex_app_server_protocol::ThreadReadParams {
                         thread_id: resolved.session_id.to_string(),
                         include_turns: false,
                     },
-                },
-            ).await?;
+                })
+                .await?;
             if response.thread.status == codex_app_server_protocol::ThreadStatus::NotLoaded {
-                app_server.request_handle().request_typed::<serde::de::IgnoredAny>(
-                    codex_app_server_protocol::ClientRequest::ThreadResume {
-                        request_id: codex_app_server_protocol::RequestId::String(uuid::Uuid::new_v4().to_string()),
-                        params: codex_app_server_protocol::ThreadResumeParams {
-                            thread_id: resolved.session_id.to_string(),
-                            exclude_turns: true,
-                            ..Default::default()
+                app_server
+                    .request_handle()
+                    .request_typed::<serde::de::IgnoredAny>(
+                        codex_app_server_protocol::ClientRequest::ThreadResume {
+                            request_id: codex_app_server_protocol::RequestId::String(
+                                uuid::Uuid::new_v4().to_string(),
+                            ),
+                            params: codex_app_server_protocol::ThreadResumeParams {
+                                thread_id: resolved.session_id.to_string(),
+                                exclude_turns: true,
+                                ..Default::default()
+                            },
                         },
-                    },
-                ).await?;
+                    )
+                    .await?;
             }
             Ok(())
-        }.await;
+        }
+        .await;
         if let Err(error) = resumed {
-            eprintln!("Warning: the message is queued, but resuming the session failed: {error:#}");
+            #[expect(
+                clippy::print_stderr,
+                reason = "This CLI action reports partial success outside the TUI."
+            )]
+            {
+                eprintln!(
+                    "Warning: the message is queued, but resuming the session failed: {error:#}"
+                );
+            }
         }
     }
     Ok(summary)

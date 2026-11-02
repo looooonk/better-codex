@@ -316,7 +316,7 @@ impl ShellState {
                 .finish_pending_elicitation(app_server, choice, request_id, result, title)
                 .await;
         }
-        let Some(pending) = self.pending_elicitation.as_ref() else {
+        let Some(pending) = self.pending_elicitation.as_mut() else {
             return Ok(());
         };
         let request_id = pending.request_id();
@@ -332,10 +332,7 @@ impl ShellState {
                     params,
                     attempt.cancellation(),
                 );
-                self.pending_elicitation
-                    .as_mut()
-                    .expect("elicitation is present")
-                    .verification_attempt = Some(attempt);
+                pending.verification_attempt = Some(attempt);
                 self.start_backend_action(
                     super::backend_actions::ActionGroup::UserVerification,
                     "waiting for device verification",

@@ -18,7 +18,6 @@ use anyhow::Result;
 use anyhow::ensure;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
-use tempfile::TempDir;
 
 #[test]
 fn managed_daemon_restarts_from_deleted_working_directory() -> Result<()> {
