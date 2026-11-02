@@ -60,5 +60,8 @@ runs:
 
         # Existing Windows-built release manifests use CRLF line endings.
         (cd "${binding_dir}" && tr -d '\r' < "${checksums_path}" | "${checksum_command[@]}")
+        binding_path="$(python3 "${GITHUB_WORKSPACE}/third_party/v8/correct_release_binding.py" \
+          --version "$version" --target "$TARGET" --input "$binding_path" \
+          --output "${binding_dir}/corrected/${binding_name}")"
         echo "RUSTY_V8_ARCHIVE=${archive_path}" >> "${GITHUB_ENV}"
         echo "RUSTY_V8_SRC_BINDING_PATH=${binding_path}" >> "${GITHUB_ENV}"

@@ -51,4 +51,4 @@ if __name__ == "__main__":
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    correct_binding(args.version, args.target, args.input, args.output)
+    print(correct_binding(args.version, args.target, args.input, args.output))
