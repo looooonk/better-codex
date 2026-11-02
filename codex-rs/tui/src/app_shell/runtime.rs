@@ -41,6 +41,7 @@ const RATE_LIMITS_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 60);
 const WORKSPACE_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(/*secs*/ 5);
 const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
 const TURN_TIMER_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 1);
+const TERMINAL_RESIZE_SETTLE_DELAY: Duration = Duration::from_secs(/*secs*/ 15);
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run(
@@ -165,6 +166,9 @@ pub(crate) async fn run(
         vec![("backend", if app_server.uses_embedded_app_server() { "in_process" } else if app_server.uses_remote_workspace() { "remote" } else { "local_daemon" })]
     } else { Vec::new() };
     let mut last_observed_turn = None;
+    let mut last_screen_size = tui.terminal.size()?;
+    let mut settled_size_tags = crate::terminal_size_telemetry::tags(last_screen_size);
+    let mut pending_resize = None;
     draw_shell(tui, &shell)?;
     shell.start_initial_dashboard_hydration(&app_server);
     shell.request_queue_hydration(&app_server);
@@ -203,8 +207,16 @@ pub(crate) async fn run(
             shell.refresh_status_metadata(&app_server);
             shell.poll_automatic_recap(tui.is_focused(), &config, &app_server);
             let terminal_size = tui.terminal.size()?;
+            if !crate::terminal_size_telemetry::enabled(&config) || terminal_size_tags.is_empty() {
+                pending_resize = None;
+                settled_size_tags = crate::terminal_size_telemetry::tags(terminal_size);
+            } else if terminal_size != last_screen_size {
+                pending_resize = Some((terminal_size, tokio::time::Instant::now() + TERMINAL_RESIZE_SETTLE_DELAY));
+            }
+            last_screen_size = terminal_size;
             if let Some(turn_id) = shell.active_turn_id.as_ref()
                 && last_observed_turn.as_ref() != Some(&(shell.thread_id, turn_id.clone()))
+                && crate::terminal_size_telemetry::enabled(&config)
             {
                 crate::terminal_size_telemetry::record(&terminal_size_tags, &config, "turn_start", terminal_size);
                 last_observed_turn = Some((shell.thread_id, turn_id.clone()));
@@ -401,7 +413,6 @@ pub(crate) async fn run(
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Resize => {
-                            crate::terminal_size_telemetry::record(&terminal_size_tags, &config, "resize", size);
                             shell.cancel_dashboard_resize();
                             shell.clear_text_selections();
                             shell.clear_pointer_position();
@@ -491,6 +502,21 @@ pub(crate) async fn run(
                     tui.frame_requester().schedule_frame();
                 }
                 _ = status_spinner.tick() => {
+                    if let Some((expected, deadline)) = pending_resize
+                        && tokio::time::Instant::now() >= deadline
+                    {
+                        let actual = tui.terminal.size()?;
+                        if actual != expected {
+                            pending_resize = Some((actual, tokio::time::Instant::now() + TERMINAL_RESIZE_SETTLE_DELAY));
+                        } else {
+                            let tags = crate::terminal_size_telemetry::tags(actual);
+                            if tags != settled_size_tags && crate::terminal_size_telemetry::enabled(&config) {
+                                crate::terminal_size_telemetry::record(&terminal_size_tags, &config, "resize", actual);
+                            }
+                            settled_size_tags = tags;
+                            pending_resize = None;
+                        }
+                    }
                     if shell.status_spinner_active() {
                         shell.status_spinner_frame = shell.status_spinner_frame.wrapping_add(1);
                         tui.frame_requester().schedule_frame();

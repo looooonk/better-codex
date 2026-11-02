@@ -70,6 +70,7 @@ impl SessionListState {
 
     fn list_params_with_cursor(&self, cursor: Option<String>) -> ThreadListParams {
         ThreadListParams {
+            current_account_only: true,
             attached_to_thread_id: None,
             excluded_thread_ids: None,
             originators: None,

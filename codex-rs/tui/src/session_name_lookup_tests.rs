@@ -95,7 +95,7 @@ async fn unique_cursor_stream_stops_at_the_page_budget() {
 }
 
 #[tokio::test]
-async fn exact_label_includes_exec_sessions_and_is_verified_before_use() {
+async fn exact_label_lookup_requests_all_accounts_and_verifies_saved_name() {
     let exact = session();
     let mut partial = exact.clone();
     partial.name = Some("requested name suffix".into());
@@ -123,6 +123,7 @@ async fn exact_label_includes_exec_sessions_and_is_verified_before_use() {
                 request.cursor.clone(),
                 request.source_kinds.clone(),
                 request.model_providers.clone(),
+                request.current_account_only,
             ))
             .collect::<Vec<_>>(),
         vec![(
@@ -132,6 +133,7 @@ async fn exact_label_includes_exec_sessions_and_is_verified_before_use() {
                 /*include_non_interactive*/ true
             )),
             Some(Vec::new()),
+            false,
         )]
     );
 }

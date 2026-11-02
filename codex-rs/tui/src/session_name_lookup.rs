@@ -88,6 +88,7 @@ async fn lookup_with_reader(
         let response = tokio::time::timeout_at(
             deadline,
             client.list(ThreadListParams {
+                current_account_only: false,
         attached_to_thread_id: None,
         excluded_thread_ids: None,
                 cursor,

@@ -3530,11 +3530,13 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         backend.calls(),
         vec![
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
@@ -7180,6 +7182,7 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
+                current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -14849,6 +14852,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
+                current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -14994,6 +14998,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
+                current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -15034,16 +15039,19 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
         backend.calls(),
         vec![
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: Some("needle".to_string()),
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
@@ -15083,11 +15091,13 @@ async fn session_navigation_appends_the_next_page_snapshot() {
         backend.calls(),
         vec![
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: Some("20".to_string()),
@@ -15182,6 +15192,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         backend.calls(),
         vec![
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
@@ -15195,11 +15206,13 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             RecordedBackendCall::ThreadUsage(resume_id),
             RecordedBackendCall::QueueList(resume_id),
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
@@ -15212,6 +15225,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             RecordedBackendCall::ThreadUsage(forked_id),
             RecordedBackendCall::QueueList(forked_id),
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
@@ -15520,11 +15534,13 @@ async fn changed_session_list_query_supersedes_a_blocked_refresh() {
         backend.calls(),
         vec![
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(true),
                 search_term: None,
                 cursor: None,
@@ -15573,16 +15589,19 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
         backend.calls(),
         vec![
             RecordedBackendCall::ThreadList {
+                current_account_only: true,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: false,
                 archived: Some(false),
                 search_term: None,
                 cursor: None,
             },
             RecordedBackendCall::ThreadList {
+                current_account_only: false,
                 archived: Some(true),
                 search_term: None,
                 cursor: None,
@@ -15957,6 +15976,7 @@ async fn session_switch_waits_for_the_active_turn_to_finish() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
+                current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -15991,6 +16011,7 @@ async fn session_switch_waits_for_pending_agent_input() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
+                current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -16026,6 +16047,7 @@ async fn session_switch_preserves_nonempty_composer_draft() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
+                current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -16073,6 +16095,7 @@ async fn session_switch_preserves_an_empty_unsaved_queued_edit() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
+                current_account_only: true,
             archived: Some(false),
             search_term: None,
             cursor: None,
@@ -17716,6 +17739,7 @@ enum RecordedBackendCall {
         goal_continuation: ForkGoalContinuation,
     },
     ThreadList {
+        current_account_only: bool,
         archived: Option<bool>,
         search_term: Option<String>,
         cursor: Option<String>,
@@ -18004,6 +18028,7 @@ impl backend::AppShellBackend for RecordingBackend {
     ) -> color_eyre::Result<ThreadListResponse> {
         let cursor = params.cursor.clone();
         self.push(RecordedBackendCall::ThreadList {
+            current_account_only: params.current_account_only,
             archived: params.archived,
             search_term: params.search_term.clone(),
             cursor: cursor.clone(),
@@ -18266,6 +18291,7 @@ impl backend::AppShellBackend for RecordingBackend {
             for archived in [false, true] {
                 let response = backend
                     .thread_list(ThreadListParams {
+                        current_account_only: false,
                         attached_to_thread_id: None,
                         excluded_thread_ids: None,
                         originators: None,

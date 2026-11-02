@@ -75,6 +75,8 @@ pub(super) async fn count_descendants(
                 .request_typed(ClientRequest::ThreadList {
                     request_id: app_shell_request_id("app-shell-descendants"),
                     params: ThreadListParams {
+                        // A known ancestor remains directly accessible across accounts.
+                        current_account_only: false,
             attached_to_thread_id: None,
             excluded_thread_ids: None,
                         originators: None,

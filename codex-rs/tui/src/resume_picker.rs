@@ -1844,6 +1844,7 @@ fn thread_list_params(
     include_non_interactive: bool,
 ) -> ThreadListParams {
     ThreadListParams {
+        current_account_only: true,
         attached_to_thread_id: None,
         excluded_thread_ids: None,
         originators: None,
