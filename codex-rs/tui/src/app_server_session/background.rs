@@ -40,6 +40,7 @@ impl AppServerSession {
         config: Config,
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        let permissions = self.validate_remote_history_permissions(&config, "resuming");
         let request_handle = self.request_handle();
         let thread_params_mode = self.thread_params_mode();
         let remote_cwd_override = self.remote_cwd_override.clone();
@@ -49,7 +50,7 @@ impl AppServerSession {
         } else {
             self.session_config_with_effective_service_tier(&config)
         };
-        resume_thread(BackgroundThreadResume {
+        let request = BackgroundThreadResume {
             request_handle,
             config,
             session_config,
@@ -58,7 +59,11 @@ impl AppServerSession {
             remote_cwd_override,
             request_id: RequestId::String(format!("app-shell-thread-resume-{}", Uuid::new_v4())),
             settings,
-        })
+        };
+        async move {
+            permissions?;
+            resume_thread(request).await
+        }
     }
 
     pub(crate) fn fork_thread_before_turn_in_background(
@@ -68,11 +73,12 @@ impl AppServerSession {
         before_turn_id: String,
         goal_continuation: ForkGoalContinuation,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        let permissions = self.validate_remote_history_permissions(&config, "forking");
         let request_handle = self.request_handle();
         let thread_params_mode = self.thread_params_mode();
         let remote_cwd_override = self.remote_cwd_override.clone();
         let session_config = self.session_config_with_effective_service_tier(&config);
-        fork_thread_before_turn(BackgroundThreadFork {
+        let request = BackgroundThreadFork {
             request_handle,
             config,
             session_config,
@@ -82,7 +88,11 @@ impl AppServerSession {
             thread_params_mode,
             remote_cwd_override,
             request_id: RequestId::String(format!("app-shell-thread-fork-{}", Uuid::new_v4())),
-        })
+        };
+        async move {
+            permissions?;
+            fork_thread_before_turn(request).await
+        }
     }
 
     pub(crate) fn thread_settings_update_in_background(

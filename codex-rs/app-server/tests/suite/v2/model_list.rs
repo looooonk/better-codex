@@ -39,6 +39,9 @@ use wiremock::matchers::path;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const INVALID_REQUEST_ERROR_CODE: i64 = -32600;
 
+#[path = "model_list_config_tests.rs"]
+mod config_tests;
+
 #[test_case(None, None, true; "default on")]
 #[test_case(None, Some(false), true; "app rollback")]
 #[test_case(None, Some(true), true; "app rollout")]

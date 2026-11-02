@@ -634,7 +634,7 @@ fn writable_key_path(
     Ok(segments)
 }
 
-fn parse_key_path(path: &str) -> Result<Vec<String>, String> {
+pub(crate) fn parse_key_path(path: &str) -> Result<Vec<String>, String> {
     if path.trim().is_empty() {
         return Err("keyPath must not be empty".to_string());
     }

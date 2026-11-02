@@ -102,6 +102,7 @@ impl ShellState {
             self.max_concurrent_threads_per_session,
         );
         child.voice = self.voice.for_new_session();
+        child.service_tier_features = self.service_tier_features.clone();
         child.keybindings = self.keybindings.clone();
         child.pets = self.pets.clone();
         child.status_surfaces = self.status_surfaces.clone();

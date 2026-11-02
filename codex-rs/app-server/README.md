@@ -833,6 +833,9 @@ response summarizes the saved configuration.
 Saving does not select a default, authenticate, or contact the provider. Use setup
 RPCs for authentication and selection. Saving the provider used by `model/list`
 invalidates its catalog for the next access. Existing threads keep their configuration.
+Successful `config/value/write` and `config/batchWrite` changes to the default provider,
+provider definitions, model catalog file, or API-key model discovery setting also refresh
+the catalog on its next access. This does not change existing threads' provider routes.
 
 # GCP provider account
 

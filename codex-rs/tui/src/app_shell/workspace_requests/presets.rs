@@ -13,6 +13,7 @@ use codex_config::types::QuickDial;
 use color_eyre::Result;
 use color_eyre::eyre::bail;
 use color_eyre::eyre::eyre;
+use color_eyre::eyre::WrapErr;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -61,7 +62,7 @@ pub(super) async fn execute(
 ) -> Result<WorkspaceResponse> {
     let response: ConfigReadResponse = client.request_typed(ClientRequest::ConfigRead {
         request_id: workspace_request_id("presets-read"),
-        params: ConfigReadParams { include_layers: true, cwd: Some(cwd) },
+        params: ConfigReadParams { include_layers: true, cwd: Some(cwd.clone()) },
     }).await?;
     let presets: BTreeMap<String, QuickDial> = response.config.additional.get("tui")
         .and_then(|tui| tui.get("presets"))
@@ -100,6 +101,21 @@ pub(super) async fn execute(
     }) {
         bail!("preset {slot} is controlled by project, command-line, or managed configuration");
     }
+    if dial.is_none() && target.is_none_or(|layer| layer.config["tui"]["presets"].get(slot.to_string()).is_none()) {
+        if !presets.contains_key(&slot.to_string()) {
+            return Ok(WorkspaceResponse::Notice(format!("Preset {slot} is already empty.")));
+        }
+        let origin = response.origins.get(&format!("{prefix}.input"))
+            .or_else(|| response.origins.get(&prefix));
+        let source = match origin.map(|origin| &origin.name) {
+            Some(ConfigLayerSource::User { file, .. }
+                | ConfigLayerSource::System { file }
+                | ConfigLayerSource::PackagedDefaults { file }
+                | ConfigLayerSource::LegacyManagedConfigTomlFromFile { file }) => file.display().to_string(),
+            _ => "the lower-priority source configuration".to_string(),
+        };
+        bail!("preset {slot} is inherited from {source}; remove it there to delete it");
+    }
     let value = dial.as_ref().map_or(Value::Null, |dial| {
         let mut value = serde_json::json!({"input": dial.input});
         if let Some(label) = &dial.label { value["label"] = Value::String(label.clone()); }
@@ -117,6 +133,19 @@ pub(super) async fn execute(
             reload_user_config: true,
         },
     }).await?;
+    if dial.is_none() {
+        let effective: ConfigReadResponse = client.request_typed(ClientRequest::ConfigRead {
+            request_id: workspace_request_id("presets-delete-readback"),
+            params: ConfigReadParams { include_layers: false, cwd: Some(cwd) },
+        }).await.wrap_err("preset override was removed, but its effective configuration could not be checked")?;
+        if effective.config.additional.get("tui")
+            .and_then(|tui| tui.get("presets"))
+            .and_then(|presets| presets.get(slot.to_string()))
+            .is_some()
+        {
+            return Ok(WorkspaceResponse::Notice(format!("Removed preset {slot} from the active configuration. An inherited preset remains available; use /presets {slot} to load it.")));
+        }
+    }
     let action = if dial.is_some() { "Saved" } else { "Deleted" };
     let suffix = if result.status == WriteStatus::OkOverridden {
         " A higher-priority setting still overrides it."

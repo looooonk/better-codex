@@ -2,6 +2,33 @@ use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use pretty_assertions::assert_eq;
 
+#[test]
+fn tier_selector_respects_independent_feature_gates() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.available_models = vec![model_preset_fixture(
+        &shell.model,
+        /*show_in_picker*/ true,
+        ReasoningEffort::Medium,
+        &[ReasoningEffort::Medium],
+        &["priority", "ultrafast", "flex"],
+    )];
+    shell.service_tier = None;
+    shell.service_tier_features.disable(codex_features::Feature::FastMode);
+    shell.open_service_tier_selector();
+    assert_eq!(shell.selector, Some(selector::SelectorState::service_tiers(
+        &selector::ServiceTierValue::Default,
+        &shell.available_models[0].service_tiers[1..],
+    )));
+    insta::assert_snapshot!("independent_service_tiers", render_shell(&shell, Rect::new(0, 0, 100, 26)));
+
+    shell.service_tier_features.disable(codex_features::Feature::UltrafastMode);
+    shell.open_service_tier_selector();
+    assert_eq!(shell.selector, Some(selector::SelectorState::service_tiers(
+        &selector::ServiceTierValue::Default,
+        &shell.available_models[0].service_tiers[2..],
+    )));
+}
+
 #[tokio::test]
 async fn account_refresh_updates_both_shell_and_backend_catalogs() {
     let mut shell = ShellState::snapshot_fixture();

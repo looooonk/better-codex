@@ -160,15 +160,24 @@ impl ConfigRequestProcessor {
         &self,
         params: ConfigValueWriteParams,
     ) -> Result<ClientResponsePayload, JSONRPCErrorError> {
-        self.handle_config_mutation_result(self.write_value(params).await)
-            .await
-            .map(ClientResponsePayload::ConfigValueWrite)
+        let refresh_catalog = changes_model_catalog(&params.key_path);
+        let response = self
+            .handle_config_mutation_result(self.write_value(params).await)
+            .await?;
+        if refresh_catalog {
+            self.model_catalog.invalidate().await;
+        }
+        Ok(ClientResponsePayload::ConfigValueWrite(response))
     }
 
     pub(crate) async fn batch_write(
         &self,
         params: ConfigBatchWriteParams,
     ) -> Result<ClientResponsePayload, JSONRPCErrorError> {
+        let refresh_catalog = params
+            .edits
+            .iter()
+            .any(|edit| changes_model_catalog(&edit.key_path));
         let session_defaults_only = !params.edits.is_empty()
             && params.edits.iter().all(|edit| {
                 matches!(
@@ -182,6 +191,9 @@ impl ConfigRequestProcessor {
             });
         let should_reload = params.reload_user_config;
         let response = self.batch_write_inner(params).await?;
+        if refresh_catalog {
+            self.model_catalog.invalidate().await;
+        }
         if !session_defaults_only {
             self.handle_config_mutation().await;
             if should_reload {
@@ -392,6 +404,19 @@ impl ConfigRequestProcessor {
                 self.analytics_events_client.track_plugin_disabled(metadata);
             }
         }
+    }
+}
+
+fn changes_model_catalog(key_path: &str) -> bool {
+    let Ok(segments) = crate::config_manager_service::parse_key_path(key_path) else {
+        return false;
+    };
+    match segments.first().map(String::as_str) {
+        Some("model_provider" | "model_providers" | "model_catalog_json") => true,
+        Some("features") => segments
+            .get(1)
+            .is_none_or(|feature| feature == "api_key_model_discovery"),
+        _ => false,
     }
 }
 

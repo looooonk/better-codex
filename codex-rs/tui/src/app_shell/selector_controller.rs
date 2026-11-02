@@ -53,7 +53,11 @@ impl ShellState {
             }
             Some(_) | None => ServiceTierValue::Default,
         };
-        let selector = SelectorState::service_tiers(&current, &preset.service_tiers);
+        let tiers = preset.service_tiers.iter()
+            .filter(|tier| self.service_tier_features.service_tier_enabled(&tier.id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let selector = SelectorState::service_tiers(&current, &tiers);
         self.open_selector(selector);
     }
 

@@ -61,3 +61,51 @@ async fn project_presets_cannot_be_silently_overwritten() -> Result<()> {
     server.shutdown().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn profile_preset_deletion_preserves_and_reports_inherited_values() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let base_path = home.path().join("config.toml");
+    let base = "[tui.presets.2]\ninput = 'base second preset'\n[tui.presets.3]\ninput = 'base third preset'\n";
+    tokio::fs::write(&base_path, base).await?;
+    let profile_path = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(home.path().join("work.config.toml"))?;
+    let profile = "[tui.presets.3]\ninput = 'profile third preset'\n";
+    tokio::fs::write(&profile_path, profile).await?;
+    let loader = LoaderOverrides {
+        user_config_path: Some(profile_path.clone()),
+        user_config_profile: Some("work".parse()?),
+        ..LoaderOverrides::without_managed_config_for_tests()
+    };
+    let config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .fallback_cwd(Some(home.path().to_path_buf()))
+        .loader_overrides(loader.clone())
+        .build().await?;
+    let client = crate::start_embedded_app_server(
+        Default::default(), config, Vec::new(), loader,
+        /*strict_config*/ false,
+        crate::CloudConfigBundleLoader::default(), codex_feedback::CodexFeedback::new(),
+        /*log_db*/ None, /*state_db*/ None,
+        std::sync::Arc::new(crate::EnvironmentManager::default_for_tests()), Default::default(),
+    ).await?;
+    let server = crate::app_server_session::AppServerSession::new(
+        codex_app_server_client::AppServerClient::InProcess(client),
+        crate::app_server_session::ThreadParamsMode::Embedded,
+    );
+    let cwd = home.path().display().to_string();
+    let error = execute(server.request_handle(), cwd.clone(), PresetCommand::Delete(2)).await.unwrap_err();
+    assert_eq!(error.to_string(), format!("preset 2 is inherited from {}; remove it there to delete it", base_path.display()));
+    assert_eq!(tokio::fs::read_to_string(&profile_path).await?, profile);
+
+    let result = execute(server.request_handle(), cwd.clone(), PresetCommand::Delete(3)).await?;
+    let WorkspaceResponse::Notice(message) = result else { panic!("expected deletion notice") };
+    insta::assert_snapshot!(message, @"Removed preset 3 from the active configuration. An inherited preset remains available; use /presets 3 to load it.");
+    let loaded = execute(server.request_handle(), cwd, PresetCommand::Load(3)).await?;
+    let WorkspaceResponse::Preset(input) = loaded else { panic!("expected inherited preset") };
+    assert_eq!(input, "base third preset");
+    assert_eq!(tokio::fs::read_to_string(&base_path).await?, base);
+    let saved: toml::Value = toml::from_str(&tokio::fs::read_to_string(&profile_path).await?)?;
+    assert!(saved.get("tui").and_then(|tui| tui.get("presets")).and_then(|presets| presets.get("3")).is_none());
+    server.shutdown().await?;
+    Ok(())
+}

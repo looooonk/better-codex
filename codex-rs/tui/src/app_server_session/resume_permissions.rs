@@ -52,6 +52,35 @@ impl ResumePermissions {
     };
 }
 
+impl super::AppServerSession {
+    pub(super) fn validate_remote_history_permissions(
+        &self,
+        config: &Config,
+        action: &str,
+    ) -> color_eyre::Result<()> {
+        if self.thread_params_mode != super::ThreadParamsMode::Remote {
+            return Ok(());
+        }
+        let selected = ResumePermissions::from_overrides(
+            config,
+            &ConfigOverrides {
+                cwd: None,
+                ..self.launch_overrides.clone()
+            },
+        );
+        if selected.approval_policy
+            || selected.approvals_reviewer
+            || selected.profile
+            || selected.workspace_roots
+        {
+            color_eyre::eyre::bail!(
+                "Permission overrides are not supported when {action} a remote task."
+            );
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 #[path = "resume_permissions_tests.rs"]
 mod tests;

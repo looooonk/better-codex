@@ -78,6 +78,11 @@ async fn resume_keeps_saved_settings_when_current_defaults_change() -> color_eyr
     )?]).await?;
     let metadata = server.thread_read(started.session.thread_id, /*include_turns*/ false).await?;
     assert_eq!(metadata.history_mode, codex_app_server_protocol::ThreadHistoryMode::Paginated);
+    server.managed_new_thread_defaults = Some(codex_app_server_protocol::NewThreadModelDefaults {
+        model: Some("managed-new-thread-model".to_string()),
+        model_reasoning_effort: Some(ReasoningEffort::High),
+        service_tier: Some("flex".to_string()),
+    });
     config.model = Some("different-model".to_string());
     config.model_provider_id = "ollama".to_string();
     config.model_reasoning_effort = Some(ReasoningEffort::High);

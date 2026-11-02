@@ -13,6 +13,7 @@ pub(crate) use history::read_thread_history;
 mod managed_worktree;
 mod models;
 pub(crate) use models::load_models;
+mod new_thread_defaults;
 mod resume_settings;
 use resume_settings::ResumeModelSettings;
 mod resume_permissions;
@@ -490,7 +491,16 @@ impl AppServerSession {
         model_provider_override: Option<&str>,
     ) -> Result<AppServerStartedThread> {
         let request_id = self.next_request_id();
-        let session_config = self.session_config_with_effective_service_tier(config);
+        let provider_override = model_provider_override.or(self.launch_overrides.model_provider.as_deref())
+            .map(|provider| config.config_layer_stack.required_model_provider().unwrap_or(provider));
+        let mut session_config = config.clone();
+        new_thread_defaults::apply_managed_new_thread_defaults(
+            &mut session_config,
+            self.managed_new_thread_defaults(),
+            &self.launch_overrides,
+            provider_override,
+        );
+        let session_config = self.session_config_with_effective_service_tier(&session_config);
         let mut params = thread_start_params_from_config(
             &session_config,
             self.thread_params_mode(),
@@ -498,10 +508,9 @@ impl AppServerSession {
             session_start_source,
         );
         if self.thread_params_mode != ThreadParamsMode::Cloud
-            && let Some(provider) = model_provider_override.or(self.launch_overrides.model_provider.as_deref())
+            && let Some(provider) = provider_override
         {
-            params.model_provider = Some(config.config_layer_stack.required_model_provider()
-                .unwrap_or(provider).to_owned());
+            params.model_provider = Some(provider.to_owned());
         }
         let response: ThreadStartResponse = self
             .client
@@ -521,6 +530,7 @@ impl AppServerSession {
         config: Config,
         thread_id: ThreadId,
     ) -> Result<AppServerStartedThread> {
+        self.validate_remote_history_permissions(&config, "resuming")?;
         let request_id = self.next_request_id();
         let settings = self.resume_settings(&config);
         let session_config = if settings.model == ResumeModelSettings::RestoreFromThread {
@@ -578,6 +588,7 @@ impl AppServerSession {
         boundary: ThreadForkBoundary,
         goal_continuation: ForkGoalContinuation,
     ) -> Result<AppServerStartedThread> {
+        self.validate_remote_history_permissions(&config, "forking")?;
         if self.thread_params_mode == ThreadParamsMode::Cloud {
             color_eyre::eyre::bail!("Cloud conversations cannot be forked in the TUI yet.");
         }

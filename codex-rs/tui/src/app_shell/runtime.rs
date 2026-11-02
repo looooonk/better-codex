@@ -131,6 +131,7 @@ pub(crate) async fn run(
         resume_cwd_runtime,
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
+    shell.service_tier_features = config.features.clone();
     let invalid_display_items = shell.status_surfaces.configure(&config);
     if !invalid_display_items.is_empty() {
         shell.push_error(format!(

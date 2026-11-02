@@ -99,8 +99,13 @@ async fn client_with_effort_updates(
         config.disable_feature(Feature::ReasoningEffortOverride)
     };
     config.with_extra_config(extra_config).write(home.path())?;
+    let isolated_home = home.path().to_string_lossy();
     TestAppServer::builder()
         .with_codex_home(home.path())
+        .with_env_overrides(&[
+            ("HOME", Some(isolated_home.as_ref())),
+            ("USERPROFILE", Some(isolated_home.as_ref())),
+        ])
         .build_initialized_with_timeout(WAIT)
         .await
 }
