@@ -1,7 +1,7 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -102,16 +102,16 @@ fn agent_shell() -> ShellState {
         ("agent-b", "/root/bravo"),
         ("agent-a", "/root/alpha"),
     ] {
-        shell
-            .agent_activity
-            .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+        shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+            ThreadItemPayload::SubAgentActivity {
+                model: None,
+                reasoning_effort: None,
                 id: format!("activity-{thread_id}"),
                 kind: SubAgentActivityKind::Started,
                 agent_thread_id: thread_id.to_string(),
                 agent_path: path.to_string(),
-            }));
+            },
+        ));
     }
     shell.agent_activity.select_thread("agent-a");
     shell

@@ -1,5 +1,5 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
+use codex_app_server_protocol::ThreadItemPayload;
 use pretty_assertions::assert_eq;
 
 #[test]

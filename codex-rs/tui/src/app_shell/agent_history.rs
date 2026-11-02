@@ -1,10 +1,10 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::ShellState;
 use super::backend::AppShellBackend;
 use crate::app_server_session::AgentHistoryTask;
 use crate::app_server_session::AgentHistoryUpdate;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_protocol::ThreadId;
 use std::collections::HashSet;
 

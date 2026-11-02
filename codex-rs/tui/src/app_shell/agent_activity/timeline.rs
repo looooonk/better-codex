@@ -1,4 +1,3 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::text::MAX_LATEST_MESSAGE_CHARS;
 use super::text::bounded_text;
 use super::text::concise_summary;
@@ -8,6 +7,7 @@ use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::app_shell) enum AgentItemPhase {

@@ -1,7 +1,7 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::TurnStatus;
 use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
@@ -431,8 +431,8 @@ fn child_turns_and_errors_update_typed_lifecycle_activity() {
 
 fn subagent_item(id: &str, kind: SubAgentActivityKind, thread_id: &str, path: &str) -> ThreadItem {
     ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+        model: None,
+        reasoning_effort: None,
         id: id.to_string(),
         kind,
         agent_thread_id: thread_id.to_string(),

@@ -16,11 +16,13 @@ fn model() -> ModelPreset {
         supported_reasoning_efforts: Vec::new(),
         supports_personality: false,
         additional_speed_tiers: Vec::new(),
-        service_tiers: ["priority", "ultrafast", "flex"].map(|id| ModelServiceTier {
-            id: id.to_string(),
-            name: id.to_string(),
-            description: String::new(),
-        }).into(),
+        service_tiers: ["priority", "ultrafast", "flex"]
+            .map(|id| ModelServiceTier {
+                id: id.to_string(),
+                name: id.to_string(),
+                description: String::new(),
+            })
+            .into(),
         default_service_tier: Some("ultrafast".to_string()),
         available_access_programs: None,
         is_default: true,
@@ -39,13 +41,17 @@ fn remote_speed_requirements_preserve_independent_modes_and_clear_disabled_defau
         (Some(true), vec!["ultrafast", "flex"], Some("ultrafast")),
         (None, vec!["flex"], None),
     ] {
-        let requirements: ConfigRequirementsReadResponse = serde_json::from_value(serde_json::json!({
-            "supportsIndependentSpeedModes": independent,
-            "requirements": {"featureRequirements": {"fast_mode": false}}
-        })).expect("requirements");
+        let requirements: ConfigRequirementsReadResponse =
+            serde_json::from_value(serde_json::json!({
+                "supportsIndependentSpeedModes": independent,
+                "requirements": {"featureRequirements": {"fast_mode": false}}
+            }))
+            .expect("requirements");
         let mut actual = [model()];
         let mut expected = model();
-        expected.service_tiers.retain(|tier| expected_tiers.contains(&tier.id.as_str()));
+        expected
+            .service_tiers
+            .retain(|tier| expected_tiers.contains(&tier.id.as_str()));
         expected.default_service_tier = expected_default.map(str::to_string);
         constrain_server_service_tiers(&mut actual, &requirements);
         assert_eq!(actual, [expected]);
@@ -58,14 +64,31 @@ async fn flex_and_ultrafast_can_run_with_fast_mode_disabled() {
     let mut config = ConfigBuilder::default()
         .codex_home(home.path().to_path_buf())
         .loader_overrides(codex_config::LoaderOverrides::without_managed_config_for_tests())
-        .build().await.expect("config");
-    config.features.disable(Feature::FastMode).expect("disable Fast mode");
-    config.features.enable(Feature::UltrafastMode).expect("enable Ultra Fast mode");
+        .build()
+        .await
+        .expect("config");
+    config
+        .features
+        .disable(Feature::FastMode)
+        .expect("disable Fast mode");
+    config
+        .features
+        .enable(Feature::UltrafastMode)
+        .expect("enable Ultra Fast mode");
     let models = [model()];
-    assert_eq!(effective_service_tier(&config, "model", &models), Some("ultrafast".to_string()));
+    assert_eq!(
+        effective_service_tier(&config, "model", &models),
+        Some("ultrafast".to_string())
+    );
     config.service_tier = Some("flex".to_string());
-    config.features.disable(Feature::UltrafastMode).expect("disable Ultra Fast mode");
-    assert_eq!(service_tier_update_for_core(&config, "model", &models), Some(Some("flex".to_string())));
+    config
+        .features
+        .disable(Feature::UltrafastMode)
+        .expect("disable Ultra Fast mode");
+    assert_eq!(
+        service_tier_update_for_core(&config, "model", &models),
+        Some(Some("flex".to_string()))
+    );
     config.service_tier = Some("priority".to_string());
     assert_eq!(effective_service_tier(&config, "model", &models), None);
 }

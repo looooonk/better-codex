@@ -32,7 +32,14 @@ fn recap_history_is_bounded_and_keeps_both_ends_of_recent_corrections() {
     let history = history::recap_history(&transcript);
     assert!(history.contains("BEGIN") && history.contains("END"));
     assert!(history.ends_with("Pending user request: Do not publish yet"));
-    assert!(RecapPrompt::new(&history).render().into_text().unwrap().len() <= history::RECAP_PROMPT_MAX_BYTES);
+    assert!(
+        RecapPrompt::new(&history)
+            .render()
+            .into_text()
+            .unwrap()
+            .len()
+            <= history::RECAP_PROMPT_MAX_BYTES
+    );
 }
 
 #[test]

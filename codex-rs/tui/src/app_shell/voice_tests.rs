@@ -11,7 +11,9 @@ use ratatui::layout::Rect;
 
 #[test]
 fn voice_settings_expose_current_v3_voice_catalog() {
-    let response = ThreadRealtimeListVoicesResponse { voices: RealtimeVoicesList::builtin() };
+    let response = ThreadRealtimeListVoicesResponse {
+        voices: RealtimeVoicesList::builtin(),
+    };
     let summary = voice_settings::settings_summary(&response, &AudioDeviceSelection::default());
     assert!(summary.contains("aube"));
     assert!(summary.contains("viola"));

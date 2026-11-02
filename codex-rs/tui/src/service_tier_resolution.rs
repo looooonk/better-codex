@@ -36,9 +36,7 @@ pub(crate) fn constrain_server_service_tiers(
     }
 }
 
-pub(crate) fn configured_service_tier(
-    config: &Config,
-) -> Option<String> {
+pub(crate) fn configured_service_tier(config: &Config) -> Option<String> {
     config.service_tier.clone().or_else(|| {
         (config.notices.fast_default_opt_out == Some(true))
             .then(|| SERVICE_TIER_DEFAULT_REQUEST_VALUE.to_string())

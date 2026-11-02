@@ -1,4 +1,3 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::workspace_requests::workspace_request_id;
 use crate::app_server_session::HistoryReader;
 use crate::app_server_session::read_thread_history;
@@ -9,6 +8,7 @@ use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadRealtimeItemContent;
@@ -203,7 +203,9 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
             let text = crate::assistant_message::with_questions(text, questions.as_deref());
             markdown.push_str(&format!("## Assistant\n\n{text}\n\n"));
         }
-        ThreadItemPayload::Plan { text, .. } => markdown.push_str(&format!("## Plan\n\n{text}\n\n")),
+        ThreadItemPayload::Plan { text, .. } => {
+            markdown.push_str(&format!("## Plan\n\n{text}\n\n"))
+        }
         ThreadItemPayload::UserMessage { content, .. } => {
             use codex_app_server_protocol::ImageReference;
             use codex_app_server_protocol::UserInput;
@@ -229,7 +231,9 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
                         append_attachment(markdown, "Image", &path.display().to_string())
                     }
                     UserInput::Audio { audio } => match audio {
-                        codex_app_server_protocol::AudioReference::Inline { url } => append_attachment(markdown, "Audio", url),
+                        codex_app_server_protocol::AudioReference::Inline { url } => {
+                            append_attachment(markdown, "Audio", url)
+                        }
                         codex_app_server_protocol::AudioReference::File { file_id } => {
                             markdown.push_str(&format!("Audio attachment: {file_id}\n\n"));
                         }
@@ -397,7 +401,10 @@ fn append_item(markdown: &mut String, thread: &Thread, item: &ThreadItem) -> Res
             } else {
                 match &item.image {
                     codex_app_server_protocol::GeneratedImageRef::Inline { result }
-                        if !result.is_empty() => append_code(markdown, "text", result),
+                        if !result.is_empty() =>
+                    {
+                        append_code(markdown, "text", result)
+                    }
                     codex_app_server_protocol::GeneratedImageRef::File { file_id } => {
                         markdown.push_str(&format!("Generated image attachment: {file_id}\n\n"));
                     }

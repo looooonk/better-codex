@@ -1,4 +1,3 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::CompletedItemOrigin;
 use super::ShellState;
 use super::TranscriptKind;
@@ -6,6 +5,7 @@ use super::TranscriptLine;
 use super::rewind::RewindAnchor;
 use crate::app_server_session::ThreadTimeline;
 use codex_app_server_protocol::PatchApplyStatus;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadRealtimeItem;
 use codex_app_server_protocol::ThreadRealtimeItemContent;
 use codex_app_server_protocol::ThreadRealtimeSessionOutcome;

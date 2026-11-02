@@ -86,24 +86,39 @@ fn cursor_sentinels_preserve_wrapped_unicode_links_and_copy_gutters() {
     let mut source = annotate_web_urls_in_line(Line::from("  é界 https://example.test/👩‍💻/path"));
     source.synthetic_prefix_width = 2;
     let options = RtOptions::new(12).subsequent_indent(Line::from("    "));
-    let expected = remap_source_wrapped_line(&source,
-        crate::wrapping::word_wrap_line_with_source(&source.line, options.clone()));
+    let expected = remap_source_wrapped_line(
+        &source,
+        crate::wrapping::word_wrap_line_with_source(&source.line, options.clone()),
+    );
     let mut wrapped = crate::wrapping::word_wrap_line_with_source(&source.line, options);
     wrapped.last_mut().expect("wrapped line").range.end += 1;
     let actual = remap_source_wrapped_line(&source, wrapped);
 
     assert!(lines_with_sources_eq(&actual, &expected));
-    assert_eq!(actual.iter().map(|line| line.synthetic_prefix_width).collect::<Vec<_>>(),
-        expected.iter().map(|line| line.synthetic_prefix_width).collect::<Vec<_>>());
+    assert_eq!(
+        actual
+            .iter()
+            .map(|line| line.synthetic_prefix_width)
+            .collect::<Vec<_>>(),
+        expected
+            .iter()
+            .map(|line| line.synthetic_prefix_width)
+            .collect::<Vec<_>>()
+    );
     assert_eq!(actual[0].synthetic_prefix_width, 2);
 }
 
 #[test]
 fn cursor_only_wrapped_row_has_empty_source_and_no_hyperlinks() {
     let source = HyperlinkLine::from("");
-    let actual = remap_source_wrapped_line(&source, vec![crate::wrapping::WrappedLine {
-        line: Line::from("  "), range: 1..1, prefix_bytes: 2,
-    }]);
+    let actual = remap_source_wrapped_line(
+        &source,
+        vec![crate::wrapping::WrappedLine {
+            line: Line::from("  "),
+            range: 1..1,
+            prefix_bytes: 2,
+        }],
+    );
     let mut expected = HyperlinkLine::from("  ");
     let mut logical = LogicalLineSource::from_line(&source.line);
     logical.prefix_bytes = 2;

@@ -1,5 +1,5 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
+use codex_app_server_protocol::ThreadItemPayload;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -49,9 +49,8 @@ fn restored_child_settings_follow_native_metadata_and_live_updates() {
             thread_settings: settings.clone(),
         },
     ));
-    shell
-        .agent_activity
-        .reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
+    shell.agent_activity.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::CollabAgentToolCall {
             id: "old-spawn".into(),
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::Completed,
@@ -61,7 +60,8 @@ fn restored_child_settings_follow_native_metadata_and_live_updates() {
             model: Some("old-model".into()),
             reasoning_effort: Some(ReasoningEffort::Low),
             agents_states: HashMap::new(),
-        }));
+        },
+    ));
     shell.agent_activity.hydrate_threads(vec![child]);
     let agent = shell.agent_activity.agent(&child_id.to_string()).unwrap();
     assert_eq!(

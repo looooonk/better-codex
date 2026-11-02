@@ -45,5 +45,8 @@ fn native_dollars_stay_distinct_from_credit_estimates() {
         native_usage_usd_micros: Some(750_000),
         groups: Vec::new(),
     };
-    insta::assert_snapshot!("native_thread_cost", thread_usage_line(&usage).unwrap().to_string());
+    insta::assert_snapshot!(
+        "native_thread_cost",
+        thread_usage_line(&usage).unwrap().to_string()
+    );
 }

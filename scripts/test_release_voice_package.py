@@ -79,7 +79,9 @@ class VoicePackageTest(unittest.TestCase):
                     prefix = "better-codex-package/"
                     executor = archive.getmember(prefix + "bin/codex-exec-server")
                     self.assertEqual(executor.mode, 0o755)
-                    self.assertEqual(archive.extractfile(executor).read(), b"executable")
+                    self.assertEqual(
+                        archive.extractfile(executor).read(), b"executable"
+                    )
                     manifest = json.load(
                         archive.extractfile(
                             prefix + "codex-resources/voice/manifest.json"

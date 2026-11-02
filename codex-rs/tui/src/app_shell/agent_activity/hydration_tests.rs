@@ -1,4 +1,3 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use crate::app_shell::agent_activity::AgentChildEvent;
 use crate::app_shell::agent_activity::AgentLifecycleStatus;
@@ -10,6 +9,7 @@ use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadHistoryMode;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;
@@ -148,23 +148,25 @@ fn disk_restored_agent_settles_stale_snapshot_and_retains_result() {
     let root_id = thread_id("01900000-0000-7000-8000-000000000021");
     let child_id = thread_id("01900000-0000-7000-8000-000000000022");
     let mut state = AgentActivityState::default();
-    state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
-        id: "root-status".to_string(),
-        tool: CollabAgentTool::Wait,
-        status: CollabAgentToolCallStatus::Completed,
-        sender_thread_id: root_id.to_string(),
-        receiver_thread_ids: vec![child_id.to_string()],
-        prompt: None,
-        model: None,
-        reasoning_effort: None,
-        agents_states: HashMap::from([(
-            child_id.to_string(),
-            CollabAgentState {
-                status: CollabAgentStatus::Running,
-                message: Some("still processing".to_string()),
-            },
-        )]),
-    }));
+    state.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::CollabAgentToolCall {
+            id: "root-status".to_string(),
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: root_id.to_string(),
+            receiver_thread_ids: vec![child_id.to_string()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                child_id.to_string(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Running,
+                    message: Some("still processing".to_string()),
+                },
+            )]),
+        },
+    ));
 
     state.hydrate_threads(vec![thread(
         child_id,
@@ -212,23 +214,25 @@ fn thread_status_reconciles_stale_active_snapshot() {
         ),
     ] {
         let mut state = AgentActivityState::default();
-        state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
-            id: "root-status".to_string(),
-            tool: CollabAgentTool::Wait,
-            status: CollabAgentToolCallStatus::Completed,
-            sender_thread_id: root_id.to_string(),
-            receiver_thread_ids: vec![child_id.to_string()],
-            prompt: None,
-            model: None,
-            reasoning_effort: None,
-            agents_states: HashMap::from([(
-                child_id.to_string(),
-                CollabAgentState {
-                    status: CollabAgentStatus::Completed,
-                    message: Some("stale completed snapshot".to_string()),
-                },
-            )]),
-        }));
+        state.reduce_completed(&ThreadItem::untimed(
+            ThreadItemPayload::CollabAgentToolCall {
+                id: "root-status".to_string(),
+                tool: CollabAgentTool::Wait,
+                status: CollabAgentToolCallStatus::Completed,
+                sender_thread_id: root_id.to_string(),
+                receiver_thread_ids: vec![child_id.to_string()],
+                prompt: None,
+                model: None,
+                reasoning_effort: None,
+                agents_states: HashMap::from([(
+                    child_id.to_string(),
+                    CollabAgentState {
+                        status: CollabAgentStatus::Completed,
+                        message: Some("stale completed snapshot".to_string()),
+                    },
+                )]),
+            },
+        ));
         let mut restored = thread(
             child_id,
             root_id,
@@ -302,23 +306,25 @@ fn unresolved_historical_agents_are_stopped_when_hydration_finishes() {
         CollabAgentStatus::Errored,
     ] {
         let mut state = AgentActivityState::default();
-        state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
-            id: "root-status".to_string(),
-            tool: CollabAgentTool::Wait,
-            status: CollabAgentToolCallStatus::Completed,
-            sender_thread_id: root_id.to_string(),
-            receiver_thread_ids: vec![child_id.to_string()],
-            prompt: None,
-            model: None,
-            reasoning_effort: None,
-            agents_states: HashMap::from([(
-                child_id.to_string(),
-                CollabAgentState {
-                    status: historical_status,
-                    message: None,
-                },
-            )]),
-        }));
+        state.reduce_completed(&ThreadItem::untimed(
+            ThreadItemPayload::CollabAgentToolCall {
+                id: "root-status".to_string(),
+                tool: CollabAgentTool::Wait,
+                status: CollabAgentToolCallStatus::Completed,
+                sender_thread_id: root_id.to_string(),
+                receiver_thread_ids: vec![child_id.to_string()],
+                prompt: None,
+                model: None,
+                reasoning_effort: None,
+                agents_states: HashMap::from([(
+                    child_id.to_string(),
+                    CollabAgentState {
+                        status: historical_status,
+                        message: None,
+                    },
+                )]),
+            },
+        ));
 
         state.finish_history_hydration();
 
@@ -613,8 +619,8 @@ fn turn(id: &str, items: Vec<ThreadItem>, status: TurnStatus, error: Option<&str
 
 fn activity(id: &str, thread_id: ThreadId, path: &str) -> ThreadItem {
     ThreadItem::untimed(ThreadItemPayload::SubAgentActivity {
-model: None,
-reasoning_effort: None,
+        model: None,
+        reasoning_effort: None,
         id: id.to_string(),
         kind: SubAgentActivityKind::Started,
         agent_thread_id: thread_id.to_string(),
@@ -663,17 +669,19 @@ fn restored_runtime_settings_do_not_require_explicit_spawn_overrides() {
         (&agent.model, &agent.reasoning_effort),
         (&restored.model, &restored.reasoning_effort)
     );
-    state.reduce_completed(&ThreadItem::untimed(ThreadItemPayload::CollabAgentToolCall {
-        id: "old-spawn".into(),
-        tool: CollabAgentTool::SpawnAgent,
-        status: CollabAgentToolCallStatus::Completed,
-        sender_thread_id: root.to_string(),
-        receiver_thread_ids: vec![child.to_string()],
-        prompt: None,
-        model: Some("old-model".into()),
-        reasoning_effort: Some(codex_protocol::openai_models::ReasoningEffort::Low),
-        agents_states: HashMap::new(),
-    }));
+    state.reduce_completed(&ThreadItem::untimed(
+        ThreadItemPayload::CollabAgentToolCall {
+            id: "old-spawn".into(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: root.to_string(),
+            receiver_thread_ids: vec![child.to_string()],
+            prompt: None,
+            model: Some("old-model".into()),
+            reasoning_effort: Some(codex_protocol::openai_models::ReasoningEffort::Low),
+            agents_states: HashMap::new(),
+        },
+    ));
     state.hydrate_snapshots(vec![AgentHistorySnapshot {
         thread_id: child.to_string(),
         agent_path: Some("/root/review".into()),

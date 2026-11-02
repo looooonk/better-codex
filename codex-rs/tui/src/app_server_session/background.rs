@@ -179,9 +179,19 @@ pub(super) struct BackgroundThreadResume {
     pub(super) settings: resume_settings::ResumeSettings,
 }
 
-pub(super) async fn resume_thread(request: BackgroundThreadResume) -> Result<AppServerStartedThread> {
-    let BackgroundThreadResume { request_handle, config, session_config, thread_id,
-        thread_params_mode, remote_cwd_override, request_id, settings } = request;
+pub(super) async fn resume_thread(
+    request: BackgroundThreadResume,
+) -> Result<AppServerStartedThread> {
+    let BackgroundThreadResume {
+        request_handle,
+        config,
+        session_config,
+        thread_id,
+        thread_params_mode,
+        remote_cwd_override,
+        request_id,
+        settings,
+    } = request;
     let mut params = thread_resume_params_from_config(
         session_config,
         thread_id,
@@ -197,15 +207,13 @@ pub(super) async fn resume_thread(request: BackgroundThreadResume) -> Result<App
     }
     params.exclude_turns = thread_params_mode != ThreadParamsMode::Cloud;
     let mut response: ThreadResumeResponse = request_handle
-        .request_typed(ClientRequest::ThreadResume {
-            request_id,
-            params,
-        })
+        .request_typed(ClientRequest::ThreadResume { request_id, params })
         .await
         .map_err(|err| bootstrap_request_error("thread/resume failed in TUI", err))?;
     if thread_params_mode != ThreadParamsMode::Cloud {
         response.thread.turns = read_thread_history(request_handle.clone(), thread_id)
-            .await?.turns;
+            .await?
+            .turns;
     }
     let fork_parent_title =
         fork_parent_title(&request_handle, response.thread.forked_from_id.as_deref()).await;

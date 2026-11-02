@@ -1,10 +1,10 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
 use crate::app_shell::CompletedItemOrigin;
 use crate::app_shell::ShellState;
 use crate::app_shell::TranscriptKind;
 use crate::app_shell::transcript_view::render_transcript_line;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::path::Path;

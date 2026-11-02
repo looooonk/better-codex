@@ -66,9 +66,17 @@ pub(super) enum WorkspaceRequest {
 #[derive(Debug)]
 pub(super) enum WorkspaceResponse {
     Archived,
-    ProviderSelected { id: String, model: Option<String> },
-    AccountChanged { models: std::result::Result<Vec<codex_protocol::openai_models::ModelPreset>, String> },
-    AccountLogin { login_id: String, auth_url: String },
+    ProviderSelected {
+        id: String,
+        model: Option<String>,
+    },
+    AccountChanged {
+        models: std::result::Result<Vec<codex_protocol::openai_models::ModelPreset>, String>,
+    },
+    AccountLogin {
+        login_id: String,
+        auth_url: String,
+    },
     Preset(String),
     MentionFiles(Vec<codex_app_server_protocol::FuzzyFileSearchResult>),
     GuardianApproved(String),
@@ -93,15 +101,22 @@ pub(super) async fn execute(
 ) -> Result<WorkspaceResponse> {
     let read_only = matches!(
         &request,
-        WorkspaceRequest::Presets { command: PresetCommand::List | PresetCommand::Load(_), .. }
-            | WorkspaceRequest::Mention { .. }
+        WorkspaceRequest::Presets {
+            command: PresetCommand::List | PresetCommand::Load(_),
+            ..
+        } | WorkspaceRequest::Mention { .. }
             | WorkspaceRequest::Diagnostic(_)
             | WorkspaceRequest::Skills(_)
             | WorkspaceRequest::Hooks(_)
             | WorkspaceRequest::Experimental(None)
             | WorkspaceRequest::Background
-            | WorkspaceRequest::Memory { command: MemoryCommand::Status | MemoryCommand::Read, .. }
-            | WorkspaceRequest::Apps(AppsCommand::List(_) | AppsCommand::Access(_) | AppsCommand::Tools(_))
+            | WorkspaceRequest::Memory {
+                command: MemoryCommand::Status | MemoryCommand::Read,
+                ..
+            }
+            | WorkspaceRequest::Apps(
+                AppsCommand::List(_) | AppsCommand::Access(_) | AppsCommand::Tools(_)
+            )
             | WorkspaceRequest::Provider(ProviderCommand::List)
             | WorkspaceRequest::Account(AccountCommand::List | AccountCommand::Refresh)
             | WorkspaceRequest::Extension(super::extension_commands::ExtensionCommand::Usage {
@@ -146,14 +161,16 @@ async fn execute_inner(
     let thread_id = thread_id.to_string();
     let mut lines = Vec::new();
     match request {
-        WorkspaceRequest::Presets { cwd, command } => return presets::execute(client, cwd, command).await,
+        WorkspaceRequest::Presets { cwd, command } => {
+            return presets::execute(client, cwd, command).await;
+        }
         WorkspaceRequest::Archive => {
-            let _: codex_app_server_protocol::ThreadArchiveResponse = client.request_typed(
-                ClientRequest::ThreadArchive {
+            let _: codex_app_server_protocol::ThreadArchiveResponse = client
+                .request_typed(ClientRequest::ThreadArchive {
                     request_id,
                     params: codex_app_server_protocol::ThreadArchiveParams { thread_id },
-                },
-            ).await?;
+                })
+                .await?;
             return Ok(WorkspaceResponse::Archived);
         }
         WorkspaceRequest::Mention { cwd, query } => {
@@ -231,7 +248,10 @@ async fn execute_inner(
             let response: HooksListResponse = client
                 .request_typed(ClientRequest::HooksList {
                     request_id,
-                    params: HooksListParams { cwds: vec![cwd], thread_id: None },
+                    params: HooksListParams {
+                        cwds: vec![cwd],
+                        thread_id: None,
+                    },
                 })
                 .await?;
             lines
@@ -342,7 +362,9 @@ async fn execute_inner(
                 .await?;
             lines.push("Background terminals stopped".to_string());
         }
-        WorkspaceRequest::Memory { cwd, command } => return memory::execute(client, thread_id, cwd, command).await,
+        WorkspaceRequest::Memory { cwd, command } => {
+            return memory::execute(client, thread_id, cwd, command).await;
+        }
         WorkspaceRequest::Apps(command) => return apps::execute(client, thread_id, command).await,
         WorkspaceRequest::Provider(command) => return providers::execute(client, command).await,
         WorkspaceRequest::Account(command) => return accounts::execute(client, command).await,

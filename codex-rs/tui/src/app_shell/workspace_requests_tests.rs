@@ -198,7 +198,10 @@ async fn native_feature_toggles_validate_names_and_persist_the_configured_value(
     insta::assert_snapshot!("configured_feature_toggle", rendered);
     let persisted: toml::Value =
         toml::from_str(&std::fs::read_to_string(home.path().join("config.toml"))?)?;
-    assert_eq!(persisted["features"]["shell_snapshot"].as_bool(), Some(true));
+    assert_eq!(
+        persisted["features"]["shell_snapshot"].as_bool(),
+        Some(true)
+    );
     let disabled = execute(
         handle,
         id,

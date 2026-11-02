@@ -17,8 +17,8 @@ pub(crate) fn visible_request(message: &str) -> &str {
     }
 }
 
-use serde::Deserialize;
 use prompt::extract_prompt_request_with_offset;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

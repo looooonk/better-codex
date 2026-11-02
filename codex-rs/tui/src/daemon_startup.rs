@@ -144,10 +144,7 @@ impl DaemonLaunch {
 
 pub(super) fn server_features(overrides: &[(String, toml::Value)]) -> BTreeMap<String, bool> {
     let layer = codex_config::build_cli_overrides_layer(overrides);
-    let Some(features) = layer
-        .get("features")
-        .and_then(toml::Value::as_table)
-    else {
+    let Some(features) = layer.get("features").and_then(toml::Value::as_table) else {
         return BTreeMap::new();
     };
     features

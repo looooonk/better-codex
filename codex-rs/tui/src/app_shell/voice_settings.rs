@@ -106,7 +106,11 @@ pub(super) fn settings_summary(
     response: &ThreadRealtimeListVoicesResponse,
     devices: &AudioDeviceSelection,
 ) -> String {
-    let voices = if response.voices.v3.is_empty() { &response.voices.v1 } else { &response.voices.v3 };
+    let voices = if response.voices.v3.is_empty() {
+        &response.voices.v1
+    } else {
+        &response.voices.v3
+    };
     let names = voices
         .iter()
         .map(|voice| voice.wire_name())

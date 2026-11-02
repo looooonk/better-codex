@@ -15,14 +15,24 @@ BINARIES = ("codex", "codex-code-mode-host", "codex-exec-server")
 
 
 def build(profile):
-    command = ["cargo", "build", "--profile", profile, "--message-format=json-render-diagnostics"]
+    command = [
+        "cargo",
+        "build",
+        "--profile",
+        profile,
+        "--message-format=json-render-diagnostics",
+    ]
     for package in ("codex-cli", "codex-code-mode-host", "codex-exec-server-cli"):
         command.extend(["-p", package])
     for binary in BINARIES:
         command.extend(["--bin", binary])
     executables = {}
-    with subprocess.Popen(command, stdout=subprocess.PIPE, text=True,
-                          env={**os.environ, **prepare(command)}) as cargo:
+    with subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        text=True,
+        env={**os.environ, **prepare(command)},
+    ) as cargo:
         for line in cargo.stdout:
             event = json.loads(line)
             if event.get("reason") == "compiler-artifact" and event.get("executable"):

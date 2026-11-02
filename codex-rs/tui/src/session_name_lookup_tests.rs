@@ -164,7 +164,7 @@ async fn duplicate_names_and_paginated_matches_require_uuid() {
     let reader = self::reader([
         page(Some("older".into())),
         ThreadListResponse {
-        read_states: None,
+            read_states: None,
             data: vec![first.clone()],
             next_cursor: None,
             backwards_cursor: None,

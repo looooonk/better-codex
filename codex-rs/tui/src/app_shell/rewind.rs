@@ -1,4 +1,3 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::backend_actions::ActionGroup;
@@ -7,6 +6,7 @@ use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::legacy_core::config::Config;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
 use color_eyre::Result;

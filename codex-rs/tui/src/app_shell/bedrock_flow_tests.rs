@@ -165,7 +165,7 @@ async fn native_bedrock_requests_retry_credentials_and_require_govcloud_acknowle
             client_name: "bedrock-test".to_string(),
             client_version: "0.0.0".to_string(),
             experimental_api: true,
-        required_human_approval: true,
+            required_human_approval: true,
             mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
             channel_capacity: 8,

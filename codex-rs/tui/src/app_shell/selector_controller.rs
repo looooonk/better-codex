@@ -53,7 +53,9 @@ impl ShellState {
             }
             Some(_) | None => ServiceTierValue::Default,
         };
-        let tiers = preset.service_tiers.iter()
+        let tiers = preset
+            .service_tiers
+            .iter()
             .filter(|tier| self.service_tier_features.service_tier_enabled(&tier.id))
             .cloned()
             .collect::<Vec<_>>();

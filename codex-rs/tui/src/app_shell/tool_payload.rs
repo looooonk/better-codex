@@ -152,7 +152,9 @@ pub(super) fn image_generation(
             codex_app_server_protocol::GeneratedImageRef::File { file_id } => {
                 body.reference("Image attachment", file_id);
             }
-            codex_app_server_protocol::GeneratedImageRef::Inline { result } if !result.is_empty() => {
+            codex_app_server_protocol::GeneratedImageRef::Inline { result }
+                if !result.is_empty() =>
+            {
                 if result.starts_with("https://")
                     || result.starts_with("http://")
                     || result.starts_with("data:")

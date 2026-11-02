@@ -404,7 +404,9 @@ pub async fn run_fork_picker_with_app_server(
         app_server.remote_cwd_override(),
     );
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_workspace);
-    let provider_filter = app_server.history_model_provider(config).await?
+    let provider_filter = app_server
+        .history_model_provider(config)
+        .await?
         .map_or(ProviderFilter::Any, ProviderFilter::MatchDefault);
     let runtime_keymap = picker_runtime_keymap(config)?;
     let request_handle = app_server.request_handle();

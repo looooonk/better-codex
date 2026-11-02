@@ -134,7 +134,9 @@ impl ShellState {
                     self.inspect_session_delete(
                         app_server,
                         self.thread_id,
-                        self.thread_name.clone().unwrap_or_else(|| "current session".into()),
+                        self.thread_name
+                            .clone()
+                            .unwrap_or_else(|| "current session".into()),
                     );
                     return Ok(());
                 }
@@ -191,7 +193,10 @@ impl ShellState {
             | WorkspaceCommand::Memory
             | WorkspaceCommand::Cd
             | WorkspaceCommand::Rename => None,
-            WorkspaceCommand::Presets | WorkspaceCommand::Apps | WorkspaceCommand::Provider | WorkspaceCommand::Account => None,
+            WorkspaceCommand::Presets
+            | WorkspaceCommand::Apps
+            | WorkspaceCommand::Provider
+            | WorkspaceCommand::Account => None,
         };
         if let Some(action) = action {
             return self
@@ -205,8 +210,16 @@ impl ShellState {
                 return Ok(());
             }
         };
-        if matches!(request, WorkspaceRequest::Account(super::workspace_requests::AccountCommand::Switch { .. }) | WorkspaceRequest::Provider(super::workspace_requests::ProviderCommand::Use { .. }))
-            && self.block_session_switch_if_busy() { return Ok(()); }
+        if matches!(
+            request,
+            WorkspaceRequest::Account(super::workspace_requests::AccountCommand::Switch { .. })
+                | WorkspaceRequest::Provider(
+                    super::workspace_requests::ProviderCommand::Use { .. }
+                )
+        ) && self.block_session_switch_if_busy()
+        {
+            return Ok(());
+        }
         if matches!(request, WorkspaceRequest::Review(_))
             && (self.active_turn_id.is_some() || self.has_pending_backend_actions())
         {
@@ -291,10 +304,19 @@ impl ShellState {
                 }
                 WorkspaceRequest::Rename(args.to_string())
             }
-            WorkspaceCommand::Memory => WorkspaceRequest::Memory { cwd: self.cwd.clone(), command: super::workspace_requests::MemoryCommand::parse(args)? },
-            WorkspaceCommand::Apps => WorkspaceRequest::Apps(super::workspace_requests::AppsCommand::parse(args)?),
-            WorkspaceCommand::Provider => WorkspaceRequest::Provider(super::workspace_requests::ProviderCommand::parse(args)?),
-            WorkspaceCommand::Account => WorkspaceRequest::Account(super::workspace_requests::AccountCommand::parse(args)?),
+            WorkspaceCommand::Memory => WorkspaceRequest::Memory {
+                cwd: self.cwd.clone(),
+                command: super::workspace_requests::MemoryCommand::parse(args)?,
+            },
+            WorkspaceCommand::Apps => {
+                WorkspaceRequest::Apps(super::workspace_requests::AppsCommand::parse(args)?)
+            }
+            WorkspaceCommand::Provider => {
+                WorkspaceRequest::Provider(super::workspace_requests::ProviderCommand::parse(args)?)
+            }
+            WorkspaceCommand::Account => {
+                WorkspaceRequest::Account(super::workspace_requests::AccountCommand::parse(args)?)
+            }
             WorkspaceCommand::Experimental => {
                 let parts = args.split_whitespace().collect::<Vec<_>>();
                 WorkspaceRequest::Experimental(match parts.as_slice() {
@@ -375,16 +397,25 @@ impl ShellState {
         }
         match result {
             Ok(WorkspaceResponse::ProviderSelected { id, model }) => {
-                self.push_system(format!("Default provider: {id}. Use /new to start with this provider."));
+                self.push_system(format!(
+                    "Default provider: {id}. Use /new to start with this provider."
+                ));
                 self.next_model_provider = Some(id);
                 self.next_provider_model = model;
             }
-            Ok(WorkspaceResponse::AccountLogin { login_id, auth_url }) => self.open_saved_account_login(login_id, auth_url),
+            Ok(WorkspaceResponse::AccountLogin { login_id, auth_url }) => {
+                self.open_saved_account_login(login_id, auth_url)
+            }
             Ok(WorkspaceResponse::AccountChanged { models }) => {
                 self.request_rate_limits_refresh();
                 match models {
-                    Ok(models) => { self.available_models = models; self.push_system("Available models refreshed; usage will refresh shortly."); }
-                    Err(error) => self.push_error(format!("Model refresh failed: {error}. Use /account refresh to retry.")),
+                    Ok(models) => {
+                        self.available_models = models;
+                        self.push_system("Available models refreshed; usage will refresh shortly.");
+                    }
+                    Err(error) => self.push_error(format!(
+                        "Model refresh failed: {error}. Use /account refresh to retry."
+                    )),
                 }
             }
             Ok(WorkspaceResponse::MentionFiles(files)) => self.open_file_mentions(files),

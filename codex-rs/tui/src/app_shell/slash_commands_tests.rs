@@ -7,11 +7,22 @@ fn account_provider_and_apps_commands_are_distinct_workspace_actions() {
     for (text, command, args) in [
         ("/apps tools docs", WorkspaceCommand::Apps, "tools docs"),
         ("/plugins", WorkspaceCommand::Plugins, ""),
-        ("/providers use openai", WorkspaceCommand::Provider, "use openai"),
-        ("/accounts switch saved work", WorkspaceCommand::Account, "switch saved work"),
+        (
+            "/providers use openai",
+            WorkspaceCommand::Provider,
+            "use openai",
+        ),
+        (
+            "/accounts switch saved work",
+            WorkspaceCommand::Account,
+            "switch saved work",
+        ),
         ("/memories use off", WorkspaceCommand::Memory, "use off"),
     ] {
-        assert_eq!(LocalSlashCommand::parse(text), Some(LocalSlashCommand::Workspace(command, args.into())));
+        assert_eq!(
+            LocalSlashCommand::parse(text),
+            Some(LocalSlashCommand::Workspace(command, args.into()))
+        );
     }
 }
 

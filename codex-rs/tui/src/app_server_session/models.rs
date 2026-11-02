@@ -12,8 +12,8 @@ use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use color_eyre::Result;
-use color_eyre::eyre::bail;
 use color_eyre::eyre::WrapErr;
+use color_eyre::eyre::bail;
 use std::collections::HashSet;
 use std::future::Future;
 use std::time::Duration;
@@ -127,7 +127,6 @@ fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
             .map(codex_app_server_protocol::MultiAgentVersion::to_core),
     }
 }
-
 
 #[cfg(test)]
 #[path = "models_tests.rs"]

@@ -1,5 +1,5 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::*;
+use codex_app_server_protocol::ThreadItemPayload;
 
 #[test]
 fn astra_catalog_drives_model_reasoning_and_fast_selectors() {

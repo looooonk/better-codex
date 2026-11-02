@@ -482,8 +482,13 @@ impl AppShellBackend for AppServerSession {
         session_start_source: Option<ThreadStartSource>,
         model_provider_override: Option<&str>,
     ) -> Result<AppServerStartedThread> {
-        AppServerSession::start_thread_with_session_start_source(self, config, session_start_source, model_provider_override)
-            .await
+        AppServerSession::start_thread_with_session_start_source(
+            self,
+            config,
+            session_start_source,
+            model_provider_override,
+        )
+        .await
     }
 
     async fn resume_thread(

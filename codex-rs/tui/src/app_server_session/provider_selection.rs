@@ -1,10 +1,10 @@
 use crate::legacy_core::config::Config;
-use codex_config::ConfigLayerSource;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigReadParams;
 use codex_app_server_protocol::ConfigReadResponse;
 use codex_app_server_protocol::RequestId;
+use codex_config::ConfigLayerSource;
 
 pub(super) fn explicit_provider(config: &Config) -> Option<String> {
     config
@@ -29,7 +29,11 @@ impl super::AppServerSession {
         &self,
         config: &Config,
     ) -> color_eyre::Result<Option<String>> {
-        if let Some(provider) = self.resume_settings(config).provider.or_else(|| explicit_provider(config)) {
+        if let Some(provider) = self
+            .resume_settings(config)
+            .provider
+            .or_else(|| explicit_provider(config))
+        {
             return Ok(Some(provider));
         }
         let Some(cwd) = super::thread_cwd_from_config(
@@ -39,17 +43,29 @@ impl super::AppServerSession {
         ) else {
             return Ok(None);
         };
-        let response: ConfigReadResponse = match self.request_handle().request_typed(
-            ClientRequest::ConfigRead {
+        let response: ConfigReadResponse = match self
+            .request_handle()
+            .request_typed(ClientRequest::ConfigRead {
                 request_id: RequestId::String(format!("history-provider-{}", uuid::Uuid::new_v4())),
-                params: ConfigReadParams { include_layers: false, cwd: Some(cwd) },
-            },
-        ).await {
+                params: ConfigReadParams {
+                    include_layers: false,
+                    cwd: Some(cwd),
+                },
+            })
+            .await
+        {
             Ok(response) => response,
-            Err(TypedRequestError::Server { source, .. }) if source.code == -32601 => return Ok(None),
+            Err(TypedRequestError::Server { source, .. }) if source.code == -32601 => {
+                return Ok(None);
+            }
             Err(error) => return Err(error.into()),
         };
-        Ok(Some(response.config.model_provider.unwrap_or_else(|| "openai".to_string())))
+        Ok(Some(
+            response
+                .config
+                .model_provider
+                .unwrap_or_else(|| "openai".to_string()),
+        ))
     }
 }
 

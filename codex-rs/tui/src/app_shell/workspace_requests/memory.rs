@@ -40,48 +40,105 @@ impl MemoryCommand {
     }
 }
 
-pub(super) async fn execute(client: AppServerRequestHandle, thread_id: String, cwd: String, command: MemoryCommand) -> Result<WorkspaceResponse> {
+pub(super) async fn execute(
+    client: AppServerRequestHandle,
+    thread_id: String,
+    cwd: String,
+    command: MemoryCommand,
+) -> Result<WorkspaceResponse> {
     if command == MemoryCommand::Read {
-        let response: ThreadMemoryReadResponse = client.request_typed(ClientRequest::ThreadMemoryRead {
-            request_id: workspace_request_id("memory-read"), params: ThreadMemoryReadParams { thread_id },
-        }).await?;
-        return Ok(WorkspaceResponse::Notice(response.summary.unwrap_or_else(|| "No saved memory summary for this session.".into())));
+        let response: ThreadMemoryReadResponse = client
+            .request_typed(ClientRequest::ThreadMemoryRead {
+                request_id: workspace_request_id("memory-read"),
+                params: ThreadMemoryReadParams { thread_id },
+            })
+            .await?;
+        return Ok(WorkspaceResponse::Notice(response.summary.unwrap_or_else(
+            || "No saved memory summary for this session.".into(),
+        )));
     }
     if let MemoryCommand::Session(mode) = command {
-        let _: ThreadMemoryModeSetResponse = client.request_typed(ClientRequest::ThreadMemoryModeSet {
-            request_id: workspace_request_id("memory-session"), params: ThreadMemoryModeSetParams { thread_id, mode },
-        }).await?;
-        return Ok(WorkspaceResponse::Notice(format!("Session memory generation: {mode:?}")));
+        let _: ThreadMemoryModeSetResponse = client
+            .request_typed(ClientRequest::ThreadMemoryModeSet {
+                request_id: workspace_request_id("memory-session"),
+                params: ThreadMemoryModeSetParams { thread_id, mode },
+            })
+            .await?;
+        return Ok(WorkspaceResponse::Notice(format!(
+            "Session memory generation: {mode:?}"
+        )));
     }
     let mut notice = String::new();
     if let MemoryCommand::Use(enabled) | MemoryCommand::Generate(enabled) = command {
-        let key = if matches!(command, MemoryCommand::Use(_)) { "use_memories" } else { "generate_memories" };
-        let response = write_config_batch(client.clone(), vec![replace_config_value(format!("memories.{key}"), enabled.into())]).await?;
+        let key = if matches!(command, MemoryCommand::Use(_)) {
+            "use_memories"
+        } else {
+            "generate_memories"
+        };
+        let response = write_config_batch(
+            client.clone(),
+            vec![replace_config_value(
+                format!("memories.{key}"),
+                enabled.into(),
+            )],
+        )
+        .await?;
         if response.status == WriteStatus::OkOverridden {
             notice.push_str("Saved, but a higher-priority configuration overrides the change. ");
         }
     }
-    let config: ConfigReadResponse = client.request_typed(ClientRequest::ConfigRead {
-        request_id: workspace_request_id("memory-config"), params: ConfigReadParams { include_layers: false, cwd: Some(cwd) },
-    }).await?;
+    let config: ConfigReadResponse = client
+        .request_typed(ClientRequest::ConfigRead {
+            request_id: workspace_request_id("memory-config"),
+            params: ConfigReadParams {
+                include_layers: false,
+                cwd: Some(cwd),
+            },
+        })
+        .await?;
     let memories = config.config.additional.get("memories");
-    let enabled = |key| memories.and_then(|value| value.get(key)).and_then(serde_json::Value::as_bool).unwrap_or(true);
+    let enabled = |key| {
+        memories
+            .and_then(|value| value.get(key))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true)
+    };
     let use_memories = enabled("use_memories");
     let generate_memories = enabled("generate_memories");
     if matches!(command, MemoryCommand::Generate(_)) {
-        let mode = if generate_memories { ThreadMemoryMode::Enabled } else { ThreadMemoryMode::Disabled };
-        if let Err(error) = client.request_typed::<ThreadMemoryModeSetResponse>(ClientRequest::ThreadMemoryModeSet {
-            request_id: workspace_request_id("memory-session"), params: ThreadMemoryModeSetParams { thread_id, mode },
-        }).await {
-            notice.push_str(&format!("Default saved; this session could not be updated: {error}. "));
+        let mode = if generate_memories {
+            ThreadMemoryMode::Enabled
+        } else {
+            ThreadMemoryMode::Disabled
+        };
+        if let Err(error) = client
+            .request_typed::<ThreadMemoryModeSetResponse>(ClientRequest::ThreadMemoryModeSet {
+                request_id: workspace_request_id("memory-session"),
+                params: ThreadMemoryModeSetParams { thread_id, mode },
+            })
+            .await
+        {
+            notice.push_str(&format!(
+                "Default saved; this session could not be updated: {error}. "
+            ));
         }
     }
-    let status: MemoryStatusResponse = client.request_typed(ClientRequest::MemoryStatus {
-        request_id: workspace_request_id("memory-status"), params: MemoryStatusParams { min_consolidated_threads: None },
-    }).await?;
+    let status: MemoryStatusResponse = client
+        .request_typed(ClientRequest::MemoryStatus {
+            request_id: workspace_request_id("memory-status"),
+            params: MemoryStatusParams {
+                min_consolidated_threads: None,
+            },
+        })
+        .await?;
     let state = |value| if value { "on" } else { "off" };
     let ready = if status.v2_ready { "ready" } else { "building" };
-    Ok(WorkspaceResponse::Notice(format!("{notice}Memory {ready}: {} consolidated sessions.\nUse memories: {}. Generate memories: {}.\n/memory use on|off; /memory generate on|off; /memory on|off for this session; /memory read for its summary.", status.v2_consolidated_threads, state(use_memories), state(generate_memories))))
+    Ok(WorkspaceResponse::Notice(format!(
+        "{notice}Memory {ready}: {} consolidated sessions.\nUse memories: {}. Generate memories: {}.\n/memory use on|off; /memory generate on|off; /memory on|off for this session; /memory read for its summary.",
+        status.v2_consolidated_threads,
+        state(use_memories),
+        state(generate_memories)
+    )))
 }
 
 #[cfg(test)]

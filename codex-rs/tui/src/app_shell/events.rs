@@ -1,4 +1,3 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use super::ShellState;
 use super::agent_activity::AgentChildEvent;
 use super::agent_activity::AgentItemPhase;
@@ -12,6 +11,7 @@ use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SessionSource;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::TurnStatus;
@@ -118,11 +118,22 @@ impl ShellState {
                 self.handle_notification(notification);
                 if account_login_completed {
                     let thread_id = self.thread_id;
-                    let request = app_server.workspace_request_in_background(thread_id,
-                        super::workspace_requests::WorkspaceRequest::Account(super::workspace_requests::AccountCommand::Refresh));
-                    self.start_backend_action(super::backend_actions::ActionGroup::Workspace, "refreshing account", async move {
-                        super::backend_actions::BackendActionResult::Workspace { thread_id, result: request.await }
-                    });
+                    let request = app_server.workspace_request_in_background(
+                        thread_id,
+                        super::workspace_requests::WorkspaceRequest::Account(
+                            super::workspace_requests::AccountCommand::Refresh,
+                        ),
+                    );
+                    self.start_backend_action(
+                        super::backend_actions::ActionGroup::Workspace,
+                        "refreshing account",
+                        async move {
+                            super::backend_actions::BackendActionResult::Workspace {
+                                thread_id,
+                                result: request.await,
+                            }
+                        },
+                    );
                 }
                 if refresh_session_list {
                     self.start_session_list_refresh(app_server);
@@ -376,7 +387,10 @@ impl ShellState {
                     if let Some(title) = item_activity_title(&started.item) {
                         let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
-                        if !matches!(&started.item.payload, ThreadItemPayload::SubAgentActivity { .. }) {
+                        if !matches!(
+                            &started.item.payload,
+                            ThreadItemPayload::SubAgentActivity { .. }
+                        ) {
                             self.push_tool_with_status_for_item(
                                 item_id,
                                 title,
@@ -440,10 +454,13 @@ impl ShellState {
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {
                     let changed_workspace = matches!(
                         &completed.item.payload,
-                        ThreadItemPayload::FileChange { .. } | ThreadItemPayload::CommandExecution { .. }
+                        ThreadItemPayload::FileChange { .. }
+                            | ThreadItemPayload::CommandExecution { .. }
                     );
-                    let incomplete_edit_history =
-                        matches!(&completed.item.payload, ThreadItemPayload::FileChange { .. });
+                    let incomplete_edit_history = matches!(
+                        &completed.item.payload,
+                        ThreadItemPayload::FileChange { .. }
+                    );
                     self.mark_active_agent_threads(&completed.item);
                     self.agent_activity.reduce_completed(&completed.item);
                     self.agent_activity.record_child_item(

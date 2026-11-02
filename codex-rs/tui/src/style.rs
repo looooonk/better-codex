@@ -1,14 +1,14 @@
 mod contrast;
 
-use ratatui::style::Color;
-use crate::terminal_palette::effective_stdout_color_level;
 use crate::color::blend;
 use crate::terminal_palette::StdoutColorLevel;
 use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
 use crate::terminal_palette::default_fg;
+use crate::terminal_palette::effective_stdout_color_level;
 use crate::terminal_palette::rgb_color;
 use crate::terminal_palette::stdout_color_level;
+use ratatui::style::Color;
 use ratatui::style::Style;
 
 pub(crate) const CHATGPT_BLUE_100: (u8, u8, u8) = (164, 205, 251);
@@ -62,4 +62,3 @@ pub(crate) fn readable_color_on(preferred: Color, background: Option<Color>) -> 
         )
     })
 }
-

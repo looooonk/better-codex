@@ -8,10 +8,20 @@ async fn configured_presets_key_reads_native_saved_prompts() {
     let mut shell = ShellState::snapshot_fixture();
     shell.active_turn_id = None;
     shell.dashboard_visible = false;
-    shell.keybindings = ShellKeymap::from_config(&toml::from_str("[chat]\nopen_presets = 'f18'").unwrap()).unwrap();
+    shell.keybindings =
+        ShellKeymap::from_config(&toml::from_str("[chat]\nopen_presets = 'f18'").unwrap()).unwrap();
     let mut backend = RecordingBackend::default();
-    shell.handle_key(KeyEvent::new(KeyCode::F(18), KeyModifiers::NONE), &config, &mut backend).await.unwrap();
-    assert!(shell.has_pending_backend_action(crate::app_shell::backend_actions::ActionGroup::Workspace));
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::F(18), KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    assert!(
+        shell.has_pending_backend_action(crate::app_shell::backend_actions::ActionGroup::Workspace)
+    );
 }
 
 #[tokio::test]

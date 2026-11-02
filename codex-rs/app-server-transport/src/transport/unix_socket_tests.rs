@@ -555,7 +555,8 @@ fn assert_socket_path_removed(_socket_path: &Path) {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn better_codex_control_socket_leaves_upstream_service_available() -> Result<(), Box<dyn std::error::Error>> {
+async fn better_codex_control_socket_leaves_upstream_service_available()
+-> Result<(), Box<dyn std::error::Error>> {
     let home = tempfile::Builder::new().tempdir_in("/tmp")?;
     let upstream_dir = home.path().join("app-server-control");
     std::fs::create_dir(&upstream_dir)?;

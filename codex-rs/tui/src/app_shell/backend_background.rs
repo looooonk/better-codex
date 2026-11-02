@@ -77,8 +77,8 @@ pub(super) async fn count_descendants(
                     params: ThreadListParams {
                         // A known ancestor remains directly accessible across accounts.
                         current_account_only: false,
-            attached_to_thread_id: None,
-            excluded_thread_ids: None,
+                        attached_to_thread_id: None,
+                        excluded_thread_ids: None,
                         originators: None,
                         project_id: None,
                         section_id: None,

@@ -42,7 +42,8 @@ class ReleasePackageTest(unittest.TestCase):
                 "#!/bin/sh\nexit 0\n",
             )
             executor = self.write_executable(
-                inputs / "codex-exec-server", "#!/bin/sh\nprintf 'executor fixture\\n'\n"
+                inputs / "codex-exec-server",
+                "#!/bin/sh\nprintf 'executor fixture\\n'\n",
             )
             rg = self.write_executable(inputs / "rg", "#!/bin/sh\nexit 0\n")
             target = host_target()

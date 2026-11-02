@@ -158,7 +158,15 @@ impl ShellState {
             ShellShortcut::Transcript => self.select_latest_transcript_item(),
             ShellShortcut::Find => self.open_transcript_find(""),
             ShellShortcut::Side => self.run_side_command("", config, app_server).await?,
-            ShellShortcut::Presets => self.run_workspace_command(crate::app_shell::workspace_commands::WorkspaceCommand::Presets, "", config, app_server).await?,
+            ShellShortcut::Presets => {
+                self.run_workspace_command(
+                    crate::app_shell::workspace_commands::WorkspaceCommand::Presets,
+                    "",
+                    config,
+                    app_server,
+                )
+                .await?
+            }
             ShellShortcut::Activity => {
                 self.dashboard_visible = true;
                 self.set_dashboard_route(crate::app_shell::navigation::DashboardRoute::Agents);

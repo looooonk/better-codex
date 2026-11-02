@@ -172,19 +172,17 @@ pub(super) async fn load_git_status(
         return WorkspaceGitStatusProbe::Unavailable;
     };
     let Ok(output) = runner
-        .run(
-            WorkspaceCommand::new(
-                [
-                    "sh".to_string(),
-                    "-c".to_string(),
-                    GIT_STATUS_SCRIPT.to_string(),
-                    GIT_STATUS_ARG0.to_string(),
-                ]
-                .into_iter()
-                .chain(candidate_roots),
-                cwd,
-            ),
-        )
+        .run(WorkspaceCommand::new(
+            [
+                "sh".to_string(),
+                "-c".to_string(),
+                GIT_STATUS_SCRIPT.to_string(),
+                GIT_STATUS_ARG0.to_string(),
+            ]
+            .into_iter()
+            .chain(candidate_roots),
+            cwd,
+        ))
         .await
     else {
         return WorkspaceGitStatusProbe::Unavailable;

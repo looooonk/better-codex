@@ -1,8 +1,8 @@
-use codex_app_server_protocol::ThreadItemPayload;
-use codex_app_server_protocol::ThreadItem;
 use super::*;
 use crate::app_shell::render::ShellView;
 use codex_app_server_protocol::ServerNotification;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadRealtimeItemCompletedNotification;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;

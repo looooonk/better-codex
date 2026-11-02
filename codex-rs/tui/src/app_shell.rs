@@ -2055,7 +2055,8 @@ impl ShellState {
     fn record_item_activity(&mut self, item: &ThreadItem, title: String, status: &str) {
         let id = item.id().to_string();
         match &item.payload {
-            ThreadItemPayload::CollabAgentToolCall { .. } | ThreadItemPayload::SubAgentActivity { .. } => {
+            ThreadItemPayload::CollabAgentToolCall { .. }
+            | ThreadItemPayload::SubAgentActivity { .. } => {
                 self.upsert_subagent_activity(id, title, status.to_string());
             }
             ThreadItemPayload::FileChange { .. } => {}

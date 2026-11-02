@@ -89,8 +89,8 @@ async fn lookup_with_reader(
             deadline,
             client.list(ThreadListParams {
                 current_account_only: false,
-        attached_to_thread_id: None,
-        excluded_thread_ids: None,
+                attached_to_thread_id: None,
+                excluded_thread_ids: None,
                 cursor,
                 limit: Some(PAGE_SIZE),
                 sort_key: Some(ThreadSortKey::UpdatedAt),

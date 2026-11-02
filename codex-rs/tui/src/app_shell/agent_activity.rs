@@ -1,4 +1,3 @@
-use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::CollabAgentState;
 #[cfg(test)]
 use codex_app_server_protocol::CollabAgentStatus;
@@ -6,6 +5,7 @@ use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::TurnStatus;
 use codex_protocol::AgentPath;
 use codex_protocol::openai_models::ReasoningEffort;
