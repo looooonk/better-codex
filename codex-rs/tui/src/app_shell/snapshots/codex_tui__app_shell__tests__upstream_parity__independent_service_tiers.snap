@@ -1,0 +1,30 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 26))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.      ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                ┃ │▎+ New session  Ctrl+N
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │▎loading sessions
+          by app╭ Select service tier ─────────────────────────────────────────────╮
+ ▎ PLAN  1. Buil│ › 1 ● Default  current                                           │
+         2. Wire│       Use the model's default service tier.                      │
+         3. Rend│   2 ○ ultrafast                                                  │0000001
+                │       ultrafast description                                      │ session list
+ ▌ tool exec jus│   3 ○ flex                                                       │
+                │       flex description                                           │
+ ▌ edited 3 file│  wheel / j k  Enter select  Esc cancel  1/3                      │
+                ╰──────────────────────────────────────────────────────────────────╯
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

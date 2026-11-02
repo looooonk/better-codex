@@ -131,7 +131,7 @@ pub(crate) async fn run(
         resume_cwd_runtime,
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
-    shell.service_tier_features = config.features.clone();
+    shell.service_tier_features = config.features.get().clone();
     let invalid_display_items = shell.status_surfaces.configure(&config);
     if !invalid_display_items.is_empty() {
         shell.push_error(format!(
@@ -164,8 +164,19 @@ pub(crate) async fn run(
         .or_else(|| shell.composer.has_images().then(String::new));
     let has_initial_prompt = pending_initial_prompt.is_some();
     let terminal_size_tags = if crate::terminal_size_telemetry::enabled(&config) {
-        vec![("backend", if app_server.uses_embedded_app_server() { "in_process" } else if app_server.uses_remote_workspace() { "remote" } else { "local_daemon" })]
-    } else { Vec::new() };
+        vec![(
+            "backend",
+            if app_server.uses_embedded_app_server() {
+                "in_process"
+            } else if app_server.uses_remote_workspace() {
+                "remote"
+            } else {
+                "local_daemon"
+            },
+        )]
+    } else {
+        Vec::new()
+    };
     let mut last_observed_turn = None;
     let mut last_screen_size = tui.terminal.size()?;
     let mut settled_size_tags = crate::terminal_size_telemetry::tags(last_screen_size);

@@ -796,6 +796,7 @@ async fn exec_resume_preserves_cli_configuration_overrides() -> anyhow::Result<(
         .arg("workspace-write")
         .arg("--model")
         .arg("gpt-5.1-high")
+        .args(["--color", "never"])
         .arg("-C")
         .arg(&repo_root)
         .arg(&prompt2)

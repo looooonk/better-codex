@@ -212,8 +212,37 @@ fn non_interactive_dumb_terminal_preserves_other_doctor_failures() -> Result<()>
     Ok(())
 }
 
+enum FailedDatabases {
+    Logs,
+    LogsAndGoals,
+}
+
+enum DoctorOutput {
+    Json,
+    Human,
+}
+
 #[test]
-fn doctor_reports_failed_database_paths() -> Result<()> {
+fn doctor_reports_failed_database_paths_log_json() -> Result<()> {
+    check_failed_database_paths(FailedDatabases::Logs, DoctorOutput::Json)
+}
+
+#[test]
+fn doctor_reports_failed_database_paths_log_human() -> Result<()> {
+    check_failed_database_paths(FailedDatabases::Logs, DoctorOutput::Human)
+}
+
+#[test]
+fn doctor_reports_failed_database_paths_multiple_json() -> Result<()> {
+    check_failed_database_paths(FailedDatabases::LogsAndGoals, DoctorOutput::Json)
+}
+
+#[test]
+fn doctor_reports_failed_database_paths_multiple_human() -> Result<()> {
+    check_failed_database_paths(FailedDatabases::LogsAndGoals, DoctorOutput::Human)
+}
+
+fn check_failed_database_paths(databases: FailedDatabases, output: DoctorOutput) -> Result<()> {
     let fixture = Fixture::new()?;
     let sqlite_home = fixture.root.path().join("sqlite");
     std::fs::create_dir(&sqlite_home)?;
@@ -226,82 +255,87 @@ fn doctor_reports_failed_database_paths() -> Result<()> {
         format!("sqlite_home = {sqlite_home}\nlog_dir = {sqlite_home}\n{config}"),
     )?;
 
-    for (snapshot_name, failed_paths) in [
-        ("doctor_failed_log_database", vec![sqlite.logs_db_path()]),
-        (
+    let (snapshot_name, failed_paths) = match databases {
+        FailedDatabases::Logs => ("doctor_failed_log_database", vec![sqlite.logs_db_path()]),
+        FailedDatabases::LogsAndGoals => (
             "doctor_failed_multiple_databases",
             vec![sqlite.logs_db_path(), sqlite.goals_db_path()],
         ),
-    ] {
-        for path in &failed_paths {
-            std::fs::write(path, "not a SQLite database")?;
-        }
-        let paths = failed_paths
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let noun = if failed_paths.len() == 1 {
-            "database"
-        } else {
-            "databases"
-        };
-        let expected_cause = format!("{paths} {noun} failed integrity check");
-        for args in [
-            vec!["doctor", "--json"],
-            vec!["doctor", "--json", "--feedback"],
-        ] {
-            let output = fixture.command()?.args(args).output()?;
-            assert_eq!(output.status.code(), Some(1));
-            let report: Value = serde_json::from_slice(&output.stdout)?;
-            assert_eq!(report["checks"]["state.paths"]["status"], "fail");
-            assert_eq!(
-                report["checks"]["state.paths"]["summary"],
-                "state database integrity check failed"
-            );
-            assert_eq!(
-                report["checks"]["state.paths"]["issues"][0]["cause"],
-                expected_cause
-            );
-        }
-
-        for summary_only in [false, true] {
-            let mut command = fixture.command()?;
-            command.args(["doctor", "--ascii", "--no-color"]);
-            if summary_only {
-                command.arg("--summary");
-            }
-            let output = command.output()?;
-            assert_eq!(output.status.code(), Some(1));
-            let stdout = String::from_utf8(output.stdout)?;
-            let state_row = stdout
-                .lines()
-                .filter(|line| {
-                    line.starts_with("  [XX] state ")
-                        || (!summary_only
-                            && line.starts_with("    -> Move the damaged SQLite database aside"))
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-                .replace(&fixture.root.path().display().to_string(), "FIXTURE")
-                .replace('\\', "/");
-            if summary_only {
+    };
+    for path in &failed_paths {
+        std::fs::write(path, "not a SQLite database")?;
+    }
+    let paths = failed_paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let noun = if failed_paths.len() == 1 {
+        "database"
+    } else {
+        "databases"
+    };
+    let expected_cause = format!("{paths} {noun} failed integrity check");
+    match output {
+        DoctorOutput::Json => {
+            for args in [
+                vec!["doctor", "--json"],
+                vec!["doctor", "--json", "--feedback"],
+            ] {
+                let output = fixture.command()?.args(args).output()?;
+                assert_eq!(output.status.code(), Some(1));
+                let report: Value = serde_json::from_slice(&output.stdout)?;
+                assert_eq!(report["checks"]["state.paths"]["status"], "fail");
                 assert_eq!(
-                    state_row,
-                    format!(
-                        "  [XX] state        {}",
-                        expected_cause
-                            .replace(&fixture.root.path().display().to_string(), "FIXTURE")
-                    )
-                    .replace('\\', "/")
+                    report["checks"]["state.paths"]["summary"],
+                    "state database integrity check failed"
                 );
-            } else {
-                insta::assert_snapshot!(snapshot_name, state_row);
+                assert_eq!(
+                    report["checks"]["state.paths"]["issues"][0]["cause"],
+                    expected_cause
+                );
             }
         }
-        for path in &failed_paths {
-            assert_eq!(std::fs::read_to_string(path)?, "not a SQLite database");
+        DoctorOutput::Human => {
+            for summary_only in [false, true] {
+                let mut command = fixture.command()?;
+                command.args(["doctor", "--ascii", "--no-color"]);
+                if summary_only {
+                    command.arg("--summary");
+                }
+                let output = command.output()?;
+                assert_eq!(output.status.code(), Some(1));
+                let stdout = String::from_utf8(output.stdout)?;
+                let state_row = stdout
+                    .lines()
+                    .filter(|line| {
+                        line.starts_with("  [XX] state ")
+                            || (!summary_only
+                                && line
+                                    .starts_with("    -> Move the damaged SQLite database aside"))
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .replace(&fixture.root.path().display().to_string(), "FIXTURE")
+                    .replace('\\', "/");
+                if summary_only {
+                    assert_eq!(
+                        state_row,
+                        format!(
+                            "  [XX] state        {}",
+                            expected_cause
+                                .replace(&fixture.root.path().display().to_string(), "FIXTURE")
+                        )
+                        .replace('\\', "/")
+                    );
+                } else {
+                    insta::assert_snapshot!(snapshot_name, state_row);
+                }
+            }
         }
+    }
+    for path in &failed_paths {
+        assert_eq!(std::fs::read_to_string(path)?, "not a SQLite database");
     }
     Ok(())
 }
@@ -340,8 +374,34 @@ fn doctor_redacts_failed_database_paths_in_json() -> Result<()> {
     Ok(())
 }
 
+enum ConfigFailure {
+    UserSyntax,
+    ProjectSyntax,
+    MissingProvider,
+    InvalidHeader,
+}
+
 #[test]
-fn doctor_reports_only_safe_config_error_metadata() -> Result<()> {
+fn doctor_reports_only_safe_config_error_metadata_user_syntax() -> Result<()> {
+    check_safe_config_error_metadata(ConfigFailure::UserSyntax)
+}
+
+#[test]
+fn doctor_reports_only_safe_config_error_metadata_project_syntax() -> Result<()> {
+    check_safe_config_error_metadata(ConfigFailure::ProjectSyntax)
+}
+
+#[test]
+fn doctor_reports_only_safe_config_error_metadata_missing_provider() -> Result<()> {
+    check_safe_config_error_metadata(ConfigFailure::MissingProvider)
+}
+
+#[test]
+fn doctor_reports_only_safe_config_error_metadata_invalid_header() -> Result<()> {
+    check_safe_config_error_metadata(ConfigFailure::InvalidHeader)
+}
+
+fn check_safe_config_error_metadata(failure: ConfigFailure) -> Result<()> {
     let fixture = Fixture::new()?;
     let user_config_file = fixture.home.join("config.toml");
     let original = std::fs::read_to_string(&user_config_file)?;
@@ -350,18 +410,18 @@ fn doctor_reports_only_safe_config_error_metadata() -> Result<()> {
     let original = format!("{original}\n[projects.{project_key}]\ntrust_level = \"trusted\"\n");
     let project_config_dir = fixture.workspace.join(".codex");
     std::fs::create_dir(&project_config_dir)?;
-    for (snapshot_name, config_file, config) in [
-        (
+    let (snapshot_name, config_file, config) = match failure {
+        ConfigFailure::UserSyntax => (
             "doctor_config_error_location",
             user_config_file.clone(),
             "custom_header = \"doctor-test-credential\" trailing\n".to_string(),
         ),
-        (
+        ConfigFailure::ProjectSyntax => (
             "doctor_config_invalid_data",
             project_config_dir.join("config.toml"),
             "custom_header = \"doctor-test-credential\" trailing\n".to_string(),
         ),
-        (
+        ConfigFailure::MissingProvider => (
             "doctor_config_not_found",
             user_config_file.clone(),
             original.replace(
@@ -369,7 +429,7 @@ fn doctor_reports_only_safe_config_error_metadata() -> Result<()> {
                 "model_provider = \"doctor-test-credential\"",
             ),
         ),
-        (
+        ConfigFailure::InvalidHeader => (
             "doctor_config_invalid_data",
             user_config_file.clone(),
             original.replace(
@@ -377,39 +437,37 @@ fn doctor_reports_only_safe_config_error_metadata() -> Result<()> {
                 "wire_api = \"responses\"\nhttp_headers = \"sk-proj-ABC123example\"",
             ),
         ),
+    };
+    std::fs::write(&user_config_file, &original)?;
+    std::fs::write(&config_file, config)?;
+    for args in [
+        vec!["doctor", "--json"],
+        vec!["doctor", "--json", "--feedback"],
     ] {
-        std::fs::write(&user_config_file, &original)?;
-        std::fs::write(&config_file, config)?;
-        for args in [
-            vec!["doctor", "--json"],
-            vec!["doctor", "--json", "--feedback"],
-        ] {
-            let output = fixture.command()?.args(args).output()?;
-            assert_eq!(output.status.code(), Some(1));
-            let report: Value = serde_json::from_slice(&output.stdout)?;
-            let mut check = report["checks"]["config.load"].clone();
-            check
-                .as_object_mut()
-                .expect("config check")
-                .remove("durationMs");
-            if let Some(file) = check["details"]["file"].as_str() {
-                check["details"]["file"] = Value::String(
-                    file.replace(
-                        &fixture.root.path().canonicalize()?.display().to_string(),
-                        "FIXTURE",
-                    )
-                    .replace(&fixture.root.path().display().to_string(), "FIXTURE")
-                    .replace('\\', "/"),
-                );
-            }
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            assert!(!stdout.contains("doctor-test-credential"));
-            assert!(!stdout.contains("sk-proj-ABC123example"));
-            // Keep snapshots stable across serde_json feature sets in Cargo and Bazel.
-            check.sort_all_objects();
-            insta::assert_snapshot!(snapshot_name, serde_json::to_string_pretty(&check)?);
+        let output = fixture.command()?.args(args).output()?;
+        assert_eq!(output.status.code(), Some(1));
+        let report: Value = serde_json::from_slice(&output.stdout)?;
+        let mut check = report["checks"]["config.load"].clone();
+        check
+            .as_object_mut()
+            .ok_or_else(|| anyhow::anyhow!("config check should be an object"))?
+            .remove("durationMs");
+        if let Some(file) = check["details"]["file"].as_str() {
+            check["details"]["file"] = Value::String(
+                file.replace(
+                    &fixture.root.path().canonicalize()?.display().to_string(),
+                    "FIXTURE",
+                )
+                .replace(&fixture.root.path().display().to_string(), "FIXTURE")
+                .replace('\\', "/"),
+            );
         }
-        std::fs::remove_file(config_file)?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(!stdout.contains("doctor-test-credential"));
+        assert!(!stdout.contains("sk-proj-ABC123example"));
+        // Keep snapshots stable across serde_json feature sets in Cargo and Bazel.
+        check.sort_all_objects();
+        insta::assert_snapshot!(snapshot_name, serde_json::to_string_pretty(&check)?);
     }
     Ok(())
 }

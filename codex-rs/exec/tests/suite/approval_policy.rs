@@ -19,6 +19,7 @@ async fn run_exec_with_config(config_toml: &str, extra_args: &[&str]) -> anyhow:
     let mut cmd = test.cmd_with_server(&server);
     let output = cmd
         .arg("--skip-git-repo-check")
+        .args(["--color", "never"])
         .args(extra_args)
         .arg("check approval mode")
         .output()?;

@@ -133,6 +133,129 @@ fn streaming_output_preserves_a_scrolled_viewport_anchor() {
 }
 
 #[test]
+fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
+    let table = "| Left | Right |\n| --- | --- |\n| one two three four five six seven | red blue green white orange |\n";
+    for kind in [TranscriptKind::Assistant, TranscriptKind::Plan] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.transcript.clear();
+        shell.clear_streaming_transcript();
+        for index in 0..40 {
+            shell.push_system(format!("history-{index}"));
+        }
+        let push_delta = match kind {
+            TranscriptKind::Assistant => ShellState::push_streaming_assistant_delta,
+            TranscriptKind::Plan => ShellState::push_streaming_plan_delta,
+            _ => unreachable!(),
+        };
+        push_delta(&mut shell, "live-table", table);
+        let revisions = (
+            shell.streaming_assistant_revision,
+            shell.streaming_plan_revision,
+        );
+        let screen = Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+        );
+        let mut separator_widths = Vec::new();
+        for width in [80, 44, 80] {
+            let area = Rect::new(/*x*/ 6, /*y*/ 0, width, screen.height);
+            let viewport = transcript_viewport(&shell, area);
+            let lines = viewport
+                .layout
+                .visible_hyperlink_lines(viewport.visible_from, viewport.visible_count);
+            assert!(
+                lines
+                    .iter()
+                    .all(|line| line.line.width() <= usize::from(viewport.text_body.width))
+            );
+            separator_widths.push(
+                lines
+                    .iter()
+                    .map(rendered_line_text)
+                    .find(|line| line.contains('━'))
+                    .expect("table separator")
+                    .trim()
+                    .width(),
+            );
+            let mut buffer = Buffer::empty(screen);
+            render_transcript(&shell, area, /*hover_position*/ None, &mut buffer);
+            if kind == TranscriptKind::Assistant && width == 44 {
+                let painted = (area.y..area.bottom())
+                    .map(|y| {
+                        (area.x..area.right())
+                            .map(|x| buffer[(x, y)].symbol())
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                insta::assert_snapshot!("allocated_live_answer_table", painted);
+            }
+            assert_eq!(
+                (
+                    shell.streaming_assistant_revision,
+                    shell.streaming_plan_revision
+                ),
+                revisions
+            );
+        }
+        assert!(separator_widths[0] > separator_widths[1]);
+        assert_eq!(separator_widths[0], separator_widths[2]);
+
+        shell.scroll_transcript_to_top();
+        shell.scroll_transcript_down(/*rows*/ 8);
+        for width in [80, 44, 80] {
+            let viewport =
+                transcript_viewport(&shell, Rect::new(/*x*/ 6, /*y*/ 0, width, screen.height));
+            let first = viewport
+                .layout
+                .row_at(viewport.visible_from)
+                .and_then(TranscriptLayoutRow::line)
+                .map(rendered_line_text)
+                .unwrap();
+            assert!(first.contains("history-8"), "{kind:?}: {first}");
+            assert_eq!(
+                (
+                    shell.streaming_assistant_revision,
+                    shell.streaming_plan_revision
+                ),
+                revisions
+            );
+        }
+        push_delta(&mut shell, "live-table", "| arrived | delta |\n");
+        let updated_revisions = (
+            shell.streaming_assistant_revision,
+            shell.streaming_plan_revision,
+        );
+        assert_ne!(updated_revisions, revisions);
+        let narrow = Rect::new(/*x*/ 6, /*y*/ 0, /*width*/ 44, screen.height);
+        let held = transcript_viewport(&shell, narrow);
+        let first = held
+            .layout
+            .row_at(held.visible_from)
+            .and_then(TranscriptLayoutRow::line)
+            .map(rendered_line_text)
+            .unwrap();
+        assert!(first.contains("history-8"), "{kind:?}: {first}");
+        assert_eq!(
+            (
+                shell.streaming_assistant_revision,
+                shell.streaming_plan_revision
+            ),
+            updated_revisions
+        );
+        shell.scroll_transcript_to_bottom();
+        let latest = transcript_viewport(&shell, narrow);
+        let visible = latest
+            .layout
+            .visible_hyperlink_lines(latest.visible_from, latest.visible_count)
+            .iter()
+            .map(rendered_line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(visible.matches("arrived").count(), 1, "{kind:?}: {visible}");
+    }
+}
+
+#[test]
 fn resizing_keeps_the_selected_transcript_item_visible() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

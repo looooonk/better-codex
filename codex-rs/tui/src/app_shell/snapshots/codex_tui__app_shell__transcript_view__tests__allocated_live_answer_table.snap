@@ -1,0 +1,23 @@
+---
+source: tui/src/app_shell/transcript_view_tests.rs
+expression: painted
+---
+                                            
+ ◆ CONVERSATION                             
+ ▎ SYSTEM  history-29                     │ 
+ ▎ SYSTEM  history-30                     │ 
+ ▎ SYSTEM  history-31                     │ 
+ ▎ SYSTEM  history-32                     │ 
+ ▎ SYSTEM  history-33                     │ 
+ ▎ SYSTEM  history-34                     │ 
+ ▎ SYSTEM  history-35                     │ 
+ ▎ SYSTEM  history-36                     │ 
+ ▎ SYSTEM  history-37                     │ 
+ ▎ SYSTEM  history-38                     │ 
+ ▎ SYSTEM  history-39                     ┃ 
+ ▎ CODEX   Left            Right          ┃ 
+          ━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━ ┃ 
+           one two         red blue       ┃ 
+           three four      green white    ┃ 
+           five six        orange         ┃ 
+           seven                          ┃
