@@ -23,14 +23,10 @@ leaving your terminal.
 
 ![Better Codex showing a live coding session, tool activity, settings, and workspace status](.github/assets/main-tui.png)
 
-Better Codex reshapes the Codex Rust backend into a dense, app-like TUI. Instead
+Better Codex reshapes the Codex Rust backend into a dense app-like TUI. Instead
 of dropping directly into a single chat, it gives you a dashboard for starting,
 finding, and resuming work, plus a session view where the conversation, active
 tools, agent plan, file changes, and project status stay visible together.
-
-> [!NOTE]
-> Better Codex is an actively developed, installable alpha. It is a standalone
-> community fork and is not a drop-in replacement for the upstream Codex CLI.
 
 ## Install
 
@@ -38,21 +34,10 @@ Install the latest release on macOS or Linux, then launch it from any project:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh
-cd path/to/your/project
-better-codex
 ```
-
-The installer selects the correct release for your platform, verifies its
-SHA-256 checksum, and places the `better-codex` launcher in
-`$HOME/.local/bin`. If that directory is not already on your `PATH`, the
-installer tells you before you try to launch the app.
 
 On first launch, choose ChatGPT sign-in, an OpenAI API key, or Amazon Bedrock
 setup, then start a session from the dashboard.
-
-> [!IMPORTANT]
-> macOS release binaries are not code-signed yet. The first launch may require
-> approval in **System Settings > Privacy & Security**.
 
 ### System requirements
 
@@ -120,12 +105,6 @@ tools, test commands, and logging.
 | **Realtime voice**        | Talk with an agent through the isolated native voice helper; control microphone and playback from the workspace. |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
-The model picker reads the complete model catalog from the connected Codex
-backend, including newly available models for your account and provider.
-Reasoning levels and service tiers follow the backend's advertised capabilities
-and account policies. Agents can ask questions
-in the conversation while continuing their work; reply through the normal message
-composer, using a suggested answer or your own text.
 
 <table>
   <tr>
@@ -142,77 +121,6 @@ composer, using a suggested answer or your own text.
   </tr>
 </table>
 
-## A quick tour
-
-Running `better-codex` opens the dashboard. Start a new session or resume an
-existing one, type a request in the composer, and follow the work in the main
-conversation pane. The right side of the workspace keeps status, agents,
-sessions, help, settings, plan progress, tools, edits, and token usage close at
-hand.
-
-Useful controls to get started:
-
-| Input                   | Action                                      |
-| ----------------------- | ------------------------------------------- |
-| `Enter`                 | Open the selected item or submit a message  |
-| `Shift+Enter`           | Add a new line in the composer              |
-| `Ctrl+D`                | Hide the dashboard or bring it back         |
-| `!<command>`            | Run a local shell command from the composer |
-| `Esc` or `Ctrl+C` twice | Exit Better Codex                           |
-
-Use `/model`, `/permissions`, `/plan`, `/review`, `/skills`, `/hooks`,
-`/memory`, and `/experimental` for the corresponding backend controls. `/voice`
-opens realtime voice controls. `better-codex agents` opens sessions across the
-shared local background server, and `better-codex queue --thread SESSION --message "message"` queues
-work for an existing session. Pass `--no-daemon` to launch an independent session.
-
-Use `/config` to focus settings, `/archive` to archive the current session, and
-`/delete` to inspect and confirm permanent deletion. `/presets` lists saved
-prompts; `/presets save 1 <prompt>` saves a slot and `/presets 1` loads it for
-review before sending. Slots 1 through 9 are available, and `/presets delete 1`
-removes a saved prompt. Configured `chat.open_presets` shortcuts open this list.
-
-`/apps` lists connected apps separately from `/plugins`. Use `/apps access <id>`
-for its connection page, `/apps enable <id>` or `/apps disable <id>` to control
-availability, and `/apps tools <id>` to inspect tools. Set app-wide approvals
-with `/apps approval <id> auto|prompt|writes|approve`, or individual tools with
-`/apps tool <id> <tool> enable|disable|approval <mode>`. Managed settings continue
-to apply. `/memory use on|off` controls using saved memories;
-`/memory generate on|off` controls generating them. `/memory on|off` changes
-generation for only the current session, and `/memory read` shows its summary.
-
-`/provider` lists available providers and their editable fields. Select a default
-with `/provider use <id> [model]`, then `/new`; the current session keeps its
-provider. `/provider configure <id> field=value` updates gateway, AWS, or GCP
-settings, and `/provider add <name> <url> [key-environment-variable]` adds a
-gateway without putting an API key in the command. Quote values containing
-spaces; an empty value clears an optional field. `/account` lists saved ChatGPT
-accounts and workspaces; `/account switch <session-id> <workspace-id>` switches
-between them and refreshes the model catalog. Use `/login` to add an account.
-
-Use `/side` for a side conversation, `/recap` for a summary, and `/worktree new`
-or `/worktree fork` for work in a managed checkout. `/recap on|off` controls
-automatic recaps while the terminal is unfocused. `/daybreak` manages access for
-eligible cybersecurity work, and `/approve` lists recent auto-review denials
-that you can approve for one retry with `/approve <review-id>`.
-
-Attach images with `--image`, `/attach <path>`, or `Ctrl+V`; `/detach` removes
-attachments. `/ide on` includes the current IDE selection and open tabs in new
-messages. `/mention <query>` finds files, `/export` saves a Markdown transcript,
-and `/warnings` retains diagnostic details for inspection.
-
-Responses support tables, task lists, math, and Mermaid diagrams within the
-conversation pane. Copying a selection preserves its Markdown structure, and
-local HTML visualizations open with the session's file-access permissions.
-
-Use `/find` to search the retained conversation, `/keymap` to customize shortcuts
-and chords, `/statusline` to choose the status row's contents, and `/title` to
-configure the terminal window title.
-`/pets` selects an animated companion in terminals that support images. These
-preferences use the same configuration layers as the rest of the application.
-
-Contextual shortcuts are always shown along the bottom edge of focused views,
-so you do not need to memorize the full key map.
 
 ## Updates
 
@@ -225,15 +133,6 @@ better-codex update
 
 Rerunning the installer works too. Either path activates the new verified
 release while keeping the launcher path stable.
-
-The background server has its own package under
-`$CODEX_HOME/packages/better-codex-daemon`. `/daemon update latest` updates it from
-Better Codex releases after the interface closes; `/daemon update from-cli`
-copies and pins the launching CLI package. Active work must finish first.
-Explicitly installed versions remain pinned until you choose the latest channel.
-Older standalone daemon installs must migrate with
-`better-codex app-server daemon update --from-cli --yes` before automatic updates;
-this preserves the separate upstream Codex installation.
 
 ## Documentation
 
@@ -258,21 +157,6 @@ before implementation.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and review
 expectations.
-
-## Project relationship
-
-Better Codex is built on the open-source
-[Codex CLI](https://github.com/openai/codex) Rust backend, which remains useful
-backend infrastructure and reference material. This fork is independently
-developed around its own full-screen terminal experience and release path; it
-is not an official OpenAI product.
-
-The current backend baseline is upstream commit
-`550eb50545a78468a09ce86b82426338640ef22d`. Backend protocol and model-catalog
-compatibility are advertised as `0.160.0`, independently of Better Codex's
-release version. Future upstream syncs must review the two compatibility
-constants in `codex-rs/build-info/src/lib.rs` alongside the imported backend and
-model catalog.
 
 ## License
 
