@@ -1,10 +1,11 @@
 ---
 source: tui/src/app_shell/tool_output_tests.rs
+assertion_line: 15
 expression: "render_output(&output, 100, 30)"
 ---
 
 
-  ╭ Tool output · exec cargo build --workspace --all-targets ────────────────────────────────────╮
+  ╭ Tool output ─────────────────────────────────────────────────────────────────────────────────╮
   │ ● Running  Live output updates automatically                                                 │
   │ Item  exec-42                                                                                │
   │ build line 09: compiling a representative workspace crate                                    │
@@ -28,5 +29,5 @@ expression: "render_output(&output, 100, 30)"
   │ build line 27: compiling a representative workspace crate                                    │
   │ build line 28: compiling a representative workspace crate                                    │
   │ build line 29: compiling a representative workspace crate                                    │
-  │  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  running · 10-30/30                         │
+  │  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  running · 14-34/34                         │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯

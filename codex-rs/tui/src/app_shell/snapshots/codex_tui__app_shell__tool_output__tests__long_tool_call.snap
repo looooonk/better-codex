@@ -1,0 +1,25 @@
+---
+source: tui/src/app_shell/tool_output_tests.rs
+assertion_line: 29
+expression: "render_output(&output, 72, 22)"
+---
+
+
+  ╭ Tool output ─────────────────────────────────────────────────────╮
+  │ ✓ Completed  Full captured output                                │
+  │ Item  exec-long-command                                          │
+  │ Tool call                                                        │
+  │ │ exec /bin/zsh -lc "rg -n 'unrecognized configuration|          │
+  │ │ ignoring.*configuration' codex-rs/config/src/strict_config.rs  │
+  │ │ codex-rs/config/src/strict_config_tests.rs"                    │
+  │                                                                  │
+  │ Output                                                           │
+  │ first match                                                      │
+  │ second match                                                     │
+  │ last match                                                       │
+  │                                                                  │
+  │                                                                  │
+  │                                                                  │
+  │                                                                  │
+  │  j/k scroll  PgUp/PgDn  Esc  completed · 1-9/9                   │
+  ╰──────────────────────────────────────────────────────────────────╯

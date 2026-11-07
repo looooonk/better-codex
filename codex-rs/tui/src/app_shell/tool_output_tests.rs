@@ -17,6 +17,37 @@ fn renders_wide_and_compact_tool_output_popups() {
 }
 
 #[test]
+fn long_call_wraps_inside_the_pane_and_scrolls_to_output() {
+    let output = ToolOutputState::new(
+        ToolOutputTarget {
+            item_id: "exec-long-command".to_string(),
+            title: "exec /bin/zsh -lc \"rg -n 'unrecognized configuration|ignoring.*configuration' codex-rs/config/src/strict_config.rs codex-rs/config/src/strict_config_tests.rs\"".to_string(),
+            status: ToolBlockStatus::Success,
+        },
+        "first match\nsecond match\nlast match",
+    );
+    insta::assert_snapshot!("long_tool_call", render_output(&output, 72, 22));
+    output.scroll_to_bottom();
+    assert!(render_output(&output, 42, 14).contains("last match"));
+}
+
+#[test]
+fn title_updates_invalidate_the_open_document() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.tool_output = Some(ready_output(ToolBlockStatus::Success));
+    let output = shell.tool_output.as_ref().unwrap();
+    output.ready_viewport(/*width*/ 80, /*height*/ 20);
+    shell.update_open_tool_output_title(
+        "exec-42",
+        "exec updated command",
+        ToolBlockStatus::Success,
+    );
+    assert!(
+        render_output(shell.tool_output.as_ref().unwrap(), 80, 24).contains("exec updated command")
+    );
+}
+
+#[test]
 fn renders_truncated_tool_output_popup() {
     let output = ToolOutputState::new(
         ToolOutputTarget {

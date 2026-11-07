@@ -3,8 +3,6 @@ use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::terminal_output;
 use crate::session_transcript::TranscriptLines;
-use crate::wrapping::RtOptions;
-use crate::wrapping::word_wrap_lines;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -12,6 +10,9 @@ use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::ops::Deref;
+
+#[path = "tool_output_format.rs"]
+mod format;
 
 const TOOL_OUTPUT_PAGE_STEP: usize = 12;
 const TOOL_OUTPUT_HIGH_WATER_BYTES: usize = 256 * 1024;
@@ -187,13 +188,14 @@ pub(super) struct ToolOutputViewport {
 
 impl ToolOutputState {
     fn new(target: ToolOutputTarget, output: impl Into<ToolOutputBuffer>) -> Self {
+        let follow_tail = target.status == ToolBlockStatus::Running;
         Self {
             target,
             output: output.into(),
             wrapped_cache: RefCell::new(None),
             scroll: Cell::new(0),
             scroll_max: Cell::new(0),
-            follow_tail: Cell::new(true),
+            follow_tail: Cell::new(follow_tail),
         }
     }
 
@@ -221,11 +223,7 @@ impl ToolOutputState {
             .as_ref()
             .is_none_or(|cache| cache.width != width);
         if needs_wrap {
-            let mut lines = codex_ansi_escape::ansi_escape(&self.output).lines;
-            if lines.is_empty() {
-                lines.push(Default::default());
-            }
-            let lines = word_wrap_lines(lines, RtOptions::new(width));
+            let lines = format::document_lines(&self.target.title, &self.output, width);
             *self.wrapped_cache.borrow_mut() = Some(WrappedOutputCache { width, lines });
         }
         let cache = self.wrapped_cache.borrow();
@@ -395,6 +393,7 @@ impl ShellState {
             && state.target.item_id == item_id
         {
             state.target.title = title.to_string();
+            state.wrapped_cache.get_mut().take();
             state.update_status(status);
         }
     }

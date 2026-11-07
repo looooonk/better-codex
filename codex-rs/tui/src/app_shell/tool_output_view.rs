@@ -16,8 +16,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 
 pub(super) fn render_tool_output(output: &ToolOutputState, screen: Rect, buf: &mut Buffer) {
-    let title = format!(" Tool output · {} ", output.target.title);
-    let geometry = render_scrollback_frame(screen, title, buf);
+    let geometry = render_scrollback_frame(screen, " Tool output ", buf);
     let (glyph, label, detail, color, footer_mode) =
         status_visual(output.target.status, output.is_truncated());
     let header_width = usize::from(geometry.header.width);
