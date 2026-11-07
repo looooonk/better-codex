@@ -2,6 +2,43 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn credit_balances_round_to_whole_numbers_and_preserve_non_numeric_values() {
+    let cases = [
+        ("62500.000000", "62500"),
+        ("12.49", "12"),
+        ("12.50", "13"),
+        ("0.6", "1"),
+        ("0.4", "0"),
+        ("$12.34", "$12.34"),
+        ("unavailable", "unavailable"),
+        ("NaN", "NaN"),
+        ("inf", "inf"),
+    ];
+    for (balance, expected) in cases {
+        let limit = RateLimitSnapshot {
+            limit_id: None,
+            limit_name: None,
+            normal_model_slug: None,
+            primary: None,
+            secondary: None,
+            credits: Some(codex_app_server_protocol::CreditsSnapshot {
+                has_credits: true,
+                unlimited: false,
+                balance: Some(balance.into()),
+            }),
+            individual_limit: None,
+            spend_control_reached: None,
+            plan_type: None,
+            rate_limit_reached_type: None,
+        };
+        assert_eq!(
+            credits_and_resets_line(&[limit], Some(2)).to_string(),
+            format!("credits {expected} | resets 2")
+        );
+    }
+}
+
+#[test]
 fn usage_bar_rounds_to_nearest_segment_and_clamps_to_ten_segments() {
     let cases = [
         (-10, 0),

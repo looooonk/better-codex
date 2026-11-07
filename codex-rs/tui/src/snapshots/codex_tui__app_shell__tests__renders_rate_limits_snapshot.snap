@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
+assertion_line: 1964
 expression: "render_shell(&shell, area)"
 ---
                                                   │
@@ -42,6 +43,6 @@ expression: "render_shell(&shell, area)"
 ╭────────────────────────────────────────────────╮│▎  spend 75% left
 │◆ MESSAGE  1:37                                 ││▎━━━━━━━━━━ 95% Background 2h
 │> Summarize the new shell architecture          ││▎━━━━━━━━━━ 41% GPT-5.3-Codex-Spark 6h
-│                                                ││▎credits $12.34 | resets 2
+│                                                ││▎credits 62500 | resets 2
 │                                                ││
 ╰────────────────────────────────────────────────╯│

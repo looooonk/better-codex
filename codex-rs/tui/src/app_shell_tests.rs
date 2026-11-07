@@ -1908,7 +1908,7 @@ fn renders_rate_limits_snapshot() {
             credits: Some(codex_app_server_protocol::CreditsSnapshot {
                 has_credits: true,
                 unlimited: false,
-                balance: Some("$12.34".to_string()),
+                balance: Some("62500.000000".to_string()),
             }),
             individual_limit: Some(codex_app_server_protocol::SpendControlLimitSnapshot {
                 limit: "$100.00".to_string(),

@@ -100,7 +100,12 @@ pub(super) fn credits_and_resets_line(
             if credits.unlimited {
                 spans.push("unlimited".fg(palette::success()));
             } else if let Some(balance) = &credits.balance {
-                spans.push(balance.clone().into());
+                let balance = balance
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|value| value.is_finite())
+                    .map_or_else(|| balance.clone(), |value| format!("{:.0}", value.round()));
+                spans.push(balance.into());
             } else if !credits.has_credits {
                 spans.push("depleted".fg(palette::error()));
             } else {
