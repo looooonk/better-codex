@@ -3,6 +3,7 @@ use super::super::design::palette;
 use super::super::design::pane_style;
 use super::SelectorOption;
 use super::SelectorState;
+use crate::render::line_utils::prefix_lines;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
@@ -20,20 +21,19 @@ use ratatui::widgets::Widget;
 const MODAL_MARGIN: u16 = 2;
 pub(super) const MAX_MODAL_WIDTH: u16 = 68;
 pub(super) const MAX_MODAL_HEIGHT: u16 = 24;
-pub(super) const OPTION_HEIGHT: u16 = 2;
 const OPTION_PREFIX_WIDTH: usize = 6;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SelectorGeometry {
     pub(super) modal: Rect,
     pub(super) options: Rect,
     pub(super) footer: Rect,
-    pub(super) visible_options: usize,
+    pub(super) rows: Vec<(usize, Rect)>,
 }
 
 impl<T> SelectorState<T> {
     pub(in super::super) fn render(&self, area: Rect, pointer: Option<Position>, buf: &mut Buffer) {
-        let geometry = selector_geometry(area, self.options.len());
+        let geometry = selector_geometry(area, &self.options, self.selected);
         let hovered = pointer.and_then(|position| self.option_at(area, position));
         buf.set_style(area, Style::new().add_modifier(Modifier::DIM));
         Clear.render(geometry.modal, buf);
@@ -47,30 +47,21 @@ impl<T> SelectorState<T> {
             .title(Line::from(format!(" {} ", self.title)).bold())
             .render(geometry.modal, buf);
 
-        let scroll = self.visible_scroll(geometry.visible_options);
-        for (visible_index, option) in self
-            .options
-            .iter()
-            .skip(scroll)
-            .take(geometry.visible_options)
-            .enumerate()
-        {
-            let index = scroll + visible_index;
-            let area = Rect::new(
-                geometry.options.x,
-                geometry.options.y.saturating_add(
-                    u16::try_from(visible_index).unwrap_or(u16::MAX) * OPTION_HEIGHT,
-                ),
-                geometry.options.width,
-                OPTION_HEIGHT,
+        let scroll = geometry.rows.first().map_or(0, |(index, _)| *index);
+        for &(index, area) in &geometry.rows {
+            self.render_option(
+                area,
+                index,
+                &self.options[index],
+                hovered == Some(index),
+                buf,
             );
-            self.render_option(area, index, option, hovered == Some(index), buf);
         }
         Paragraph::new(selector_footer(
             self.selected,
             self.options.len(),
             scroll,
-            geometry.visible_options,
+            geometry.rows.len(),
             geometry.footer.width,
             self.key_hints.as_deref(),
         ))
@@ -100,10 +91,6 @@ impl<T> SelectorState<T> {
             .saturating_sub(OPTION_PREFIX_WIDTH + current_label.chars().count())
             .max(1);
         let label = first_wrapped_line(&option.label, label_width);
-        let detail_width = usize::from(area.width)
-            .saturating_sub(OPTION_PREFIX_WIDTH)
-            .max(1);
-        let detail = first_wrapped_line(&option.detail, detail_width);
         let pointer = if selected {
             "›".fg(palette::focus()).bold()
         } else {
@@ -129,22 +116,25 @@ impl<T> SelectorState<T> {
         } else {
             "".into()
         };
-        let lines = vec![
-            Line::from(vec![
-                pointer,
-                " ".into(),
-                shortcut,
-                " ".into(),
-                current,
-                " ".into(),
-                label,
-                current_label,
-            ]),
-            Line::from(vec![
-                " ".repeat(OPTION_PREFIX_WIDTH).into(),
-                detail.fg(palette::muted()),
-            ]),
-        ];
+        let mut lines = vec![Line::from(vec![
+            pointer,
+            " ".into(),
+            shortcut,
+            " ".into(),
+            current,
+            " ".into(),
+            label,
+            current_label,
+        ])];
+        let indent = " ".repeat(OPTION_PREFIX_WIDTH).into();
+        lines.extend(prefix_lines(
+            wrapped_detail(&option.detail, area.width)
+                .into_iter()
+                .map(|line| Line::from(line.into_owned()).fg(palette::muted()))
+                .collect(),
+            indent,
+            " ".repeat(OPTION_PREFIX_WIDTH).into(),
+        ));
         Paragraph::new(lines)
             .style(pane_style(background))
             .render(area, buf);
@@ -197,14 +187,37 @@ fn selector_footer(
     ])
 }
 
-pub(super) fn selector_geometry(area: Rect, option_count: usize) -> SelectorGeometry {
+pub(super) fn selector_geometry<T>(
+    area: Rect,
+    choices: &[SelectorOption<T>],
+    selected: usize,
+) -> SelectorGeometry {
     let available_width = area.width.saturating_sub(MODAL_MARGIN.saturating_mul(2));
-    let available_height = area.height.saturating_sub(MODAL_MARGIN.saturating_mul(2));
     let width = available_width.min(MAX_MODAL_WIDTH);
-    let option_count = u16::try_from(option_count.max(1)).unwrap_or(u16::MAX);
-    let desired_height = option_count.saturating_mul(OPTION_HEIGHT).saturating_add(3);
+    let content_width = width.saturating_sub(2);
+    let content_width = content_width.saturating_sub(u16::from(content_width > 2) * 2);
+    let heights = choices
+        .iter()
+        .map(|option| {
+            u16::try_from(wrapped_detail(&option.detail, content_width).len())
+                .unwrap_or(u16::MAX)
+                .saturating_add(1)
+        })
+        .collect::<Vec<_>>();
+    let desired_height = heights
+        .iter()
+        .fold(3u16, |sum, height| sum.saturating_add(*height));
+    let selected_height = heights
+        .get(selected)
+        .copied()
+        .unwrap_or_default()
+        .saturating_add(3);
+    let available_height = area
+        .height
+        .saturating_sub(MODAL_MARGIN.saturating_mul(2))
+        .max(selected_height.min(area.height));
     let height = desired_height
-        .min(MAX_MODAL_HEIGHT)
+        .min(MAX_MODAL_HEIGHT.max(selected_height))
         .min(available_height)
         .max(available_height.min(5));
     let modal = Rect::new(
@@ -229,7 +242,7 @@ pub(super) fn selector_geometry(area: Rect, option_count: usize) -> SelectorGeom
             .saturating_sub(horizontal_padding.saturating_mul(2)),
         inner.height,
     );
-    let footer_height = u16::from(content.height > OPTION_HEIGHT);
+    let footer_height = u16::from(content.height > 2);
     let option_height = content.height.saturating_sub(footer_height);
     let options = Rect::new(content.x, content.y, content.width, option_height);
     let footer = Rect::new(
@@ -238,12 +251,38 @@ pub(super) fn selector_geometry(area: Rect, option_count: usize) -> SelectorGeom
         content.width,
         footer_height,
     );
+    let mut scroll = selected.min(choices.len().saturating_sub(1));
+    let mut used_height = heights.get(scroll).copied().unwrap_or_default();
+    while scroll > 0 && used_height.saturating_add(heights[scroll - 1]) <= options.height {
+        scroll -= 1;
+        used_height = used_height.saturating_add(heights[scroll]);
+    }
+    let mut rows = Vec::new();
+    let mut y = options.y;
+    for (index, &height) in heights.iter().enumerate().skip(scroll) {
+        let remaining = options.bottom().saturating_sub(y);
+        if remaining == 0 || (height > remaining && !rows.is_empty()) {
+            break;
+        }
+        let height = height.min(remaining);
+        rows.push((index, Rect::new(options.x, y, options.width, height)));
+        y = y.saturating_add(height);
+    }
     SelectorGeometry {
         modal,
         options,
         footer,
-        visible_options: usize::from(options.height / OPTION_HEIGHT),
+        rows,
     }
+}
+
+fn wrapped_detail(text: &str, width: u16) -> Vec<std::borrow::Cow<'_, str>> {
+    textwrap::wrap(
+        text,
+        usize::from(width)
+            .saturating_sub(OPTION_PREFIX_WIDTH)
+            .max(1),
+    )
 }
 
 fn first_wrapped_line(text: &str, width: usize) -> String {

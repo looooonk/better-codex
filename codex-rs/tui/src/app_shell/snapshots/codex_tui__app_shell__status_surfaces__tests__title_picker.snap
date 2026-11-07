@@ -1,6 +1,6 @@
 ---
 source: tui/src/app_shell/status_surfaces_tests.rs
-assertion_line: 41
+assertion_line: 101
 expression: rendered
 ---
 
@@ -18,6 +18,7 @@ expression: rendered
                 │       Current working directory                                  │
                 │   6 ○ [ ] activity                                               │
                 │       Spinner while working, action-required message while       │
+                │       blocked                                                    │
                 │   7 ○ [ ] run-state                                              │
                 │       Compact session run-state text (Ready, Working, Thinking)  │
                 │   8 ○ [x] thread-name                                            │
@@ -26,6 +27,5 @@ expression: rendered
                 │       Current thread title, or thread identifier when unnamed    │
                 │   · ○ [ ] git-branch                                             │
                 │       Current Git branch (omitted when unavailable)              │
-                │                                                                  │
                 │  wheel / j k  Enter select  Esc cancel  1/27 ↓                   │
                 ╰──────────────────────────────────────────────────────────────────╯

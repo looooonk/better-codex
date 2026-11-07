@@ -53,7 +53,7 @@ fn app_theme_selector_renders_all_themes_and_marks_the_current_one() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 20,
     );
-    let geometry = selector_geometry(area, state.options.len());
+    let geometry = selector_geometry(area, &state.options, state.selected);
     let mut buffer = Buffer::empty(area);
 
     state.render(area, /*pointer*/ None, &mut buffer);
@@ -65,6 +65,9 @@ fn app_theme_selector_renders_all_themes_and_marks_the_current_one() {
 #[test]
 fn movement_keys_clamp_and_keep_the_selection_visible() {
     let mut state = SelectorState::new("Choices", (0..8).map(option).collect());
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 13,
+    );
 
     for _ in 0..5 {
         assert_eq!(
@@ -72,22 +75,46 @@ fn movement_keys_clamp_and_keep_the_selection_visible() {
             SelectorOutcome::Pending
         );
     }
-    assert_eq!((state.selected, state.visible_scroll(3)), (5, 3));
+    assert_eq!(
+        (
+            state.selected,
+            selector_geometry(area, &state.options, state.selected).rows[0].0
+        ),
+        (5, 3)
+    );
 
     assert_eq!(
         state.handle_key(key(KeyCode::Char('g'))),
         SelectorOutcome::Pending
     );
-    assert_eq!((state.selected, state.visible_scroll(3)), (0, 0));
+    assert_eq!(
+        (
+            state.selected,
+            selector_geometry(area, &state.options, state.selected).rows[0].0
+        ),
+        (0, 0)
+    );
 
     assert_eq!(
         state.handle_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT)),
         SelectorOutcome::Pending
     );
-    assert_eq!((state.selected, state.visible_scroll(3)), (7, 5));
+    assert_eq!(
+        (
+            state.selected,
+            selector_geometry(area, &state.options, state.selected).rows[0].0
+        ),
+        (7, 5)
+    );
 
     assert_eq!(state.handle_key(key(KeyCode::Up)), SelectorOutcome::Pending);
-    assert_eq!((state.selected, state.visible_scroll(3)), (6, 4));
+    assert_eq!(
+        (
+            state.selected,
+            selector_geometry(area, &state.options, state.selected).rows[0].0
+        ),
+        (6, 4)
+    );
 }
 
 #[test]
@@ -120,7 +147,7 @@ fn modal_geometry_is_centered_and_bounded() {
         /*x*/ 7, /*y*/ 3, /*width*/ 120, /*height*/ 50,
     );
 
-    let geometry = selector_geometry(area, state.options.len());
+    let geometry = selector_geometry(area, &state.options, state.selected);
 
     assert_eq!(geometry.modal.width, MAX_MODAL_WIDTH);
     assert_eq!(geometry.modal.height, MAX_MODAL_HEIGHT);
@@ -132,7 +159,7 @@ fn modal_geometry_is_centered_and_bounded() {
         geometry.modal.y.saturating_sub(area.y),
         area.height.saturating_sub(geometry.modal.height) / 2
     );
-    assert_eq!(geometry.visible_options, 10);
+    assert_eq!(geometry.rows.len(), 10);
 }
 
 #[test]
@@ -142,14 +169,14 @@ fn narrow_geometry_stays_inside_its_bounds() {
         /*x*/ 4, /*y*/ 2, /*width*/ 24, /*height*/ 8,
     );
 
-    let geometry = selector_geometry(area, state.options.len());
+    let geometry = selector_geometry(area, &state.options, state.selected);
 
     assert!(area.contains(Position::new(geometry.modal.x, geometry.modal.y)));
     assert!(geometry.modal.right() <= area.right());
     assert!(geometry.modal.bottom() <= area.bottom());
     assert_eq!(geometry.modal.width, 20);
-    assert_eq!(geometry.modal.height, 4);
-    assert_eq!(geometry.visible_options, 1);
+    assert_eq!(geometry.modal.height, 8);
+    assert_eq!(geometry.rows.len(), 1);
 }
 
 #[test]
@@ -184,9 +211,9 @@ fn option_hit_testing_uses_both_rows_and_the_visible_scroll_window() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 13,
     );
-    let geometry = selector_geometry(area, state.options.len());
+    let geometry = selector_geometry(area, &state.options, state.selected);
     state.set_selected(7);
-    let scroll = state.visible_scroll(geometry.visible_options);
+    let scroll = selector_geometry(area, &state.options, state.selected).rows[0].0;
 
     assert_eq!(
         state.option_at(area, Position::new(geometry.options.x, geometry.options.y)),
@@ -218,11 +245,8 @@ fn clicking_an_option_selects_and_returns_its_value() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 20,
     );
-    let geometry = selector_geometry(area, state.options.len());
-    let position = Position::new(
-        geometry.options.x,
-        geometry.options.y.saturating_add(OPTION_HEIGHT),
-    );
+    let geometry = selector_geometry(area, &state.options, state.selected);
+    let position = Position::new(geometry.options.x, geometry.rows[1].1.y);
 
     assert_eq!(
         state.select_at(area, position),
@@ -237,7 +261,7 @@ fn rendering_uses_two_rows_and_marks_current_and_selected_choices() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 20,
     );
-    let geometry = selector_geometry(area, state.options.len());
+    let geometry = selector_geometry(area, &state.options, state.selected);
     let mut buf = Buffer::empty(area);
 
     state.render(area, /*pointer*/ None, &mut buf);
@@ -269,4 +293,85 @@ fn buffer_text(buf: &Buffer, area: Rect) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[test]
+fn models_sort_by_numeric_generation_preserving_names_and_same_generation_order() {
+    let template: ModelPreset = codex_models_manager::bundled_models_response()
+        .unwrap()
+        .models
+        .remove(0)
+        .into();
+    let models = [
+        "custom",
+        "gpt-6-astra",
+        "gpt-6.9-sol",
+        "gpt-6.10-terra",
+        "gpt-6-sol",
+    ]
+    .map(|slug| ModelPreset {
+        model: slug.into(),
+        display_name: format!("Backend name for {slug}"),
+        description: "A model description.".into(),
+        show_in_picker: true,
+        ..template.clone()
+    });
+    let state = SelectorState::models("gpt-6.10-terra", &models);
+    let expected = [3, 2, 1, 4, 0].map(|index| {
+        let model = &models[index];
+        SelectorOption::new(
+            SelectorValue::Model(model.model.clone()),
+            &model.display_name,
+            &model.description,
+        )
+        .current(index == 3)
+    });
+    assert_eq!(state.options, expected);
+    assert_eq!(state.selected, 0);
+}
+
+#[test]
+fn model_descriptions_wrap_and_remain_clickable_when_scrolling_and_resizing() {
+    let models = codex_models_manager::bundled_models_response()
+        .unwrap()
+        .models
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<_>>();
+    let mut state = SelectorState::models("gpt-6.1-terra", &models);
+    for (width, height) in [(80, 26), (56, 26), (40, 26), (40, 11)] {
+        let area = Rect::new(/*x*/ 0, /*y*/ 0, width, height);
+        for index in 0..state.options.len() {
+            state.set_selected(index);
+            let geometry = selector_geometry(area, &state.options, state.selected);
+            let row = geometry.rows.iter().find(|(i, _)| *i == index).unwrap().1;
+            let mut buf = Buffer::empty(area);
+            state.render(area, /*pointer*/ None, &mut buf);
+            let detail = buffer_text(
+                &buf,
+                Rect {
+                    y: row.y + 1,
+                    height: row.height - 1,
+                    ..row
+                },
+            );
+            assert_eq!(
+                detail.split_whitespace().collect::<Vec<_>>().join(" "),
+                state.options[index].detail
+            );
+            for y in row.y..row.bottom() {
+                assert_eq!(state.option_at(area, Position::new(row.x, y)), Some(index));
+            }
+        }
+        for key_code in [KeyCode::Home, KeyCode::End] {
+            state.handle_key(key(key_code));
+            let mut buf = Buffer::empty(area);
+            state.render(area, /*pointer*/ None, &mut buf);
+            let geometry = selector_geometry(area, &state.options, state.selected);
+            insta::assert_snapshot!(
+                format!("wrapped_models_{width}_{height}_{key_code:?}"),
+                buffer_text(&buf, geometry.modal)
+            );
+        }
+    }
 }

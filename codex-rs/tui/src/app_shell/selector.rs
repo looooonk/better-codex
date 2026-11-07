@@ -16,7 +16,6 @@ use ratatui::layout::Rect;
 #[path = "selector_view.rs"]
 mod view;
 
-use view::OPTION_HEIGHT;
 use view::selector_geometry;
 
 #[cfg(test)]
@@ -112,35 +111,14 @@ impl<T> SelectorState<T> {
     }
 
     pub(super) fn option_at(&self, area: Rect, position: Position) -> Option<usize> {
-        let geometry = selector_geometry(area, self.options.len());
-        if geometry.visible_options == 0 || !geometry.options.contains(position) {
-            return None;
-        }
-        let visible_index =
-            usize::from(position.y.saturating_sub(geometry.options.y) / OPTION_HEIGHT);
-        if visible_index >= geometry.visible_options {
-            return None;
-        }
-        let index = self
-            .visible_scroll(geometry.visible_options)
-            .saturating_add(visible_index);
-        (index < self.options.len()).then_some(index)
+        selector_geometry(area, &self.options, self.selected)
+            .rows
+            .into_iter()
+            .find_map(|(index, row)| row.contains(position).then_some(index))
     }
 
     fn set_selected(&mut self, selected: usize) {
         self.selected = selected.min(self.options.len().saturating_sub(1));
-    }
-
-    fn visible_scroll(&self, viewport_len: usize) -> usize {
-        if self.options.is_empty() {
-            return 0;
-        }
-        let viewport_len = viewport_len.max(1);
-        let max_scroll = self.options.len().saturating_sub(viewport_len);
-        self.selected
-            .saturating_add(1)
-            .saturating_sub(viewport_len)
-            .min(max_scroll)
     }
 }
 
@@ -200,7 +178,7 @@ impl<T: Clone> SelectorState<T> {
     }
 
     pub(super) fn select_at(&mut self, area: Rect, position: Position) -> SelectorOutcome<T> {
-        if !selector_geometry(area, self.options.len())
+        if !selector_geometry(area, &self.options, self.selected)
             .modal
             .contains(position)
         {
@@ -223,22 +201,38 @@ impl<T: Clone> SelectorState<T> {
 
 impl SelectorState<SelectorValue> {
     pub(super) fn models(current: &str, models: &[ModelPreset]) -> Self {
-        let mut options = models
+        let mut models = models
             .iter()
             .filter(|model| model.show_in_picker)
+            .collect::<Vec<_>>();
+        models.sort_by_cached_key(|model| {
+            let generation = model
+                .model
+                .strip_prefix("gpt-")
+                .and_then(|suffix| suffix.split('-').next())
+                .and_then(|version| {
+                    version
+                        .split('.')
+                        .map(str::parse::<u32>)
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok()
+                });
+            std::cmp::Reverse(generation)
+        });
+        let mut options = models
+            .into_iter()
             .map(|model| {
                 let label = if model.display_name.trim().is_empty() {
                     model.model.clone()
                 } else {
                     model.display_name.clone()
                 };
-                let detail = if model.description.trim().is_empty() {
-                    model.model.clone()
-                } else {
-                    format!("{} - {}", model.model, model.description)
-                };
-                SelectorOption::new(SelectorValue::Model(model.model.clone()), label, detail)
-                    .current(model.model == current)
+                SelectorOption::new(
+                    SelectorValue::Model(model.model.clone()),
+                    label,
+                    &model.description,
+                )
+                .current(model.model == current)
             })
             .collect::<Vec<_>>();
         if options.is_empty() && !current.trim().is_empty() {

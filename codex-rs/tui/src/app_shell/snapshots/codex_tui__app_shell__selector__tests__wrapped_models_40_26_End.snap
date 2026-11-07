@@ -1,0 +1,27 @@
+---
+source: tui/src/app_shell/selector_tests.rs
+assertion_line: 327
+expression: "buffer_text(&buf, geometry.modal)"
+---
+╭ Select model ────────────────────╮
+│   4 ○ GPT-6-Sol                  │
+│       Previous generation        │
+│       workhorse model.           │
+│   5 ○ GPT-6-Luna                 │
+│       Fast and affordable model  │
+│       for easier tasks.          │
+│   6 ○ GPT-5.6-Sol                │
+│       Older generation workhorse │
+│       model.                     │
+│   7 ○ GPT-5.6-Terra              │
+│       Older balanced model for   │
+│       straightforward work.      │
+│   8 ○ GPT-5.6-Luna               │
+│       Older fast and efficient   │
+│       model.                     │
+│ › 9 ○ GPT-5.5                    │
+│       Legacy coding model.       │
+│                                  │
+│                                  │
+│  wheel / j k  Enter  Esc  ↑ 9/9  │
+╰──────────────────────────────────╯

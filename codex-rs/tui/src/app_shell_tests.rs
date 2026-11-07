@@ -17046,7 +17046,7 @@ async fn native_settings_select_models_and_service_tiers() {
         .expect("model selector should open");
     shell
         .handle_selector_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
             &mut backend,
         )
         .await

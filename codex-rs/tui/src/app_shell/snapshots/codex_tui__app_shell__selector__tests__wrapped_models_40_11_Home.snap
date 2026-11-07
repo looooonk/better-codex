@@ -1,0 +1,12 @@
+---
+source: tui/src/app_shell/selector_tests.rs
+assertion_line: 327
+expression: "buffer_text(&buf, geometry.modal)"
+---
+╭ Select model ────────────────────╮
+│ › 1 ○ GPT-6.1-Sol                │
+│       Latest workhorse model for │
+│       coding and everyday work.  │
+│                                  │
+│  wheel / j k  Enter  Esc  1/9 ↓  │
+╰──────────────────────────────────╯

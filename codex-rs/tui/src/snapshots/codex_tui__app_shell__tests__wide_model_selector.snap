@@ -1,5 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
+assertion_line: 3318
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
@@ -7,25 +8,25 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                 ╭ Select model ────────────────────────────────────────────────────╮
  ◆ CONVERSATION │ › 1 ● gpt-5-0  current                                           │
- ▎ SYSTEM  Bette│       gpt-5-0 - gpt-5-0 description                              │ions
+ ▎ SYSTEM  Bette│       gpt-5-0 description                                        │ions
  ▎ YOU  Create a│   2 ○ gpt-5-1                                                    │
-                │       gpt-5-1 - gpt-5-1 description                              │
+                │       gpt-5-1 description                                        │
  ▎ CODEX  Starte│   3 ○ gpt-5-2                                                    │
-          by app│       gpt-5-2 - gpt-5-2 description                              │
+          by app│       gpt-5-2 description                                        │
  ▎ PLAN  1. Buil│   4 ○ gpt-5-3                                                    │
-         2. Wire│       gpt-5-3 - gpt-5-3 description                              │0000001
+         2. Wire│       gpt-5-3 description                                        │0000001
          3. Rend│   5 ○ gpt-5-4                                                    │ session list
-                │       gpt-5-4 - gpt-5-4 description                              │
+                │       gpt-5-4 description                                        │
  ▌ tool exec jus│   6 ○ gpt-5-5                                                    │
-                │       gpt-5-5 - gpt-5-5 description                              │
+                │       gpt-5-5 description                                        │
  ▌ edited 3 file│   7 ○ gpt-5-6                                                    │
-                │       gpt-5-6 - gpt-5-6 description                              │
+                │       gpt-5-6 description                                        │
  ▎ CODEX  The ne│   8 ○ gpt-5-7                                                    │
-          surfac│       gpt-5-7 - gpt-5-7 description                              │
+          surfac│       gpt-5-7 description                                        │
                 │   9 ○ gpt-5-8                                                    │
-                │       gpt-5-8 - gpt-5-8 description                              │
+                │       gpt-5-8 description                                        │
                 │   · ○ gpt-5-9                                                    │
-                │       gpt-5-9 - gpt-5-9 description                              │
+                │       gpt-5-9 description                                        │
 ╭───────────────│                                                                  │
 │◆ MESSAGE  1:37│  wheel / j k  Enter select  Esc cancel  1/12 ↓                   │
 │> Summarize the╰──────────────────────────────────────────────────────────────────╯

@@ -1,6 +1,6 @@
 ---
 source: tui/src/app_shell/settings/persistence_tests.rs
-assertion_line: 71
+assertion_line: 103
 expression: rendered
 ---
 
@@ -17,11 +17,11 @@ expression: rendered
          3. Render da│       Let Codex request approval when an action needs it.        │
                      │ › 2 ● Unless trusted (this session)  current                     │
  ▌ tool exec just tes│       Ask before commands that are not known to be safe. Saved   │
-                     │   3 ○ Never                                                      │
- ▌ edited 3 files +12│       Never pause the agent to request approval.                 │
-                     │  wheel / j k  Enter select  Esc cancel  2/3                      │
- ▎ CODEX  The new she╰──────────────────────────────────────────────────────────────────╯
-
+                     │       defaults stay unchanged.                                   │
+ ▌ edited 3 files +12│   3 ○ Never                                                      │
+                     │       Never pause the agent to request approval.                 │
+ ▎ CODEX  The new she│  wheel / j k  Enter select  Esc cancel  2/3                      │
+                     ╰──────────────────────────────────────────────────────────────────╯
 
 
 

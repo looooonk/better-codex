@@ -1,0 +1,12 @@
+---
+source: tui/src/app_shell/selector_tests.rs
+assertion_line: 327
+expression: "buffer_text(&buf, geometry.modal)"
+---
+╭ Select model ────────────────────╮
+│ › 9 ○ GPT-5.5                    │
+│       Legacy coding model.       │
+│                                  │
+│                                  │
+│  wheel / j k  Enter  Esc  ↑ 9/9  │
+╰──────────────────────────────────╯
