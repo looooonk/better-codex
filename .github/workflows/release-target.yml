@@ -1,0 +1,299 @@
+name: release target
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      profile:
+        default: release
+        type: string
+      benchmark:
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  binaries:
+    name: application
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 240
+    defaults:
+      run:
+        working-directory: codex-rs
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      STABLE_GIT_COMMIT: ${{ inputs.sha }}
+      CARGO_PROFILE_RELEASE_DEBUG: "none"
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
+      CARGO_PROFILE_RELEASE_LTO: ${{ inputs.profile == 'off16' && 'off' || 'thin' }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.profile == 'release' && '4' || '16' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          toolchain: 1.95.0
+          targets: ${{ inputs.target }}
+
+      - if: ${{ runner.os == 'Linux' }}
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.14.0
+          use-cache: false
+
+      - if: ${{ runner.os == 'Linux' }}
+        name: Install musl build tools
+        env:
+          TARGET: ${{ inputs.target }}
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+
+      - if: ${{ runner.os == 'Linux' }}
+        name: Configure musl build
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >>"$GITHUB_ENV"
+          target_no_jitter="AWS_LC_SYS_NO_JITTER_ENTROPY_${{ inputs.target }}"
+          echo "${target_no_jitter//-/_}=1" >>"$GITHUB_ENV"
+
+      - name: Configure sandboxed rusty_v8
+        uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: ${{ inputs.target }}
+
+      - name: Restore compiled Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: codex-rs
+          shared-key: release-${{ inputs.target }}-${{ inputs.profile }}
+          cache-bin: false
+
+      - if: ${{ runner.os == 'Linux' }}
+        name: Build bubblewrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ inputs.target }}"
+          cargo build --locked --target "$target" --release --bin bwrap
+          bwrap="target/${target}/release/bwrap"
+          strip --strip-debug --strip-unneeded "$bwrap"
+          echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >>"$GITHUB_ENV"
+
+      - name: Build binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --target "${{ inputs.target }}" --release --timings \
+            --bin codex \
+            --bin codex-code-mode-host \
+            --bin codex-exec-server
+
+      - name: Strip binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ inputs.target }}/release"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            strip -S -x "$release_dir/codex" "$release_dir/codex-code-mode-host" "$release_dir/codex-exec-server"
+          else
+            strip --strip-debug --strip-unneeded \
+              "$release_dir/codex" \
+              "$release_dir/codex-code-mode-host" \
+              "$release_dir/codex-exec-server"
+          fi
+
+      - name: Bundle application binaries
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          binaries=(codex codex-code-mode-host codex-exec-server)
+          if [[ "$TARGET" == *linux* ]]; then binaries+=(bwrap); fi
+          tar -cf "${RUNNER_TEMP}/binaries.tar" -C "target/${TARGET}/release" "${binaries[@]}"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: binaries-${{ inputs.target }}
+          path: ${{ runner.temp }}/binaries.tar
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: timings-${{ inputs.target }}
+          path: codex-rs/target/cargo-timings/
+          retention-days: 14
+      - name: Benchmark terminal rendering
+        if: inputs.benchmark
+        shell: bash
+        env:
+          CARGO_PROFILE_BENCH_DEBUG: "none"
+          CARGO_PROFILE_BENCH_LTO: ${{ env.CARGO_PROFILE_RELEASE_LTO }}
+          CARGO_PROFILE_BENCH_CODEGEN_UNITS: ${{ env.CARGO_PROFILE_RELEASE_CODEGEN_UNITS }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          command -v just >/dev/null || brew install just
+          just bench --target "$TARGET" --exclude codex-utils-image -- --sample-count 100 --sample-size 10 \
+            2>&1 | tee "${RUNNER_TEMP}/render-benchmark.txt"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: inputs.benchmark
+        with:
+          name: render-benchmark-${{ inputs.target }}
+          path: ${{ runner.temp }}/render-benchmark.txt
+          retention-days: 14
+
+  voice:
+    name: voice
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
+    env:
+      STABLE_GIT_COMMIT: ${{ inputs.sha }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Set up Bazel for native voice
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-version: 1.28.1
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: release-voice
+
+      - name: Build native voice helper and runtime
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          voice_target="${TARGET/-linux-musl/-linux-gnu}"
+          case "$voice_target" in
+            aarch64-apple-darwin) prefix=macos_aarch64 ;;
+            x86_64-apple-darwin) prefix=macos_x86_64 ;;
+            aarch64-unknown-linux-gnu) prefix=linux_aarch64 ;;
+            x86_64-unknown-linux-gnu) prefix=linux_x86_64 ;;
+            *) exit 1 ;;
+          esac
+          bazel build -c opt //codex-rs/voice-host:codex-voice-host //third_party/voice:native_runtime
+          output="${RUNNER_TEMP}/better-codex-voice"
+          mkdir -p "$output"
+          python3 third_party/voice/release_runtime.py stage \
+            --target "$voice_target" \
+            --source "bazel-bin/third_party/voice/native_runtime_${prefix}" \
+            --output "$output/runtime"
+          cp bazel-bin/codex-rs/voice-host/codex-voice-host "$output/codex-voice-host"
+          chmod 0755 "$output/codex-voice-host"
+          python3 third_party/voice/release_runtime.py seal \
+            --target "$voice_target" --output "$output/runtime"
+
+      - name: Bundle voice runtime
+        shell: bash
+        run: tar -cf "${RUNNER_TEMP}/voice.tar" -C "${RUNNER_TEMP}/better-codex-voice" .
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: voice-${{ inputs.target }}
+          path: ${{ runner.temp }}/voice.tar
+          compression-level: 0
+          retention-days: 1
+
+  package:
+    name: package
+    needs: [binaries, voice]
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: codex-rs
+    env:
+      STABLE_GIT_COMMIT: ${{ inputs.sha }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binaries-${{ inputs.target }}
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: voice-${{ inputs.target }}
+          path: ${{ runner.temp }}
+      - name: Extract build outputs
+        shell: bash
+        run: |
+          mkdir -p release-binaries "${RUNNER_TEMP}/better-codex-voice"
+          tar -xf "${RUNNER_TEMP}/binaries.tar" -C release-binaries
+          tar -xf "${RUNNER_TEMP}/voice.tar" -C "${RUNNER_TEMP}/better-codex-voice"
+      - name: Build release archive
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          asset="better-codex-package-${TARGET}.tar.gz"
+          args=(
+            --target "$TARGET"
+            --version "$VERSION"
+            --codex-bin "release-binaries/codex"
+            --code-mode-host-bin "release-binaries/codex-code-mode-host"
+            --exec-server-bin "release-binaries/codex-exec-server"
+            --voice-host-bin "${RUNNER_TEMP}/better-codex-voice/codex-voice-host"
+            --voice-runtime-dir "${RUNNER_TEMP}/better-codex-voice/runtime"
+            --build-commit "$STABLE_GIT_COMMIT"
+            --output "dist/${asset}"
+          )
+          if [[ "$TARGET" == *linux* ]]; then
+            args+=(--bwrap-bin "release-binaries/bwrap")
+          fi
+          python3 "${GITHUB_WORKSPACE}/scripts/build_release_package.py" "${args[@]}" \
+            >"dist/${asset}.sha256"
+
+      - name: Smoke test release archive
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          smoke_dir="${RUNNER_TEMP}/better-codex-smoke"
+          mkdir -p "$smoke_dir"
+          tar -xzf "dist/better-codex-package-${TARGET}.tar.gz" \
+            -C "$smoke_dir" --strip-components 1
+          "$smoke_dir/bin/codex" --version | grep -F "$VERSION"
+          test -x "$smoke_dir/bin/codex-code-mode-host"
+          "$smoke_dir/bin/codex-exec-server" --help >/dev/null
+          test -x "$smoke_dir/codex-path/rg"
+          test -x "$smoke_dir/codex-resources/voice/bin/codex-voice-host"
+          test "$("$smoke_dir/codex-resources/voice/bin/codex-voice-host" --build-commit)" = "$STABLE_GIT_COMMIT"
+          test -f "$smoke_dir/codex-resources/voice/manifest.json"
+          if [[ "$TARGET" == *linux* ]]; then
+            test -x "$smoke_dir/codex-resources/bwrap"
+          fi
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: release-${{ inputs.target }}
+          path: |
+            codex-rs/dist/*.tar.gz
+            codex-rs/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
