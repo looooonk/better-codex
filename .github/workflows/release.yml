@@ -27,6 +27,10 @@ on:
         description: Also measure terminal rendering (Intel Mac only)
         type: boolean
         default: false
+      compiler_cache:
+        description: Also cache individual Rust compiler outputs
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ inputs.release_tag || github.run_id }}
@@ -97,6 +101,7 @@ jobs:
       version: ${{ needs.validate.outputs.version }}
       profile: ${{ inputs.profile }}
       benchmark: ${{ inputs.benchmark }}
+      compiler_cache: ${{ inputs.compiler_cache }}
 
   publish:
     if: inputs.release_tag != ''
