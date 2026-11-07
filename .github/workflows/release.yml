@@ -27,6 +27,10 @@ on:
         description: Also measure terminal rendering (Intel Mac only)
         type: boolean
         default: false
+      benchmark_only:
+        description: Run only terminal-rendering benchmarks (Intel Mac only)
+        type: boolean
+        default: false
       compiler_cache:
         description: Also cache individual Rust compiler outputs
         type: boolean
@@ -60,6 +64,7 @@ jobs:
           PROFILE: ${{ inputs.profile }}
           TARGETS: ${{ inputs.targets }}
           BENCHMARK: ${{ inputs.benchmark }}
+          BENCHMARK_ONLY: ${{ inputs.benchmark_only }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
@@ -68,10 +73,10 @@ jobs:
             [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
             [[ "${RELEASE_TAG#v}" == "$version" ]]
             [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" && -z "$SOURCE_REF" ]]
-            [[ "$PROFILE" == release && "$TARGETS" == all && "$BENCHMARK" == false ]]
+            [[ "$PROFILE" == release && "$TARGETS" == all && "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ]]
           fi
           [[ -z "$REQUESTED_VERSION" || "$REQUESTED_VERSION" == "$version" ]]
-          [[ "$BENCHMARK" == false || "$TARGETS" == intel-mac ]]
+          [[ ( "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ) || "$TARGETS" == intel-mac ]]
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
           python3 - <<'PYTHON'
@@ -102,6 +107,7 @@ jobs:
       profile: ${{ inputs.profile }}
       benchmark: ${{ inputs.benchmark }}
       compiler_cache: ${{ inputs.compiler_cache }}
+      benchmark_only: ${{ inputs.benchmark_only }}
 
   publish:
     if: inputs.release_tag != ''

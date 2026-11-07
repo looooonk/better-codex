@@ -21,6 +21,9 @@ on:
       benchmark:
         default: false
         type: boolean
+      benchmark_only:
+        default: false
+        type: boolean
       compiler_cache:
         default: false
         type: boolean
@@ -112,6 +115,7 @@ jobs:
           echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >>"$GITHUB_ENV"
 
       - name: Build binaries
+        if: ${{ !inputs.benchmark_only }}
         shell: bash
         run: |
           set -euo pipefail
@@ -121,6 +125,7 @@ jobs:
             --bin codex-exec-server
 
       - name: Strip binaries
+        if: ${{ !inputs.benchmark_only }}
         shell: bash
         run: |
           set -euo pipefail
@@ -135,6 +140,7 @@ jobs:
           fi
 
       - name: Bundle application binaries
+        if: ${{ !inputs.benchmark_only }}
         shell: bash
         env:
           TARGET: ${{ inputs.target }}
@@ -143,18 +149,20 @@ jobs:
           if [[ "$TARGET" == *linux* ]]; then binaries+=(bwrap); fi
           tar -cf "${RUNNER_TEMP}/binaries.tar" -C "target/${TARGET}/release" "${binaries[@]}"
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: ${{ !inputs.benchmark_only }}
         with:
           name: binaries-${{ inputs.target }}
           path: ${{ runner.temp }}/binaries.tar
           compression-level: 0
           retention-days: 1
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: ${{ !inputs.benchmark_only }}
         with:
           name: timings-${{ inputs.target }}
           path: codex-rs/target/cargo-timings/
           retention-days: 14
       - name: Benchmark terminal rendering
-        if: inputs.benchmark
+        if: inputs.benchmark || inputs.benchmark_only
         shell: bash
         env:
           CARGO_PROFILE_BENCH_DEBUG: "none"
@@ -166,13 +174,14 @@ jobs:
           just bench --target "$TARGET" --exclude codex-utils-image -- --sample-count 100 --sample-size 10 \
             2>&1 | tee "${RUNNER_TEMP}/render-benchmark.txt"
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        if: inputs.benchmark
+        if: inputs.benchmark || inputs.benchmark_only
         with:
           name: render-benchmark-${{ inputs.target }}
           path: ${{ runner.temp }}/render-benchmark.txt
           retention-days: 14
 
   voice:
+    if: ${{ !inputs.benchmark_only }}
     name: voice
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 120
