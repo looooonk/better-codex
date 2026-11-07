@@ -47,6 +47,8 @@ pub(super) struct Preferences {
 #[derive(Clone, Default)]
 pub(super) struct StatusSurfaces {
     pub(super) preferences: Preferences,
+    // Saved CLI footer items do not opt the standalone shell into an extra row.
+    status_enabled: bool,
     layers: Option<ConfigLayerStack>,
     title: Arc<Mutex<ManagedTitle>>,
     pub(super) metadata: super::status_surface_metadata::StatusMetadata,
@@ -79,7 +81,7 @@ impl StatusSurfaces {
     }
 
     pub(super) fn status_visible(&self) -> bool {
-        !self.preferences.status.is_empty()
+        self.status_enabled && !self.preferences.status.is_empty()
     }
 }
 
@@ -301,6 +303,12 @@ impl ShellState {
     ) {
         match result {
             Ok(preferences) => {
+                if matches!(
+                    change,
+                    SurfaceChange::Items(Surface::StatusLine, _) | SurfaceChange::Colors(_)
+                ) {
+                    self.status_surfaces.status_enabled = true;
+                }
                 let applied = match change {
                     SurfaceChange::Items(Surface::StatusLine, items) => {
                         preferences

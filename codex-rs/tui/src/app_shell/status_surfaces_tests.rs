@@ -5,7 +5,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn configured_native_items_render_in_order_without_replacing_the_header() {
+fn conversation_layout_uses_native_header_with_saved_cli_status_items() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.context_token_usage.total_tokens = 56_000;
@@ -52,8 +52,22 @@ fn configured_native_items_render_in_order_without_replacing_the_header() {
             .join("\n");
         insta::assert_snapshot!(format!("status_line_{width}"), rendered);
         let layout = crate::app_shell::shell_layout::calculate(&shell, area).unwrap();
-        assert_eq!(layout.status.unwrap().bottom(), layout.transcript.y);
+        assert_eq!(layout.header.bottom(), layout.transcript.y);
     }
+}
+
+#[test]
+fn explicit_status_line_selection_enables_the_row_for_this_session() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.complete_status_surface(
+        SurfaceChange::Items(Surface::StatusLine, vec!["model-name".into()]),
+        /*selector*/ None,
+        Ok(Preferences {
+            status: vec![StatusLineItem::ModelName],
+            ..Preferences::default()
+        }),
+    );
+    assert!(shell.status_surfaces.status_visible());
 }
 
 #[test]

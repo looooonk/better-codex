@@ -1,17 +1,17 @@
 ---
 source: tui/src/app_shell/status_surfaces_tests.rs
-assertion_line: 26
+assertion_line: 53
 expression: rendered
 ---
 
   Dashboard  ◆ BC        gpt-5-codex ▾
 ────────────────────────────────────────
- Display controls | gpt-5-codex | Contex
 
  ◆ CONVERSATION
+          shell backed by app-server  │
           turns.                      │
  ▎ PLAN  1. Build shell               │
-         2. Wire transcript           │
+         2. Wire transcript           ┃
          3. Render dashboard          ┃
                                       ┃
  ▌ tool exec just test -p codex-tui   ┃
