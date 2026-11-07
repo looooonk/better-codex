@@ -1,0 +1,25 @@
+---
+source: tui/src/app_shell/tool_output_tests.rs
+assertion_line: 176
+expression: "render_output(&output, 72, 22)"
+---
+
+
+  ╭ Tool output ─────────────────────────────────────────────────────╮
+  │ ✓ Completed  Full captured output                                │
+  │ Item  result                                                     │
+  │ Tool call                                                        │
+  │ │ functions.exec                                                 │
+  │                                                                  │
+  │ Output · JSON · expanded text                                    │
+  │ {                                                                │
+  │   "exit_code": 0,                                                │
+  │   "output": Text                                                 │
+  │     │ first                                                      │
+  │     │ second                                                     │
+  │ }                                                                │
+  │                                                                  │
+  │                                                                  │
+  │                                                                  │
+  │  j/k scroll  PgUp/PgDn  r format  Esc  completed · 1-10/10       │
+  ╰──────────────────────────────────────────────────────────────────╯

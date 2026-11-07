@@ -15,5 +15,5 @@ expression: "render_output(&output, 54, 16)"
   │ ↪ workspace crate                              │
   │ build line 29: compiling a representative      │
   │ ↪ workspace crate                              │
-  │  ↑↓ scroll  PgUp/PgDn  Esc  running · 57-63/63 │
+  │  ↑↓ scroll  r format  Esc  running · 57-63/63  │
   ╰────────────────────────────────────────────────╯

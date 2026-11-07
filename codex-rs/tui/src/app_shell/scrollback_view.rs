@@ -204,10 +204,10 @@ fn agent_log_hints() -> [&'static str; 5] {
 
 fn tool_output_hints() -> [&'static str; 5] {
     [
-        "j/k scroll  PgUp/PgDn page  g/G ends  Esc close",
-        "j/k scroll  PgUp/PgDn  Esc",
-        "↑↓ scroll  PgUp/PgDn  Esc",
-        "↑↓  Esc",
+        "j/k scroll  PgUp/PgDn page  g/G ends  r format  Esc close",
+        "j/k scroll  PgUp/PgDn  r format  Esc",
+        "↑↓ scroll  r format  Esc",
+        "↑↓  r format  Esc",
         "",
     ]
 }

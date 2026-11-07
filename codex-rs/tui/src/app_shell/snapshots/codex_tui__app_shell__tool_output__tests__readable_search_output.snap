@@ -1,0 +1,27 @@
+---
+source: tui/src/app_shell/tool_output_tests.rs
+assertion_line: 157
+expression: "render_output(shell.tool_output.as_ref().unwrap(), 88, 24)"
+---
+
+
+  ╭ Tool output ─────────────────────────────────────────────────────────────────────╮
+  │ ✓ Completed  Full captured output                                                │
+  │ Item  exec-search                                                                │
+  │ Tool call                                                                        │
+  │ │ exec rg -n 'unrecognized configuration' codex-rs/config/src                    │
+  │                                                                                  │
+  │ Output · Search results                                                          │
+  │ codex-rs/config/src/strict_config.rs:304                                         │
+  │   "Ignoring unrecognized configuration settings. Check for typos or deprecated   │
+  │ ↪   settings."                                                                   │
+  │                                                                                  │
+  │ codex-rs/config/src/strict_config_tests.rs:278                                   │
+  │   "Warning text with literal \n escapes stays intact."                           │
+  │                                                                                  │
+  │                                                                                  │
+  │                                                                                  │
+  │                                                                                  │
+  │                                                                                  │
+  │  j/k scroll  PgUp/PgDn page  g/G ends  r format  Esc close  completed · 1-10/10  │
+  ╰──────────────────────────────────────────────────────────────────────────────────╯

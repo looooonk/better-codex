@@ -26,9 +26,12 @@ fn long_call_wraps_inside_the_pane_and_scrolls_to_output() {
         },
         "first match\nsecond match\nlast match",
     );
-    insta::assert_snapshot!("long_tool_call", render_output(&output, 72, 22));
+    insta::assert_snapshot!(
+        "long_tool_call",
+        render_output(&output, /*width*/ 72, /*height*/ 22)
+    );
     output.scroll_to_bottom();
-    assert!(render_output(&output, 42, 14).contains("last match"));
+    assert!(render_output(&output, /*width*/ 42, /*height*/ 14).contains("last match"));
 }
 
 #[test]
@@ -43,7 +46,12 @@ fn title_updates_invalidate_the_open_document() {
         ToolBlockStatus::Success,
     );
     assert!(
-        render_output(shell.tool_output.as_ref().unwrap(), 80, 24).contains("exec updated command")
+        render_output(
+            shell.tool_output.as_ref().unwrap(),
+            /*width*/ 80,
+            /*height*/ 24
+        )
+        .contains("exec updated command")
     );
 }
 
@@ -140,7 +148,71 @@ fn renders_normalized_terminal_controls_in_tool_output_popup() {
         "left\tright\r\nprogress 10%\rprogress 100%\n",
     );
 
-    insta::assert_snapshot!(render_output(&output, 72, 12));
+    insta::assert_snapshot!(render_output(
+        &output, /*width*/ 72, /*height*/ 16
+    ));
+}
+
+#[test]
+fn formatted_search_output_and_original_toggle() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.tool_output = Some(ToolOutputState::new(
+        ToolOutputTarget {
+            item_id: "exec-search".to_string(),
+            title: "exec rg -n 'unrecognized configuration' codex-rs/config/src".to_string(),
+            status: ToolBlockStatus::Success,
+        },
+        "codex-rs/config/src/strict_config.rs:304:    \"Ignoring unrecognized configuration settings. Check for typos or deprecated settings.\"\ncodex-rs/config/src/strict_config_tests.rs:278:    \"Warning text with literal \\n escapes stays intact.\"",
+    ));
+    insta::assert_snapshot!(
+        "readable_search_output",
+        render_output(
+            shell.tool_output.as_ref().unwrap(),
+            /*width*/ 88,
+            /*height*/ 24
+        )
+    );
+    assert!(shell.handle_tool_output_key(key(KeyCode::Char('r'))));
+    insta::assert_snapshot!(
+        "original_search_output",
+        render_output(
+            shell.tool_output.as_ref().unwrap(),
+            /*width*/ 88,
+            /*height*/ 24
+        )
+    );
+    assert!(shell.handle_tool_output_key(key(KeyCode::Char('r'))));
+    assert_eq!(
+        shell.tool_output.as_ref().unwrap().format,
+        format::OutputFormat::Readable
+    );
+}
+
+#[test]
+fn streamed_json_is_reformatted_when_completed() {
+    let mut output = ToolOutputState::new(
+        ToolOutputTarget {
+            item_id: "result".to_string(),
+            title: "functions.exec".to_string(),
+            status: ToolBlockStatus::Running,
+        },
+        r#"{"exit_code":0,"output":"first\n"#,
+    );
+    output.ready_viewport(/*width*/ 64, /*height*/ 20);
+    output.append_output(r#"second"}"#, ToolBlockStatus::Success);
+    insta::assert_snapshot!(render_output(
+        &output, /*width*/ 72, /*height*/ 22
+    ));
+}
+
+#[test]
+fn tool_output_handles_tiny_terminals() {
+    let output = ready_output(ToolBlockStatus::Success);
+    for width in [1, 4, 8, 20] {
+        for height in [1, 4, 8] {
+            render_output(&output, width, height);
+        }
+    }
 }
 
 #[test]

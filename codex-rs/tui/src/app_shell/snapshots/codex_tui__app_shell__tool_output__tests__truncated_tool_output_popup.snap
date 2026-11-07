@@ -1,6 +1,6 @@
 ---
 source: tui/src/app_shell/tool_output_tests.rs
-assertion_line: 65
+assertion_line: 71
 expression: "render_output(&output, 80, 16)"
 ---
 
@@ -11,9 +11,9 @@ expression: "render_output(&output, 80, 16)"
   │ Tool call                                                                │
   │ │ exec generate-large-report                                             │
   │                                                                          │
-  │ Output                                                                   │
+  │ Output · Text                                                            │
   │ ... earlier tool output omitted ...                                      │
   │ report line 2999: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
   │ report line 3000: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
-  │  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  completed · 1-7/3006   │
+  │  j/k scroll  PgUp/PgDn  r format  Esc  completed · 1-7/3006              │
   ╰──────────────────────────────────────────────────────────────────────────╯

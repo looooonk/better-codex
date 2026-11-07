@@ -29,5 +29,5 @@ expression: "render_output(&output, 100, 30)"
   │ build line 27: compiling a representative workspace crate                                    │
   │ build line 28: compiling a representative workspace crate                                    │
   │ build line 29: compiling a representative workspace crate                                    │
-  │  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  running · 14-34/34                         │
+  │  j/k scroll  PgUp/PgDn page  g/G ends  r format  Esc close  running · 14-34/34               │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯

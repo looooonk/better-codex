@@ -1,0 +1,16 @@
+---
+source: tui/src/app_shell/tool_output_format_tests.rs
+assertion_line: 60
+expression: "plain(document_lines(\"exec cat source.rs\",\n\"fn example() {\\n    let result = process_configuration_with_a_long_name(first_argument, second_argument);\\n\\n    result\\n}\",\n42, OutputFormat::Readable,))"
+---
+Tool call
+│ exec cat source.rs
+
+Output · Text
+fn example() {
+    let result =
+↪     process_configuration_with_a_long_na
+↪     me(first_argument, second_argument);
+
+    result
+}

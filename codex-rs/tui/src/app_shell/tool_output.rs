@@ -173,6 +173,7 @@ pub(super) struct ToolOutputState {
     scroll: Cell<usize>,
     scroll_max: Cell<usize>,
     follow_tail: Cell<bool>,
+    format: format::OutputFormat,
 }
 
 struct WrappedOutputCache {
@@ -196,6 +197,7 @@ impl ToolOutputState {
             scroll: Cell::new(0),
             scroll_max: Cell::new(0),
             follow_tail: Cell::new(follow_tail),
+            format: format::OutputFormat::default(),
         }
     }
 
@@ -223,7 +225,8 @@ impl ToolOutputState {
             .as_ref()
             .is_none_or(|cache| cache.width != width);
         if needs_wrap {
-            let lines = format::document_lines(&self.target.title, &self.output, width);
+            let lines =
+                format::document_lines(&self.target.title, &self.output, width, self.format);
             *self.wrapped_cache.borrow_mut() = Some(WrappedOutputCache { width, lines });
         }
         let cache = self.wrapped_cache.borrow();
@@ -407,6 +410,17 @@ impl ShellState {
         }
         if matches!(key.code, KeyCode::Esc) {
             self.close_tool_output();
+            return true;
+        }
+        if key.code == KeyCode::Char('r') {
+            if let Some(output) = &mut self.tool_output {
+                output.format = match output.format {
+                    format::OutputFormat::Readable => format::OutputFormat::Original,
+                    format::OutputFormat::Original => format::OutputFormat::Readable,
+                };
+                output.wrapped_cache.get_mut().take();
+                output.scroll_to_top();
+            }
             return true;
         }
         let Some(output) = &self.tool_output else {

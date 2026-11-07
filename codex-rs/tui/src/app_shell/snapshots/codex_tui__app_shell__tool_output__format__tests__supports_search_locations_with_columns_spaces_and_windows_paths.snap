@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell/tool_output_format_tests.rs
+assertion_line: 37
+expression: "plain(document_lines(\"exec rg -n warning .\",\n\"src/config.rs:304:    warning with a long explanation that wraps across the pane\\nC:\\\\work dir\\\\config.rs:12:9:  another match\\n36: a match without a filename\\n17:\\nfinal diagnostic\",\n48, OutputFormat::Readable,))"
+---
+Tool call
+│ exec rg -n warning .
+
+Output · Search results
+src/config.rs:304
+  warning with a long explanation that wraps
+↪   across the pane
+
+C:\work dir\config.rs:12:9
+  another match
+
+Line 36
+  a match without a filename
+
+Line 17
+
+final diagnostic

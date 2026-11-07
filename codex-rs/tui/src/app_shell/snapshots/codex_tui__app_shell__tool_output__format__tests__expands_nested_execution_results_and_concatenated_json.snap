@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/tool_output_format_tests.rs
+assertion_line: 11
+expression: "plain(document_lines(\"functions.exec\", output, 64, OutputFormat::Readable))"
+---
+Tool call
+│ functions.exec
+
+Output · JSON · expanded text
+{
+  "i": 0,
+  "value": {
+    "exit_code": 0,
+    "output": Text
+      │ first line
+      │   second line
+  }
+}
+
+{
+  "i": 1,
+  "value": {
+    "output": Text
+      │ {
+      │   "ok": true,
+      │   "count": 2
+      │ }
+  }
+}
