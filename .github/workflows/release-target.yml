@@ -44,7 +44,7 @@ jobs:
       STABLE_GIT_COMMIT: ${{ inputs.sha }}
       CARGO_PROFILE_RELEASE_DEBUG: "none"
       CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
-      CARGO_PROFILE_RELEASE_LTO: ${{ inputs.profile == 'off16' && 'off' || 'thin' }}
+      CARGO_PROFILE_RELEASE_LTO: ${{ startsWith(inputs.profile, 'off16') && 'off' || 'thin' }}
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.profile == 'release' && '4' || '16' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -81,6 +81,11 @@ jobs:
         uses: ./.github/actions/setup-rusty-v8
         with:
           target: ${{ inputs.target }}
+
+      - name: Configure optimization-level experiment
+        if: inputs.profile == 'off16-opt2'
+        shell: bash
+        run: echo "CARGO_PROFILE_RELEASE_OPT_LEVEL=2" >>"$GITHUB_ENV"
 
       - name: Restore compiled Rust dependencies
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -168,9 +173,11 @@ jobs:
           CARGO_PROFILE_BENCH_DEBUG: "none"
           CARGO_PROFILE_BENCH_LTO: ${{ env.CARGO_PROFILE_RELEASE_LTO }}
           CARGO_PROFILE_BENCH_CODEGEN_UNITS: ${{ env.CARGO_PROFILE_RELEASE_CODEGEN_UNITS }}
+          BUILD_PROFILE: ${{ inputs.profile }}
           TARGET: ${{ inputs.target }}
         run: |
           command -v just >/dev/null || brew install just
+          if [[ "$BUILD_PROFILE" == off16-opt2 ]]; then export CARGO_PROFILE_BENCH_OPT_LEVEL=2; fi
           just bench --target "$TARGET" --exclude codex-utils-image -- --sample-count 100 --sample-size 10 \
             2>&1 | tee "${RUNNER_TEMP}/render-benchmark.txt"
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

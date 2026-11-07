@@ -17,7 +17,7 @@ on:
         description: Compiler configuration (publishing requires release)
         type: choice
         default: release
-        options: [release, thin16, off16]
+        options: [release, thin16, off16, off16-opt2]
       targets:
         description: Platforms to build
         type: choice
