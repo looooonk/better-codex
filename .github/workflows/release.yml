@@ -22,7 +22,7 @@ on:
         description: Platforms to build
         type: choice
         default: all
-        options: [all, intel-mac, linux-arm]
+        options: [all, intel-mac, apple-silicon, linux-arm]
       benchmark:
         description: Also measure terminal rendering (Intel Mac only)
         type: boolean
@@ -89,6 +89,8 @@ jobs:
           ]
           if os.environ["TARGETS"] == "intel-mac":
               matrix = [matrix[1]]
+          elif os.environ["TARGETS"] == "apple-silicon":
+              matrix = [matrix[0]]
           elif os.environ["TARGETS"] == "linux-arm":
               matrix = [matrix[2]]
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
