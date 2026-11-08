@@ -138,7 +138,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo release-build --target "${{ inputs.target }}"
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            /usr/bin/time -l cargo release-build --target "${{ inputs.target }}"
+          else
+            /usr/bin/time -v cargo release-build --target "${{ inputs.target }}"
+          fi
 
       - name: Strip binaries
         if: ${{ !inputs.benchmark_only }}
