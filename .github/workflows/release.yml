@@ -1,5 +1,5 @@
 name: release
-run-name: ${{ inputs.release_tag && 'publish' || 'build' }} ${{ inputs.release_tag || inputs.source_ref || github.ref_name }} (${{ inputs.profile }})
+run-name: ${{ inputs.release_tag && 'publish' || inputs.benchmark_only && 'benchmark' || 'build' }} ${{ inputs.release_tag || inputs.source_ref || github.ref_name }} (release)
 
 on:
   workflow_dispatch:
@@ -13,25 +13,16 @@ on:
       version:
         description: Expected version; defaults to Cargo.toml
         type: string
-      profile:
-        description: Compiler configuration (publishing requires release)
-        type: choice
-        default: release
-        options: [release, off16-opt2]
       targets:
         description: Platforms to build
         type: choice
         default: all
         options: [all, intel-mac, apple-silicon, linux-arm, linux-x86]
       intel_builder:
-        description: Machine that compiles Intel Mac binaries (packages are tested on Intel)
+        description: Machine that compiles Intel Mac binaries (packages and benchmarks run on Intel)
         type: choice
         default: native
         options: [native, apple-silicon]
-      benchmark:
-        description: Also measure terminal rendering (Intel Mac only)
-        type: boolean
-        default: false
       benchmark_only:
         description: Run only terminal-rendering benchmarks (Intel Mac only)
         type: boolean
@@ -62,11 +53,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           SOURCE_REF: ${{ inputs.source_ref }}
           REQUESTED_VERSION: ${{ inputs.version }}
-          PROFILE: ${{ inputs.profile }}
           TARGETS: ${{ inputs.targets }}
-          BENCHMARK: ${{ inputs.benchmark }}
           BENCHMARK_ONLY: ${{ inputs.benchmark_only }}
-          INTEL_BUILDER: ${{ inputs.intel_builder }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
@@ -75,11 +63,10 @@ jobs:
             [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
             [[ "${RELEASE_TAG#v}" == "$version" ]]
             [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" && -z "$SOURCE_REF" ]]
-            [[ "$PROFILE" == release && "$TARGETS" == all && "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ]]
+            [[ "$TARGETS" == all && "$BENCHMARK_ONLY" == false ]]
           fi
           [[ -z "$REQUESTED_VERSION" || "$REQUESTED_VERSION" == "$version" ]]
-          [[ ( "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ) || "$TARGETS" == intel-mac ]]
-          [[ ( "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ) || "$INTEL_BUILDER" == native ]]
+          [[ "$BENCHMARK_ONLY" == false || "$TARGETS" == intel-mac ]]
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
           python3 - <<'PYTHON'
@@ -111,11 +98,9 @@ jobs:
     with:
       target: ${{ matrix.target }}
       runner: ${{ matrix.runner }}
-      build_runner: ${{ inputs.intel_builder == 'apple-silicon' && matrix.target == 'x86_64-apple-darwin' && 'macos-15' || matrix.runner }}
+      build_runner: ${{ !inputs.benchmark_only && inputs.intel_builder == 'apple-silicon' && matrix.target == 'x86_64-apple-darwin' && 'macos-15' || matrix.runner }}
       sha: ${{ needs.validate.outputs.sha }}
       version: ${{ needs.validate.outputs.version }}
-      profile: ${{ inputs.profile }}
-      benchmark: ${{ inputs.benchmark }}
       benchmark_only: ${{ inputs.benchmark_only }}
 
   publish:
