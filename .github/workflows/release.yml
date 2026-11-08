@@ -4,6 +4,10 @@ run-name: release ${{ inputs.release_tag || inputs.source_ref || github.ref_name
 on:
   workflow_dispatch:
     inputs:
+      cache_inventory:
+        description: Inspect the release cache without building
+        type: boolean
+        default: false
       release_tag:
         description: Tag to publish; leave empty for a build without publishing
         type: string
@@ -94,6 +98,7 @@ jobs:
           PYTHON
 
   build:
+    if: ${{ !inputs.cache_inventory }}
     needs: validate
     strategy:
       fail-fast: false
@@ -182,3 +187,20 @@ jobs:
             --generate-notes \
             --notes "Unsigned macOS preview: Gatekeeper may require approval in System Settings." \
             "${options[@]}"
+
+  inventory:
+    if: inputs.cache_inventory
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            /home/runner/.cargo/registry
+            /home/runner/.cargo/git
+            /home/runner/work/better-codex/better-codex/codex-rs/target
+          key: v0-rust-release-aarch64-unknown-linux-musl-release-Linux-arm64-b2ac58dc-3f6b7735
+          fail-on-cache-miss: true
+      - name: Inspect cache size
+        run: |
+          du -h -d 3 /home/runner/.cargo /home/runner/work/better-codex/better-codex/codex-rs/target | sort -h | tail -40
+          find /home/runner/.cargo /home/runner/work/better-codex/better-codex/codex-rs/target -type f -size +100M -printf '%s %p\n' | sort -nr | head -30
