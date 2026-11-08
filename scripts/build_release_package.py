@@ -89,11 +89,40 @@ def read_ripgrep_release(target: str) -> tuple[bytes, dict[str, bytes]]:
         f"https://github.com/BurntSushi/ripgrep/releases/download/"
         f"{RIPGREP_VERSION}/{release.archive}"
     )
-    archive = subprocess.run(
-        ["curl", "-fsSL", "--retry", "3", url],
-        check=True,
-        capture_output=True,
-    ).stdout
+    try:
+        archive = subprocess.run(
+            [
+                "curl",
+                "-fsSL",
+                "--retry",
+                "3",
+                "--retry-all-errors",
+                "--retry-max-time",
+                "120",
+                url,
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout
+    except subprocess.CalledProcessError:
+        with tempfile.TemporaryDirectory(prefix="better-codex-ripgrep-") as directory:
+            subprocess.run(
+                [
+                    "gh",
+                    "release",
+                    "download",
+                    RIPGREP_VERSION,
+                    "--repo",
+                    "BurntSushi/ripgrep",
+                    "--pattern",
+                    release.archive,
+                    "--dir",
+                    directory,
+                ],
+                check=True,
+                capture_output=True,
+            )
+            archive = (Path(directory) / release.archive).read_bytes()
     if len(archive) != release.size or sha256(archive) != release.sha256:
         raise ValueError(f"ripgrep archive verification failed for {target}")
 
