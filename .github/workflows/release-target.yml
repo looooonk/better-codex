@@ -314,7 +314,8 @@ jobs:
           tar -xzf "dist/better-codex-package-${TARGET}.tar.gz" \
             -C "$smoke_dir" --strip-components 1
           "$smoke_dir/bin/codex" --version | grep -F "$VERSION"
-          test -x "$smoke_dir/bin/codex-code-mode-host"
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/smoke-code-mode-host.py" \
+            "$smoke_dir/bin/codex-code-mode-host"
           "$smoke_dir/bin/codex-exec-server" --help >/dev/null
           test -x "$smoke_dir/codex-path/rg"
           test -x "$smoke_dir/codex-resources/voice/bin/codex-voice-host"
