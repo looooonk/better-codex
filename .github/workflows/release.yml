@@ -21,8 +21,8 @@ on:
       intel_builder:
         description: Machine that compiles Intel Mac binaries (packages and benchmarks run on Intel)
         type: choice
-        default: native
-        options: [native, apple-silicon]
+        default: apple-silicon
+        options: [apple-silicon, native]
       benchmark_only:
         description: Run only terminal-rendering benchmarks (Intel Mac only)
         type: boolean
