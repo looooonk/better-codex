@@ -60,13 +60,13 @@ jobs:
           set -euo pipefail
           version="$(python3 -c 'import tomllib; print(tomllib.load(open("codex-rs/Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
           if [[ -n "$RELEASE_TAG" ]]; then
-            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
-            [[ "${RELEASE_TAG#v}" == "$version" ]]
-            [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" && -z "$SOURCE_REF" ]]
-            [[ "$TARGETS" == all && "$BENCHMARK_ONLY" == false ]]
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || exit 1
+            [[ "${RELEASE_TAG#v}" == "$version" ]] || exit 1
+            [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" && -z "$SOURCE_REF" ]] || exit 1
+            [[ "$TARGETS" == all && "$BENCHMARK_ONLY" == false ]] || exit 1
           fi
-          [[ -z "$REQUESTED_VERSION" || "$REQUESTED_VERSION" == "$version" ]]
-          [[ "$BENCHMARK_ONLY" == false || "$TARGETS" == intel-mac ]]
+          [[ -z "$REQUESTED_VERSION" || "$REQUESTED_VERSION" == "$version" ]] || exit 1
+          [[ "$BENCHMARK_ONLY" == false || "$TARGETS" == intel-mac ]] || exit 1
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
           python3 - <<'PYTHON'
