@@ -138,11 +138,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --locked --target "${{ inputs.target }}" --release --timings \
-            -p codex-cli -p codex-code-mode-host -p codex-exec-server-cli \
-            --bin codex \
-            --bin codex-code-mode-host \
-            --bin codex-exec-server
+          cargo release-build --target "${{ inputs.target }}"
 
       - name: Strip binaries
         if: ${{ !inputs.benchmark_only }}

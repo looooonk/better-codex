@@ -1,3 +1,6 @@
+[alias]
+release-build = "build --locked --release --timings -p codex-cli -p codex-code-mode-host -p codex-exec-server-cli --bin codex --bin codex-code-mode-host --bin codex-exec-server"
+
 [env]
 # Roughly one arena per four CPUs reduces idle RSS after Linux musl conversations unload.
 JEMALLOC_SYS_WITH_MALLOC_CONF = "narenas_ratio:0.25"
