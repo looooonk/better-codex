@@ -128,7 +128,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${{ inputs.target }}"
-          cargo build --locked --target "$target" --release --bin bwrap
+          cargo build --locked --target "$target" --release -p codex-bwrap --bin bwrap
           bwrap="target/${target}/release/bwrap"
           strip --strip-debug --strip-unneeded "$bwrap"
           echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >>"$GITHUB_ENV"
@@ -139,6 +139,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --locked --target "${{ inputs.target }}" --release --timings \
+            -p codex-cli -p codex-code-mode-host -p codex-exec-server-cli \
             --bin codex \
             --bin codex-code-mode-host \
             --bin codex-exec-server
