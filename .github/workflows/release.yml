@@ -17,7 +17,7 @@ on:
         description: Compiler configuration (publishing requires release)
         type: choice
         default: release
-        options: [release, thin16, off16, off16-opt2, thin4-opt2]
+        options: [release, off16-opt2]
       targets:
         description: Platforms to build
         type: choice
@@ -34,10 +34,6 @@ on:
         default: false
       benchmark_only:
         description: Run only terminal-rendering benchmarks (Intel Mac only)
-        type: boolean
-        default: false
-      compiler_cache:
-        description: Also cache individual Rust compiler outputs
         type: boolean
         default: false
 
@@ -118,7 +114,6 @@ jobs:
       version: ${{ needs.validate.outputs.version }}
       profile: ${{ inputs.profile }}
       benchmark: ${{ inputs.benchmark }}
-      compiler_cache: ${{ inputs.compiler_cache }}
       benchmark_only: ${{ inputs.benchmark_only }}
 
   publish:
