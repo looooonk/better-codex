@@ -93,6 +93,17 @@ jobs:
           workspaces: codex-rs
           shared-key: release-${{ inputs.target }}-release
           cache-bin: false
+          save-if: false
+
+      - name: Retry or seed compiled Rust dependencies
+        id: rust-cache-retry
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          prefix-key: v1-rust
+          workspaces: codex-rs
+          shared-key: release-${{ inputs.target }}-release
+          cache-bin: false
           save-if: ${{ !inputs.benchmark_only }}
 
       - if: ${{ runner.os == 'Linux' }}
@@ -106,7 +117,7 @@ jobs:
           strip --strip-debug --strip-unneeded "$bwrap"
           echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >>"$GITHUB_ENV"
 
-      - name: Build binaries
+      - name: "Build binaries (exact cache hit: ${{ steps.rust-cache.outputs.cache-hit == 'true' || steps.rust-cache-retry.outputs.cache-hit == 'true' }})"
         if: ${{ !inputs.benchmark_only }}
         shell: bash
         run: |
@@ -174,7 +185,7 @@ jobs:
           retention-days: 14
 
       - name: Trim release cache
-        if: ${{ !inputs.benchmark_only && steps.rust-cache.outputs.cache-hit != 'true' }}
+        if: ${{ !inputs.benchmark_only && steps.rust-cache.outputs.cache-hit != 'true' && steps.rust-cache-retry.outputs.cache-hit != 'true' }}
         env:
           TARGET: ${{ inputs.target }}
         run: |
