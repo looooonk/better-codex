@@ -22,7 +22,7 @@ on:
         description: Platforms to build
         type: choice
         default: all
-        options: [all, intel-mac, apple-silicon, linux-arm]
+        options: [all, intel-mac, apple-silicon, linux-arm, linux-x86]
       intel_builder:
         description: Machine that compiles Intel Mac binaries (packages are tested on Intel)
         type: choice
@@ -96,6 +96,8 @@ jobs:
               matrix = [matrix[0]]
           elif os.environ["TARGETS"] == "linux-arm":
               matrix = [matrix[2]]
+          elif os.environ["TARGETS"] == "linux-x86":
+              matrix = [matrix[3]]
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
               print("matrix=" + json.dumps({"include": matrix}), file=output)
           PYTHON
