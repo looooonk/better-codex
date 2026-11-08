@@ -1,4 +1,5 @@
 [alias]
+# rust-cache hashes this file, so package selection changes refresh the cache.
 release-build = "build --locked --release --timings -p codex-cli -p codex-code-mode-host -p codex-exec-server-cli --bin codex --bin codex-code-mode-host --bin codex-exec-server"
 
 [env]
