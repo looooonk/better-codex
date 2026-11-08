@@ -56,6 +56,17 @@ jobs:
           toolchain: 1.95.0
           targets: ${{ inputs.target }}
 
+      - name: Keep cache keys tied to the release compiler
+        shell: bash
+        run: |
+          # rust-cache hashes every installed toolchain, including unused ones.
+          rustup toolchain list --quiet | while read -r toolchain _; do
+            case "$toolchain" in
+              1.95.0-*) ;;
+              *) rustup toolchain uninstall "$toolchain" ;;
+            esac
+          done
+
       - if: ${{ runner.os == 'Linux' }}
         uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
