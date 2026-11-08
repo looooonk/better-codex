@@ -9,6 +9,8 @@ on:
       runner:
         required: true
         type: string
+      build_runner:
+        type: string
       sha:
         required: true
         type: string
@@ -34,7 +36,7 @@ permissions:
 jobs:
   binaries:
     name: application
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.build_runner || inputs.runner }}
     timeout-minutes: 240
     defaults:
       run:

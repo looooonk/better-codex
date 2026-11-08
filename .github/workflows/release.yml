@@ -23,6 +23,11 @@ on:
         type: choice
         default: all
         options: [all, intel-mac, apple-silicon, linux-arm]
+      intel_builder:
+        description: Machine that compiles Intel Mac binaries (packages are tested on Intel)
+        type: choice
+        default: native
+        options: [native, apple-silicon]
       benchmark:
         description: Also measure terminal rendering (Intel Mac only)
         type: boolean
@@ -65,6 +70,7 @@ jobs:
           TARGETS: ${{ inputs.targets }}
           BENCHMARK: ${{ inputs.benchmark }}
           BENCHMARK_ONLY: ${{ inputs.benchmark_only }}
+          INTEL_BUILDER: ${{ inputs.intel_builder }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
@@ -77,6 +83,7 @@ jobs:
           fi
           [[ -z "$REQUESTED_VERSION" || "$REQUESTED_VERSION" == "$version" ]]
           [[ ( "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ) || "$TARGETS" == intel-mac ]]
+          [[ ( "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ) || "$INTEL_BUILDER" == native ]]
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
           python3 - <<'PYTHON'
@@ -106,6 +113,7 @@ jobs:
     with:
       target: ${{ matrix.target }}
       runner: ${{ matrix.runner }}
+      build_runner: ${{ inputs.intel_builder == 'apple-silicon' && matrix.target == 'x86_64-apple-darwin' && 'macos-15' || matrix.runner }}
       sha: ${{ needs.validate.outputs.sha }}
       version: ${{ needs.validate.outputs.version }}
       profile: ${{ inputs.profile }}
@@ -133,6 +141,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.sha }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          INTEL_BUILDER: ${{ inputs.intel_builder }}
         run: |
           python3 - <<'PYTHON'
           import json, os
@@ -146,7 +155,10 @@ jobs:
                       "repository": repository,
                       "path": workflow.split("/", 2)[2].split("@", 1)[0],
                       "ref": os.environ["GITHUB_REF"],
-                  }, "inputs": {"release_tag": os.environ["RELEASE_TAG"]}},
+                  }, "inputs": {
+                      "release_tag": os.environ["RELEASE_TAG"],
+                      "intel_builder": os.environ["INTEL_BUILDER"],
+                  }},
                   "resolvedDependencies": [
                       {"uri": "git+" + repository + "@" + os.environ["GITHUB_REF"],
                        "digest": {"gitCommit": os.environ["GITHUB_SHA"]}},
