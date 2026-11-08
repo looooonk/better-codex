@@ -1,17 +1,43 @@
 name: release
+run-name: ${{ inputs.release_tag && 'publish' || 'build' }} ${{ inputs.release_tag || inputs.source_ref || github.ref_name }} (${{ inputs.profile }})
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: Tag to publish; leave empty for a build without publishing
+        type: string
+      source_ref:
+        description: Full commit SHA or branch to benchmark; defaults to the workflow commit
+        type: string
       version:
-        description: Version to build without publishing; defaults to Cargo.toml
-        required: false
+        description: Expected version; defaults to Cargo.toml
+        type: string
+      profile:
+        description: Compiler configuration (publishing requires release)
+        type: choice
+        default: release
+        options: [release, thin16, off16, off16-opt2]
+      targets:
+        description: Platforms to build
+        type: choice
+        default: all
+        options: [all, intel-mac, linux-arm]
+      benchmark:
+        description: Also measure terminal rendering (Intel Mac only)
+        type: boolean
+        default: false
+      benchmark_only:
+        description: Run only terminal-rendering benchmarks (Intel Mac only)
+        type: boolean
+        default: false
+      compiler_cache:
+        description: Also cache individual Rust compiler outputs
+        type: boolean
+        default: false
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -21,216 +47,72 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
+      matrix: ${{ steps.version.outputs.matrix }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || inputs.source_ref || github.sha }}
           persist-credentials: false
       - id: version
-        name: Validate version
+        name: Validate release inputs
         shell: bash
         env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_REF: ${{ inputs.source_ref }}
           REQUESTED_VERSION: ${{ inputs.version }}
+          PROFILE: ${{ inputs.profile }}
+          TARGETS: ${{ inputs.targets }}
+          BENCHMARK: ${{ inputs.benchmark }}
+          BENCHMARK_ONLY: ${{ inputs.benchmark_only }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
-          cargo_version="$(python3 -c 'import tomllib; print(tomllib.load(open("codex-rs/Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
-              || { echo "Invalid release tag: ${GITHUB_REF_NAME}" >&2; exit 1; }
-            version="${GITHUB_REF_NAME#v}"
-          else
-            version="${REQUESTED_VERSION:-$cargo_version}"
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("codex-rs/Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+            [[ "${RELEASE_TAG#v}" == "$version" ]]
+            [[ "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" && -z "$SOURCE_REF" ]]
+            [[ "$PROFILE" == release && "$TARGETS" == all && "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ]]
           fi
-          [[ "${version}" == "${cargo_version}" ]] \
-            || { echo "Tag/input version ${version} does not match Cargo version ${cargo_version}" >&2; exit 1; }
-          echo "version=${version}" >>"$GITHUB_OUTPUT"
+          [[ -z "$REQUESTED_VERSION" || "$REQUESTED_VERSION" == "$version" ]]
+          [[ ( "$BENCHMARK" == false && "$BENCHMARK_ONLY" == false ) || "$TARGETS" == intel-mac ]]
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+          python3 - <<'PYTHON'
+          import json, os
+          matrix = [
+              {"runner": "macos-15", "target": "aarch64-apple-darwin"},
+              {"runner": "macos-15-intel", "target": "x86_64-apple-darwin"},
+              {"runner": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-musl"},
+              {"runner": "ubuntu-24.04", "target": "x86_64-unknown-linux-musl"},
+          ]
+          if os.environ["TARGETS"] == "intel-mac":
+              matrix = [matrix[1]]
+          elif os.environ["TARGETS"] == "linux-arm":
+              matrix = [matrix[2]]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              print("matrix=" + json.dumps({"include": matrix}), file=output)
+          PYTHON
 
   build:
     needs: validate
-    name: ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 240
-    permissions:
-      contents: read
-    defaults:
-      run:
-        working-directory: codex-rs
-    env:
-      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-      STABLE_GIT_COMMIT: ${{ github.sha }}
-      CARGO_PROFILE_RELEASE_DEBUG: "none"
-      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
-        with:
-          toolchain: 1.95.0
-          targets: ${{ matrix.target }}
-
-      - if: ${{ runner.os == 'Linux' }}
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
-        with:
-          version: 0.14.0
-          use-cache: false
-
-      - if: ${{ runner.os == 'Linux' }}
-        name: Install musl build tools
-        env:
-          TARGET: ${{ matrix.target }}
-        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
-
-      - if: ${{ runner.os == 'Linux' }}
-        name: Configure musl build
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >>"$GITHUB_ENV"
-          target_no_jitter="AWS_LC_SYS_NO_JITTER_ENTROPY_${{ matrix.target }}"
-          echo "${target_no_jitter//-/_}=1" >>"$GITHUB_ENV"
-
-      - name: Configure sandboxed rusty_v8
-        uses: ./.github/actions/setup-rusty-v8
-        with:
-          target: ${{ matrix.target }}
-
-      - if: ${{ runner.os == 'Linux' }}
-        name: Build bubblewrap
-        shell: bash
-        run: |
-          set -euo pipefail
-          target="${{ matrix.target }}"
-          cargo build --locked --target "$target" --release --bin bwrap
-          bwrap="target/${target}/release/bwrap"
-          strip --strip-debug --strip-unneeded "$bwrap"
-          echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >>"$GITHUB_ENV"
-
-      - name: Build binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo build --locked --target "${{ matrix.target }}" --release \
-            --bin codex \
-            --bin codex-code-mode-host \
-            --bin codex-exec-server
-
-      - name: Strip binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-          release_dir="target/${{ matrix.target }}/release"
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            strip -S -x "$release_dir/codex" "$release_dir/codex-code-mode-host" "$release_dir/codex-exec-server"
-          else
-            strip --strip-debug --strip-unneeded \
-              "$release_dir/codex" \
-              "$release_dir/codex-code-mode-host" \
-              "$release_dir/codex-exec-server"
-          fi
-
-      - name: Set up Bazel for native voice
-        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
-        with:
-          bazelisk-version: 1.28.1
-
-      - name: Build native voice helper and runtime
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
-          voice_target="${TARGET/-linux-musl/-linux-gnu}"
-          case "$voice_target" in
-            aarch64-apple-darwin) prefix=macos_aarch64 ;;
-            x86_64-apple-darwin) prefix=macos_x86_64 ;;
-            aarch64-unknown-linux-gnu) prefix=linux_aarch64 ;;
-            x86_64-unknown-linux-gnu) prefix=linux_x86_64 ;;
-            *) exit 1 ;;
-          esac
-          bazel build -c opt //codex-rs/voice-host:codex-voice-host //third_party/voice:native_runtime
-          output="${RUNNER_TEMP}/better-codex-voice"
-          mkdir -p "$output"
-          python3 third_party/voice/release_runtime.py stage \
-            --target "$voice_target" \
-            --source "bazel-bin/third_party/voice/native_runtime_${prefix}" \
-            --output "$output/runtime"
-          cp bazel-bin/codex-rs/voice-host/codex-voice-host "$output/codex-voice-host"
-          chmod 0755 "$output/codex-voice-host"
-          python3 third_party/voice/release_runtime.py seal \
-            --target "$voice_target" --output "$output/runtime"
-
-      - name: Build release archive
-        shell: bash
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          asset="better-codex-package-${TARGET}.tar.gz"
-          args=(
-            --target "$TARGET"
-            --version "$VERSION"
-            --codex-bin "target/${TARGET}/release/codex"
-            --code-mode-host-bin "target/${TARGET}/release/codex-code-mode-host"
-            --exec-server-bin "target/${TARGET}/release/codex-exec-server"
-            --voice-host-bin "${RUNNER_TEMP}/better-codex-voice/codex-voice-host"
-            --voice-runtime-dir "${RUNNER_TEMP}/better-codex-voice/runtime"
-            --build-commit "$STABLE_GIT_COMMIT"
-            --output "dist/${asset}"
-          )
-          if [[ "$TARGET" == *linux* ]]; then
-            args+=(--bwrap-bin "target/${TARGET}/release/bwrap")
-          fi
-          python3 "${GITHUB_WORKSPACE}/scripts/build_release_package.py" "${args[@]}" \
-            >"dist/${asset}.sha256"
-
-      - name: Smoke test release archive
-        shell: bash
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          smoke_dir="${RUNNER_TEMP}/better-codex-smoke"
-          mkdir -p "$smoke_dir"
-          tar -xzf "dist/better-codex-package-${TARGET}.tar.gz" \
-            -C "$smoke_dir" --strip-components 1
-          "$smoke_dir/bin/codex" --version | grep -F "$VERSION"
-          test -x "$smoke_dir/bin/codex-code-mode-host"
-          "$smoke_dir/bin/codex-exec-server" --help >/dev/null
-          test -x "$smoke_dir/codex-path/rg"
-          test -x "$smoke_dir/codex-resources/voice/bin/codex-voice-host"
-          test "$("$smoke_dir/codex-resources/voice/bin/codex-voice-host" --build-commit)" = "$STABLE_GIT_COMMIT"
-          test -f "$smoke_dir/codex-resources/voice/manifest.json"
-          if [[ "$TARGET" == *linux* ]]; then
-            test -x "$smoke_dir/codex-resources/bwrap"
-          fi
-
-      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: release-${{ matrix.target }}
-          path: |
-            codex-rs/dist/*.tar.gz
-            codex-rs/dist/*.sha256
-          if-no-files-found: error
-          retention-days: 14
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
+    uses: ./.github/workflows/release-target.yml
+    with:
+      target: ${{ matrix.target }}
+      runner: ${{ matrix.runner }}
+      sha: ${{ needs.validate.outputs.sha }}
+      version: ${{ needs.validate.outputs.version }}
+      profile: ${{ inputs.profile }}
+      benchmark: ${{ inputs.benchmark }}
+      compiler_cache: ${{ inputs.compiler_cache }}
+      benchmark_only: ${{ inputs.benchmark_only }}
 
   publish:
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: inputs.release_tag != ''
     needs:
       - validate
       - build
@@ -245,9 +127,45 @@ jobs:
           pattern: release-*
           path: dist
           merge-multiple: true
+      - name: Record the tagged source and workflow revisions
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          server = os.environ["GITHUB_SERVER_URL"]
+          repository = server + "/" + os.environ["GITHUB_REPOSITORY"]
+          workflow = os.environ["GITHUB_WORKFLOW_REF"]
+          predicate = {
+              "buildDefinition": {
+                  "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+                  "externalParameters": {"workflow": {
+                      "repository": repository,
+                      "path": workflow.split("/", 2)[2].split("@", 1)[0],
+                      "ref": os.environ["GITHUB_REF"],
+                  }, "inputs": {"release_tag": os.environ["RELEASE_TAG"]}},
+                  "resolvedDependencies": [
+                      {"uri": "git+" + repository + "@" + os.environ["GITHUB_REF"],
+                       "digest": {"gitCommit": os.environ["GITHUB_SHA"]}},
+                      {"uri": "git+" + repository + "@refs/tags/" + os.environ["RELEASE_TAG"],
+                       "digest": {"gitCommit": os.environ["SOURCE_SHA"]}},
+                  ],
+              },
+              "runDetails": {
+                  "builder": {"id": server + "/" + workflow},
+                  "metadata": {"invocationId": repository + "/actions/runs/"
+                      + os.environ["GITHUB_RUN_ID"] + "/attempts/" + os.environ["GITHUB_RUN_ATTEMPT"]},
+              },
+          }
+          with open("provenance.json", "w") as output:
+              json.dump(predicate, output)
+          PYTHON
       - uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: dist/*.tar.gz
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: provenance.json
       - name: Publish GitHub release
         shell: bash
         env:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from contextlib import nullcontext
 import gzip
 import hashlib
 import io
@@ -165,7 +166,7 @@ def validate_inputs(args: argparse.Namespace) -> None:
         raise ValueError("--rg-bin and --rg-license-dir must be provided together")
 
 
-def build_base_package(args: argparse.Namespace) -> None:
+def build_base_package(args: argparse.Namespace, *, compress: bool = True) -> None:
     validate_inputs(args)
     if args.rg_bin is None:
         rg, rg_licenses = read_ripgrep_release(args.target)
@@ -195,8 +196,12 @@ def build_base_package(args: argparse.Namespace) -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("wb") as output:
-        with gzip.GzipFile(
-            filename="", mode="wb", fileobj=output, mtime=0
+        with (
+            gzip.GzipFile(
+                filename="", mode="wb", fileobj=output, mtime=0, compresslevel=6
+            )
+            if compress
+            else nullcontext(output)
         ) as compressed:
             with tarfile.open(
                 fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
@@ -250,15 +255,18 @@ def build_base_package(args: argparse.Namespace) -> None:
 
 
 def build_package(args: argparse.Namespace) -> None:
-    build_base_package(args)
     if args.voice_host_bin is None:
+        build_base_package(args)
         return
     sys.path.insert(0, str(REPOSITORY_ROOT / "third_party/voice"))
     from assemble_package import assemble
 
     with tempfile.TemporaryDirectory(prefix="better-codex-package-") as directory:
         staging = Path(directory)
-        with tarfile.open(args.output, "r:gz") as archive:
+        base_args = argparse.Namespace(**vars(args))
+        base_args.output = staging / "base.tar"
+        build_base_package(base_args, compress=False)
+        with tarfile.open(base_args.output, "r:") as archive:
             archive.extractall(staging, filter="data")
         assembled = staging / "assembled"
         assemble(
@@ -270,9 +278,10 @@ def build_package(args: argparse.Namespace) -> None:
             runtime=args.voice_runtime_dir,
             release_version=args.version,
         )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("wb") as output:
             with gzip.GzipFile(
-                filename="", mode="wb", fileobj=output, mtime=0
+                filename="", mode="wb", fileobj=output, mtime=0, compresslevel=6
             ) as compressed:
                 with tarfile.open(
                     fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT
