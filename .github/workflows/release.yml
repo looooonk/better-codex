@@ -1,5 +1,5 @@
 name: release
-run-name: release ${{ inputs.release_tag || inputs.source_ref || github.ref_name }} (${{ inputs.profile }})
+run-name: ${{ inputs.release_tag && 'publish' || 'build' }} ${{ inputs.release_tag || inputs.source_ref || github.ref_name }} (${{ inputs.profile }})
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         description: Tag to publish; leave empty for a build without publishing
         type: string
       source_ref:
-        description: Commit or branch to benchmark; defaults to the workflow commit
+        description: Full commit SHA or branch to benchmark; defaults to the workflow commit
         type: string
       version:
         description: Expected version; defaults to Cargo.toml
@@ -17,7 +17,7 @@ on:
         description: Compiler configuration (publishing requires release)
         type: choice
         default: release
-        options: [release, thin16, off16, off16-opt2]
+        options: [release, thin16, off16, off16-opt2, thin4-opt2]
       targets:
         description: Platforms to build
         type: choice
