@@ -25,7 +25,10 @@ def resolve_module(item):
     ])
     if hashlib.sha256(data).hexdigest() != checksum:
         raise ValueError(f"Registry checksum mismatch: {url}")
-    source = json.loads(data)
+    return resolve_release(json.loads(data))
+
+
+def resolve_release(source):
     match = re.fullmatch(
         r"https://github.com/([^/]+)/([^/]+)/releases/download/([^/]+)/([^/?#]+)",
         source.get("url", ""),
@@ -35,10 +38,14 @@ def resolve_module(item):
     owner, repository, tag, name = map(unquote, match.groups())
     if Path(name).name != name or any(char in name for char in "*?[]"):
         raise ValueError(f"Unsupported archive name: {name}")
-    algorithm, digest = source["integrity"].split("-", 1)
-    if algorithm != "sha256":
-        raise ValueError(f"Unsupported integrity algorithm: {algorithm}")
-    return f"{owner}/{repository}", tag, name, base64.b64decode(digest)
+    if "sha256" in source:
+        expected = bytes.fromhex(source["sha256"])
+    else:
+        algorithm, digest = source["integrity"].split("-", 1)
+        if algorithm != "sha256":
+            raise ValueError(f"Unsupported integrity algorithm: {algorithm}")
+        expected = base64.b64decode(digest)
+    return f"{owner}/{repository}", tag, name, expected
 
 
 def download_module(module):
@@ -60,6 +67,9 @@ with ThreadPoolExecutor(max_workers=4) as pool:
         resolve_module, [(url, checksum) for url, checksum in lock.items()
                          if url.endswith("/source.json")],
     ) if module is not None]
+    voice = json.loads((root / "third_party/voice/sources.json").read_text())
+    modules.extend(module for source in voice["sources"]
+                   if (module := resolve_release(source)) is not None)
     if len({module[2] for module in modules}) != len(modules):
         raise ValueError("Module archive names must be unique")
     list(pool.map(download_module, modules))
