@@ -9,22 +9,15 @@ on:
       runner:
         required: true
         type: string
+      build_runner:
+        type: string
       sha:
         required: true
         type: string
       version:
         required: true
         type: string
-      profile:
-        default: release
-        type: string
-      benchmark:
-        default: false
-        type: boolean
       benchmark_only:
-        default: false
-        type: boolean
-      compiler_cache:
         default: false
         type: boolean
 
@@ -34,7 +27,7 @@ permissions:
 jobs:
   binaries:
     name: application
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.build_runner || inputs.runner }}
     timeout-minutes: 240
     defaults:
       run:
@@ -44,8 +37,8 @@ jobs:
       STABLE_GIT_COMMIT: ${{ inputs.sha }}
       CARGO_PROFILE_RELEASE_DEBUG: "none"
       CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
-      CARGO_PROFILE_RELEASE_LTO: ${{ startsWith(inputs.profile, 'off16') && 'off' || 'thin' }}
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ (inputs.profile == 'release' || inputs.profile == 'thin4-opt2') && '4' || '16' }}
+      CARGO_PROFILE_RELEASE_LTO: "thin"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "4"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -53,7 +46,6 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
-          toolchain: 1.95.0
           targets: ${{ inputs.target }}
 
       - name: Keep cache keys tied to the release compiler
@@ -93,34 +85,26 @@ jobs:
         with:
           target: ${{ inputs.target }}
 
-      - name: Configure optimization-level experiment
-        if: endsWith(inputs.profile, '-opt2')
-        shell: bash
-        run: echo "CARGO_PROFILE_RELEASE_OPT_LEVEL=2" >>"$GITHUB_ENV"
-
       - name: Restore compiled Rust dependencies
         id: rust-cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           prefix-key: v1-rust
           workspaces: codex-rs
-          shared-key: release-${{ inputs.target }}-${{ inputs.profile }}
+          shared-key: release-${{ inputs.target }}-release
           cache-bin: false
-          save-if: ${{ !inputs.benchmark && !inputs.benchmark_only }}
+          save-if: false
 
-      - name: Set up compiler cache
-        if: inputs.compiler_cache
-        uses: Mozilla-Actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+      - name: Retry or seed compiled Rust dependencies
+        id: rust-cache-retry
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          version: v0.19.0
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-      - name: Enable compiler cache
-        if: inputs.compiler_cache
-        shell: bash
-        run: |
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          prefix-key: v1-rust
+          workspaces: codex-rs
+          shared-key: release-${{ inputs.target }}-release
+          cache-bin: false
+          save-if: ${{ !inputs.benchmark_only }}
 
       - if: ${{ runner.os == 'Linux' }}
         name: Build bubblewrap
@@ -133,12 +117,16 @@ jobs:
           strip --strip-debug --strip-unneeded "$bwrap"
           echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >>"$GITHUB_ENV"
 
-      - name: Build binaries
+      - name: "Build binaries (exact cache hit: ${{ steps.rust-cache.outputs.cache-hit == 'true' || steps.rust-cache-retry.outputs.cache-hit == 'true' }})"
         if: ${{ !inputs.benchmark_only }}
         shell: bash
         run: |
           set -euo pipefail
-          cargo release-build --target "${{ inputs.target }}"
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            /usr/bin/time -l cargo release-build --target "${{ inputs.target }}"
+          else
+            /usr/bin/time -v cargo release-build --target "${{ inputs.target }}"
+          fi
 
       - name: Strip binaries
         if: ${{ !inputs.benchmark_only }}
@@ -178,28 +166,26 @@ jobs:
           path: codex-rs/target/cargo-timings/
           retention-days: 14
       - name: Benchmark terminal rendering
-        if: inputs.benchmark || inputs.benchmark_only
+        if: inputs.benchmark_only
         shell: bash
         env:
           CARGO_PROFILE_BENCH_DEBUG: "none"
           CARGO_PROFILE_BENCH_LTO: ${{ env.CARGO_PROFILE_RELEASE_LTO }}
           CARGO_PROFILE_BENCH_CODEGEN_UNITS: ${{ env.CARGO_PROFILE_RELEASE_CODEGEN_UNITS }}
-          BUILD_PROFILE: ${{ inputs.profile }}
           TARGET: ${{ inputs.target }}
         run: |
           command -v just >/dev/null || brew install just
-          if [[ "$BUILD_PROFILE" == *-opt2 ]]; then export CARGO_PROFILE_BENCH_OPT_LEVEL=2; fi
           just bench --target "$TARGET" --exclude codex-utils-image -- --sample-count 100 --sample-size 10 \
             2>&1 | tee "${RUNNER_TEMP}/render-benchmark.txt"
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        if: inputs.benchmark || inputs.benchmark_only
+        if: inputs.benchmark_only
         with:
           name: render-benchmark-${{ inputs.target }}
           path: ${{ runner.temp }}/render-benchmark.txt
           retention-days: 14
 
       - name: Trim release cache
-        if: ${{ !inputs.benchmark && !inputs.benchmark_only && steps.rust-cache.outputs.cache-hit != 'true' }}
+        if: ${{ !inputs.benchmark_only && steps.rust-cache.outputs.cache-hit != 'true' && steps.rust-cache-retry.outputs.cache-hit != 'true' }}
         env:
           TARGET: ${{ inputs.target }}
         run: |
@@ -339,7 +325,8 @@ jobs:
           tar -xzf "dist/better-codex-package-${TARGET}.tar.gz" \
             -C "$smoke_dir" --strip-components 1
           "$smoke_dir/bin/codex" --version | grep -F "$VERSION"
-          test -x "$smoke_dir/bin/codex-code-mode-host"
+          python3 "${GITHUB_WORKSPACE}/.github/scripts/smoke-code-mode-host.py" \
+            "$smoke_dir/bin/codex-code-mode-host"
           "$smoke_dir/bin/codex-exec-server" --help >/dev/null
           test -x "$smoke_dir/codex-path/rg"
           test -x "$smoke_dir/codex-resources/voice/bin/codex-voice-host"
