@@ -17,7 +17,7 @@ on:
         description: Compiler configuration (publishing requires release)
         type: choice
         default: release
-        options: [release, thin16, off16]
+        options: [release, thin16, off16, off16-opt2]
       targets:
         description: Platforms to build
         type: choice
@@ -125,9 +125,45 @@ jobs:
           pattern: release-*
           path: dist
           merge-multiple: true
+      - name: Record the tagged source and workflow revisions
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          server = os.environ["GITHUB_SERVER_URL"]
+          repository = server + "/" + os.environ["GITHUB_REPOSITORY"]
+          workflow = os.environ["GITHUB_WORKFLOW_REF"]
+          predicate = {
+              "buildDefinition": {
+                  "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+                  "externalParameters": {"workflow": {
+                      "repository": repository,
+                      "path": workflow.split("/", 2)[2].split("@", 1)[0],
+                      "ref": os.environ["GITHUB_REF"],
+                  }, "inputs": {"release_tag": os.environ["RELEASE_TAG"]}},
+                  "resolvedDependencies": [
+                      {"uri": "git+" + repository + "@" + os.environ["GITHUB_REF"],
+                       "digest": {"gitCommit": os.environ["GITHUB_SHA"]}},
+                      {"uri": "git+" + repository + "@refs/tags/" + os.environ["RELEASE_TAG"],
+                       "digest": {"gitCommit": os.environ["SOURCE_SHA"]}},
+                  ],
+              },
+              "runDetails": {
+                  "builder": {"id": server + "/" + workflow},
+                  "metadata": {"invocationId": repository + "/actions/runs/"
+                      + os.environ["GITHUB_RUN_ID"] + "/attempts/" + os.environ["GITHUB_RUN_ATTEMPT"]},
+              },
+          }
+          with open("provenance.json", "w") as output:
+              json.dump(predicate, output)
+          PYTHON
       - uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
         with:
           subject-path: dist/*.tar.gz
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: provenance.json
       - name: Publish GitHub release
         shell: bash
         env:
