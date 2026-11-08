@@ -88,8 +88,10 @@ jobs:
         run: echo "CARGO_PROFILE_RELEASE_OPT_LEVEL=2" >>"$GITHUB_ENV"
 
       - name: Restore compiled Rust dependencies
+        id: rust-cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
+          prefix-key: v1-rust
           workspaces: codex-rs
           shared-key: release-${{ inputs.target }}-${{ inputs.profile }}
           cache-bin: false
@@ -187,6 +189,24 @@ jobs:
           path: ${{ runner.temp }}/render-benchmark.txt
           retention-days: 14
 
+      - name: Trim release cache
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          # rust-cache removes gn_out, so V8 must rerun its prebuilt-library setup.
+          cargo clean --release --target "$TARGET" -p v8
+          python3 - <<'PYTHON'
+          import os, shutil
+          from pathlib import Path
+          cargo = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
+          for checkout in (cargo / "git/checkouts").glob("rusty_v8-*/*"):
+              # Prebuilt V8 needs the source checkout, but not submodule history.
+              for metadata in list(checkout.rglob(".git")):
+                  if metadata.parent != checkout and metadata.is_dir():
+                      shutil.rmtree(metadata)
+          PYTHON
+
   voice:
     if: ${{ !inputs.benchmark_only }}
     name: voice
@@ -204,7 +224,6 @@ jobs:
         with:
           bazelisk-version: 1.28.1
           bazelisk-cache: true
-          repository-cache: true
           disk-cache: release-voice
 
       - name: Build native voice helper and runtime
