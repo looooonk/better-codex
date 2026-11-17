@@ -61,6 +61,12 @@ impl ShellState {
             }
             return Ok(());
         }
+        if self.source_preview.is_some() {
+            if !super::scrollback_view::scrollback_panel_area(area).contains(position) {
+                self.source_preview = None;
+            }
+            return Ok(());
+        }
         if self.tool_output.is_some() {
             if !super::tool_output_view::tool_output_panel_area(area).contains(position) {
                 self.close_tool_output();
@@ -258,6 +264,28 @@ impl ShellState {
         if let Some(destination) =
             (ShellView { shell: self }).transcript_hyperlink_at(area, position)
         {
+            use crate::terminal_hyperlinks::ClickTarget;
+            let destination = match destination {
+                ClickTarget::External(url) => url,
+                ClickTarget::Source(link) => {
+                    let thread_id = self.thread_id;
+                    let request = app_server.workspace_request_in_background(
+                        thread_id,
+                        super::workspace_requests::WorkspaceRequest::ReadSource(link),
+                    );
+                    self.start_backend_action(
+                        super::backend_actions::ActionGroup::Workspace,
+                        "opening source",
+                        async move {
+                            super::backend_actions::BackendActionResult::Workspace {
+                                thread_id,
+                                result: request.await,
+                            }
+                        },
+                    );
+                    return Ok(());
+                }
+            };
             match webbrowser::open(&destination) {
                 Ok(()) => self.push_status("opened link in browser"),
                 Err(error) => {
@@ -399,6 +427,10 @@ impl ShellState {
             }
             return false;
         }
+        if let Some(preview) = &mut self.source_preview {
+            preview.scroll(key);
+            return false;
+        }
         if self.tool_output.is_some() {
             match direction {
                 MouseScrollDirection::Up => self.scroll_tool_output_up(),
@@ -491,6 +523,7 @@ impl ShellState {
     fn has_blocking_overlay(&self) -> bool {
         self.diff_view.is_some()
             || self.tool_output.is_some()
+            || self.source_preview.is_some()
             || self.agent_log.is_some()
             || self.pending_approval.is_some()
             || self.pending_session_delete.is_some()

@@ -47,6 +47,7 @@ pub(crate) struct TerminalHyperlink {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DestinationKind {
     Web,
+    Source,
     /// A generated visualization or a capability-validated spoken workspace artifact.
     TrustedFile,
 }
@@ -93,7 +94,29 @@ impl TrustedWorkspaceFile {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ClickTarget {
+    External(String),
+    Source(crate::markdown_render::FileLink),
+}
+
 impl TerminalHyperlink {
+    pub(crate) fn source(columns: Range<usize>, destination: String) -> Self {
+        Self {
+            columns,
+            destination,
+            destination_kind: DestinationKind::Source,
+        }
+    }
+
+    pub(crate) fn click_target(&self) -> Option<ClickTarget> {
+        if self.destination_kind == DestinationKind::Source {
+            return crate::markdown_render::source_file_link(&self.destination)
+                .map(ClickTarget::Source);
+        }
+        self.terminal_destination().map(ClickTarget::External)
+    }
+
     pub(crate) fn web(columns: Range<usize>, destination: String) -> Self {
         Self {
             columns,
@@ -131,6 +154,7 @@ impl TerminalHyperlink {
 
     pub(crate) fn terminal_destination(&self) -> Option<String> {
         match self.destination_kind {
+            DestinationKind::Source => None,
             DestinationKind::Web => web_destination(&self.destination),
             DestinationKind::TrustedFile => trusted_file_destination(&self.destination),
         }

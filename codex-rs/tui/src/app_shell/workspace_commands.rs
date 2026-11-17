@@ -387,7 +387,7 @@ impl ShellState {
         }
         if matches!(
             self.status.as_str(),
-            "loading workspace action" | "loading diagnostics"
+            "loading workspace action" | "loading diagnostics" | "opening source" | "refreshing models"
         ) {
             self.status = if self.active_turn_id.is_some() {
                 "thinking"
@@ -420,6 +420,9 @@ impl ShellState {
                 }
             }
             Ok(WorkspaceResponse::MentionFiles(files)) => self.open_file_mentions(files),
+            Ok(WorkspaceResponse::SourcePreview(preview)) => {
+                self.source_preview = Some(preview);
+            }
             Ok(WorkspaceResponse::Archived) => self.handle_remote_thread_lifecycle(
                 &thread_id.to_string(),
                 super::session_lifecycle::RemoteThreadLifecycle::Archived,

@@ -146,6 +146,9 @@ impl ShellView<'_> {
         if let Some(output) = &self.shell.tool_output {
             super::tool_output_view::render_tool_output(output, area, buf);
         }
+        if let Some(preview) = &self.shell.source_preview {
+            preview.render(area, buf);
+        }
         if let Some(diff) = &self.shell.diff_view {
             super::diff_view_view::render_diff_view(diff, area, buf);
         }
@@ -157,6 +160,7 @@ impl ShellView<'_> {
             || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
             || self.shell.tool_output.is_some()
+            || self.shell.source_preview.is_some()
             || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_session_delete.is_some()
@@ -201,7 +205,11 @@ impl ShellView<'_> {
         super::transcript_view::transcript_card_at(self.shell, layout.transcript, position)
     }
 
-    pub(super) fn transcript_hyperlink_at(&self, area: Rect, position: Position) -> Option<String> {
+    pub(super) fn transcript_hyperlink_at(
+        &self,
+        area: Rect,
+        position: Position,
+    ) -> Option<crate::terminal_hyperlinks::ClickTarget> {
         let layout = self.layout(area)?;
         if layout
             .dashboard
@@ -563,6 +571,7 @@ impl ShellView<'_> {
             || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
             || self.shell.tool_output.is_some()
+            || self.shell.source_preview.is_some()
             || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_session_delete.is_some()

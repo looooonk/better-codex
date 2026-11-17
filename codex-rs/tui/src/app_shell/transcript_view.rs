@@ -141,7 +141,7 @@ pub(super) fn transcript_hyperlink_at(
     shell: &ShellState,
     area: Rect,
     position: Position,
-) -> Option<String> {
+) -> Option<crate::terminal_hyperlinks::ClickTarget> {
     let viewport = transcript_viewport(shell, area);
     if !viewport.text_body.contains(position) {
         return None;
@@ -155,7 +155,7 @@ pub(super) fn transcript_hyperlink_at(
     line.hyperlinks
         .iter()
         .find(|hyperlink| hyperlink.columns.contains(&column))
-        .and_then(crate::terminal_hyperlinks::TerminalHyperlink::terminal_destination)
+        .and_then(crate::terminal_hyperlinks::TerminalHyperlink::click_target)
 }
 
 /// Resolve a terminal position inside the rendered transcript body to its complete grapheme.

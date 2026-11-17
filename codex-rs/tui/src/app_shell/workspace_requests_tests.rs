@@ -36,6 +36,9 @@ async fn native_workspace_requests_update_the_selected_thread_and_read_diagnosti
         WorkspaceRequest::Cwd(destination.clone()),
     )
     .await?;
+    let source = crate::markdown_render::source_file_link("native_mention_fixture.rs:1:4").unwrap();
+    let preview = execute(handle.clone(), id, WorkspaceRequest::ReadSource(source)).await?;
+    assert!(matches!(preview, WorkspaceResponse::SourcePreview(_)));
     execute(
         handle.clone(),
         id,

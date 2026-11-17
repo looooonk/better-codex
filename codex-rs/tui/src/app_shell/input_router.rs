@@ -35,6 +35,7 @@ const HELP_PAGE_SCROLL_STEP: usize = 8;
 pub(super) enum ActiveInputRoute {
     DiffView,
     ToolOutput,
+    SourcePreview,
     AgentLog,
     Selector,
     CommandPalette,
@@ -56,6 +57,8 @@ impl ShellState {
     pub(super) fn active_input_route(&self) -> Option<ActiveInputRoute> {
         if self.diff_view.is_some() {
             Some(ActiveInputRoute::DiffView)
+        } else if self.source_preview.is_some() {
+            Some(ActiveInputRoute::SourcePreview)
         } else if self.tool_output.is_some() {
             Some(ActiveInputRoute::ToolOutput)
         } else if self.agent_log.is_some() {
@@ -104,6 +107,7 @@ impl ShellState {
         match self.active_input_route() {
             Some(
                 ActiveInputRoute::DiffView
+                | ActiveInputRoute::SourcePreview
                 | ActiveInputRoute::ToolOutput
                 | ActiveInputRoute::AgentLog,
             ) => KeymapContextSet::new(Pager).with_copy(),
@@ -203,6 +207,15 @@ impl ShellState {
         match route {
             ActiveInputRoute::DiffView => {
                 self.handle_diff_view_key(key);
+            }
+            ActiveInputRoute::SourcePreview => {
+                if key.kind != KeyEventKind::Release {
+                    if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                        self.source_preview = None;
+                    } else if let Some(preview) = &mut self.source_preview {
+                        preview.scroll(key.code);
+                    }
+                }
             }
             ActiveInputRoute::ToolOutput => {
                 self.handle_tool_output_key(key);

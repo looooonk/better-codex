@@ -433,6 +433,7 @@ impl ShellState {
         self.automatic_recap.reset();
         self.can_accept_direct_input = session.can_accept_direct_input;
         self.daybreak_enabled = session.daybreak_enabled;
+        self.source_preview = None;
         self.model_provider_id = session.model_provider_id;
         self.session_unavailable_reason = None;
         self.thread_name = session.thread_name;

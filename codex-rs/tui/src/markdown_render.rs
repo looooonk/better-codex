@@ -91,8 +91,11 @@ mod web_links;
 use inline_directives::InlineDirectives;
 pub(crate) use list_spacing::ListSpacing;
 use list_spacing::UniformList;
+pub(crate) use local_links::FileLink;
+pub(crate) use local_links::SourceLocation;
 use local_links::is_local_path_like_link;
 use local_links::render_local_link_target;
+pub(crate) use local_links::source_file_link;
 pub(crate) use streaming::StreamingMarkdownRender;
 pub(crate) use streaming::render_streaming_markdown_lines_with_width_and_cwd;
 #[cfg(test)]
@@ -2253,12 +2256,15 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         if style_label {
             self.push_inline_style(self.styles.link);
         }
-        let show_destination = !style_label && should_render_link_destination(&dest_url);
+        let has_source_location =
+            source_file_link(&dest_url).is_some_and(|link| link.location.is_some());
+        let show_destination =
+            !style_label && should_render_link_destination(&dest_url) && !has_source_location;
         self.link = Some(LinkState {
             show_destination,
             style_label,
             has_visible_label: false,
-            local_target_display: if is_local_path_like_link(&dest_url) {
+            local_target_display: if is_local_path_like_link(&dest_url) || has_source_location {
                 Some(
                     render_local_link_target(&dest_url, self.cwd.as_deref())
                         .unwrap_or_else(|| dest_url.clone()),
@@ -2307,6 +2313,9 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     self.push_span(")".into());
                 }
             } else if let Some(local_target_display) = link.local_target_display {
+                let source = source_file_link(&link.destination)
+                    .filter(|file| file.location.is_some())
+                    .map(|_| link.destination.as_str());
                 let show_label = link
                     .local_label_spans
                     .iter()
@@ -2326,13 +2335,13 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                             .zip(link.local_label_inline)
                         {
                             let previous = std::mem::replace(&mut self.copy_inline, inline);
-                            self.push_span_to_table_cell(label_span);
+                            self.push_source_span(label_span, source);
                             self.copy_inline = previous;
                         }
                         self.push_span_to_table_cell(" (".into());
                     }
                     self.copy_inline.push(crate::markdown_copy::Inline::Literal);
-                    self.push_span_to_table_cell(span);
+                    self.push_source_span(span, source);
                     self.copy_inline.pop();
                     if show_label {
                         self.push_span_to_table_cell(")".into());
@@ -2348,13 +2357,13 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                             .zip(link.local_label_inline)
                         {
                             let previous = std::mem::replace(&mut self.copy_inline, inline);
-                            self.push_span(label_span);
+                            self.push_source_span(label_span, source);
                             self.copy_inline = previous;
                         }
                         self.push_span(" (".into());
                     }
                     self.copy_inline.push(crate::markdown_copy::Inline::Literal);
-                    self.push_span(span);
+                    self.push_source_span(span, source);
                     self.copy_inline.pop();
                     if show_label {
                         self.push_span(")".into());
@@ -2362,6 +2371,26 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     self.line_ends_with_local_link_target = true;
                 }
             }
+        }
+    }
+
+    fn push_source_span(&mut self, span: Span<'static>, source: Option<&str>) {
+        let mut line = HyperlinkLine::new(Line::from(span));
+        if let Some(destination) = source {
+            line.hyperlinks
+                .push(crate::terminal_hyperlinks::TerminalHyperlink::source(
+                    0..line.width(),
+                    destination.to_owned(),
+                ));
+        }
+        if let Some(cell) = self
+            .table_state
+            .as_mut()
+            .and_then(|table| table.current_cell.as_mut())
+        {
+            cell.push_annotated(line, &self.copy_inline);
+        } else {
+            self.push_annotated(line);
         }
     }
 

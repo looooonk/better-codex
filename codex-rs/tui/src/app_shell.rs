@@ -156,6 +156,7 @@ mod side;
 mod slash_command_popup;
 mod slash_command_popup_view;
 mod slash_commands;
+mod source_preview;
 mod startup;
 mod startup_availability_nux;
 mod startup_layout;
@@ -530,6 +531,7 @@ struct ShellState {
     agent_activity: AgentActivityState,
     agent_log: Option<AgentLogState>,
     tool_output: Option<ToolOutputState>,
+    source_preview: Option<source_preview::SourcePreview>,
     diff_store: DiffStore,
     diff_view: Option<DiffViewState>,
     agent_history_task: Option<AgentHistoryTask>,
@@ -695,6 +697,7 @@ impl ShellState {
             agent_activity: AgentActivityState::for_root(session.thread_id.to_string()),
             agent_log: None,
             tool_output: None,
+            source_preview: None,
             diff_store: DiffStore::with_display_root(session.cwd.as_path()),
             diff_view: None,
             agent_history_task: None,
@@ -2494,6 +2497,7 @@ impl ShellState {
             agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
             tool_output: None,
+            source_preview: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
                 "/workspace/better-codex",
             )),
@@ -2795,6 +2799,7 @@ pub mod bench_support {
             agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
             tool_output: None,
+            source_preview: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
                 "/workspace/better-codex",
             )),

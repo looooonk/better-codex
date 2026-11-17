@@ -13985,7 +13985,7 @@ fn file_change_detail_caps_file_rows() {
     );
 }
 
-fn render_shell(shell: &ShellState, area: Rect) -> String {
+pub(super) fn render_shell(shell: &ShellState, area: Rect) -> String {
     let buf = render_shell_buffer(shell, area);
     buffer_contents(&buf, area)
 }

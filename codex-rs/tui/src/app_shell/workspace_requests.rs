@@ -40,8 +40,15 @@ pub(super) use presets::PresetCommand;
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum WorkspaceRequest {
     Archive,
-    Presets { cwd: String, command: PresetCommand },
-    Mention { cwd: String, query: String },
+    ReadSource(crate::markdown_render::FileLink),
+    Presets {
+        cwd: String,
+        command: PresetCommand,
+    },
+    Mention {
+        cwd: String,
+        query: String,
+    },
     GuardianApproval(Box<codex_protocol::approvals::GuardianAssessmentEvent>),
     Diagnostic(super::diagnostic_commands::DiagnosticRequest),
     AutomaticRecap(bool),
@@ -72,6 +79,7 @@ pub(super) enum WorkspaceRequest {
 #[derive(Debug)]
 pub(super) enum WorkspaceResponse {
     Archived,
+    SourcePreview(super::source_preview::SourcePreview),
     ProviderSelected {
         id: String,
         model: Option<String>,
@@ -110,7 +118,8 @@ pub(super) async fn execute(
         WorkspaceRequest::Presets {
             command: PresetCommand::List | PresetCommand::Load(_),
             ..
-        } | WorkspaceRequest::Mention { .. }
+        } | WorkspaceRequest::ReadSource(_)
+            | WorkspaceRequest::Mention { .. }
             | WorkspaceRequest::Diagnostic(_)
             | WorkspaceRequest::Skills(_)
             | WorkspaceRequest::Hooks(_)
@@ -172,6 +181,11 @@ async fn execute_inner(
     match request {
         WorkspaceRequest::Presets { cwd, command } => {
             return presets::execute(client, cwd, command).await;
+        }
+        WorkspaceRequest::ReadSource(link) => {
+            return super::source_preview::read(client, parsed_thread_id, link)
+                .await
+                .map(WorkspaceResponse::SourcePreview);
         }
         WorkspaceRequest::Archive => {
             let _: codex_app_server_protocol::ThreadArchiveResponse = client
