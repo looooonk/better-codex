@@ -41,6 +41,7 @@ where
         let page = tokio::time::timeout(
             Duration::from_secs(/*secs*/ 30),
             read_page(ModelListParams {
+                model_provider: None,
                 cursor,
                 limit: Some(100),
                 include_hidden: Some(true),

@@ -33,6 +33,7 @@ region = "us-west-2"
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                model_provider: None,
                 cursor: None,
                 limit: Some(100),
                 include_hidden: Some(true),
@@ -115,6 +116,7 @@ region = "us-west-2"
         .request(|request_id| ClientRequest::ModelList {
             request_id,
             params: ModelListParams {
+                model_provider: None,
                 cursor: None,
                 limit: Some(100),
                 include_hidden: Some(true),

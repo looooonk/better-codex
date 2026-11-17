@@ -50,11 +50,13 @@ async fn catalog_reads_all_pages_and_preserves_model_metadata() {
         requests,
         vec![
             ModelListParams {
+                model_provider: None,
                 cursor: None,
                 limit: Some(100),
                 include_hidden: Some(true),
             },
             ModelListParams {
+                model_provider: None,
                 cursor: Some("next".to_string()),
                 limit: Some(100),
                 include_hidden: Some(true),

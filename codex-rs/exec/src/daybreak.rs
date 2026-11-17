@@ -47,6 +47,7 @@ pub(crate) async fn program_for_turn(
             .request_typed::<ModelListResponse>(ClientRequest::ModelList {
                 request_id: request_ids.next(),
                 params: ModelListParams {
+                    model_provider: None,
                     cursor,
                     limit: None,
                     include_hidden: Some(true),

@@ -744,6 +744,11 @@ Clients can filter the complete list by `settings.type === "customGateway"`.
 `defaultProviderId` reports the selected default even if it has no provider table.
 `canChangeDefault` accounts for required selection and higher-precedence overrides.
 
+Use `modelProvider/default/set` with `{"providerId":"openai"}` to save the provider
+for new threads. It returns a `ConfigWriteResponse` and honors managed requirements.
+Pass `modelProvider` to `model/list` to read another configured provider's catalog
+without changing the default or the provider of an existing thread.
+
 Every entry contains `id`, `name`, `canEdit`, `baseUrl`, and `settings`.
 The shared `baseUrl` includes a configured endpoint override, including for
 Bedrock and GCP. It is null if unset or unsuitable for display.

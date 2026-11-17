@@ -289,7 +289,20 @@ name = 'Other'
         )
         .await?;
     let _: ModelProviderConfigWriteResponse = server.read_response(id).await?;
-    assert_eq!(list_models(&mut server).await?.data[0].id, "saved-model");
+    let saved = list_models(&mut server).await?;
+    assert_eq!(saved.data[0].id, "saved-model");
+    let id = server
+        .send_request(
+            "modelProvider/default/set",
+            Some(json!({"providerId": "other"})),
+        )
+        .await?;
+    let _: codex_app_server_protocol::ConfigWriteResponse = server.read_response(id).await?;
+    let id = server
+        .send_request("model/list", Some(json!({"modelProvider": "gateway"})))
+        .await?;
+    let retained: ModelListResponse = server.read_response(id).await?;
+    assert_eq!(retained, saved);
     Ok(())
 }
 

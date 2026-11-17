@@ -91,6 +91,7 @@ async fn config_writes_refresh_provider_catalogs(
             .request(|request_id| ClientRequest::ModelList {
                 request_id,
                 params: ModelListParams {
+                    model_provider: None,
                     include_hidden: Some(true),
                     ..Default::default()
                 },

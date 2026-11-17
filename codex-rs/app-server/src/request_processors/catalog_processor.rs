@@ -179,11 +179,36 @@ impl CatalogRequestProcessor {
         &self,
         params: ModelListParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        let (config, models_manager) = self
+        let (active_config, active_models_manager) = self
             .model_catalog
             .current()
             .await
             .map_err(|err| config_load_error(&err))?;
+        let (config, models_manager) = match params.model_provider.as_deref() {
+            None => (active_config, active_models_manager),
+            Some(provider_id) => {
+                let config = config_for_provider(&active_config, provider_id)?;
+                if provider_id == active_config.model_provider_id
+                    && config.model_provider == active_config.model_provider
+                {
+                    (active_config, active_models_manager)
+                } else {
+                    // Temporary catalogs must not replace the active provider's disk cache.
+                    let provider = codex_model_provider::create_model_provider(
+                        config.model_provider.clone(),
+                        Some(self.thread_manager.auth_manager()),
+                    );
+                    let manager =
+                        provider.models_manager_without_cache(config.model_catalog.clone());
+                    manager.set_api_key_model_discovery_enabled(
+                        config
+                            .features
+                            .enabled(codex_features::Feature::ApiKeyModelDiscovery),
+                    );
+                    (config, manager)
+                }
+            }
+        };
         // Gate the same provider used by the catalog, including when its model cache is warm.
         // Resolving credentials may refresh them, but explicit host policy prevents browser login.
         if let Some(gateway) = codex_model_provider::create_model_provider(
@@ -204,9 +229,11 @@ impl CatalogRequestProcessor {
                     .load_latest_config(/*fallback_cwd*/ None)
                     .await
                     .map_err(|err| config_load_error(&err))?;
-                // A direct config file edit can leave the catalog using the previous gateway.
-                if current.model_provider_id != config.model_provider_id
-                    || current.model_provider != config.model_provider
+                // An explicit selection need not match the current default.
+                if current.model_providers.get(&config.model_provider_id)
+                    != Some(&config.model_provider)
+                    || (params.model_provider.is_none()
+                        && current.model_provider_id != config.model_provider_id)
                 {
                     return Err(invalid_request(
                         "Model provider settings changed. Restart Codex to apply them, then retry fetching the model list",
@@ -293,6 +320,7 @@ impl CatalogRequestProcessor {
             limit,
             cursor,
             include_hidden,
+            model_provider: _,
         } = params;
         let presets = self
             .model_catalog

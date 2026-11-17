@@ -3705,6 +3705,30 @@
             },
             "method": {
               "enum": [
+                "modelProvider/default/set"
+              ],
+              "title": "ModelProvider/default/setRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ModelProviderDefaultSetParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ModelProvider/default/setRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "modelProvider/capabilities/read"
               ],
               "title": "ModelProvider/capabilities/readRequestMethod",
@@ -12202,6 +12226,13 @@
             "integer",
             "null"
           ]
+        },
+        "modelProvider": {
+          "description": "List models for this configured provider instead of the app-server default.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "title": "ModelListParams",
@@ -12277,6 +12308,20 @@
         "provider"
       ],
       "title": "ModelProviderConfigWriteResponse",
+      "type": "object"
+    },
+    "ModelProviderDefaultSetParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "providerId": {
+          "description": "Configured provider to use by default for new threads and unscoped model lists.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "title": "ModelProviderDefaultSetParams",
       "type": "object"
     },
     "ModelProviderError": {
