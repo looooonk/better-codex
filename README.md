@@ -91,9 +91,20 @@ profile by default; set `CODEX_CARGO_PROFILE` to select another profile.
 See the [complete build guide](docs/install.md) for development
 tools, test commands, and logging.
 
+The backend is based on [Codex revision a54329e](https://github.com/openai/codex/commit/a54329e23522b787fbbe65a973e12348e53f7c72).
+The bundled OpenAI, Bedrock, and Vertex AI model catalogs include the
+[GPT-6.2 update](https://github.com/openai/codex/pull/62106).
+
 </details>
 
 ## Everything in one workspace
+
+Use `/model` to select GPT-6.2 Sol or Astra and see the reasoning levels and
+service tiers your provider offers. Use `/provider use <id> [model]` followed
+by `/new` to switch providers. Resumed chats keep their own provider catalog.
+
+Click a source citation such as `src/main.rs:42:7` in a response to open the file
+at that line and column. Press Escape to return to the conversation.
 
 |                            |                                                                                                                 |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
