@@ -96,6 +96,8 @@ async fn vertex_credential_file_is_retained_when_refreshing_after_401() -> Resul
 
 #[test_case("gpt-6.1-sol"; "sol")]
 #[test_case("gpt-6.1-terra"; "terra")]
+#[test_case("gpt-6.2-astra"; "astra_62")]
+#[test_case("gpt-6.2-sol"; "sol_62")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn vertex_requests_use_command_auth_with_namespaces_and_tool_search(
     model: &str,
