@@ -526,6 +526,9 @@ pub(crate) struct ThreadManagerState {
     agent_control_factory: Option<AgentControlFactory>,
     auth_manager: Arc<AuthManager>,
     models_manager: SharedModelsManager,
+    models_manager_provider: ModelProviderInfo,
+    configured_catalog: Option<codex_protocol::openai_models::ModelsResponse>,
+    api_key_model_discovery: bool,
     git_root_discovery: Arc<GitRootDiscovery>,
     environment_manager: Arc<EnvironmentManager>,
     starting_mcp_runtimes: std::sync::Mutex<Vec<std::sync::Weak<AtomicBool>>>,
@@ -697,6 +700,9 @@ impl ThreadManager {
                 thread_id_generator: default_thread_id_generator(),
                 agent_control_factory: None,
                 models_manager,
+                models_manager_provider: config.model_provider.clone(),
+                configured_catalog: config.model_catalog.clone(),
+                api_key_model_discovery: config.features.enabled(Feature::ApiKeyModelDiscovery),
                 git_root_discovery: Arc::default(),
                 environment_manager,
                 starting_mcp_runtimes: std::sync::Mutex::new(Vec::new()),
@@ -905,6 +911,9 @@ impl ThreadManager {
                 thread_created_tx,
                 thread_id_generator: default_thread_id_generator(),
                 agent_control_factory: None,
+                models_manager_provider: provider.clone(),
+                configured_catalog: None,
+                api_key_model_discovery: false,
                 models_manager: create_model_provider(provider, Some(auth_manager.clone()))
                     .models_manager(codex_home, /*config_model_catalog*/ None),
                 git_root_discovery: Arc::default(),
@@ -1046,8 +1055,15 @@ impl ThreadManager {
         Arc::clone(&self.state.git_root_discovery)
     }
 
+    /// The startup catalog. A live thread owns its model metadata after a provider switch.
     pub fn get_models_manager(&self) -> SharedModelsManager {
         self.state.models_manager.clone()
+    }
+
+    /// Select the catalog for a destination thread before its session exists.
+    pub fn models_manager_for_config(&self, config: &Config) -> SharedModelsManager {
+        self.state
+            .models_manager_for_config(config, &self.state.auth_manager)
     }
 
     pub async fn list_models(
@@ -1839,6 +1855,23 @@ impl ThreadManager {
 }
 
 impl ThreadManagerState {
+    fn models_manager_for_config(
+        &self,
+        config: &Config,
+        auth_manager: &Arc<AuthManager>,
+    ) -> SharedModelsManager {
+        if Arc::ptr_eq(auth_manager, &self.auth_manager)
+            && config.model_provider == self.models_manager_provider
+            && config.model_catalog == self.configured_catalog
+            && config.features.enabled(Feature::ApiKeyModelDiscovery)
+                == self.api_key_model_discovery
+        {
+            Arc::clone(&self.models_manager)
+        } else {
+            build_models_manager(config, Arc::clone(auth_manager))
+        }
+    }
+
     pub(crate) fn shared_thread_instructions_provider(
         &self,
         root_thread_id: ThreadId,
@@ -2584,6 +2617,10 @@ impl ThreadManagerState {
         } else {
             codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile
         };
+        let models_manager = self.models_manager_for_config(&config, &auth_manager);
+        let models_manager = models_manager
+            .for_originator(&startup_context.originator)
+            .unwrap_or(models_manager);
         let spawn_result = Session::spawn(SessionSpawnArgs {
             attached_thread,
             startup,
@@ -2593,10 +2630,7 @@ impl ThreadManagerState {
             instructions: startup_context.instructions,
             installation_id: self.installation_id.clone(),
             auth_manager,
-            models_manager: self
-                .models_manager
-                .for_originator(&startup_context.originator)
-                .unwrap_or_else(|| Arc::clone(&self.models_manager)),
+            models_manager,
             git_root_discovery: Arc::clone(&self.git_root_discovery),
             environment_manager: Arc::clone(&self.environment_manager),
             skills_service: Arc::clone(&self.skills_service),
