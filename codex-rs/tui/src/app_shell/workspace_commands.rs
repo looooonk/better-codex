@@ -387,7 +387,10 @@ impl ShellState {
         }
         if matches!(
             self.status.as_str(),
-            "loading workspace action" | "loading diagnostics" | "opening source" | "refreshing models"
+            "loading workspace action"
+                | "loading diagnostics"
+                | "opening source"
+                | "refreshing models"
         ) {
             self.status = if self.active_turn_id.is_some() {
                 "thinking"

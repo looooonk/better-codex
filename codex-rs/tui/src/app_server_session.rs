@@ -13,6 +13,7 @@ pub(crate) use history::read_thread_history;
 mod managed_worktree;
 mod models;
 pub(crate) use models::load_models;
+pub(crate) use models::read_model_requirements;
 mod new_thread_defaults;
 mod resume_settings;
 use resume_settings::ResumeModelSettings;
@@ -51,7 +52,6 @@ use codex_app_server_protocol::CancelLoginAccountParams;
 use codex_app_server_protocol::CancelLoginAccountResponse;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigBatchWriteParams;
-use codex_app_server_protocol::ConfigRequirementsReadResponse;
 use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
@@ -306,30 +306,14 @@ impl AppServerSession {
 
     pub(crate) async fn bootstrap(&mut self, config: &Config) -> Result<AppServerBootstrap> {
         let requirements_request_id = self.next_request_id();
-        let requirements = match self
-            .client
-            .request_typed::<ConfigRequirementsReadResponse>(
-                ClientRequest::ConfigRequirementsRead {
-                    request_id: requirements_request_id,
-                    params: None,
-                },
-            )
+        let requirements = read_model_requirements(&self.request_handle(), requirements_request_id)
             .await
-        {
-            Ok(requirements) => Some(requirements),
-            Err(TypedRequestError::Server { source, .. })
-                if self.thread_params_mode == ThreadParamsMode::Cloud
-                    && source.code == JSONRPC_METHOD_NOT_FOUND =>
-            {
-                None
-            }
-            Err(error) => {
-                return Err(bootstrap_request_error(
+            .map_err(|error| {
+                bootstrap_request_error(
                     "configRequirements/read failed during TUI bootstrap",
                     error,
-                ));
-            }
-        };
+                )
+            })?;
         self.managed_new_thread_defaults = requirements
             .as_ref()
             .and_then(|response| response.requirements.as_ref())

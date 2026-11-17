@@ -6,7 +6,6 @@ use codex_app_server_protocol::AccountSessionsResponse;
 use codex_app_server_protocol::AccountSessionsSwitchParams;
 use codex_app_server_protocol::AccountSessionsSwitchResponse;
 use codex_app_server_protocol::ClientRequest;
-use codex_app_server_protocol::ConfigRequirementsReadResponse;
 use color_eyre::Result;
 use color_eyre::eyre::bail;
 
@@ -117,13 +116,17 @@ pub(super) async fn execute(
     let models = async {
         let mut models =
             crate::app_server_session::load_models(client.clone(), Some(provider)).await?;
-        let requirements: ConfigRequirementsReadResponse = client
-            .request_typed(ClientRequest::ConfigRequirementsRead {
-                request_id: workspace_request_id("account-requirements"),
-                params: None,
-            })
-            .await?;
-        crate::service_tier_resolution::constrain_server_service_tiers(&mut models, &requirements);
+        if let Some(requirements) = crate::app_server_session::read_model_requirements(
+            &client,
+            workspace_request_id("account-requirements"),
+        )
+        .await?
+        {
+            crate::service_tier_resolution::constrain_server_service_tiers(
+                &mut models,
+                &requirements,
+            );
+        }
         Ok::<_, color_eyre::Report>(models)
     }
     .await;

@@ -2,6 +2,7 @@ use super::bootstrap_request_error;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
+use codex_app_server_protocol::ConfigRequirementsReadResponse;
 use codex_app_server_protocol::Model as ApiModel;
 use codex_app_server_protocol::ModelListParams;
 use codex_app_server_protocol::ModelListResponse;
@@ -19,10 +20,38 @@ use std::future::Future;
 use std::time::Duration;
 use uuid::Uuid;
 
+/// Cloud deployments may omit requirements discovery while still providing a model catalog.
+pub(crate) async fn read_model_requirements(
+    handle: &AppServerRequestHandle,
+    request_id: RequestId,
+) -> Result<Option<ConfigRequirementsReadResponse>, TypedRequestError> {
+    match handle
+        .request_typed(ClientRequest::ConfigRequirementsRead {
+            request_id,
+            params: None,
+        })
+        .await
+    {
+        Ok(requirements) => Ok(Some(requirements)),
+        Err(TypedRequestError::Server { source, .. })
+            if matches!(handle, AppServerRequestHandle::Cloud(_))
+                && source.code == super::JSONRPC_METHOD_NOT_FOUND =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 pub(crate) async fn load_models(
     handle: AppServerRequestHandle,
     provider: Option<&str>,
 ) -> Result<Vec<ModelPreset>> {
+    // Cloud owns provider selection for both fresh and resumed conversations.
+    let provider = match &handle {
+        AppServerRequestHandle::Cloud(_) => None,
+        AppServerRequestHandle::Remote(_) | AppServerRequestHandle::InProcess(_) => provider,
+    };
     read_catalog(provider, |params| {
         handle.request_typed(ClientRequest::ModelList {
             request_id: RequestId::String(Uuid::new_v4().to_string()),
