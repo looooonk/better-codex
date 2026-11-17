@@ -242,7 +242,8 @@ async fn reopening_consumes_catalog_refreshed_while_chat_was_closed() -> Result<
         .list_models(RefreshStrategy::Online, test.config.http_client_factory())
         .await;
     let resumed = test_codex()
-        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        // The refreshed catalog belongs to the same account that reopens this chat.
+        .with_auth_manager(test.thread_manager.auth_manager())
         .with_model("gpt-5.5")
         .with_models_manager(manager)
         .with_config(|config| {
