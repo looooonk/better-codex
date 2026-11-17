@@ -39,7 +39,7 @@ async fn catalog_reads_all_pages_and_preserves_model_metadata() {
         },
     ]);
     let mut requests = Vec::new();
-    let models = read_catalog(|params| {
+    let models = read_catalog(Some("gateway"), |params| {
         requests.push(params);
         std::future::ready(Ok(pages.pop_front().expect("unexpected catalog request")))
     })
@@ -50,13 +50,13 @@ async fn catalog_reads_all_pages_and_preserves_model_metadata() {
         requests,
         vec![
             ModelListParams {
-                model_provider: None,
+                model_provider: Some("gateway".to_string()),
                 cursor: None,
                 limit: Some(100),
                 include_hidden: Some(true),
             },
             ModelListParams {
-                model_provider: None,
+                model_provider: Some("gateway".to_string()),
                 cursor: Some("next".to_string()),
                 limit: Some(100),
                 include_hidden: Some(true),
@@ -67,7 +67,7 @@ async fn catalog_reads_all_pages_and_preserves_model_metadata() {
 
 #[tokio::test]
 async fn repeated_catalog_cursor_fails_without_hanging() {
-    let error = read_catalog(|_| {
+    let error = read_catalog(Some("gateway"), |_| {
         std::future::ready(Ok(ModelListResponse {
             data: vec![model("same")],
             next_cursor: Some("same".to_string()),
@@ -80,7 +80,7 @@ async fn repeated_catalog_cursor_fails_without_hanging() {
 
 #[tokio::test]
 async fn oversized_catalog_page_fails_before_retaining_models() {
-    let error = read_catalog(|_| {
+    let error = read_catalog(Some("gateway"), |_| {
         std::future::ready(Ok(ModelListResponse {
             data: vec![model("oversized"); 101],
             next_cursor: None,

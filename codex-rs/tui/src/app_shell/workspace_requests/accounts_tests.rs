@@ -16,6 +16,7 @@ async fn switching_accounts_validates_workspace_before_mutation() {
             session_id: "missing".into(),
             account_id: "workspace".into(),
         },
+        "openai",
     )
     .await
     .unwrap_err();
@@ -40,6 +41,7 @@ async fn saved_workspace_can_require_browser_login() {
     let response = execute(
         AppServerRequestHandle::Remote(client.request_handle()),
         AccountCommand::parse("switch session-1 workspace-1").unwrap(),
+        "openai",
     )
     .await
     .unwrap();

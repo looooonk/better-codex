@@ -212,10 +212,10 @@ impl ShellState {
         };
         if matches!(
             request,
-            WorkspaceRequest::Account(super::workspace_requests::AccountCommand::Switch { .. })
-                | WorkspaceRequest::Provider(
-                    super::workspace_requests::ProviderCommand::Use { .. }
-                )
+            WorkspaceRequest::Account {
+                command: super::workspace_requests::AccountCommand::Switch { .. },
+                ..
+            } | WorkspaceRequest::Provider(super::workspace_requests::ProviderCommand::Use { .. })
         ) && self.block_session_switch_if_busy()
         {
             return Ok(());
@@ -314,9 +314,10 @@ impl ShellState {
             WorkspaceCommand::Provider => {
                 WorkspaceRequest::Provider(super::workspace_requests::ProviderCommand::parse(args)?)
             }
-            WorkspaceCommand::Account => {
-                WorkspaceRequest::Account(super::workspace_requests::AccountCommand::parse(args)?)
-            }
+            WorkspaceCommand::Account => WorkspaceRequest::Account {
+                command: super::workspace_requests::AccountCommand::parse(args)?,
+                provider: self.model_provider_id.clone(),
+            },
             WorkspaceCommand::Experimental => {
                 let parts = args.split_whitespace().collect::<Vec<_>>();
                 WorkspaceRequest::Experimental(match parts.as_slice() {

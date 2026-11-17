@@ -39,6 +39,7 @@ impl AccountCommand {
 pub(super) async fn execute(
     client: AppServerRequestHandle,
     command: AccountCommand,
+    provider: &str,
 ) -> Result<WorkspaceResponse> {
     if command != AccountCommand::Refresh {
         let accounts: AccountSessionsResponse = client
@@ -114,7 +115,8 @@ pub(super) async fn execute(
         }
     }
     let models = async {
-        let mut models = crate::app_server_session::load_models(client.clone()).await?;
+        let mut models =
+            crate::app_server_session::load_models(client.clone(), Some(provider)).await?;
         let requirements: ConfigRequirementsReadResponse = client
             .request_typed(ClientRequest::ConfigRequirementsRead {
                 request_id: workspace_request_id("account-requirements"),

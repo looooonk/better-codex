@@ -103,6 +103,10 @@ pub(crate) async fn run(
         app_server.request_handle(),
     ));
 
+    let restoring_session = matches!(
+        session_selection,
+        SessionSelection::Resume(_) | SessionSelection::Fork(_)
+    );
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
     if let Some(worktree) = &worktree_runtime.startup {
         worktree.bind(started.session.thread_id)?;
@@ -131,6 +135,9 @@ pub(crate) async fn run(
         resume_cwd_runtime,
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
+    if restoring_session || shell.model_provider_id != config.model_provider_id {
+        shell.refresh_session_models(&app_server);
+    }
     shell.service_tier_features = config.features.get().clone();
     let invalid_display_items = shell.status_surfaces.configure(&config);
     if !invalid_display_items.is_empty() {

@@ -18,6 +18,7 @@ use tokio::task::JoinSet;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum ActionGroup {
     StatusMetadata,
+    ModelCatalog,
     IdeStatus,
     TurnSteer,
     Workspace,
@@ -352,6 +353,7 @@ impl ShellState {
                 if let Ok(super::workspace_requests::WorkspaceResponse::AccountChanged {
                     models: Ok(models),
                 }) = &result
+                    && thread_id == self.thread_id
                 {
                     app_server.replace_available_models(models.clone());
                 }

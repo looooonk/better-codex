@@ -3,10 +3,15 @@ use super::workspace_request_id;
 use crate::config_update::replace_config_value;
 use crate::config_update::write_config_batch;
 use codex_app_server_client::AppServerRequestHandle;
+use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
+use codex_app_server_protocol::ConfigReadParams;
+use codex_app_server_protocol::ConfigReadResponse;
+use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::CustomGatewaySettingsParams;
 use codex_app_server_protocol::ModelProviderConfigWriteParams;
 use codex_app_server_protocol::ModelProviderConfigWriteResponse;
+use codex_app_server_protocol::ModelProviderDefaultSetParams;
 use codex_app_server_protocol::ModelProviderListParams;
 use codex_app_server_protocol::ModelProviderListResponse;
 use codex_app_server_protocol::ProviderSettings;
@@ -127,14 +132,54 @@ pub(super) async fn execute(
             if !catalog.data.iter().any(|provider| provider.id == id) {
                 bail!("unknown provider {id}; use /provider list");
             }
-            let response = write_config_batch(
-                client,
-                vec![
-                    replace_config_value("model_provider", Value::String(id.clone())),
-                    replace_config_value("model", model.clone().map_or(Value::Null, Value::String)),
-                ],
-            )
-            .await?;
+            // An explicit or previously pinned model must be changed atomically with its provider.
+            let model_edit = if model.is_some() {
+                true
+            } else {
+                let current: ConfigReadResponse = client
+                    .request_typed(ClientRequest::ConfigRead {
+                        request_id: workspace_request_id("provider-settings"),
+                        params: ConfigReadParams {
+                            include_layers: false,
+                            cwd: None,
+                        },
+                    })
+                    .await?;
+                current.config.model.is_some()
+            };
+            let saved: Option<ConfigWriteResponse> = if model_edit {
+                None
+            } else {
+                match client
+                    .request_typed(ClientRequest::ModelProviderDefaultSet {
+                        request_id: workspace_request_id("provider-default"),
+                        params: ModelProviderDefaultSetParams {
+                            provider_id: id.clone(),
+                        },
+                    })
+                    .await
+                {
+                    Ok(response) => Some(response),
+                    Err(TypedRequestError::Server { source, .. }) if source.code == -32601 => None,
+                    Err(error) => return Err(error.into()),
+                }
+            };
+            let response = match saved {
+                Some(response) => response,
+                None => {
+                    write_config_batch(
+                        client,
+                        vec![
+                            replace_config_value("model_provider", Value::String(id.clone())),
+                            replace_config_value(
+                                "model",
+                                model.clone().map_or(Value::Null, Value::String),
+                            ),
+                        ],
+                    )
+                    .await?
+                }
+            };
             if response.status == WriteStatus::OkOverridden {
                 bail!("provider saved, but a higher-priority configuration prevents applying it");
             }

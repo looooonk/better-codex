@@ -107,3 +107,42 @@ async fn runtime_provider_choice_reaches_remote_thread_creation() -> color_eyre:
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn fresh_start_uses_provider_and_model_saved_after_launch() -> color_eyre::Result<()> {
+    let home = tempfile::tempdir()?;
+    let config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .fallback_cwd(Some(home.path().to_path_buf()))
+        .loader_overrides(codex_config::LoaderOverrides::without_managed_config_for_tests())
+        .build()
+        .await?;
+    let mut server = crate::start_embedded_app_server_for_picker(&config).await?;
+    crate::config_update::write_config_batch(
+        server.request_handle(),
+        vec![
+            crate::config_update::replace_config_value("model_provider", "ollama".into()),
+            crate::config_update::replace_config_value("model", "local-saved-model".into()),
+        ],
+    )
+    .await?;
+    for mode in [ThreadParamsMode::Embedded, ThreadParamsMode::Remote] {
+        server.thread_params_mode = mode;
+        let started = server
+            .start_thread_with_session_start_source(
+                &config,
+                Some(ThreadStartSource::Startup),
+                /*model_provider_override*/ None,
+            )
+            .await?;
+        assert_eq!(
+            (
+                started.session.model_provider_id.as_str(),
+                started.session.model.as_str()
+            ),
+            ("ollama", "local-saved-model")
+        );
+    }
+    server.shutdown().await?;
+    Ok(())
+}

@@ -19,8 +19,11 @@ use std::future::Future;
 use std::time::Duration;
 use uuid::Uuid;
 
-pub(crate) async fn load_models(handle: AppServerRequestHandle) -> Result<Vec<ModelPreset>> {
-    read_catalog(|params| {
+pub(crate) async fn load_models(
+    handle: AppServerRequestHandle,
+    provider: Option<&str>,
+) -> Result<Vec<ModelPreset>> {
+    read_catalog(provider, |params| {
         handle.request_typed(ClientRequest::ModelList {
             request_id: RequestId::String(Uuid::new_v4().to_string()),
             params,
@@ -29,7 +32,7 @@ pub(crate) async fn load_models(handle: AppServerRequestHandle) -> Result<Vec<Mo
     .await
 }
 
-async fn read_catalog<F, Fut>(mut read_page: F) -> Result<Vec<ModelPreset>>
+async fn read_catalog<F, Fut>(provider: Option<&str>, mut read_page: F) -> Result<Vec<ModelPreset>>
 where
     F: FnMut(ModelListParams) -> Fut,
     Fut: Future<Output = Result<ModelListResponse, TypedRequestError>>,
@@ -41,7 +44,7 @@ where
         let page = tokio::time::timeout(
             Duration::from_secs(/*secs*/ 30),
             read_page(ModelListParams {
-                model_provider: None,
+                model_provider: provider.map(str::to_owned),
                 cursor,
                 limit: Some(100),
                 include_hidden: Some(true),

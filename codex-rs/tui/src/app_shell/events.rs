@@ -120,9 +120,10 @@ impl ShellState {
                     let thread_id = self.thread_id;
                     let request = app_server.workspace_request_in_background(
                         thread_id,
-                        super::workspace_requests::WorkspaceRequest::Account(
-                            super::workspace_requests::AccountCommand::Refresh,
-                        ),
+                        super::workspace_requests::WorkspaceRequest::Account {
+                            command: super::workspace_requests::AccountCommand::Refresh,
+                            provider: self.model_provider_id.clone(),
+                        },
                     );
                     self.start_backend_action(
                         super::backend_actions::ActionGroup::Workspace,

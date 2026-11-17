@@ -335,7 +335,11 @@ impl AppServerSession {
             .and_then(|response| response.requirements.as_ref())
             .and_then(|requirements| requirements.models.as_ref())
             .and_then(|models| models.new_thread.clone());
-        let mut available_models = load_models(self.request_handle()).await?;
+        let mut available_models = load_models(
+            self.request_handle(),
+            provider_selection::explicit_provider(config).as_deref(),
+        )
+        .await?;
         if let Some(requirements) = &requirements {
             service_tier_resolution::constrain_server_service_tiers(
                 &mut available_models,
@@ -515,6 +519,11 @@ impl AppServerSession {
                     .unwrap_or(provider)
             });
         let mut session_config = config.clone();
+        if session_start_source == Some(ThreadStartSource::Startup)
+            && self.thread_params_mode != ThreadParamsMode::Cloud
+        {
+            new_thread_defaults::apply_server_startup_settings(self, &mut session_config).await?;
+        }
         new_thread_defaults::apply_managed_new_thread_defaults(
             &mut session_config,
             self.managed_new_thread_defaults(),

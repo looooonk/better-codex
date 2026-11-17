@@ -62,3 +62,45 @@ async fn gateway_edits_patch_only_requested_fields() {
         json!({"settings":{"type":"customGateway","providerId":"gateway","name":"Company"}})
     );
 }
+
+#[tokio::test]
+async fn provider_selection_writes_the_default_and_any_model_pin_together() {
+    let provider = json!({"id":"gateway","name":"Gateway","canEdit":true,"settings":{"type":"customGateway","auth":{"mode":"externallyConfigured","envKey":null}}});
+    let catalog = json!({"data":[provider],"defaultProviderId":"openai","canChangeDefault":true});
+    let saved = json!({"status":"ok","version":"1","filePath":"/tmp/config.toml"});
+    for (pin, requested_model, method) in [
+        (None, None, "modelProvider/default/set"),
+        (Some("old"), None, "config/batchWrite"),
+        (None, Some("selected"), "config/batchWrite"),
+    ] {
+        let mut script = vec![("modelProvider/list", catalog.clone())];
+        if requested_model.is_none() {
+            script.push(("config/read", json!({"config":{"model":pin},"origins":{}})));
+        }
+        script.push((method, saved.clone()));
+        let (client, server) = scripted_server(script).await;
+        execute(
+            AppServerRequestHandle::Remote(client.request_handle()),
+            ProviderCommand::Use {
+                id: "gateway".into(),
+                model: requested_model.map(str::to_owned),
+            },
+        )
+        .await
+        .unwrap();
+        client.shutdown().await.unwrap();
+        let requests = server.await.unwrap();
+        let write = requests.last().unwrap();
+        if method == "modelProvider/default/set" {
+            assert_eq!(write, &json!({"providerId":"gateway"}));
+        } else {
+            assert_eq!(
+                write["edits"],
+                json!([
+                    {"keyPath":"model_provider","value":"gateway","mergeStrategy":"replace"},
+                    {"keyPath":"model","value":requested_model,"mergeStrategy":"replace"},
+                ])
+            );
+        }
+    }
+}

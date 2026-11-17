@@ -48,21 +48,6 @@ impl ShellState {
         self.next_model_provider = None;
         self.next_provider_model = None;
         self.complete_session_switch(started, app_server).await;
-        if refresh_catalog {
-            let thread_id = self.thread_id;
-            let request = app_server.workspace_request_in_background(
-                thread_id,
-                super::workspace_requests::WorkspaceRequest::Account(
-                    super::workspace_requests::AccountCommand::Refresh,
-                ),
-            );
-            self.start_backend_action(ActionGroup::Workspace, "refreshing models", async move {
-                BackendActionResult::Workspace {
-                    thread_id,
-                    result: request.await,
-                }
-            });
-        }
         self.session_list.focused = false;
         self.settings.focused = false;
         self.agents_focused = false;
@@ -99,12 +84,36 @@ impl ShellState {
         S: AppShellBackend,
     {
         self.cancel_agent_history().await;
+        let provider_changed = self.model_provider_id != started.session.model_provider_id;
         let previous_thread_ids = self.tracked_thread_ids();
         self.replace_started_session(started);
         self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
         self.start_replaced_session_hydration(app_server);
         self.request_queue_hydration(app_server);
         self.start_session_list_refresh(app_server);
+        if provider_changed || self.available_models.is_empty() {
+            self.refresh_session_models(app_server);
+        }
+    }
+
+    pub(super) fn refresh_session_models<S: AppShellBackend>(&mut self, app_server: &S) {
+        self.available_models.clear();
+        app_server.replace_available_models(Vec::new());
+        let thread_id = self.thread_id;
+        let request = app_server.workspace_request_in_background(
+            thread_id,
+            super::workspace_requests::WorkspaceRequest::Account {
+                command: super::workspace_requests::AccountCommand::Refresh,
+                provider: self.model_provider_id.clone(),
+            },
+        );
+        self.backend_actions.invalidate([ActionGroup::ModelCatalog]);
+        self.start_backend_action(ActionGroup::ModelCatalog, "refreshing models", async move {
+            BackendActionResult::Workspace {
+                thread_id,
+                result: request.await,
+            }
+        });
     }
 
     pub(super) fn resume_session<S>(&mut self, config: &Config, app_server: &S, thread_id: ThreadId)

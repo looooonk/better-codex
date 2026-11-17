@@ -54,10 +54,16 @@ pub(super) enum WorkspaceRequest {
     Experimental(Option<(String, bool)>),
     Background,
     Clean,
-    Memory { cwd: String, command: MemoryCommand },
+    Memory {
+        cwd: String,
+        command: MemoryCommand,
+    },
     Apps(AppsCommand),
     Provider(ProviderCommand),
-    Account(AccountCommand),
+    Account {
+        command: AccountCommand,
+        provider: String,
+    },
     Plan(CollaborationMode),
     Cwd(PathBuf),
     Rename(String),
@@ -118,7 +124,10 @@ pub(super) async fn execute(
                 AppsCommand::List(_) | AppsCommand::Access(_) | AppsCommand::Tools(_)
             )
             | WorkspaceRequest::Provider(ProviderCommand::List)
-            | WorkspaceRequest::Account(AccountCommand::List | AccountCommand::Refresh)
+            | WorkspaceRequest::Account {
+                command: AccountCommand::List | AccountCommand::Refresh,
+                ..
+            }
             | WorkspaceRequest::Extension(super::extension_commands::ExtensionCommand::Usage {
                 reset: false
             })
@@ -367,7 +376,9 @@ async fn execute_inner(
         }
         WorkspaceRequest::Apps(command) => return apps::execute(client, thread_id, command).await,
         WorkspaceRequest::Provider(command) => return providers::execute(client, command).await,
-        WorkspaceRequest::Account(command) => return accounts::execute(client, command).await,
+        WorkspaceRequest::Account { command, provider } => {
+            return accounts::execute(client, command, &provider).await;
+        }
         WorkspaceRequest::Cwd(cwd) => {
             let _: ThreadSettingsUpdateResponse = client
                 .request_typed(ClientRequest::ThreadSettingsUpdate {

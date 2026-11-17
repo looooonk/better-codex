@@ -17935,11 +17935,15 @@ impl backend::AppShellBackend for RecordingBackend {
             .lock()
             .expect("start configs should lock")
             .push(config.clone());
-        Ok(started_thread(
+        let mut started = started_thread(
             "started",
             test_thread_id("01900000-0000-7000-8000-000000000201"),
             /*forked_from_id*/ None,
-        ))
+        );
+        started.session.model_provider_id = model_provider_override
+            .unwrap_or(&config.model_provider_id)
+            .to_owned();
+        Ok(started)
     }
 
     async fn resume_thread(

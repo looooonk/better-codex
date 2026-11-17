@@ -129,7 +129,7 @@ async fn new_session_applies_pending_provider_and_refreshes_its_catalog() {
         (&shell.next_model_provider, &shell.next_provider_model),
         (&None, &None)
     );
-    assert!(shell.has_pending_backend_action(ActionGroup::Workspace));
+    assert!(shell.has_pending_backend_action(ActionGroup::ModelCatalog));
 }
 
 #[test]
