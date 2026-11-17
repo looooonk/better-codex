@@ -4,7 +4,7 @@ use codex_app_server_protocol::ThreadItemPayload;
 #[test]
 fn astra_catalog_drives_model_reasoning_and_fast_selectors() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.model = "gpt-6-astra".to_string();
+    shell.model = "gpt-6.2-astra".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Ultra);
     shell.available_models = codex_models_manager::bundled_models_response()
         .unwrap()

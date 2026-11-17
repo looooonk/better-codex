@@ -166,7 +166,7 @@ fn verification_request() -> ServerRequest {
 #[test]
 fn sol_catalog_supports_current_model_and_reasoning_controls() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.model = "gpt-6.1-sol".to_string();
+    shell.model = "gpt-6.2-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Ultra);
     shell.available_models = codex_models_manager::bundled_models_response()
         .unwrap()

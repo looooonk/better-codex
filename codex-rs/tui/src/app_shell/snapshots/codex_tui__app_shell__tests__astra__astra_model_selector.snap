@@ -1,35 +1,34 @@
 ---
 source: tui/src/app_shell/astra_tests.rs
-assertion_line: 16
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
-  Dashboard  ◆ BC        gpt-6-astra ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
+  Dashboard  ◆ BC      gpt-6.2-astra ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ◆ CONVERSATION ╭ Select model ────────────────────────────────────────────────────╮
- ▎ SYSTEM  Bette│   1 ○ GPT-6.1-Sol                                                │ions
- ▎ YOU  Create a│       Latest workhorse model for coding and everyday work.       │
-                │   2 ○ GPT-6.1 Terra                                              │
- ▎ CODEX  Starte│       GPT-6.1 Terra Codex model.                                 │
-          by app│ › 3 ● GPT-6-Astra  current                                       │
- ▎ PLAN  1. Buil│       Frontier intelligence for the most demanding work.         │
-         2. Wire│   4 ○ GPT-6-Sol                                                  │0000001
-         3. Rend│       Previous generation workhorse model.                       │ session list
-                │   5 ○ GPT-6-Luna                                                 │
- ▌ tool exec jus│       Fast and affordable model for easier tasks.                │
-                │   6 ○ GPT-5.6-Sol                                                │
- ▌ edited 3 file│       Older generation workhorse model.                          │
-                │   7 ○ GPT-5.6-Terra                                              │
- ▎ CODEX  The ne│       Older balanced model for straightforward work.             │
-          surfac│   8 ○ GPT-5.6-Luna                                               │
-                │       Older fast and efficient model.                            │
-                │   9 ○ GPT-5.5                                                    │
-                │       Legacy coding model.                                       │
-                │  wheel / j k  Enter select  Esc cancel  3/9                      │
-╭───────────────╰──────────────────────────────────────────────────────────────────╯
-│◆ MESSAGE  1:37                                 ││
-│> Summarize the new shell architecture          ││
+                ╭ Select model ────────────────────────────────────────────────────╮
+ ◆ CONVERSATION │   1 ○ GPT-6.2-Sol                                                │
+ ▎ SYSTEM  Bette│       Fast, go-to model for coding and everyday work.            │ions
+ ▎ YOU  Create a│ › 2 ● GPT-6.2-Astra  current                                     │
+                │       Our most capable model for complex coding and professional │
+ ▎ CODEX  Starte│       work.                                                      │
+          by app│   3 ○ GPT-6.1-Sol                                                │
+ ▎ PLAN  1. Buil│       Previous generation model for coding and everyday work.    │
+         2. Wire│   4 ○ GPT-6.1 Terra                                              │0000001
+         3. Rend│       Efficient model that excels at visual understanding and    │ session list
+                │       computer use.                                              │
+ ▌ tool exec jus│   5 ○ GPT-6-Astra                                                │
+                │       Previous generation model for complex coding and           │
+ ▌ edited 3 file│       professional work.                                         │
+                │   6 ○ GPT-6-Sol                                                  │
+ ▎ CODEX  The ne│       Legacy model for coding and everyday work.                 │
+          surfac│   7 ○ GPT-6-Luna                                                 │
+                │       Fast and affordable model for easier tasks.                │
+                │   8 ○ GPT-5.6-Sol                                                │
+                │       Legacy model for coding and everyday work.                 │
+                │   9 ○ GPT-5.6-Terra                                              │
+╭───────────────│       Legacy balanced model for agentic coding.                  │
+│◆ MESSAGE  1:37│  wheel / j k  Enter select  Esc cancel  2/11 ↓                   │
+│> Summarize the╰──────────────────────────────────────────────────────────────────╯
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

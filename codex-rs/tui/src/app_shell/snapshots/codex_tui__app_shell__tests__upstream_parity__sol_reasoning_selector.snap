@@ -1,10 +1,9 @@
 ---
 source: tui/src/app_shell/upstream_parity_tests.rs
-assertion_line: 20
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
-  Dashboard  ◆ BC        gpt-6.1-sol ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
+  Dashboard  ◆ BC        gpt-6.2-sol ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS

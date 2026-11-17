@@ -3,7 +3,7 @@ source: tui/src/app_shell/astra_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
-  Dashboard  ◆ BC        gpt-6-astra ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
+  Dashboard  ◆ BC      gpt-6.2-astra ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
