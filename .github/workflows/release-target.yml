@@ -241,6 +241,17 @@ jobs:
           bazelisk-cache: true
           disk-cache: release-voice
 
+      - name: Configure mirrors for checksum-pinned Ubuntu zlib packages
+        if: runner.os == 'Linux'
+        run: |
+          config="$RUNNER_TEMP/ubuntu-zlib-mirrors.cfg"
+          cat > "$config" <<'EOF'
+          rewrite snapshot\.ubuntu\.com/ubuntu/[^/]+/pool/main/z/zlib/(zlib1g_[^/]+\.deb) launchpad.net/ubuntu/+archive/primary/+files/$1
+          rewrite snapshot\.ubuntu\.com/ubuntu/[^/]+/pool/main/z/zlib/(zlib1g_[^/]+_arm64\.deb) mirror.neolabs.kz/ubuntu-ports/pool/main/z/zlib/$1
+          rewrite (snapshot\.ubuntu\.com/ubuntu/[^/]+/pool/main/z/zlib/zlib1g_[^/]+\.deb) $1
+          EOF
+          printf 'common --downloader_config=%s\n' "$config" >> "$HOME/.bazelrc"
+
       - name: Build native voice helper and runtime
         shell: bash
         env:
