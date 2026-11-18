@@ -69,7 +69,13 @@ jobs:
         name: Install musl build tools
         env:
           TARGET: ${{ inputs.target }}
-        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Use the workflow's installer so mirror fixes also apply to existing tags.
+          installer="$RUNNER_TEMP/install-musl-build-tools.sh"
+          gh api -H 'Accept: application/vnd.github.raw+json' \
+            "repos/$GITHUB_REPOSITORY/contents/.github/scripts/install-musl-build-tools.sh?ref=$GITHUB_SHA" > "$installer"
+          bash "$installer"
 
       - if: ${{ runner.os == 'Linux' }}
         name: Configure musl build
