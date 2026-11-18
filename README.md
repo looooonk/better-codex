@@ -56,7 +56,7 @@ currently supported.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh \
-  | sh -s -- --version 0.1.0-alpha.21
+  | sh -s -- --version 0.1.0-alpha.22
 ```
 
 Browse every published build on the
