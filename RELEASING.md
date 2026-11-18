@@ -18,6 +18,16 @@ tests all four packages, creates SHA-256 files and build attestations, then
 publishes the GitHub release. Tags containing a prerelease suffix are marked as
 prereleases.
 
+If all four packages passed their smoke tests and publishing failed, rerun the
+current release workflow with the tag and the failed run's numeric ID:
+
+```sh
+gh workflow run release.yml --ref main -f release_tag="$tag" -f package_run_id="$run_id"
+```
+
+This reuses the retained packages, checks their targets, versions, source
+commits, and checksums, and records the original run in the attestation.
+
 Use the workflow's manual dispatch to test the build matrix without publishing.
 The optional version input must match Cargo.toml.
 
