@@ -141,6 +141,12 @@ jobs:
                       "release_tag": os.environ["RELEASE_TAG"],
                       "intel_builder": os.environ["INTEL_BUILDER"],
                   }},
+                  "internalParameters": {"github": {
+                      "event_name": os.environ["GITHUB_EVENT_NAME"],
+                      "repository_id": os.environ["GITHUB_REPOSITORY_ID"],
+                      "repository_owner_id": os.environ["GITHUB_REPOSITORY_OWNER_ID"],
+                      "runner_environment": os.environ["RUNNER_ENVIRONMENT"],
+                  }},
                   "resolvedDependencies": [
                       {"uri": "git+" + repository + "@" + os.environ["GITHUB_REF"],
                        "digest": {"gitCommit": os.environ["GITHUB_SHA"]}},
