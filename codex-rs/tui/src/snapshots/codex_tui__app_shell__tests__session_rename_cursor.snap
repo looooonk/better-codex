@@ -7,21 +7,21 @@ expression: "render_shell(&rename, Rect::new(0, 0, 100, 28,))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  1 sessions
- ▎ YOU  Create a divergent standalone TUI.        │▎+ New session  Ctrl+N
-                                                  │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
- ▎ CODEX  Started a fullscreen app shell backed   │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
-          by app-server turns.                    │
- ▎ PLAN  1. Build shell                           │▎◆ THREAD
-         2. Wire transcript                       │▎stage-one
-         3. Render dashboard                      │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
- ▌ tool exec just test -p codex-tui               │
+ ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  ACTIVE  1 sessions
+                                                  │▎+ New session  Ctrl+N
+ ▎ CODEX  Started a fullscreen app shell backed   │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
+          by app-server turns.                    │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ THREAD
+         3. Render dashboard                      │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+ ▌ tool exec just test -p codex-tui               │▎resume, fork, archive, delete in session list
                                                   │
  ▌ edited 3 files +128 -24                        │
                                                   │
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │
+                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

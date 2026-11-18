@@ -7,21 +7,21 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
- ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
-                                                  │▎› Model: gpt-5-codex
- ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
-          by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │▎
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ GOAL
-                                                  │▎status active
- ▌ tool exec just test -p codex-tui               │▎Complete the unchecked dashboard progress item
-                                                  │▎1m | 12,345/50,000 tokens
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ PLAN
- ▎ CODEX  The new shell owns the fullscreen       │▎Build the standalone shell in slices.
-          surface.                                │▎x Shell frame
+ ▎ YOU  Create a divergent standalone TUI.        │▎Model │ Permissions │ Appearance │Integrations
+                                                  │▎━━━━━━─────────────────────────────────────────
+ ▎ CODEX  Started a fullscreen app shell backed   │▎› Model: gpt-5-codex
+          by app-server turns.                    │▎  Reasoning: default
+ ▎ PLAN  1. Build shell                           │▎  Service tier: default
+         2. Wire transcript                       │▎
+         3. Render dashboard                      │
+                                                  │▎◆ GOAL
+ ▌ tool exec just test -p codex-tui               │▎status active
+                                                  │▎Complete the unchecked dashboard progress item
+ ▌ edited 3 files +128 -24                        │▎1m | 12,345/50,000 tokens
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ PLAN
+          surface.                                │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
                                                   │▎> Transcript model
                                                   │▎- Approvals
                                                   │

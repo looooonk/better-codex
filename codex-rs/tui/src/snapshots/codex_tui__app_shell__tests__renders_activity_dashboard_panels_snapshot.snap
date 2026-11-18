@@ -7,20 +7,20 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────────────────────────│
                                                                       │◆ CONVERSATION         │ ◆ COMPOSER
  ◆ CONVERSATION                                                       │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
- ▎ SYSTEM  Better Codex app shell                                     │ ↵ / c       Copy item │  ⌘⌫          Delete st…
- ▎ YOU  Create a divergent standalone TUI.                            │ e           Branch    │  ⌥/^ + ←→    Move word
-                                                                      │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │                       │  Alt+M       Model
- ▎ PLAN  1. Build shell                                               │◆ DASHBOARD            │  Alt+E       Effort
-         2. Wire transcript                                           │ F1 … F4     Open tab  │  ↵           Steer turn
-         3. Render dashboard                                          │ Alt+← / →   Prev/next │  Tab         Queue next
-                                                                      │ Pg↑ / Pg↓   Scroll he…│
- ▌ tool exec just test -p codex-tui                                   │ ⇧Alt+←/→    Resize    │ ◆ APP
-                                                                      │                       │  ^P          Commands
- ▌ edited 3 files +128 -24                                            │◆ SESSIONS             │  ^D          Show/hide
- ▎ PLAN  1. Route activity into dashboard panels                      │ ↑↓ / jk     Select    │  ^C          Stop/canc…
-                                                                      │ ↵ / r       Resume    │  Esc ×2      Exit app
- ▎ CODEX  The new shell owns the fullscreen surface.                  │ f           Fork      │  ^N          New chat
+ ▎ YOU  Create a divergent standalone TUI.                            │ ↵ / c       Copy item │  ⌘⌫          Delete st…
+                                                                      │ e           Branch    │  ⌥/^ + ←→    Move word
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
+ ▎ PLAN  1. Build shell                                               │                       │  Alt+M       Model
+         2. Wire transcript                                           │◆ DASHBOARD            │  Alt+E       Effort
+         3. Render dashboard                                          │ F1 … F4     Open tab  │  ↵           Steer turn
+                                                                      │ Alt+← / →   Prev/next │  Tab         Queue next
+ ▌ tool exec just test -p codex-tui                                   │ Pg↑ / Pg↓   Scroll he…│
+                                                                      │ ⇧Alt+←/→    Resize    │ ◆ APP
+ ▌ edited 3 files +128 -24                                            │                       │  ^P          Commands
+ ▎ PLAN  1. Route activity into dashboard panels                      │◆ SESSIONS             │  ^D          Show/hide
+                                                                      │ ↑↓ / jk     Select    │  ^C          Stop/canc…
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │ ↵ / r       Resume    │  Esc ×2      Exit app
+                                                                      │ f           Fork      │  ^N          New chat
                                                                       │ a           Archive   │
                                                                       │ u           Unarchive │ ◆ AGENTS
                                                                       │ v           Switch vi…│  ↵           Focus/log

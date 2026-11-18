@@ -7,21 +7,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                 ╭ Select model ────────────────────────────────────────────────────╮
  ◆ CONVERSATION │ › 1 ● GPT-6.2-Sol  current                                       │
- ▎ SYSTEM  Bette│       Fast, go-to model for coding and everyday work.            │ions
- ▎ YOU  Create a│   2 ○ GPT-6.2-Astra                                              │
-                │       Our most capable model for complex coding and professional │
- ▎ CODEX  Starte│       work.                                                      │
-          by app│   3 ○ GPT-6.1-Sol                                                │
- ▎ PLAN  1. Buil│       Previous generation model for coding and everyday work.    │
-         2. Wire│   4 ○ GPT-6.1 Terra                                              │0000001
-         3. Rend│       Efficient model that excels at visual understanding and    │ session list
-                │       computer use.                                              │
- ▌ tool exec jus│   5 ○ GPT-6-Astra                                                │
-                │       Previous generation model for complex coding and           │
- ▌ edited 3 file│       professional work.                                         │
-                │   6 ○ GPT-6-Sol                                                  │
- ▎ CODEX  The ne│       Legacy model for coding and everyday work.                 │
-          surfac│   7 ○ GPT-6-Luna                                                 │
+ ▎ YOU  Create a│       Fast, go-to model for coding and everyday work.            │ions
+                │   2 ○ GPT-6.2-Astra                                              │
+ ▎ CODEX  Starte│       Our most capable model for complex coding and professional │
+          by app│       work.                                                      │
+ ▎ PLAN  1. Buil│   3 ○ GPT-6.1-Sol                                                │
+         2. Wire│       Previous generation model for coding and everyday work.    │
+         3. Rend│   4 ○ GPT-6.1 Terra                                              │0000001
+                │       Efficient model that excels at visual understanding and    │ session list
+ ▌ tool exec jus│       computer use.                                              │
+                │   5 ○ GPT-6-Astra                                                │
+ ▌ edited 3 file│       Previous generation model for complex coding and           │
+                │       professional work.                                         │
+ ▎ CODEX  The ne│   6 ○ GPT-6-Sol                                                  │
+          surfac│       Legacy model for coding and everyday work.                 │
+                │   7 ○ GPT-6-Luna                                                 │
                 │       Fast and affordable model for easier tasks.                │
                 │   8 ○ GPT-5.6-Sol                                                │
                 │       Legacy model for coding and everyday work.                 │

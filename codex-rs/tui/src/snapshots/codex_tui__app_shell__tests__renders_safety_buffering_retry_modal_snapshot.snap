@@ -7,20 +7,20 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  Bet╭──────────────────────────────────────────────────────────────────────╮ns
- ▎ YOU  Create│◆ SAFETY REVIEW                                                       │
-              │Our systems are thinking a bit more about this request before         │
- ▎ CODEX  Star│responding.                                                           │
-          by a│                                                                      │
- ▎ PLAN  1. Bu│Hang tight or retry with a faster model for a quicker response, though│
-         2. Wi│it may be less capable of handling complex requests.                  │00001
-         3. Re│                                                                      │ession list
-              │> Retry with a faster model                                           │
- ▌ tool exec j│  Dismiss and keep waiting                                            │
-              │  Learn more                                                          │
- ▌ edited 3 fi│                                                                      │
-              │No action is required. Codex will keep waiting, and this menu will    │
- ▎ YOU  Explai│close when the response is ready.                                     │
+ ▎ YOU  Create╭──────────────────────────────────────────────────────────────────────╮ns
+              │◆ SAFETY REVIEW                                                       │
+ ▎ CODEX  Star│Our systems are thinking a bit more about this request before         │
+          by a│responding.                                                           │
+ ▎ PLAN  1. Bu│                                                                      │
+         2. Wi│Hang tight or retry with a faster model for a quicker response, though│
+         3. Re│it may be less capable of handling complex requests.                  │00001
+              │                                                                      │ession list
+ ▌ tool exec j│> Retry with a faster model                                           │
+              │  Dismiss and keep waiting                                            │
+ ▌ edited 3 fi│  Learn more                                                          │
+              │                                                                      │
+ ▎ YOU  Explai│No action is required. Codex will keep waiting, and this menu will    │
+              │close when the response is ready.                                     │
               │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

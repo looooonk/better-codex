@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell_tests.rs
-assertion_line: 8801
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
@@ -10,7 +9,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ PLAN  1. Build shell                         │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
          2. Wire transcript                     │ │▎+ New session  Ctrl+N
-         3. Render dashboard                    │ │▎loading sessions
+         3. Render dashboard                    ┃ │▎loading sessions
                                                 ┃ │
  ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
                                                 ┃ │▎stage-one

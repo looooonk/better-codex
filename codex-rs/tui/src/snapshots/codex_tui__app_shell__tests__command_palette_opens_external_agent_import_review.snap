@@ -7,24 +7,24 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ YOU  Create a divergent standalone TUI.        │▎+ New session  Ctrl+N
-                                                  │▎loading sessions
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ THREAD
- ▎ PLAN  1. Bu╭──────────────────────────────────────────────────────────────────────╮
-         2. Wi│◆ CLAUDE CODE IMPORT                                                  │00001
-         3. Re│Review Claude Code setup  Settings 1, Skills 1                        │ession list
-              │                                                                      │
- ▌ tool exec j│> [x] Settings (settings.json -> config.toml) - home                  │
-              │      Import settings from Claude Code                                │
- ▌ edited 3 fi│  [x] Skills - better-codex                                           │
- ▎ STATUS  che│      1 skill: review                                                 │
- ▎ STATUS  rev│                                                                      │
-           imp│↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
-              │                                                                      │
- ▎ CODEX  The ╰──────────────────────────────────────────────────────────────────────╯
-          surface.                                │
+ ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+ ▎ CODEX  Started a fullscreen app shell backed   │▎loading sessions
+          by app-server turns.                    │
+ ▎ PLAN  1. Build shell                           │▎◆ THREAD
+         2. Wi╭──────────────────────────────────────────────────────────────────────╮
+         3. Re│◆ CLAUDE CODE IMPORT                                                  │00001
+              │Review Claude Code setup  Settings 1, Skills 1                        │ession list
+ ▌ tool exec j│                                                                      │
+              │> [x] Settings (settings.json -> config.toml) - home                  │
+ ▌ edited 3 fi│      Import settings from Claude Code                                │
+ ▎ STATUS  che│  [x] Skills - better-codex                                           │
+ ▎ STATUS  rev│      1 skill: review                                                 │
+           imp│                                                                      │
+              │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
+ ▎ CODEX  The │                                                                      │
+          surf╰──────────────────────────────────────────────────────────────────────╯
+                                                  │
                                                   │
                                                   │
                                                   │

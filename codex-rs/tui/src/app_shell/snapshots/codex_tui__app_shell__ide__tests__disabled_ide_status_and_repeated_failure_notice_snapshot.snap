@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell/ide_tests.rs
-assertion_line: 46
 expression: rendered
 ---
 
@@ -9,7 +8,7 @@ expression: rendered
 
  ◆ CONVERSATION
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                        │
- ▎ PLAN  1. Build shell                                                                                     │
+ ▎ PLAN  1. Build shell                                                                                     ┃
          2. Wire transcript                                                                                 ┃
          3. Render dashboard                                                                                ┃
                                                                                                             ┃

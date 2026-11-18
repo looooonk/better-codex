@@ -7,7 +7,7 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
-                                                │ │▎Model │ Permissions │ Appearance │Integrations
+                                                ┃ │▎Model │ Permissions │ Appearance │Integrations
  ▎ CODEX  Started a fullscreen app shell backed ┃ │▎━━━━━━─────────────────────────────────────────
           by app-server turns.                  ┃ │▎› Model: gpt-5-codex
  ▎ PLAN  1. Build shell                         ┃ │▎  Reasoning: default

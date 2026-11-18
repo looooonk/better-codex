@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell/upstream_parity_tests.rs
-assertion_line: 188
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
 
@@ -8,7 +7,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ◆ CONVERSATION
- ▎ SYSTEM  Better Codex app shell
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
@@ -22,6 +20,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
  ▎ STATUS  wait for the session transition before sending a message
 
  ▎ CODEX  The new shell owns the fullscreen surface.
+
 
 
 

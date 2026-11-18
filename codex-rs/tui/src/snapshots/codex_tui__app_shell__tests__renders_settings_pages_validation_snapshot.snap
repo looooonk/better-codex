@@ -7,21 +7,21 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
- ▎ YOU  Create a divergent standalone TUI.        │▎─────────────────────━━━━━━━━━━━━──────────────
-                                                  │▎edit Syntax theme missing-theme▏
- ▎ CODEX  Started a fullscreen app shell backed   │▎unknown syntax theme `missing-theme`
-          by app-server turns.                    │▎  App theme: Tokyo Night
- ▎ PLAN  1. Build shell                           │▎› Syntax theme: default
-         2. Wire transcript                       │▎  Animations: on
-         3. Render dashboard                      │▎  Tooltips: on
+ ▎ YOU  Create a divergent standalone TUI.        │▎Model │ Permissions │ Appearance │Integrations
+                                                  │▎─────────────────────━━━━━━━━━━━━──────────────
+ ▎ CODEX  Started a fullscreen app shell backed   │▎edit Syntax theme missing-theme▏
+          by app-server turns.                    │▎unknown syntax theme `missing-theme`
+ ▎ PLAN  1. Build shell                           │▎  App theme: Tokyo Night
+         2. Wire transcript                       │▎› Syntax theme: default
+         3. Render dashboard                      │▎  Animations: on
+                                                  │▎  Tooltips: on
+ ▌ tool exec just test -p codex-tui               │
+                                                  │▎◆ PLAN
+ ▌ edited 3 files +128 -24                        │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▎ CODEX  The new shell owns the fullscreen       │▎> Transcript model
+          surface.                                │▎- Approvals
                                                   │
- ▌ tool exec just test -p codex-tui               │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
- ▌ edited 3 files +128 -24                        │▎x Shell frame
-                                                  │▎> Transcript model
- ▎ CODEX  The new shell owns the fullscreen       │▎- Approvals
-          surface.                                │
                                                   │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
                                                   │

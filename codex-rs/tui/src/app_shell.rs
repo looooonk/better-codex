@@ -592,7 +592,7 @@ impl ShellState {
         } else {
             session.model.clone()
         };
-        let mut shell = Self {
+        Self {
             pets: pets::PetState::default(),
             status_surfaces: status_surfaces::StatusSurfaces::default(),
             warnings: diagnostic_commands::WarningHistory::default(),
@@ -718,9 +718,7 @@ impl ShellState {
             context_token_usage: TokenUsage::default(),
             model_context_window: None,
             thread_usage: None,
-        };
-        shell.push_system("Better Codex app shell");
-        shell
+        }
     }
 
     fn ingest_turn_history(&mut self, turns: Vec<Turn>) {
@@ -2537,7 +2535,6 @@ impl ShellState {
             model_context_window: Some(200000),
             thread_usage: None,
         };
-        shell.push_system("Better Codex app shell");
         shell.push_user("Create a divergent standalone TUI.");
         shell.push_assistant("Started a fullscreen app shell backed by app-server turns.");
         shell.push_plan("1. Build shell\n2. Wire transcript\n3. Render dashboard");

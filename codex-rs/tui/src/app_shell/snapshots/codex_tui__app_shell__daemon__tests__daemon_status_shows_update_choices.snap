@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell/daemon_tests.rs
-assertion_line: 74
 expression: "lines.join(\"\\n\")"
 ---
 
@@ -10,7 +9,7 @@ expression: "lines.join(\"\\n\")"
  ◆ CONVERSATION
          2. Wire transcript                                                                       │
          3. Render dashboard                                                                      │
-                                                                                                  │
+                                                                                                  ┃
  ▌ tool exec just test -p codex-tui                                                               ┃
                                                                                                   ┃
  ▌ edited 3 files +128 -24                                                                        ┃

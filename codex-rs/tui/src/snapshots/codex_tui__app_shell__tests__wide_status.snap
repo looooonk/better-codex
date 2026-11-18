@@ -7,20 +7,20 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
 ──────────────────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                               │
  ◆ CONVERSATION                                               │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                             │▎Model │ Permissions │ Appearance │Integrations
- ▎ YOU  Create a divergent standalone TUI.                    │▎━━━━━━─────────────────────────────────────────
-                                                              │▎› Model: gpt-5-codex
- ▎ CODEX  Started a fullscreen app shell backed by app-server │▎  Reasoning: default
-          turns.                                              │▎  Service tier: default
- ▎ PLAN  1. Build shell                                       │▎
-         2. Wire transcript                                   │
-         3. Render dashboard                                  │▎◆ PLAN
-                                                              │▎Build the standalone shell in slices.
- ▌ tool exec just test -p codex-tui                           │▎x Shell frame
-                                                              │▎> Transcript model
- ▌ edited 3 files +128 -24                                    │▎- Approvals
-                                                              │
- ▎ CODEX  The new shell owns the fullscreen surface.          │▎◆ TOOLS
+ ▎ YOU  Create a divergent standalone TUI.                    │▎Model │ Permissions │ Appearance │Integrations
+                                                              │▎━━━━━━─────────────────────────────────────────
+ ▎ CODEX  Started a fullscreen app shell backed by app-server │▎› Model: gpt-5-codex
+          turns.                                              │▎  Reasoning: default
+ ▎ PLAN  1. Build shell                                       │▎  Service tier: default
+         2. Wire transcript                                   │▎
+         3. Render dashboard                                  │
+                                                              │▎◆ PLAN
+ ▌ tool exec just test -p codex-tui                           │▎Build the standalone shell in slices.
+                                                              │▎x Shell frame
+ ▌ edited 3 files +128 -24                                    │▎> Transcript model
+                                                              │▎- Approvals
+ ▎ CODEX  The new shell owns the fullscreen surface.          │
+                                                              │▎◆ TOOLS
                                                               │▎in progress exec just test -p codex-tui
                                                               │
                                                               │▎◆ EDITS

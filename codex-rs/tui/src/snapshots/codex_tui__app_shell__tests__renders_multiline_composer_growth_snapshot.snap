@@ -8,7 +8,7 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ CODEX  Started a fullscreen app shell backed │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          by app-server turns.                  │ │▎+ New session  Ctrl+N
+          by app-server turns.                  ┃ │▎+ New session  Ctrl+N
  ▎ PLAN  1. Build shell                         ┃ │▎loading sessions
          2. Wire transcript                     ┃ │
          3. Render dashboard                    ┃ │▎◆ THREAD

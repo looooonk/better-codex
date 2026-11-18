@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell/status_surfaces_tests.rs
-assertion_line: 53
 expression: rendered
 ---
 
@@ -8,18 +7,18 @@ expression: rendered
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ◆ CONVERSATION
- ▎ YOU  Create a divergent standalone TUI.                                                        ┃
-                                                                                                  ┃
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              ┃
- ▎ PLAN  1. Build shell                                                                           ┃
-         2. Wire transcript                                                                       ┃
-         3. Render dashboard                                                                      ┃
-                                                                                                  ┃
- ▌ tool exec just test -p codex-tui                                                               ┃
-                                                                                                  ┃
- ▌ edited 3 files +128 -24                                                                        ┃
-                                                                                                  ┃
- ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
+ ▎ YOU  Create a divergent standalone TUI.
+
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+         3. Render dashboard
+
+ ▌ tool exec just test -p codex-tui
+
+ ▌ edited 3 files +128 -24
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                                                   │

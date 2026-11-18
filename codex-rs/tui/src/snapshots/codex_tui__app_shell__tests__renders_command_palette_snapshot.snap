@@ -7,21 +7,21 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ YOU  Create╭──────────────────────────────────────────────────────────────────────╮
-              │◆ ACTIONS  Ctrl+P                                                     │
- ▎ CODEX  Star│                                                                      │
-          by a│▌ New session  Start an empty session in the c...                     │
- ▎ PLAN  1. Bu│  Copy transcript item                                                │
-         2. Wi│  Clear visible transcript                                            │00001
-         3. Re│  Select latest transcript item                                       │ession list
-              │  Jump transcript to top                                              │
- ▌ tool exec j│  Jump transcript to bottom                                           │
-              │  Interrupt active turn                                               │
- ▌ edited 3 fi│  Switch model                                                        │
-              │  Change permissions                                                  │
- ▎ CODEX  The │  Resume thread                                                       │
-          surf│  Fork thread                                                         │
+ ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+              ╭──────────────────────────────────────────────────────────────────────╮
+ ▎ CODEX  Star│◆ ACTIONS  Ctrl+P                                                     │
+          by a│                                                                      │
+ ▎ PLAN  1. Bu│▌ New session  Start an empty session in the c...                     │
+         2. Wi│  Copy transcript item                                                │
+         3. Re│  Clear visible transcript                                            │00001
+              │  Select latest transcript item                                       │ession list
+ ▌ tool exec j│  Jump transcript to top                                              │
+              │  Jump transcript to bottom                                           │
+ ▌ edited 3 fi│  Interrupt active turn                                               │
+              │  Switch model                                                        │
+ ▎ CODEX  The │  Change permissions                                                  │
+          surf│  Resume thread                                                       │
+              │  Fork thread                                                         │
               │  Import Claude Code setup                                            │
               │  Compact context                                                     │
               │↑↓ / j k navigate   Enter select   Esc close  1/13                    │

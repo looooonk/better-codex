@@ -7,21 +7,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  25 sessions
- ▎ YOU  Create a divergent standalone TUI.        │▎+ New session  Ctrl+N
-                                                  │▎  17/25 Session 16 [main]  pagination fixture
- ▎ CODEX  Started a fullscreen app shell backed   │▎  18/25 Session 17 [main]  pagination fixture
-          by app-server turns.                    │▎  19/25 Session 18 [main]  pagination fixture
- ▎ PLAN  1. Build shell                           │▎  20/25 Session 19 [main]  pagination fixture
-         2. Wire transcript                       │▎› 21/25 Session 20 [main]  pagination fixture
-         3. Render dashboard                      │
-                                                  │▎◆ THREAD
- ▌ tool exec just test -p codex-tui               │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
- ▌ edited 3 files +128 -24                        │▎resume, fork, archive, delete in session list
+ ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  ACTIVE  25 sessions
+                                                  │▎+ New session  Ctrl+N
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  17/25 Session 16 [main]  pagination fixture
+          by app-server turns.                    │▎  18/25 Session 17 [main]  pagination fixture
+ ▎ PLAN  1. Build shell                           │▎  19/25 Session 18 [main]  pagination fixture
+         2. Wire transcript                       │▎  20/25 Session 19 [main]  pagination fixture
+         3. Render dashboard                      │▎› 21/25 Session 20 [main]  pagination fixture
                                                   │
+ ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+                                                  │▎stage-one
+ ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │
+                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

@@ -18,6 +18,7 @@ fn copy_shortcut_supports_control_and_command() {
 #[test]
 fn copies_exact_message_selection_and_retains_it() {
     let mut shell = ShellState::snapshot_fixture();
+    let transcript_before_copy = shell.transcript.clone();
     shell.composer.set_text("alpha\tbeta");
     shell.composer.set_selection(/*anchor*/ 5, /*cursor*/ 10);
     let mut copied = None;
@@ -30,10 +31,7 @@ fn copies_exact_message_selection_and_retains_it() {
     assert_eq!(copied, Some("\tbeta".to_string()));
     assert_eq!(shell.composer.selected_text(), Some("\tbeta"));
     assert!(shell.clipboard_lease.is_some());
-    assert_eq!(
-        shell.transcript.back().map(|line| line.text.as_str()),
-        Some("copied selected text")
-    );
+    assert_eq!(shell.transcript, transcript_before_copy);
 }
 
 #[test]

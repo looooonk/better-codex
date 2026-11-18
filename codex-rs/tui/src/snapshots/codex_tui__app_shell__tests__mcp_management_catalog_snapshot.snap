@@ -7,21 +7,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ────────────────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                             │
  ◆ CONVERSATION                                             │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │Integrations
- ▎ YOU  Create a divergent standalone TUI.                  │▎──────────────────────────────────━━━━━━━━━━━━━
-                                                            │▎mcp inventory refreshed
- ▎ CODEX  Started a fullscreen app shell backed by app-     │▎› MCP servers: 2 servers / 3 tools / 1 login n…
-          server turns.                                     │▎  Plugins: not loaded
- ▎ PLAN  1. Build shell                                     │▎
-         2. Wire transcript                                 │
-         3. Render dashboard                                │▎◆ PLAN
-                   ╭──────────────────────────────────────────────────────────────────────╮ slices.
- ▌ tool exec just t│◆ MCP SERVERS                                                         │
-                   │1/2 mcp servers  ↑↓ / j k navigate                                    │
- ▌ edited 3 files +│Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
- ▎ STATUS  mcp mana│> login        github 2 tools                                         │
-                   │  bearer       linear 1 tools                                         │
- ▎ CODEX  The new s│                                                                      │ codex-tui
+ ▎ YOU  Create a divergent standalone TUI.                  │▎Model │ Permissions │ Appearance │Integrations
+                                                            │▎──────────────────────────────────━━━━━━━━━━━━━
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │▎mcp inventory refreshed
+          server turns.                                     │▎› MCP servers: 2 servers / 3 tools / 1 login n…
+ ▎ PLAN  1. Build shell                                     │▎  Plugins: not loaded
+         2. Wire transcript                                 │▎
+         3. Render dashboard                                │
+                                                            │▎◆ PLAN
+ ▌ tool exec just t╭──────────────────────────────────────────────────────────────────────╮ slices.
+                   │◆ MCP SERVERS                                                         │
+ ▌ edited 3 files +│1/2 mcp servers  ↑↓ / j k navigate                                    │
+ ▎ STATUS  mcp mana│Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
+                   │> login        github 2 tools                                         │
+ ▎ CODEX  The new s│  bearer       linear 1 tools                                         │
+                   │                                                                      │ codex-tui
                    │Action: press Enter or l to start oauth login                         │
                    │                                                                      │
                    ╰──────────────────────────────────────────────────────────────────────╯

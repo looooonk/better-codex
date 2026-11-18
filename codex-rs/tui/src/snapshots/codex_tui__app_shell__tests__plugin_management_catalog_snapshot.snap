@@ -7,21 +7,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ────────────────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                             │
  ◆ CONVERSATION                                             │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │Integrations
- ▎ YOU  Create a divergent standalone TUI.                  │▎──────────────────────────────────━━━━━━━━━━━━━
-                                                            │▎plugin inventory refreshed
- ▎ CODEX  Started a fullscreen app shell backed by app-     │▎  MCP servers: not loaded
-          server turns.                                     │▎› Plugins: 1 installed / 2 available
- ▎ PLAN  1. Build shell                                     │▎
-         2. Wire transcript                                 │
-         3. Render dashboard                                │▎◆ PLAN
-                   ╭──────────────────────────────────────────────────────────────────────╮ slices.
- ▌ tool exec just t│◆ PLUGINS                                                             │
-                   │1/2 plugin catalog  ↑↓ / j k navigate                                 │
- ▌ edited 3 files +│Install / update ↵  Toggle e  Uninstall u  Refresh r                  │
- ▎ STATUS  plugin m│> enabled    Calendar (local)                                         │
-                   │  available  Drive (local)                                            │
- ▎ CODEX  The new s│                                                                      │ codex-tui
+ ▎ YOU  Create a divergent standalone TUI.                  │▎Model │ Permissions │ Appearance │Integrations
+                                                            │▎──────────────────────────────────━━━━━━━━━━━━━
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │▎plugin inventory refreshed
+          server turns.                                     │▎  MCP servers: not loaded
+ ▎ PLAN  1. Build shell                                     │▎› Plugins: 1 installed / 2 available
+         2. Wire transcript                                 │▎
+         3. Render dashboard                                │
+                                                            │▎◆ PLAN
+ ▌ tool exec just t╭──────────────────────────────────────────────────────────────────────╮ slices.
+                   │◆ PLUGINS                                                             │
+ ▌ edited 3 files +│1/2 plugin catalog  ↑↓ / j k navigate                                 │
+ ▎ STATUS  plugin m│Install / update ↵  Toggle e  Uninstall u  Refresh r                  │
+                   │> enabled    Calendar (local)                                         │
+ ▎ CODEX  The new s│  available  Drive (local)                                            │
+                   │                                                                      │ codex-tui
                    │Action: press i or Enter to update from the marketplace               │
                    │                                                                      │
                    ╰──────────────────────────────────────────────────────────────────────╯

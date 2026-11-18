@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell/settings/persistence_tests.rs
-assertion_line: 103
 expression: rendered
 ---
 
@@ -8,19 +7,19 @@ expression: rendered
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ◆ CONVERSATION
- ▎ SYSTEM  Better Codex app shell
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
- ▎ PLAN  1. Build she╭ Select approval policy ──────────────────────────────────────────╮
-         2. Wire tran│   1 ○ On request                                                 │
-         3. Render da│       Let Codex request approval when an action needs it.        │
-                     │ › 2 ● Unless trusted (this session)  current                     │
- ▌ tool exec just tes│       Ask before commands that are not known to be safe. Saved   │
-                     │       defaults stay unchanged.                                   │
- ▌ edited 3 files +12│   3 ○ Never                                                      │
-                     │       Never pause the agent to request approval.                 │
- ▎ CODEX  The new she│  wheel / j k  Enter select  Esc cancel  2/3                      │
+ ▎ PLAN  1. Build shell
+         2. Wire tran╭ Select approval policy ──────────────────────────────────────────╮
+         3. Render da│   1 ○ On request                                                 │
+                     │       Let Codex request approval when an action needs it.        │
+ ▌ tool exec just tes│ › 2 ● Unless trusted (this session)  current                     │
+                     │       Ask before commands that are not known to be safe. Saved   │
+ ▌ edited 3 files +12│       defaults stay unchanged.                                   │
+                     │   3 ○ Never                                                      │
+ ▎ CODEX  The new she│       Never pause the agent to request approval.                 │
+                     │  wheel / j k  Enter select  Esc cancel  2/3                      │
                      ╰──────────────────────────────────────────────────────────────────╯
 
 

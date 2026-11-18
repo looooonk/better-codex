@@ -8,8 +8,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
   │ CHANGED FILES         │OLD FILE                          │NEW FILE                           │
  ◆│                       │src/tab\tname.rs                  │src/tab\tname.rs                   │
  ▎│ > M src/tab\tname.rs  │        @@ -1,1 +1,1 @@           │        @@ -1,1 +1,1 @@            │
- ▎│                       │    1 - old                       │    1 + final                      │
-  │                       │                                  │                                   │
+  │                       │    1 - old                       │    1 + final                      │
  ▎│                       │                                  │                                   │
   │                       │                                  │                                   │
  ▎│                       │                                  │                                   │
@@ -21,6 +20,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
  ▌│                       │                                  │                                   │
   │                       │                                  │                                   │
  ▎│                       │                                  │                                   │
+  │                       │                                  │                                   │
   │                       │                                  │                                   │
   │                       │                                  │                                   │
   │                       │                                  │                                   │

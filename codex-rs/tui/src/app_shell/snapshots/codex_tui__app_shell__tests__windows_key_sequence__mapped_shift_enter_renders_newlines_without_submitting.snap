@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell/windows_key_sequence_tests.rs
-assertion_line: 26
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24))"
 ---
                                                   │
@@ -9,7 +8,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24))"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ CODEX  Started a fullscreen app shell backed │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          by app-server turns.                  │ │▎+ New session  Ctrl+N
+          by app-server turns.                  ┃ │▎+ New session  Ctrl+N
  ▎ PLAN  1. Build shell                         ┃ │▎loading sessions
          2. Wire transcript                     ┃ │
          3. Render dashboard                    ┃ │▎◆ THREAD

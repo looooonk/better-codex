@@ -102,10 +102,7 @@ impl ShellState {
         };
 
         match copy_fn(&text) {
-            Ok(lease) => {
-                self.clipboard_lease = lease;
-                self.push_status("copied selected text");
-            }
+            Ok(lease) => self.clipboard_lease = lease,
             Err(error) => self.push_error(format!("Copy failed: {error}")),
         }
         true

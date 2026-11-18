@@ -138,7 +138,7 @@ fn alt_digits_map_to_response_ordinals() {
 #[test]
 fn copies_selected_transcript_item() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.transcript_selection = Some(1);
+    shell.select_latest_transcript_item();
     let mut copied = None;
 
     shell.copy_selected_transcript_with(|text| {

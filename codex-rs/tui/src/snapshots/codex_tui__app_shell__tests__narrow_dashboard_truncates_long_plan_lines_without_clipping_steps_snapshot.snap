@@ -7,21 +7,21 @@ expression: rendered
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
- ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
-                                                  │▎› Model: gpt-5-codex
- ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
-          by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │▎
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ PLAN
-                                                  │▎This deliberately long plan explanation must s…
- ▌ tool exec just test -p codex-tui               │▎x Inspect measurement
-                                                  │▎x Truncate styled lines
- ▌ edited 3 files +128 -24                        │▎> Preserve hit targets
-                                                  │▎- Verify narrow rendering
- ▎ CODEX  The new shell owns the fullscreen       │▎- Final plan row remains visible
-          surface.                                │
+ ▎ YOU  Create a divergent standalone TUI.        │▎Model │ Permissions │ Appearance │Integrations
+                                                  │▎━━━━━━─────────────────────────────────────────
+ ▎ CODEX  Started a fullscreen app shell backed   │▎› Model: gpt-5-codex
+          by app-server turns.                    │▎  Reasoning: default
+ ▎ PLAN  1. Build shell                           │▎  Service tier: default
+         2. Wire transcript                       │▎
+         3. Render dashboard                      │
+                                                  │▎◆ PLAN
+ ▌ tool exec just test -p codex-tui               │▎This deliberately long plan explanation must s…
+                                                  │▎x Inspect measurement
+ ▌ edited 3 files +128 -24                        │▎x Truncate styled lines
+                                                  │▎> Preserve hit targets
+ ▎ CODEX  The new shell owns the fullscreen       │▎- Verify narrow rendering
+          surface.                                │▎- Final plan row remains visible
+                                                  │
                                                   │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
                                                   │

@@ -7,21 +7,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ YOU  Create a divergent standalone TUI.        │▎+ New session  Ctrl+N
-                                                  │▎loading sessions
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ THREAD
- ▎ PLAN  1. Build shell                           │▎stage-one
-         2. Wire╭ Select service tier ─────────────────────────────────────────────╮0000001
-         3. Rend│ › 1 ● Default  current                                           │ session list
-                │       Use the model's default service tier.                      │
- ▌ tool exec jus│   2 ○ Fast                                                       │
-                │       2x speed, increased usage                                  │
- ▌ edited 3 file│  wheel / j k  Enter select  Esc cancel  1/2                      │
-                ╰──────────────────────────────────────────────────────────────────╯
- ▎ CODEX  The new shell owns the fullscreen       │
+ ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+ ▎ CODEX  Started a fullscreen app shell backed   │▎loading sessions
+          by app-server turns.                    │
+ ▎ PLAN  1. Build shell                           │▎◆ THREAD
+         2. Wire transcript                       │▎stage-one
+         3. Rend╭ Select service tier ─────────────────────────────────────────────╮0000001
+                │ › 1 ● Default  current                                           │ session list
+ ▌ tool exec jus│       Use the model's default service tier.                      │
+                │   2 ○ Fast                                                       │
+ ▌ edited 3 file│       2x speed, increased usage                                  │
+                │  wheel / j k  Enter select  Esc cancel  1/2                      │
+ ▎ CODEX  The ne╰──────────────────────────────────────────────────────────────────╯
           surface.                                │
+                                                  │
                                                   │
                                                   │
                                                   │

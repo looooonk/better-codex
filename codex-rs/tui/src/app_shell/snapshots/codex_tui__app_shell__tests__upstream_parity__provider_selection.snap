@@ -1,6 +1,5 @@
 ---
 source: tui/src/app_shell/upstream_parity_tests.rs
-assertion_line: 29
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 26))"
 ---
 
@@ -8,7 +7,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 26))"
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ◆ CONVERSATION
- ▎ SYSTEM  Better Codex app shell
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
@@ -21,6 +19,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 26))"
  ▌ edited 3 files +128 -24
  ▎ SYSTEM  Default provider: gateway. Use /new to start with this provider.
  ▎ CODEX  The new shell owns the fullscreen surface.
+
 
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
