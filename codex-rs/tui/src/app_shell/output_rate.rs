@@ -14,7 +14,7 @@ pub(super) struct OutputRate {
 }
 
 impl OutputRate {
-    pub(super) fn record(&mut self, now: Instant, text: &str) {
+    pub(super) fn record(&mut self, now: Instant, text: &str) -> f64 {
         while self
             .buckets
             .front()
@@ -27,11 +27,7 @@ impl OutputRate {
             self.previous = '\0';
         }
 
-        let mut tokens = 0.0;
-        for c in text.chars() {
-            tokens += token_weight(c, self.previous);
-            self.previous = c;
-        }
+        let tokens = estimate_tokens(text, &mut self.previous);
         if let Some((at, count)) = self.buckets.back_mut()
             && now.duration_since(*at) < BUCKET_WIDTH
         {
@@ -39,6 +35,7 @@ impl OutputRate {
         } else {
             self.buckets.push_back((now, tokens));
         }
+        tokens
     }
 
     pub(super) fn tokens_per_second(&self, now: Instant) -> u64 {
@@ -57,6 +54,15 @@ impl OutputRate {
             .clamp(Duration::from_secs(1), RATE_WINDOW);
         (tokens / seconds.as_secs_f64()).round() as u64
     }
+}
+
+pub(super) fn estimate_tokens(text: &str, previous: &mut char) -> f64 {
+    let mut tokens = 0.0;
+    for c in text.chars() {
+        tokens += token_weight(c, *previous);
+        *previous = c;
+    }
+    tokens
 }
 
 // Calibrated against o200k_base counts on source code, Markdown, and translated UI text.

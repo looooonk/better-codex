@@ -43,6 +43,12 @@ impl ShellState {
                 .find(|turn| turn.status == TurnStatus::InProgress)
         {
             self.record_active_turn_started(turn.id.clone());
+            if turn.items_view == codex_app_server_protocol::TurnItemsView::Full {
+                self.turn_outputs
+                    .insert(turn.id.clone(), turn.item_payloads().collect());
+            } else {
+                self.turn_outputs.remove(&turn.id);
+            }
         }
         let thread_id = self.thread_id.to_string();
         self.handle_remote_thread_status(&thread_id, status);

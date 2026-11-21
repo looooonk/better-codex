@@ -148,6 +148,7 @@ impl ShellState {
         let pending_user_input = self.pending_user_input.take();
         let queued_interactive_requests = std::mem::take(&mut self.queued_interactive_requests);
         let live_transcript = std::mem::take(&mut self.transcript);
+        let live_turn_outputs = std::mem::take(&mut self.turn_outputs);
         let live_tool_activity = std::mem::take(&mut self.tool_activity);
         let live_subagent_activity = std::mem::take(&mut self.subagent_activity);
         let live_agent_thread_ids = std::mem::take(&mut self.active_agent_thread_ids);
@@ -164,6 +165,7 @@ impl ShellState {
         self.thread_name = thread.name;
         self.cwd = thread.cwd.to_string_lossy().to_string();
         self.reset_reverted_conversation_projection();
+        self.turn_outputs = live_turn_outputs;
         self.agent_activity = live_agent_activity;
         self.diff_store.set_display_root(thread.cwd.as_path());
         self.push_system("session reverted");

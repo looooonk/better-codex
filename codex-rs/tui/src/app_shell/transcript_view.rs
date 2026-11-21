@@ -541,9 +541,10 @@ pub(super) fn render_transcript_line_with_visualizations(
     inline_visualization_context: Option<&crate::inline_visualization::InlineVisualizationContext>,
 ) -> Vec<HyperlinkLine> {
     if kind == TranscriptKind::Separator {
-        return vec![HyperlinkLine::new(
-            Line::from("─".repeat(usize::from(width))).style(Style::new().fg(palette::border())),
-        )];
+        return vec![HyperlinkLine::new(turn_separator_line(
+            text,
+            usize::from(width),
+        ))];
     }
     if let Some(status) = tool_status
         && matches!(
@@ -570,7 +571,7 @@ pub(super) fn render_transcript_line_with_visualizations(
         TranscriptKind::Error => LineStyle::Red,
     };
 
-    let prefix_width = label.len() + 4;
+    let prefix_width = transcript_prefix_width(kind);
     let body_width = width.saturating_sub(prefix_width).max(1);
     let initial_prefix = style.label_prefix(label, selected);
     let subsequent_prefix = " ".repeat(prefix_width).into();
@@ -612,6 +613,33 @@ pub(super) fn render_transcript_line_with_visualizations(
             .collect();
     }
     rendered_lines
+}
+
+fn transcript_prefix_width(kind: TranscriptKind) -> usize {
+    kind.label().width() + 4 // "▎ " before the label and two spaces after it.
+}
+
+fn turn_separator_line(label: &str, width: usize) -> Line<'static> {
+    let indent = transcript_prefix_width(TranscriptKind::Assistant);
+    let border = palette::border();
+    if label.is_empty() || width <= indent {
+        return Line::from("─".repeat(width).fg(border));
+    }
+
+    let mut line = Line::from(vec![
+        "─".repeat(indent - 1).fg(border),
+        " ".into(),
+        label.to_owned().fg(palette::muted()),
+    ]);
+    let used = indent + label.width();
+    if used > width {
+        return crate::line_truncation::truncate_line_with_ellipsis_if_overflow(line, width);
+    }
+    if width > used {
+        line.spans.push(" ".into());
+        line.spans.push("─".repeat(width - used - 1).fg(border));
+    }
+    line
 }
 
 fn tool_block_lines(

@@ -6938,8 +6938,15 @@ fn turn_completion_adds_one_separator_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
-    shell.active_turn_id = Some("turn-separator".to_string());
-    shell.push_assistant("Turn complete.");
+    shell.record_active_turn_started("turn-separator".to_string());
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn-separator".into(),
+            item_id: "reply".into(),
+            delta: "Turn complete.".into(),
+        },
+    ));
 
     for _ in 0..2 {
         shell.handle_notification(ServerNotification::TurnCompleted(
@@ -6953,8 +6960,9 @@ fn turn_completion_adds_one_separator_snapshot() {
     assert_eq!(
         shell.transcript,
         VecDeque::from([
-            TranscriptLine::new(TranscriptKind::Assistant, "Turn complete."),
-            TranscriptLine::new(TranscriptKind::Separator, ""),
+            TranscriptLine::new(TranscriptKind::Assistant, "Turn complete.").item_id("reply"),
+            TranscriptLine::new(TranscriptKind::Separator, "Took 1.00s · 2.8 tok/s")
+                .item_id("turn-separator"),
         ])
     );
     insta::assert_snapshot!(render_shell(

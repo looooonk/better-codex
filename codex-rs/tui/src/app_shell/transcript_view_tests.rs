@@ -876,3 +876,28 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
         rendered_rows
     );
 }
+
+#[test]
+fn turn_separator_aligns_with_assistant_text_and_fills_the_available_width() {
+    let label = "Took 12.50s · 8.4 tok/s";
+    let reply = render_transcript_line(
+        TranscriptKind::Assistant,
+        "Answer",
+        /*tool_status*/ None,
+        /*width*/ 60,
+        std::path::Path::new("."),
+        /*selected*/ false,
+    );
+    let reply = reply[0].line.to_string();
+    let indent = reply.split_once("Answer").unwrap().0.width();
+    let mut lines = vec![reply];
+    for width in [60, 35, 18, 5, 0] {
+        let line = turn_separator_line(label, width).to_string();
+        assert_eq!(line.width(), width);
+        if width >= indent + 4 {
+            assert_eq!(line.split_once("Took").unwrap().0.width(), indent);
+        }
+        lines.push(line);
+    }
+    insta::assert_snapshot!(lines.join("\n").trim_end());
+}

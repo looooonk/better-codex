@@ -38,14 +38,13 @@ impl ShellState {
         if timeline.has_older {
             self.push_system("Showing recent conversation history");
         }
-        let statuses: HashMap<_, _> = turns
-            .iter()
-            .map(|turn| (turn.id.as_str(), &turn.status))
-            .collect();
+        let turns_by_id: HashMap<_, _> =
+            turns.iter().map(|turn| (turn.id.as_str(), turn)).collect();
         let mut opening_turns = HashSet::new();
         for entry in timeline.entries {
             match entry {
                 ThreadTimelineEntry::TurnStarted { turn_id, .. } => {
+                    self.turn_outputs.entry(turn_id.clone()).or_default();
                     opening_turns.insert(turn_id);
                 }
                 ThreadTimelineEntry::Item { turn_id, item, .. } => {
@@ -54,9 +53,9 @@ impl ShellState {
                     } else {
                         None
                     };
-                    let origin = if statuses
+                    let origin = if turns_by_id
                         .get(turn_id.as_str())
-                        .is_some_and(|status| **status != TurnStatus::InProgress)
+                        .is_some_and(|turn| turn.status != TurnStatus::InProgress)
                         && matches!(
                             item.payload,
                             ThreadItemPayload::FileChange {
@@ -72,14 +71,36 @@ impl ShellState {
                     self.ingest_completed_item_for_turn(&turn_id, *item, origin, rewind_anchor);
                 }
                 ThreadTimelineEntry::Realtime { item, .. } => self.ingest_realtime_item(item),
-                ThreadTimelineEntry::TurnCompleted { status, error, .. } => {
+                ThreadTimelineEntry::TurnCompleted {
+                    turn_id,
+                    status,
+                    error,
+                    started_at,
+                    completed_at,
+                    duration_ms,
+                    ..
+                } => {
                     if let Some(error) = error {
                         self.push_error(error.message);
                     }
                     if status == TurnStatus::Interrupted {
                         self.push_status("turn interrupted");
                     }
-                    self.push_turn_separator();
+                    let turn = turns_by_id.get(turn_id.as_str()).copied();
+                    // A capped timeline can start in the middle of a turn.
+                    if !self.turn_outputs.contains_key(&turn_id)
+                        && let Some(turn) =
+                            turn.filter(|turn| turn.items_view == TurnItemsView::Full)
+                    {
+                        self.turn_outputs
+                            .insert(turn_id.clone(), turn.item_payloads().collect());
+                    }
+                    let duration = super::turn_summary::turn_duration(
+                        duration_ms.or_else(|| turn.and_then(|t| t.duration_ms)),
+                        started_at.or_else(|| turn.and_then(|t| t.started_at)),
+                        completed_at.or_else(|| turn.and_then(|t| t.completed_at)),
+                    );
+                    self.push_turn_separator(&turn_id, duration);
                 }
             }
         }

@@ -186,7 +186,7 @@ impl ShellState {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     if self.push_streaming_assistant_delta(&delta.item_id, &delta.delta) {
-                        self.record_streamed_output(&delta.turn_id, &delta.delta);
+                        self.record_streamed_output(&delta.turn_id, &delta.item_id, &delta.delta);
                     }
                 } else if self.prepare_active_agent_thread(&delta.thread_id) {
                     self.agent_activity.record_child_progress(
@@ -203,7 +203,7 @@ impl ShellState {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     if self.push_streaming_plan_delta(&delta.item_id, &delta.delta) {
-                        self.record_streamed_output(&delta.turn_id, &delta.delta);
+                        self.record_streamed_output(&delta.turn_id, &delta.item_id, &delta.delta);
                     }
                 }
             }
@@ -253,9 +253,7 @@ impl ShellState {
                     self.finish_streaming_plan();
                     self.finish_streaming_assistant();
                     self.clear_safety_buffering_for_turn_completion(&completed.turn.id);
-                    if completed_active_turn {
-                        self.clear_active_turn();
-                    }
+
                     self.mark_workspace_status_refresh_due();
                     self.status = match completed.turn.status {
                         TurnStatus::Completed => "ready".to_string(),
@@ -264,7 +262,19 @@ impl ShellState {
                         TurnStatus::InProgress => "thinking".to_string(),
                     };
                     if completed_active_turn && turn_ended {
-                        self.push_turn_separator();
+                        if let Some(output) = self.turn_outputs.get_mut(&completed.turn.id) {
+                            for item in completed.turn.item_payloads() {
+                                output.record_item(item);
+                            }
+                        }
+                        let duration = super::turn_summary::turn_duration(
+                            completed.turn.duration_ms,
+                            completed.turn.started_at,
+                            completed.turn.completed_at,
+                        )
+                        .or_else(|| self.turn_started_at.map(|started| started.elapsed()));
+                        self.push_turn_separator(&completed.turn.id, duration);
+                        self.clear_active_turn();
                         self.request_thread_usage_refresh();
                     }
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {

@@ -50,6 +50,7 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicU64;
@@ -180,6 +181,7 @@ mod transcript_export;
 mod transcript_render;
 mod transcript_selection;
 mod transcript_view;
+mod turn_summary;
 mod turn_timer;
 mod user_input;
 mod vim_input;
@@ -509,6 +511,7 @@ struct ShellState {
     active_turn_id: Option<String>,
     turn_started_at: Option<std::time::Instant>,
     output_rate: output_rate::OutputRate,
+    turn_outputs: HashMap<String, turn_summary::TurnOutput>,
     pending_approval: Option<PendingApproval>,
     pending_session_delete: Option<PendingSessionDelete>,
     pending_elicitation: Option<PendingElicitation>,
@@ -676,6 +679,7 @@ impl ShellState {
             active_turn_id: None,
             turn_started_at: None,
             output_rate: Default::default(),
+            turn_outputs: HashMap::new(),
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
@@ -744,6 +748,11 @@ impl ShellState {
             if turn.items_view != TurnItemsView::Full || terminal_turn_has_in_progress_file_change {
                 self.diff_store.mark_history_truncated();
             }
+            let duration =
+                turn_summary::turn_duration(turn.duration_ms, turn.started_at, turn.completed_at);
+            if turn.items_view == TurnItemsView::Full {
+                self.turn_outputs.entry(turn.id.clone()).or_default();
+            }
             let turn_id = turn.id;
             for (item_index, item) in turn.items.into_iter().enumerate() {
                 let rewind_anchor = if item_index == 0 {
@@ -772,7 +781,7 @@ impl ShellState {
                 self.push_status("turn interrupted");
             }
             if turn.status != TurnStatus::InProgress {
-                self.push_turn_separator();
+                self.push_turn_separator(&turn_id, duration);
             }
         }
     }
@@ -1761,6 +1770,9 @@ impl ShellState {
         origin: CompletedItemOrigin,
         rewind_anchor: Option<rewind::RewindAnchor>,
     ) {
+        if let Some(output) = self.turn_outputs.get_mut(turn_id) {
+            output.record_item(&item.payload);
+        }
         self.agent_activity.reduce_completed(&item);
         match item.payload {
             ThreadItemPayload::UserMessage {
@@ -2159,10 +2171,6 @@ impl ShellState {
         self.push_output_with_status_for_item(next_local_output_item_id(), text.into(), status);
     }
 
-    fn push_turn_separator(&mut self) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Separator, ""));
-    }
-
     fn push_output_with_status_for_item(
         &mut self,
         item_id: impl Into<String>,
@@ -2460,6 +2468,7 @@ impl ShellState {
             active_turn_id: None,
             turn_started_at: None,
             output_rate: Default::default(),
+            turn_outputs: HashMap::new(),
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
@@ -2766,6 +2775,7 @@ pub mod bench_support {
             active_turn_id: Some("turn-bench-1234567890".to_string()),
             turn_started_at: Some(std::time::Instant::now()),
             output_rate: Default::default(),
+            turn_outputs: HashMap::new(),
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
