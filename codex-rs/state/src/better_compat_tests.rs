@@ -2,6 +2,7 @@ use super::*;
 use crate::SqliteConfig;
 use crate::migrations::QUEUE_MIGRATOR;
 use crate::migrations::STATE_MIGRATOR;
+use crate::migrations::runtime_state_migrator;
 use codex_utils_absolute_path::test_support::PathExt;
 use pretty_assertions::assert_eq;
 use std::borrow::Cow;
@@ -190,7 +191,7 @@ async fn repairs_only_matching_legacy_migration_checksums() -> anyhow::Result<()
     });
     let sqlite = SqliteConfig::new_for_testing(directory.as_path().abs());
     let pool = sqlite.open_read_write_pool(&sqlite.state_db_path()).await?;
-    sqlx::raw_sql("CREATE TABLE _sqlx_migrations (version INTEGER PRIMARY KEY, description TEXT, checksum BLOB);")
+    sqlx::raw_sql("CREATE TABLE _sqlx_migrations (version INTEGER PRIMARY KEY, description TEXT, checksum BLOB, success BOOLEAN);")
         .execute(&pool).await?;
     for (old, new) in [(49, 10_001), (50, 10_002), (51, 10_003)] {
         let migration = STATE_MIGRATOR
@@ -198,7 +199,7 @@ async fn repairs_only_matching_legacy_migration_checksums() -> anyhow::Result<()
             .iter()
             .find(|m| m.version == new)
             .unwrap();
-        sqlx::query("INSERT INTO _sqlx_migrations VALUES (?, 'legacy', ?)")
+        sqlx::query("INSERT INTO _sqlx_migrations VALUES (?, 'legacy', ?, TRUE)")
             .bind(old)
             .bind(migration.checksum.as_ref())
             .execute(&pool)
@@ -212,7 +213,7 @@ async fn repairs_only_matching_legacy_migration_checksums() -> anyhow::Result<()
             .await?,
         vec![10_001, 10_002, 10_003]
     );
-    sqlx::query("INSERT INTO _sqlx_migrations VALUES (49, 'upstream', X'1234')")
+    sqlx::query("INSERT INTO _sqlx_migrations VALUES (49, 'upstream', X'1234', TRUE)")
         .execute(&pool)
         .await?;
     repair_migrations(&pool, &STATE_MIGRATOR).await?;
@@ -223,5 +224,119 @@ async fn repairs_only_matching_legacy_migration_checksums() -> anyhow::Result<()
         vec![49, 10_001, 10_002, 10_003]
     );
     pool.close().await;
+    Ok(())
+}
+
+async fn check_canonical_state_startup(sqlite: &SqliteConfig) -> anyhow::Result<()> {
+    let pool = sqlite
+        .open_state_db(&runtime_state_migrator(), /*telemetry_override*/ None)
+        .await?;
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT version, description, lower(hex(checksum)) FROM _sqlx_migrations
+         WHERE version IN (63, 64) ORDER BY version",
+    )
+    .fetch_all(&pool)
+    .await?;
+    // These are the released SQLx checksums from upstream eb53da6c3a.
+    assert_eq!(
+        rows,
+        vec![
+            (63, "session model ids".into(), "dffdc4b9759f9b7fc8f3405daa55584e527fc3c4a167f0a89c687e2c02ded8720655a1d3049833cfd67070541959de02".into()),
+            (64, "thread listing indexes".into(), "a6862d0af07feb8851ce32e2cc0e470bc8bfd5b851a87d82f5f989604c2bffe11ee2579a80f318bba4612e493175e5e5".into()),
+        ],
+    );
+    // Both objects must be usable even if the listing SQL originally ran as 63.
+    sqlx::query("SELECT session_id FROM session_model_ids LIMIT 0")
+        .execute(&pool)
+        .await?;
+    let indexes: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM pragma_index_list('threads')
+         WHERE name GLOB 'idx_threads_interactive_*' ORDER BY name",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        indexes,
+        [
+            "idx_threads_interactive_created_at_ms",
+            "idx_threads_interactive_recency_at_ms",
+            "idx_threads_interactive_updated_at_ms",
+        ]
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn fresh_and_stock_state_use_canonical_migrations() -> anyhow::Result<()> {
+    let fresh_home = tempfile::tempdir()?;
+    let fresh = SqliteConfig::new_for_testing(fresh_home.path().abs());
+    check_canonical_state_startup(&fresh).await?;
+    check_canonical_state_startup(&fresh).await?;
+
+    let stock_home = tempfile::tempdir()?;
+    let stock = SqliteConfig::new_for_testing(stock_home.path().abs());
+    let pool = stock.open_read_write_pool(&stock.state_db_path()).await?;
+    STATE_MIGRATOR.run_to(/*target*/ 64, &pool).await?;
+    pool.close().await;
+    check_canonical_state_startup(&stock).await
+}
+
+#[tokio::test]
+async fn upgrades_alpha_21_and_22_thread_listing_history_once() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    let sqlite = SqliteConfig::new_for_testing(home.path().abs());
+    let pool = sqlite.open_read_write_pool(&sqlite.state_db_path()).await?;
+    // Both releases shipped this same set, with only the listing indexes at 63.
+    let mut released: Vec<_> = STATE_MIGRATOR
+        .iter()
+        .filter(|m| m.version <= 62 || m.version == 64 || (10_001..=10_005).contains(&m.version))
+        .cloned()
+        .collect();
+    released
+        .iter_mut()
+        .find(|m| m.version == 64)
+        .unwrap()
+        .version = 63;
+    Migrator::with_migrations(released).run(&pool).await?;
+    sqlx::query("UPDATE _sqlx_migrations SET execution_time = 12345 WHERE version = 63")
+        .execute(&pool)
+        .await?;
+    pool.close().await;
+
+    check_canonical_state_startup(&sqlite).await?;
+    check_canonical_state_startup(&sqlite).await?;
+    let pool = sqlite
+        .open_read_only_pool(&sqlite.state_db_path(), /*busy_timeout*/ None)
+        .await?;
+    let execution_time: i64 =
+        sqlx::query_scalar("SELECT execution_time FROM _sqlx_migrations WHERE version = 64")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(execution_time, 12345);
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn startup_rejects_an_unrecognized_checksum_at_63() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    let sqlite = SqliteConfig::new_for_testing(home.path().abs());
+    let pool = sqlite.open_read_write_pool(&sqlite.state_db_path()).await?;
+    STATE_MIGRATOR.run_to(/*target*/ 63, &pool).await?;
+    sqlx::query("UPDATE _sqlx_migrations SET checksum = zeroblob(48) WHERE version = 63")
+        .execute(&pool)
+        .await?;
+    pool.close().await;
+
+    let err = sqlite
+        .open_state_db(&runtime_state_migrator(), /*telemetry_override*/ None)
+        .await
+        .expect_err("SQLx should reject the unknown checksum");
+    assert!(matches!(
+        err.root_cause()
+            .downcast_ref::<sqlx::migrate::MigrateError>(),
+        Some(sqlx::migrate::MigrateError::VersionMismatch(63))
+    ));
     Ok(())
 }

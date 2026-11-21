@@ -1303,7 +1303,7 @@ WITH RECURSIVE subtree(child_thread_id, parent_thread_id) AS (
         }
         None => builder.push(" FROM threads"),
     };
-    // Keep the stored source values and their order in sync with migration 0063.
+    // Keep the stored source values and their order in sync with migration 0064.
     // SQLite needs a literal IN list to recognize the partial-index predicate.
     const INDEXED_INTERACTIVE_SOURCES: [&str; 4] = [
         "cli",

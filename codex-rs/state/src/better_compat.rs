@@ -18,13 +18,15 @@ pub(crate) async fn repair_migrations(
         return Ok(());
     }
     let mut tx = pool.begin().await?;
-    for (old, new) in [(49, 10_001), (50, 10_002), (51, 10_003)] {
+    // Alpha.21 and alpha.22 shipped the thread-listing SQL as 63, now reserved
+    // for session_model_ids. The checksum of upstream's 64 identifies that SQL.
+    for (old, new) in [(49, 10_001), (50, 10_002), (51, 10_003), (63, 64)] {
         let Some(migration) = migrator.migrations.iter().find(|item| item.version == new) else {
             continue;
         };
         sqlx::query(
             "UPDATE _sqlx_migrations SET version = ?, description = ?
-             WHERE version = ? AND checksum = ?
+             WHERE version = ? AND checksum = ? AND success
              AND NOT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = ?)",
         )
         .bind(new)
@@ -35,8 +37,8 @@ pub(crate) async fn repair_migrations(
         .execute(&mut *tx)
         .await?;
         sqlx::query(
-            "DELETE FROM _sqlx_migrations WHERE version = ? AND checksum = ?
-             AND EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = ? AND checksum = ?)",
+            "DELETE FROM _sqlx_migrations WHERE version = ? AND checksum = ? AND success
+             AND EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = ? AND checksum = ? AND success)",
         )
         .bind(old)
         .bind(migration.checksum.as_ref())
