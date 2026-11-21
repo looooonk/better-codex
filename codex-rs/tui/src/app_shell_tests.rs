@@ -6938,7 +6938,17 @@ fn turn_completion_adds_one_separator_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
-    shell.record_active_turn_started("turn-separator".to_string());
+    let home = tempfile::tempdir().unwrap();
+    shell.codex_home = home.path().to_owned();
+    shell.handle_notification(ServerNotification::TurnStarted(
+        codex_app_server_protocol::TurnStartedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn: test_turn("turn-separator", TurnStatus::InProgress),
+        },
+    ));
+    let resume = Instant::now();
+    shell.output_rate.pause(resume - Duration::from_millis(500));
+    shell.output_rate.resume(resume);
     shell.handle_notification(ServerNotification::AgentMessageDelta(
         codex_app_server_protocol::AgentMessageDeltaNotification {
             thread_id: shell.thread_id.to_string(),
@@ -6969,7 +6979,7 @@ fn turn_completion_adds_one_separator_snapshot() {
         shell.transcript,
         VecDeque::from([
             TranscriptLine::new(TranscriptKind::Assistant, "Turn complete.").item_id("reply"),
-            TranscriptLine::new(TranscriptKind::Separator, "Took 1.00s · 42.0 tok/s")
+            TranscriptLine::new(TranscriptKind::Separator, "Took 1.00s · 84.0 tok/s")
                 .item_id("turn-separator"),
         ])
     );
@@ -19337,6 +19347,7 @@ fn started_thread(
 ) -> crate::app_server_session::AppServerStartedThread {
     crate::app_server_session::AppServerStartedThread {
         session: crate::session_state::ThreadSessionState {
+            ephemeral: false,
             can_accept_direct_input: true,
             daybreak_enabled: false,
             thread_id,

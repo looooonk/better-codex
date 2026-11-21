@@ -70,6 +70,7 @@ impl ShellState {
         self.drain_agent_history_updates();
         match event {
             AppServerEvent::Lagged { skipped } => {
+                self.output_rate.invalidate_turn_wait();
                 let refreshed_reverted_session = self.handle_reverted_thread_lag(app_server).await;
                 self.push_system(format!("skipped {skipped} best-effort backend events"));
                 self.diff_store.mark_history_truncated();
@@ -162,6 +163,7 @@ impl ShellState {
                 }
             }
             AppServerEvent::Disconnected { message } => {
+                self.output_rate.invalidate_turn_wait();
                 self.recap = super::recap::RecapState::default();
                 self.disconnect_voice();
                 self.status = "disconnected".to_string();
@@ -232,6 +234,7 @@ impl ShellState {
                 if started.thread_id == self.thread_id.to_string() {
                     self.mark_thread_revert_hydration_stale();
                     self.record_active_turn_started(started.turn.id.clone());
+                    self.output_rate.observe_turn_start();
                     self.reset_safety_buffering_for_turn_start(&started.turn.id);
                     self.status = "thinking".to_string();
                 } else if self.prepare_active_agent_thread(&started.thread_id) {
@@ -269,7 +272,8 @@ impl ShellState {
                             completed.turn.completed_at,
                         )
                         .or_else(|| self.turn_started_at.map(|started| started.elapsed()));
-                        self.push_turn_separator(&completed.turn.id, duration);
+                        let tool_wait = self.output_rate.total_tool_wait(std::time::Instant::now());
+                        self.push_turn_separator(&completed.turn.id, duration, tool_wait);
                         self.clear_active_turn();
                         self.request_thread_usage_refresh();
                     }
@@ -314,6 +318,7 @@ impl ShellState {
             ServerNotification::ThreadStarted(started) => {
                 let thread = started.thread;
                 if thread.id == self.thread_id.to_string() {
+                    self.ephemeral = thread.ephemeral;
                     self.can_accept_direct_input = thread.can_accept_direct_input != Some(false);
                     self.daybreak_enabled = thread.daybreak_enabled.unwrap_or(false);
                 }

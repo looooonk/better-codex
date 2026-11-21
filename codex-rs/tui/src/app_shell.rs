@@ -435,6 +435,7 @@ struct ShellState {
     side_parent: Option<Box<ShellState>>,
     recap: recap::RecapState,
     automatic_recap: automatic_recap::AutomaticRecap,
+    ephemeral: bool,
     can_accept_direct_input: bool,
     daybreak_enabled: bool,
     model_provider_id: String,
@@ -604,6 +605,7 @@ impl ShellState {
             side_parent: None,
             recap: recap::RecapState::default(),
             automatic_recap: automatic_recap::AutomaticRecap::default(),
+            ephemeral: session.ephemeral,
             can_accept_direct_input: session.can_accept_direct_input,
             daybreak_enabled: session.daybreak_enabled,
             model_provider_id: session.model_provider_id,
@@ -778,7 +780,7 @@ impl ShellState {
                 self.push_status("turn interrupted");
             }
             if turn.status != TurnStatus::InProgress {
-                self.push_turn_separator(&turn_id, duration);
+                self.push_turn_separator(&turn_id, duration, /*observed_wait*/ None);
             }
         }
     }
@@ -2375,6 +2377,7 @@ impl ShellState {
             side_parent: None,
             recap: recap::RecapState::default(),
             automatic_recap: automatic_recap::AutomaticRecap::default(),
+            ephemeral: false,
             can_accept_direct_input: true,
             daybreak_enabled: false,
             model_provider_id: "openai".to_string(),
@@ -2682,6 +2685,7 @@ pub mod bench_support {
             side_parent: None,
             recap: recap::RecapState::default(),
             automatic_recap: automatic_recap::AutomaticRecap::default(),
+            ephemeral: false,
             can_accept_direct_input: true,
             daybreak_enabled: false,
             model_provider_id: "openai".to_string(),

@@ -29,6 +29,7 @@ pub(crate) struct MessageHistoryMetadata {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ThreadSessionState {
     pub(crate) thread_id: ThreadId,
+    pub(crate) ephemeral: bool,
     pub(crate) can_accept_direct_input: bool,
     pub(crate) daybreak_enabled: bool,
     pub(crate) forked_from_id: Option<ThreadId>,

@@ -431,6 +431,7 @@ impl ShellState {
         self.recent_guardian_denials.clear();
         self.recap = super::recap::RecapState::default();
         self.automatic_recap.reset();
+        self.ephemeral = session.ephemeral;
         self.can_accept_direct_input = session.can_accept_direct_input;
         self.daybreak_enabled = session.daybreak_enabled;
         self.source_preview = None;

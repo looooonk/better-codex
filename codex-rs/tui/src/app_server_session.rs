@@ -1713,6 +1713,7 @@ async fn thread_session_state_from_thread_start_response(
     )
     .await
     .map(|mut session| {
+        session.ephemeral = response.thread.ephemeral;
         session.can_accept_direct_input = response.thread.can_accept_direct_input != Some(false);
         session.daybreak_enabled = response
             .thread
@@ -1762,6 +1763,7 @@ async fn thread_session_state_from_thread_resume_response(
     )
     .await
     .map(|mut session| {
+        session.ephemeral = response.thread.ephemeral;
         session.can_accept_direct_input = response.thread.can_accept_direct_input != Some(false);
         session.daybreak_enabled = response.thread.daybreak_enabled.unwrap_or(false);
         session
@@ -1799,6 +1801,7 @@ async fn thread_session_state_from_thread_fork_response(
     )
     .await
     .map(|mut session| {
+        session.ephemeral = response.thread.ephemeral;
         session.can_accept_direct_input = response.thread.can_accept_direct_input != Some(false);
         session.daybreak_enabled = response.thread.daybreak_enabled.unwrap_or(false);
         session
@@ -1852,6 +1855,7 @@ async fn thread_session_state_from_thread_response(
         codex_message_history::HistoryConfig::new(config.codex_home.clone(), &config.history);
     let (log_id, entry_count) = codex_message_history::history_metadata(&history_config).await;
     Ok(ThreadSessionState {
+        ephemeral: config.ephemeral,
         can_accept_direct_input: true,
         daybreak_enabled: config.daybreak_enabled,
         thread_id,

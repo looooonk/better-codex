@@ -128,3 +128,27 @@ fn tool_wait_holds_three_seconds_of_model_activity() {
     assert_eq!(rate.tokens_per_second(resume), 60);
     assert_eq!(rate.tokens_per_second(resume + Duration::from_secs(1)), 20);
 }
+
+#[test]
+fn full_turn_wait_includes_distinct_pauses_and_an_unfinished_wait_only_once() {
+    let start = Instant::now();
+    let at = |secs| start + Duration::from_secs(secs);
+    let mut rate = OutputRate::default();
+    rate.pause(at(0));
+    rate.resume(at(1));
+    assert_eq!(rate.total_tool_wait(at(2)), None);
+
+    let mut rate = OutputRate::default();
+    rate.observe_turn_start();
+    assert_eq!(rate.total_tool_wait(at(1)), Some(Duration::ZERO));
+    rate.pause(at(2));
+    rate.pause(at(3));
+    rate.resume(at(7));
+    rate.resume(at(8));
+    rate.observe_turn_start();
+    rate.pause(at(10));
+    assert_eq!(rate.total_tool_wait(at(13)), Some(Duration::from_secs(8)));
+    rate.invalidate_turn_wait();
+    rate.resume(at(14));
+    assert_eq!(rate.total_tool_wait(at(15)), None);
+}

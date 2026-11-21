@@ -132,6 +132,7 @@ impl ShellState {
             timeline,
             agent_history_task,
         } = rehydration;
+        self.ephemeral = thread.ephemeral;
         self.can_accept_direct_input = thread.can_accept_direct_input != Some(false);
         self.daybreak_enabled = thread.daybreak_enabled.unwrap_or(false);
         let thread_id = thread.id;
@@ -143,6 +144,8 @@ impl ShellState {
             .find(|turn| turn.status == TurnStatus::InProgress)
             .map(|turn| turn.id.clone());
         let live_active_turn_id = self.active_turn_id.clone();
+        let live_started_at = self.turn_started_at;
+        let live_rate = std::mem::take(&mut self.output_rate);
         let pending_approval = self.pending_approval.take();
         let pending_elicitation = self.pending_elicitation.take();
         let pending_user_input = self.pending_user_input.take();
@@ -210,8 +213,12 @@ impl ShellState {
         }
         let status_tracks_active_turn = matches!(&thread_status, ThreadStatus::Active { .. });
         self.handle_remote_thread_status(&thread_id, thread_status);
-        if let Some(turn_id) = active_turn_id.or(live_active_turn_id) {
-            self.record_active_turn_started(turn_id);
+        if let Some(turn_id) = active_turn_id.as_ref().or(live_active_turn_id.as_ref()) {
+            self.record_active_turn_started(turn_id.clone());
+            if Some(turn_id) == live_active_turn_id.as_ref() {
+                self.turn_started_at = live_started_at;
+                self.output_rate = live_rate;
+            }
             if !status_tracks_active_turn {
                 self.status = "thinking".to_string();
             }

@@ -238,7 +238,7 @@ fn audit_items_have_exactly_one_blank_row_between_neighbors() {
     shell.clear_streaming_transcript();
     shell.push_system("before");
     shell.push_decision_audit("test", "recorded", "first");
-    shell.push_turn_separator("turn", /*duration*/ None);
+    shell.push_turn_separator("turn", /*duration*/ None, /*observed_wait*/ None);
     shell.push_decision_audit("test", "recorded", "second");
     shell.push_decision_audit("test", "recorded", "third");
     shell.push_status("after");

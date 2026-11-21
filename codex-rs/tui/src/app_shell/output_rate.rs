@@ -13,9 +13,27 @@ pub(super) struct OutputRate {
     stream_started_at: Option<Instant>,
     previous: char,
     paused_at: Option<Instant>,
+    // None when attaching mid-turn: earlier waits cannot be recovered from live events.
+    completed_tool_wait: Option<Duration>,
 }
 
 impl OutputRate {
+    pub(super) fn observe_turn_start(&mut self) {
+        self.completed_tool_wait.get_or_insert(Duration::ZERO);
+    }
+
+    pub(super) fn invalidate_turn_wait(&mut self) {
+        self.completed_tool_wait = None;
+    }
+
+    pub(super) fn total_tool_wait(&self, now: Instant) -> Option<Duration> {
+        let closed = self.completed_tool_wait?;
+        let open = self
+            .paused_at
+            .map_or(Duration::ZERO, |at| now.duration_since(at));
+        Some(closed + open)
+    }
+
     pub(super) fn pause(&mut self, now: Instant) {
         self.paused_at.get_or_insert(now);
     }
@@ -24,6 +42,9 @@ impl OutputRate {
         // Shift the bounded window onto the resumed clock so only model time ages it.
         if let Some(paused) = self.paused_at.take() {
             let wait = now.duration_since(paused);
+            if let Some(total) = &mut self.completed_tool_wait {
+                *total += wait;
+            }
             for (at, _) in &mut self.buckets {
                 *at += wait;
             }
