@@ -3,9 +3,9 @@ name: code-review
 description: Run a final code review on a pull request
 ---
 
-Use subagents to review code using all code-review-* skills other than this orchestrator. One subagent per skill. Pass full skill path to subagents. Use xhigh reasoning.
+Review the code yourself using all other code-review-* skills. Use subagents only when the user explicitly asks for multiple agents or delegation. If they do, follow their requested scope and agent count and give each reviewer the full path to the relevant skill.
 
-You must return every single issue from every subagent. You can return an unlimited number of findings.
+Report every issue you find, including findings from any requested reviewers.
 Use raw Markdown to report findings.
 Number findings for ease of reference.
 Each finding must include a specific file path and line number.
