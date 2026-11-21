@@ -1,10 +1,53 @@
 use super::*;
+use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ThreadRealtimeItem;
 use codex_app_server_protocol::ThreadRealtimeItemContent;
 use codex_app_server_protocol::ThreadRealtimeTranscriptRole;
 use pretty_assertions::assert_eq;
 use std::collections::VecDeque;
 use std::sync::Mutex;
+
+impl TimelineReader for JSONRPCErrorError {
+    async fn read_timeline(
+        &self,
+        _params: ThreadTimelineListParams,
+    ) -> Result<ThreadTimelineListResponse, TypedRequestError> {
+        Err(TypedRequestError::Server {
+            method: "thread/timeline/list".into(),
+            source: self.clone(),
+        })
+    }
+}
+
+#[tokio::test]
+async fn falls_back_to_turn_history_only_for_an_unsupported_timeline_method() {
+    let thread = ThreadId::new();
+    for (code, message) in [
+        (-32601, "Method not found"),
+        (
+            -32600,
+            "Invalid request: unknown variant `thread/timeline/list`, expected one of `initialize`, `thread/read`",
+        ),
+    ] {
+        let error = JSONRPCErrorError {
+            code,
+            message: message.into(),
+            data: None,
+        };
+        assert!(
+            load_thread_timeline(&error, thread)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    let error = JSONRPCErrorError {
+        code: -32600,
+        message: "Invalid request: unknown variant `unexpected` in thread/timeline/list".into(),
+        data: None,
+    };
+    assert!(load_thread_timeline(&error, thread).await.is_err());
+}
 
 struct Reader {
     pages: Mutex<VecDeque<ThreadTimelineListResponse>>,

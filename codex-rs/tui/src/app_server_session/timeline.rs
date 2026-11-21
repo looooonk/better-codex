@@ -61,7 +61,15 @@ pub(crate) async fn load_thread_timeline(
         .await?;
         let page = match response {
             Ok(page) => page,
-            Err(TypedRequestError::Server { source, .. }) if source.code == -32601 => {
+            // Codex backends that deserialize a typed method enum report an unknown
+            // method as Invalid Request. Keep the ordinary turn history on either form.
+            Err(TypedRequestError::Server { source, .. })
+                if source.code == super::JSONRPC_METHOD_NOT_FOUND
+                    || (source.code == super::JSONRPC_INVALID_REQUEST
+                        && source
+                            .message
+                            .contains("unknown variant `thread/timeline/list`")) =>
+            {
                 return Ok(None);
             }
             Err(error) => return Err(error.into()),

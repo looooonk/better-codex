@@ -10,15 +10,29 @@ use std::path::Path;
 
 // Usage normally directly precedes completion. Avoid replaying long turns to populate a label.
 const TAIL_BYTES: u64 = 64 * 1024;
+// Unlike plain rollouts, zstd streams must decompress everything before a requested offset.
+// Limit optional usage lookups to the same maximum work as 64 plain turn tails per page.
+pub(super) const ARCHIVE_SCAN_BYTES: u64 = 64 * TAIL_BYTES;
 
-pub(super) async fn read(path: &Path, turns: Vec<(String, u64)>) -> HashMap<String, i64> {
+pub(super) async fn read(
+    path: &Path,
+    mut turns: Vec<(String, u64)>,
+    remaining_archive_bytes: &mut u64,
+) -> HashMap<String, i64> {
     let Some(path) = codex_rollout::existing_rollout_path(path).await else {
         return HashMap::new();
     };
+    let compressed = path.extension().is_some_and(|ext| ext == "zst");
+    if compressed {
+        turns.retain(|(_, end)| *end <= *remaining_archive_bytes);
+        let Some(last_end) = turns.iter().map(|(_, end)| *end).max() else {
+            return HashMap::new();
+        };
+        *remaining_archive_bytes -= last_end;
+    }
     tokio::task::spawn_blocking(move || -> io::Result<_> {
         let file = File::open(&path)?;
-        if path.extension().is_some_and(|ext| ext == "zst") {
-            // Walk the archive once, in order, without extracting it into the sessions directory.
+        if compressed {
             let decoder = zstd::stream::read::Decoder::new(file)?;
             read_tails(decoder, turns, |reader, distance| {
                 io::copy(&mut reader.take(distance), &mut io::sink()).map(|_| ())

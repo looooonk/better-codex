@@ -35,10 +35,15 @@ async fn archived_usage_respects_turn_boundaries_and_preserves_the_archive() -> 
     }
     // A later boundary includes a newer record for "first", beyond that turn's requested end.
     ends.push(("unreported".into(), history.len() as u64));
+    // An out-of-budget turn must not force a scan or discard the earlier counts.
+    ends.push(("distant".into(), ARCHIVE_SCAN_BYTES + 1));
     let encoded = zstd::encode_all(history.as_slice(), /*level*/ 1)?;
     std::fs::write(&archive, &encoded)?;
     let expected = HashMap::from([("first".into(), 42), ("second".into(), 15)]);
-    assert_eq!(read(&plain, ends).await, expected);
+    let mut remaining = history.len() as u64;
+    assert_eq!(read(&plain, ends.clone(), &mut remaining).await, expected);
+    assert_eq!(remaining, 0);
+    assert!(read(&plain, ends, &mut remaining).await.is_empty());
     assert_eq!(std::fs::read(archive)?, encoded);
     assert!(!plain.exists());
     Ok(())

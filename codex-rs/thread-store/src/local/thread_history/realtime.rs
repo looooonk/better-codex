@@ -82,6 +82,7 @@ pub(in crate::local) async fn list_timeline(
     let cursor_kind = cursor.as_ref().map_or(4, |cursor| cursor.kind);
     let cursor_id = cursor.as_ref().map_or("", |cursor| cursor.id.as_str());
 
+    let mut remaining_archive_bytes = super::turn_usage::ARCHIVE_SCAN_BYTES;
     let mut rows = Vec::new();
     let max_rows = params.page_size + 1;
     for segment in lineage.segments().iter().rev() {
@@ -196,7 +197,12 @@ LIMIT ?7
             });
         }
         if !turn_ends.is_empty() {
-            let counts = super::turn_usage::read(&segment.rollout_path, turn_ends).await;
+            let counts = super::turn_usage::read(
+                &segment.rollout_path,
+                turn_ends,
+                &mut remaining_archive_bytes,
+            )
+            .await;
             for entry in &mut rows[first..] {
                 if let ThreadTimelineEntry::TurnCompleted {
                     turn_id,

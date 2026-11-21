@@ -702,6 +702,8 @@ a model response that requested local tool work. Clients can hold a rolling rate
 until generation resumes. A terminal `usage` activity carries the reported
 `outputTokens` across responses, including reasoning, before `turn/completed`.
 The timeline's completed turn boundary also carries `outputTokens` when known.
+Usage lookups read a bounded portion of the rollout. A large compressed archive
+can return a completed boundary with no usage count.
 
 # Item history anchors
 
