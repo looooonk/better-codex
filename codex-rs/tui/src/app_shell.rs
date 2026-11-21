@@ -127,6 +127,7 @@ mod managed_worktree;
 mod mcp_management;
 mod modal_view;
 mod navigation;
+mod output_rate;
 mod paste;
 mod pets;
 mod plugin_management;
@@ -507,6 +508,7 @@ struct ShellState {
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
     turn_started_at: Option<std::time::Instant>,
+    output_rate: output_rate::OutputRate,
     pending_approval: Option<PendingApproval>,
     pending_session_delete: Option<PendingSessionDelete>,
     pending_elicitation: Option<PendingElicitation>,
@@ -673,6 +675,7 @@ impl ShellState {
             clipboard_lease: None,
             active_turn_id: None,
             turn_started_at: None,
+            output_rate: Default::default(),
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
@@ -1674,14 +1677,14 @@ impl ShellState {
         }
     }
 
-    fn push_streaming_assistant_delta(&mut self, item_id: &str, delta: &str) {
+    fn push_streaming_assistant_delta(&mut self, item_id: &str, delta: &str) -> bool {
         if delta.is_empty() {
-            return;
+            return false;
         }
         if self.transcript.iter().rev().any(|item| {
             item.kind == TranscriptKind::Assistant && item.item_id.as_deref() == Some(item_id)
         }) {
-            return;
+            return false;
         }
         if self
             .streaming_assistant_item_id
@@ -1694,16 +1697,17 @@ impl ShellState {
             .get_or_insert_with(|| item_id.to_string());
         self.streaming_assistant.push_str(delta);
         self.streaming_assistant_revision = next_transcript_render_revision();
+        true
     }
 
-    fn push_streaming_plan_delta(&mut self, item_id: &str, delta: &str) {
+    fn push_streaming_plan_delta(&mut self, item_id: &str, delta: &str) -> bool {
         if delta.is_empty() {
-            return;
+            return false;
         }
         if self.transcript.iter().rev().any(|item| {
             item.kind == TranscriptKind::Plan && item.item_id.as_deref() == Some(item_id)
         }) {
-            return;
+            return false;
         }
         if self
             .streaming_plan_item_id
@@ -1716,6 +1720,7 @@ impl ShellState {
             .get_or_insert_with(|| item_id.to_string());
         self.streaming_plan.push_str(delta);
         self.streaming_plan_revision = next_transcript_render_revision();
+        true
     }
 
     fn clear_streaming_assistant(&mut self) {
@@ -2454,6 +2459,7 @@ impl ShellState {
             clipboard_lease: None,
             active_turn_id: None,
             turn_started_at: None,
+            output_rate: Default::default(),
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
@@ -2759,6 +2765,7 @@ pub mod bench_support {
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),
             turn_started_at: Some(std::time::Instant::now()),
+            output_rate: Default::default(),
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,

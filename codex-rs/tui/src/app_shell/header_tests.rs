@@ -9,7 +9,7 @@ fn view() -> HeaderView<'static> {
         service_tier: "priority",
         status: "ready",
         status_spinner_frame: None,
-        turn_elapsed_seconds: None,
+        turn_metrics: None,
         dashboard_visible: true,
         reasoning_ripple: None,
     }
@@ -251,15 +251,19 @@ fn turn_elapsed_time_keeps_seconds_at_every_scale() {
 }
 
 #[test]
-fn active_turn_timer_remains_visible_in_compact_headers() {
+fn active_turn_header_shows_rate_and_keeps_timer_in_compact_headers() {
     let view = HeaderView {
         status: "thinking",
         status_spinner_frame: Some(2),
-        turn_elapsed_seconds: Some(5_147),
+        turn_metrics: Some(TurnMetrics {
+            elapsed_seconds: 5_147,
+            tokens_per_second: 42,
+        }),
         ..view()
     };
 
-    for width in [40, 48, 78, 100] {
+    let mut rows = Vec::new();
+    for width in [40, 48, 78, 110] {
         let area = Rect::new(0, 0, width, 3);
         let layout = view.control_layout(area).expect("timed header");
         let mut buf = Buffer::empty(area);
@@ -270,5 +274,7 @@ fn active_turn_timer_remains_visible_in_compact_headers() {
 
         assert!(layout.status.is_some(), "width {width}: {rendered}");
         assert!(rendered.contains("1h 25m 47s"), "width {width}: {rendered}");
+        rows.push(rendered.trim_end().to_string());
     }
+    insta::assert_snapshot!(rows.join("\n"));
 }

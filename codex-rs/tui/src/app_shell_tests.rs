@@ -1353,7 +1353,7 @@ async fn turn_timer_starts_resets_and_stops_with_turn_lifecycle() {
         (
             shell.active_turn_id.as_deref(),
             shell.turn_started_at,
-            shell.active_turn_elapsed_seconds(),
+            shell.active_turn_metrics(),
         ),
         (None, None, None)
     );

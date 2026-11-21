@@ -541,7 +541,7 @@ pub(crate) async fn run(
                         tui.frame_requester().schedule_frame();
                     }
                 }
-                _ = turn_timer_refresh.tick(), if shell.active_turn_elapsed_seconds().is_some() => {
+                _ = turn_timer_refresh.tick(), if shell.turn_started_at.is_some() => {
                     tui.frame_requester().schedule_frame();
                 }
             }
