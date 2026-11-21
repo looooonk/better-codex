@@ -9,6 +9,9 @@ When making changes in this fork:
 - Treat the existing Codex CLI as backend infrastructure and reference material,
   not as the target user experience. However, make sure to never modify Codex's
   agent harness.
+- Preserve compatibility with sessions created by the Codex CLI and desktop
+  app. Read their existing records in place for display features. Keep any new
+  Better Codex display data separate from shared rollouts and databases.
 - Optimize new work for a full-screen, app-like TUI in the spirit of OpenCode,
   btop, and other dense terminal applications.
 - Prefer new UI architecture over incremental patches to the upstream chat UI

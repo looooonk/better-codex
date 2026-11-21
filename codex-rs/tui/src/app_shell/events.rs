@@ -186,7 +186,7 @@ impl ShellState {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     if self.push_streaming_assistant_delta(&delta.item_id, &delta.delta) {
-                        self.record_streamed_output(&delta.turn_id, &delta.item_id, &delta.delta);
+                        self.record_streamed_output(&delta.turn_id, &delta.delta);
                     }
                 } else if self.prepare_active_agent_thread(&delta.thread_id) {
                     self.agent_activity.record_child_progress(
@@ -203,7 +203,7 @@ impl ShellState {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     if self.push_streaming_plan_delta(&delta.item_id, &delta.delta) {
-                        self.record_streamed_output(&delta.turn_id, &delta.item_id, &delta.delta);
+                        self.record_streamed_output(&delta.turn_id, &delta.delta);
                     }
                 }
             }
@@ -225,6 +225,7 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.status = "reasoning".to_string();
+                    self.record_streamed_output(&delta.turn_id, &delta.delta);
                 }
             }
             ServerNotification::TurnStarted(started) => {
@@ -262,11 +263,6 @@ impl ShellState {
                         TurnStatus::InProgress => "thinking".to_string(),
                     };
                     if completed_active_turn && turn_ended {
-                        if let Some(output) = self.turn_outputs.get_mut(&completed.turn.id) {
-                            for item in completed.turn.item_payloads() {
-                                output.record_item(item);
-                            }
-                        }
                         let duration = super::turn_summary::turn_duration(
                             completed.turn.duration_ms,
                             completed.turn.started_at,
@@ -284,6 +280,24 @@ impl ShellState {
                         &completed.turn.status,
                     );
                     self.agent_activity.mark_live_thread(&completed.thread_id);
+                }
+            }
+            ServerNotification::TurnModelActivity(update) => {
+                if update.thread_id == self.thread_id.to_string()
+                    && self.active_turn_id.as_deref() == Some(&update.turn_id)
+                {
+                    use codex_app_server_protocol::TurnModelActivity;
+                    let now = std::time::Instant::now();
+                    match update.activity {
+                        TurnModelActivity::Generating => self.output_rate.resume(now),
+                        TurnModelActivity::WaitingForTool => self.output_rate.pause(now),
+                        TurnModelActivity::ToolInput { estimated_tokens } => {
+                            self.output_rate.add_tokens(now, estimated_tokens)
+                        }
+                        TurnModelActivity::Usage { output_tokens } => {
+                            self.turn_outputs.insert(update.turn_id, output_tokens);
+                        }
+                    }
                 }
             }
             ServerNotification::ThreadTokenUsageUpdated(usage) => {

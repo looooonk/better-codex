@@ -916,6 +916,11 @@ impl CodexThread {
         self.session.token_usage_info().await
     }
 
+    /// Provider-reported output across responses in the specified turn, including reasoning.
+    pub async fn reported_turn_output_tokens(&self, turn_id: &str) -> Option<i64> {
+        self.session.reported_turn_output_tokens(turn_id).await
+    }
+
     /// Records a context fragment without creating a new user turn boundary.
     pub(crate) async fn inject_fragment_without_turn(&self, fragment: impl ContextualUserFragment) {
         let item = ContextualUserFragment::into(fragment);

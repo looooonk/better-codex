@@ -10,7 +10,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
  ▎ SYSTEM  switched session                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎ SYSTEM  loaded 1 previous turns                │▎+ New session  Ctrl+N
  ▎ YOU  Earlier context                           │▎loading sessions
- ──────── Took 1.00s · 0.0 tok/s ──────────────── │
+ ──────── Took 1.00s ──────────────────────────── │
  ▎ SYSTEM  2 queued follow-ups remain on the      │▎◆ THREAD
            previous session 01900000-0000-7000-   │▎forked
            8000-000000000001. Open Sessions to    │▎id 01900000-0000-7000-8000-000000000202

@@ -1992,6 +1992,11 @@ pub enum ThreadTimelineEntry {
         completed_at: Option<i64>,
         #[ts(rename = "durationMs", type = "number | null")]
         duration_ms: Option<i64>,
+        /// Provider-reported output across the turn, including reasoning.
+        #[schemars(rename = "outputTokens")]
+        #[serde(rename = "outputTokens")]
+        #[ts(rename = "outputTokens", type = "number | null")]
+        output_tokens: Option<i64>,
     },
 }
 
@@ -2012,6 +2017,41 @@ pub struct ThreadTokenUsageUpdatedNotification {
     pub thread_id: String,
     pub turn_id: String,
     pub token_usage: ThreadTokenUsage,
+}
+
+/// Model activity for a single turn. Tool output and private reasoning text are never forwarded.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct TurnModelActivityNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub activity: TurnModelActivity,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(tag = "type", rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum TurnModelActivity {
+    Generating,
+    ToolInput {
+        #[schemars(rename = "estimatedTokens")]
+        #[serde(rename = "estimatedTokens")]
+        #[ts(rename = "estimatedTokens")]
+        estimated_tokens: f64,
+    },
+    WaitingForTool,
+    Usage {
+        #[schemars(rename = "outputTokens")]
+        #[serde(rename = "outputTokens")]
+        #[ts(rename = "outputTokens", type = "number")]
+        output_tokens: i64,
+    },
 }
 
 /// Internal-only notification containing the exact usage from one upstream

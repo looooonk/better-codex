@@ -541,6 +541,7 @@ enabled = false
                 thread_extensions(
                     &good_config,
                     ThreadExtensionDependencies {
+                        activity_listeners: Default::default(),
                         sample_responses: Arc::new(
                             crate::thread_sample::SampleResponseRegistry::default(),
                         ),

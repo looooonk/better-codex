@@ -692,6 +692,17 @@ HTTP, WebSocket, and code-mode gRPC requests use the shared destination checks.
 User-directed Git, SSH, shell, and other subprocess traffic retain their existing
 execution and sandbox policies.
 
+## Turn output activity (experimental)
+
+Clients with `experimentalApi` receive `turn/modelActivity` for subscribed threads.
+Each notification identifies its thread and turn. A `generating` activity starts a
+model request. A `toolInput` activity carries an incremental `estimatedTokens`
+count from streamed tool arguments. A `waitingForTool` activity marks the end of
+a model response that requested local tool work. Clients can hold a rolling rate
+until generation resumes. A terminal `usage` activity carries the reported
+`outputTokens` across responses, including reasoning, before `turn/completed`.
+The timeline's completed turn boundary also carries `outputTokens` when known.
+
 # Item history anchors
 
 Live notifications and turn history return the same `ThreadItem`. Each item has

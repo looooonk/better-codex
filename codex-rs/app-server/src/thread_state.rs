@@ -69,6 +69,7 @@ pub(crate) enum ThreadListenerCommand {
         request: Box<PendingThreadResumeRequest>,
         completion_tx: oneshot::Sender<()>,
     },
+    ModelActivity(codex_app_server_protocol::TurnModelActivityNotification),
     // EmitThreadGoalUpdated is used to order goal updates with running-thread resume responses and goal clears.
     EmitThreadGoalUpdated {
         turn_id: Option<String>,

@@ -573,6 +573,17 @@ async fn start_listener(
                         conversation_id,
                     );
 
+                    if terminal_summary.is_some()
+                        && let Some(output_tokens) = conversation.reported_turn_output_tokens(&event.id).await
+                    {
+                        thread_outgoing.send_server_notification(ServerNotification::TurnModelActivity(
+                            codex_app_server_protocol::TurnModelActivityNotification {
+                                thread_id: conversation_id.to_string(),
+                                turn_id: event.id.clone(),
+                                activity: codex_app_server_protocol::TurnModelActivity::Usage { output_tokens },
+                            },
+                        )).await;
+                    }
                     // Publish the committed receipt before turn/completed so completion
                     // remains the last notification for this terminal result.
                     if let Some(summary) = terminal_summary
@@ -966,6 +977,18 @@ pub(super) async fn handle_thread_listener_command(
                     },
                 ))
                 .await;
+        }
+        ThreadListenerCommand::ModelActivity(activity) => {
+            let subscribers = thread_state_manager
+                .subscribed_connection_ids(conversation_id)
+                .await;
+            ThreadScopedOutgoingMessageSender::new(
+                Arc::clone(outgoing),
+                subscribers,
+                conversation_id,
+            )
+            .send_server_notification(ServerNotification::TurnModelActivity(activity))
+            .await;
         }
         ThreadListenerCommand::EmitThreadQueueChanged => {
             let subscribed_connection_ids = thread_state_manager

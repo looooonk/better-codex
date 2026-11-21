@@ -132,6 +132,7 @@ mod log_write_warning;
 mod managed_daemon;
 mod mcp_refresh;
 mod message_processor;
+mod model_activity;
 mod model_catalog;
 mod models;
 mod models_refresh_worker;

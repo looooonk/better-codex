@@ -2,6 +2,7 @@ use super::super::output_rate::OutputRate;
 use super::*;
 use codex_app_server_protocol::AgentMessageDeltaNotification;
 use codex_app_server_protocol::PlanDeltaNotification;
+use codex_app_server_protocol::ReasoningTextDeltaNotification;
 use codex_app_server_protocol::ServerNotification;
 use pretty_assertions::assert_eq;
 use std::time::Duration;
@@ -58,12 +59,13 @@ fn one_second_estimates_track_reference_token_counts() {
 }
 
 #[test]
-fn rate_counts_live_text_and_plans_only_for_the_active_turn() {
+fn rate_counts_streamed_output_only_for_the_active_turn() {
     let mut shell = ShellState::snapshot_fixture();
     let thread_id = shell.thread_id.to_string();
     shell.record_active_turn_started("turn-1".into());
     let message = "Here is the next message. ";
     let plan = "Plan the next step.";
+    let reasoning = "Compare the two durations.";
     for (turn, thread) in [
         ("old", thread_id.as_str()),
         ("turn-1", "other"),
@@ -79,16 +81,26 @@ fn rate_counts_live_text_and_plans_only_for_the_active_turn() {
         ));
     }
     shell.handle_notification(ServerNotification::PlanDelta(PlanDeltaNotification {
-        thread_id,
+        thread_id: thread_id.clone(),
         turn_id: "turn-1".into(),
         item_id: "plan".into(),
         delta: plan.into(),
     }));
+    shell.handle_notification(ServerNotification::ReasoningTextDelta(
+        ReasoningTextDeltaNotification {
+            thread_id,
+            turn_id: "turn-1".into(),
+            item_id: "reasoning".into(),
+            delta: reasoning.into(),
+            content_index: 0,
+        },
+    ));
     shell.record_active_turn_started("turn-1".into());
     let now = Instant::now();
     let mut expected = OutputRate::default();
     expected.record(now, message);
     expected.record(now, plan);
+    expected.record(now, reasoning);
     assert_eq!(
         shell.active_turn_metrics().unwrap().tokens_per_second,
         expected.tokens_per_second(now)
@@ -98,4 +110,21 @@ fn rate_counts_live_text_and_plans_only_for_the_active_turn() {
     assert_eq!(shell.active_turn_metrics().unwrap().tokens_per_second, 0);
     shell.clear_active_turn();
     assert_eq!(shell.active_turn_metrics(), None);
+}
+
+#[test]
+fn tool_wait_holds_three_seconds_of_model_activity() {
+    let start = Instant::now();
+    let mut rate = OutputRate::default();
+    rate.add_tokens(start, 60.0);
+    rate.add_tokens(start + Duration::from_secs(1), 30.0);
+    let pause = start + Duration::from_secs(2);
+    rate.pause(pause);
+    rate.pause(pause + Duration::from_secs(1));
+    let resume = pause + Duration::from_secs(20);
+    assert_eq!(rate.tokens_per_second(resume), 45);
+    rate.resume(resume);
+    rate.add_tokens(resume, 30.0);
+    assert_eq!(rate.tokens_per_second(resume), 60);
+    assert_eq!(rate.tokens_per_second(resume + Duration::from_secs(1)), 20);
 }

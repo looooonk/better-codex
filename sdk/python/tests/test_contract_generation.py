@@ -94,8 +94,8 @@ def test_schema_refresh_only_updates_python_for_repository_schemas(monkeypatch, 
 
     runpy.run_path(str(script), run_name="__main__")
 
-    assert [args[0] for args, _kwargs in calls] == (
-        ["cargo", "uv"] if mode == "repository" else ["cargo"]
+    assert [args[:2] for args, _kwargs in calls] == (
+        [["just", "test"], ["uv", "run"]] if mode == "repository" else [["just", "test"]]
     )
     assert all(kwargs["check"] for _args, kwargs in calls)
     if mode == "repository":
@@ -111,14 +111,14 @@ def test_schema_generation_failure_does_not_update_python(monkeypatch):
     calls = []
 
     def fail(args, **_kwargs):
-        calls.append(args[0])
+        calls.append(args[:2])
         raise subprocess.CalledProcessError(1, args)
 
     monkeypatch.setattr(sys, "argv", [str(script)])
     monkeypatch.setattr(subprocess, "run", fail)
     with pytest.raises(subprocess.CalledProcessError):
         runpy.run_path(str(script), run_name="__main__")
-    assert calls == ["cargo"]
+    assert calls == [["just", "test"]]
 
 
 @pytest.mark.parametrize(
@@ -142,3 +142,15 @@ def test_model_provider_errors_round_trip_wire_names(payload):
 
     error = ModelProviderError.model_validate(payload)
     assert error.model_dump(by_alias=True) == payload
+
+
+@pytest.mark.parametrize(
+    "activity",
+    [{"type": "toolInput", "estimatedTokens": 3.5}, {"type": "usage", "outputTokens": 71}],
+)
+def test_model_activity_round_trips_token_fields(activity):
+    from openai_codex.generated.v2_all import TurnModelActivityNotification
+
+    payload = {"threadId": "thread", "turnId": "turn", "activity": activity}
+    event = TurnModelActivityNotification.model_validate(payload)
+    assert event.model_dump(by_alias=True) == payload

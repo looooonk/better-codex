@@ -651,6 +651,8 @@ export type { TurnError } from "./TurnError";
 export type { TurnInterruptParams } from "./TurnInterruptParams";
 export type { TurnInterruptResponse } from "./TurnInterruptResponse";
 export type { TurnItemsView } from "./TurnItemsView";
+export type { TurnModelActivity } from "./TurnModelActivity";
+export type { TurnModelActivityNotification } from "./TurnModelActivityNotification";
 export type { TurnModerationMetadataNotification } from "./TurnModerationMetadataNotification";
 export type { TurnPlanStep } from "./TurnPlanStep";
 export type { TurnPlanStepStatus } from "./TurnPlanStepStatus";

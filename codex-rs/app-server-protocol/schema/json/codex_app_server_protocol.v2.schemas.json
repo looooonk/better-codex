@@ -17865,6 +17865,26 @@
           "properties": {
             "method": {
               "enum": [
+                "turn/modelActivity"
+              ],
+              "title": "Turn/modelActivityNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/TurnModelActivityNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Turn/modelActivityNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "thread/tokenUsage/updated"
               ],
               "title": "Thread/tokenUsage/updatedNotificationMethod",
@@ -24302,6 +24322,14 @@
                 }
               ]
             },
+            "outputTokens": {
+              "description": "Provider-reported output across the turn, including reasoning.",
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "position": {
               "format": "uint64",
               "minimum": 0.0,
@@ -25020,6 +25048,106 @@
           "type": "string"
         }
       ]
+    },
+    "TurnModelActivity": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "generating"
+              ],
+              "title": "GeneratingTurnModelActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "GeneratingTurnModelActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "estimatedTokens": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": {
+              "enum": [
+                "toolInput"
+              ],
+              "title": "ToolInputTurnModelActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "estimatedTokens",
+            "type"
+          ],
+          "title": "ToolInputTurnModelActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "waitingForTool"
+              ],
+              "title": "WaitingForToolTurnModelActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "title": "WaitingForToolTurnModelActivity",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "outputTokens": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "usage"
+              ],
+              "title": "UsageTurnModelActivityType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "outputTokens",
+            "type"
+          ],
+          "title": "UsageTurnModelActivity",
+          "type": "object"
+        }
+      ]
+    },
+    "TurnModelActivityNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Model activity for a single turn. Tool output and private reasoning text are never forwarded.",
+      "properties": {
+        "activity": {
+          "$ref": "#/definitions/TurnModelActivity"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "activity",
+        "threadId",
+        "turnId"
+      ],
+      "title": "TurnModelActivityNotification",
+      "type": "object"
     },
     "TurnModerationMetadataNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",

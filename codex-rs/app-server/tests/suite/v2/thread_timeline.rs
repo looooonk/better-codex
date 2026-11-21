@@ -20,6 +20,8 @@ use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
+use codex_protocol::protocol::TokenUsage;
+use codex_protocol::protocol::TokenUsageRecord;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::realtime::RealtimeItem;
@@ -129,6 +131,26 @@ async fn timeline_pages_mix_items_and_resolve_the_opening_realtime_session() -> 
                         text: "Checking staging".to_string(),
                     },
                 }),
+                RolloutItem::TokenUsageRecord(TokenUsageRecord {
+                    thread_id,
+                    session_id: thread_id.into(),
+                    turn_id: "turn-1".to_string(),
+                    root_turn_id: "turn-1".to_string(),
+                    response_id: "response-2".to_string(),
+                    usage: TokenUsage {
+                        output_tokens: 30,
+                        ..Default::default()
+                    },
+                    turn_token_usage: TokenUsage {
+                        output_tokens: 80,
+                        reasoning_output_tokens: 24,
+                        ..Default::default()
+                    },
+                    thread_token_usage: TokenUsage {
+                        output_tokens: 200,
+                        ..Default::default()
+                    },
+                }),
                 RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
                     root_turn_id: None,
                     turn_id: "turn-1".to_string(),
@@ -142,7 +164,9 @@ async fn timeline_pages_mix_items_and_resolve_the_opening_realtime_session() -> 
             ],
         })
         .await?;
+    let rollout = store.live_rollout_path(thread_id).await?;
     store.shutdown_thread(thread_id).await?;
+    let original = tokio::fs::read(&rollout).await?;
 
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -183,7 +207,7 @@ async fn timeline_pages_mix_items_and_resolve_the_opening_realtime_session() -> 
     );
     assert!(matches!(
         &page.data[2],
-        ThreadTimelineEntry::TurnCompleted { turn_id, duration_ms: Some(2000), .. }
+        ThreadTimelineEntry::TurnCompleted { turn_id, duration_ms: Some(2000), output_tokens: Some(80), .. }
             if turn_id == "turn-1"
     ));
 
@@ -228,6 +252,7 @@ async fn timeline_pages_mix_items_and_resolve_the_opening_realtime_session() -> 
         .await?;
     assert_eq!(ordinary.data.len(), 1);
     assert_eq!(ordinary.data[0].turn_id, "turn-1");
+    assert_eq!(tokio::fs::read(rollout).await?, original);
 
     Ok(())
 }

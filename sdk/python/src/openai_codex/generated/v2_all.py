@@ -6869,6 +6869,61 @@ class TurnItemsView(Enum):
     full = "full"
 
 
+class GeneratingTurnModelActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    type: Annotated[Literal["generating"], Field(title="GeneratingTurnModelActivityType")]
+
+
+class ToolInputTurnModelActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    estimated_tokens: Annotated[float, Field(alias="estimatedTokens")]
+    type: Annotated[Literal["toolInput"], Field(title="ToolInputTurnModelActivityType")]
+
+
+class WaitingForToolTurnModelActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    type: Annotated[Literal["waitingForTool"], Field(title="WaitingForToolTurnModelActivityType")]
+
+
+class UsageTurnModelActivity(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    output_tokens: Annotated[int, Field(alias="outputTokens")]
+    type: Annotated[Literal["usage"], Field(title="UsageTurnModelActivityType")]
+
+
+class TurnModelActivity(
+    RootModel[
+        GeneratingTurnModelActivity
+        | ToolInputTurnModelActivity
+        | WaitingForToolTurnModelActivity
+        | UsageTurnModelActivity
+    ]
+):
+    root: (
+        GeneratingTurnModelActivity
+        | ToolInputTurnModelActivity
+        | WaitingForToolTurnModelActivity
+        | UsageTurnModelActivity
+    )
+
+
+class TurnModelActivityNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    activity: TurnModelActivity
+    thread_id: Annotated[str, Field(alias="threadId")]
+    turn_id: Annotated[str, Field(alias="turnId")]
+
+
 class TurnModerationMetadataNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -10064,6 +10119,23 @@ class ThreadProjectUpdatedServerNotification(BaseModel):
     params: ThreadProjectUpdatedNotification
 
 
+class TurnModelActivityServerNotification(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    emitted_at_ms: Annotated[
+        int | None,
+        Field(
+            alias="emittedAtMs",
+            description="Unix timestamp (in milliseconds) when app-server emitted this notification.",
+        ),
+    ] = None
+    method: Annotated[
+        Literal["turn/modelActivity"], Field(title="Turn/modelActivityNotificationMethod")
+    ]
+    params: TurnModelActivityNotification
+
+
 class HookStartedServerNotification(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
@@ -12503,6 +12575,13 @@ class TurnCompletedThreadTimelineEntry(BaseModel):
     completed_at: int | None = None
     duration_ms: int | None = None
     error: TurnError | None = None
+    output_tokens: Annotated[
+        int | None,
+        Field(
+            alias="outputTokens",
+            description="Provider-reported output across the turn, including reasoning.",
+        ),
+    ] = None
     position: Annotated[int, Field(ge=0)]
     started_at: int | None = None
     status: TurnStatus
@@ -13966,6 +14045,7 @@ class ServerNotification(
         | ThreadEnvironmentConnectedServerNotification
         | ThreadEnvironmentDisconnectedServerNotification
         | ThreadSettingsUpdatedServerNotification
+        | TurnModelActivityServerNotification
         | ThreadTokenUsageUpdatedServerNotification
         | TurnStartedServerNotification
         | HookStartedServerNotification
@@ -14055,6 +14135,7 @@ class ServerNotification(
         | ThreadEnvironmentConnectedServerNotification
         | ThreadEnvironmentDisconnectedServerNotification
         | ThreadSettingsUpdatedServerNotification
+        | TurnModelActivityServerNotification
         | ThreadTokenUsageUpdatedServerNotification
         | TurnStartedServerNotification
         | HookStartedServerNotification

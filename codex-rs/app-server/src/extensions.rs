@@ -32,6 +32,7 @@ use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadStateManager;
 
 pub(crate) struct ThreadExtensionDependencies {
+    pub(crate) activity_listeners: ThreadStateManager,
     pub(crate) sample_responses: Arc<crate::thread_sample::SampleResponseRegistry>,
     pub(crate) event_sink: Arc<dyn ExtensionEventSink>,
     pub(crate) auth_manager: Arc<AuthManager>,
@@ -54,6 +55,7 @@ pub(crate) fn thread_extensions(
     dependencies: ThreadExtensionDependencies,
 ) -> Arc<ExtensionRegistry<Config>> {
     let ThreadExtensionDependencies {
+        activity_listeners,
         sample_responses,
         event_sink,
         auth_manager,
@@ -139,6 +141,9 @@ pub(crate) fn thread_extensions(
         },
     );
     builder.model_request_contributor(sample_responses);
+    builder.model_request_contributor(Arc::new(crate::model_activity::ModelActivityObserver(
+        activity_listeners,
+    )));
     Arc::new(builder.build())
 }
 

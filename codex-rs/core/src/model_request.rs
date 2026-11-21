@@ -21,6 +21,10 @@ pub(crate) fn prepare(
             let interceptor = contributor.request(ModelRequestInput {
                 kind,
                 thread_id,
+                turn_id: metadata
+                    .as_ref()
+                    .and_then(|m| m.get(crate::responses_metadata::TURN_ID_KEY))
+                    .map(String::as_str),
                 client_metadata: &mut additions,
                 model,
             });

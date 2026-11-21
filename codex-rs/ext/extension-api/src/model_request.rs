@@ -23,6 +23,8 @@ pub struct ModelRequestInput<'a> {
     pub kind: ModelRequestKind,
     /// Thread making the request.
     pub thread_id: &'a str,
+    /// Turn that owns this provider request, when available.
+    pub turn_id: Option<&'a str>,
     /// Additional provider metadata for request tracking; existing and reserved keys cannot be replaced.
     pub client_metadata: &'a mut Option<HashMap<String, String>>,
     /// Requested model identifier.

@@ -107,6 +107,7 @@ pub(in crate::local) async fn list_timeline(
                 String,
                 Option<i64>,
                 Option<i64>,
+                Option<i64>,
             ),
         >(
             r#"
@@ -138,17 +139,17 @@ SELECT rollout_end_ordinal AS rollout_ordinal, 3 AS kind, turn_id AS id, turn_id
        json_object('type', 'turnCompleted', 'position', rollout_end_ordinal,
                    'turnId', turn_id, 'status', status, 'error', json(error_json),
                    'startedAt', started_at, 'completedAt', completed_at,
-                   'durationMs', duration_ms) AS item_json
+                   'durationMs', duration_ms) AS item_json, rollout_end_byte_offset
 FROM thread_turns
 WHERE thread_id = ?1 AND rollout_end_ordinal >= ?2
   AND rollout_end_ordinal < ?3 AND rollout_end_ordinal <= ?4
   AND (rollout_end_ordinal, 3, turn_id) < (?4, ?5, ?6)
 ORDER BY rollout_end_ordinal DESC, turn_id DESC LIMIT ?7
 )
-SELECT *, NULL, NULL FROM starts
-UNION ALL SELECT * FROM items
-UNION ALL SELECT *, NULL, NULL FROM realtime
-UNION ALL SELECT *, NULL, NULL FROM ends
+SELECT *, NULL, NULL, NULL FROM starts
+UNION ALL SELECT *, NULL FROM items
+UNION ALL SELECT *, NULL, NULL, NULL FROM realtime
+UNION ALL SELECT rollout_ordinal, kind, id, turn_id, item_json, NULL, NULL, rollout_end_byte_offset FROM ends
 ORDER BY rollout_ordinal DESC, kind DESC, id DESC
 LIMIT ?7
             "#,
@@ -164,10 +165,15 @@ LIMIT ?7
         .await
         .map_err(thread_history_error)?;
 
-        for (position, kind, _id, turn_id, item_json, started_at_ms, completed_at_ms) in
+        let first = rows.len();
+        let mut turn_ends = Vec::new();
+        for (position, kind, id, turn_id, item_json, started_at_ms, completed_at_ms, end_offset) in
             segment_rows
         {
             let position = u64::try_from(position).map_err(thread_history_error)?;
+            if let Some(end) = end_offset.and_then(|offset| u64::try_from(offset).ok()) {
+                turn_ends.push((id, end));
+            }
             rows.push(match kind {
                 0 | 3 => serde_json::from_str::<ThreadTimelineEntry>(&item_json)
                     .map_err(thread_history_error)?,
@@ -188,6 +194,19 @@ LIMIT ?7
                 },
                 _ => return Err(thread_history_error("invalid timeline entry kind")),
             });
+        }
+        if !turn_ends.is_empty() {
+            let counts = super::turn_usage::read(&segment.rollout_path, turn_ends).await;
+            for entry in &mut rows[first..] {
+                if let ThreadTimelineEntry::TurnCompleted {
+                    turn_id,
+                    output_tokens,
+                    ..
+                } = entry
+                {
+                    *output_tokens = counts.get(turn_id).copied();
+                }
+            }
         }
     }
 

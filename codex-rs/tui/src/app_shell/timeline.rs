@@ -28,6 +28,26 @@ impl ShellState {
             self.ingest_turn_history(turns);
             return;
         };
+        for entry in &timeline.entries {
+            if let ThreadTimelineEntry::TurnCompleted {
+                turn_id,
+                output_tokens: Some(tokens),
+                ..
+            } = entry
+            {
+                self.turn_outputs.insert(turn_id.clone(), *tokens);
+            }
+        }
+        // Retain the normal turn history when the optional timeline only supplied usage.
+        if !turns.is_empty()
+            && !timeline
+                .entries
+                .iter()
+                .any(|entry| matches!(entry, ThreadTimelineEntry::Realtime { .. }))
+        {
+            self.ingest_turn_history(turns);
+            return;
+        }
         if timeline.has_older
             || turns
                 .iter()
@@ -44,7 +64,6 @@ impl ShellState {
         for entry in timeline.entries {
             match entry {
                 ThreadTimelineEntry::TurnStarted { turn_id, .. } => {
-                    self.turn_outputs.entry(turn_id.clone()).or_default();
                     opening_turns.insert(turn_id);
                 }
                 ThreadTimelineEntry::Item { turn_id, item, .. } => {
@@ -87,14 +106,6 @@ impl ShellState {
                         self.push_status("turn interrupted");
                     }
                     let turn = turns_by_id.get(turn_id.as_str()).copied();
-                    // A capped timeline can start in the middle of a turn.
-                    if !self.turn_outputs.contains_key(&turn_id)
-                        && let Some(turn) =
-                            turn.filter(|turn| turn.items_view == TurnItemsView::Full)
-                    {
-                        self.turn_outputs
-                            .insert(turn_id.clone(), turn.item_payloads().collect());
-                    }
                     let duration = super::turn_summary::turn_duration(
                         duration_ms.or_else(|| turn.and_then(|t| t.duration_ms)),
                         started_at.or_else(|| turn.and_then(|t| t.started_at)),

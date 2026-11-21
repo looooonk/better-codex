@@ -511,7 +511,7 @@ struct ShellState {
     active_turn_id: Option<String>,
     turn_started_at: Option<std::time::Instant>,
     output_rate: output_rate::OutputRate,
-    turn_outputs: HashMap<String, turn_summary::TurnOutput>,
+    turn_outputs: HashMap<String, i64>,
     pending_approval: Option<PendingApproval>,
     pending_session_delete: Option<PendingSessionDelete>,
     pending_elicitation: Option<PendingElicitation>,
@@ -750,9 +750,6 @@ impl ShellState {
             }
             let duration =
                 turn_summary::turn_duration(turn.duration_ms, turn.started_at, turn.completed_at);
-            if turn.items_view == TurnItemsView::Full {
-                self.turn_outputs.entry(turn.id.clone()).or_default();
-            }
             let turn_id = turn.id;
             for (item_index, item) in turn.items.into_iter().enumerate() {
                 let rewind_anchor = if item_index == 0 {
@@ -1770,9 +1767,6 @@ impl ShellState {
         origin: CompletedItemOrigin,
         rewind_anchor: Option<rewind::RewindAnchor>,
     ) {
-        if let Some(output) = self.turn_outputs.get_mut(turn_id) {
-            output.record_item(&item.payload);
-        }
         self.agent_activity.reduce_completed(&item);
         match item.payload {
             ThreadItemPayload::UserMessage {

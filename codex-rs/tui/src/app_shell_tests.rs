@@ -6948,6 +6948,14 @@ fn turn_completion_adds_one_separator_snapshot() {
         },
     ));
 
+    shell.handle_notification(ServerNotification::TurnModelActivity(
+        codex_app_server_protocol::TurnModelActivityNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn-separator".into(),
+            activity: codex_app_server_protocol::TurnModelActivity::Usage { output_tokens: 42 },
+        },
+    ));
+
     for _ in 0..2 {
         shell.handle_notification(ServerNotification::TurnCompleted(
             codex_app_server_protocol::TurnCompletedNotification {
@@ -6961,7 +6969,7 @@ fn turn_completion_adds_one_separator_snapshot() {
         shell.transcript,
         VecDeque::from([
             TranscriptLine::new(TranscriptKind::Assistant, "Turn complete.").item_id("reply"),
-            TranscriptLine::new(TranscriptKind::Separator, "Took 1.00s · 2.8 tok/s")
+            TranscriptLine::new(TranscriptKind::Separator, "Took 1.00s · 42.0 tok/s")
                 .item_id("turn-separator"),
         ])
     );

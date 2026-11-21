@@ -1618,6 +1618,12 @@ impl Session {
         state.token_info()
     }
 
+    pub(crate) async fn reported_turn_output_tokens(&self, turn_id: &str) -> Option<i64> {
+        let state = self.state.lock().await;
+        let record = state.latest_token_usage_record.as_ref()?;
+        (record.turn_id == turn_id).then_some(record.turn_token_usage.output_tokens)
+    }
+
     pub(crate) async fn get_estimated_token_count(
         &self,
         turn_context: &TurnContext,

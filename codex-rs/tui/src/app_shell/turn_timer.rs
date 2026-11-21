@@ -17,7 +17,6 @@ impl ShellState {
             }
             self.turn_started_at = Some(Instant::now());
             self.output_rate = Default::default();
-            self.turn_outputs.entry(turn_id.clone()).or_default();
         }
         self.active_turn_id = Some(turn_id);
     }
@@ -29,12 +28,9 @@ impl ShellState {
         self.output_rate = Default::default();
     }
 
-    pub(super) fn record_streamed_output(&mut self, turn_id: &str, item_id: &str, delta: &str) {
+    pub(super) fn record_streamed_output(&mut self, turn_id: &str, delta: &str) {
         if self.active_turn_id.as_deref() == Some(turn_id) {
-            let tokens = self.output_rate.record(Instant::now(), delta);
-            if let Some(output) = self.turn_outputs.get_mut(turn_id) {
-                output.add_delta(item_id, tokens);
-            }
+            self.output_rate.record(Instant::now(), delta);
         }
     }
 

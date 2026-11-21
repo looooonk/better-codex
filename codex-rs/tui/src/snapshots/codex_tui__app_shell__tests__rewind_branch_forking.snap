@@ -10,7 +10,7 @@ expression: "render_shell(&shell, area)"
  ▎ SYSTEM  switched session                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎ SYSTEM  loaded 1 previous turns                │▎+ New session  Ctrl+N
  ▎ YOU  Rewrite this prompt.                      │▎loading sessions
- ──────── Took 1.00s · 0.0 tok/s ──────────────── │
+ ──────── Took 1.00s ──────────────────────────── │
                                                   │▎◆ THREAD
                                                   │▎rewind-source
                                                   │▎id 01900000-0000-7000-8000-000000000001

@@ -396,13 +396,18 @@ pub fn process_responses_event(
                 return Ok(Some(ResponseEvent::OutputTextDelta(delta)));
             }
         }
-        "response.custom_tool_call_input.delta" => {
+        "response.function_call_arguments.delta" | "response.custom_tool_call_input.delta" => {
             if let (Some(delta), Some(item_id)) =
                 (event.delta, event.item_id.clone().or(event.call_id.clone()))
             {
                 return Ok(Some(ResponseEvent::ToolCallInputDelta {
+                    // Ordinary argument fragments must never be mistaken for an anonymous
+                    // custom-tool patch fragment when output items interleave.
+                    call_id: event.call_id.or_else(|| {
+                        (event.kind == "response.function_call_arguments.delta")
+                            .then(|| item_id.clone())
+                    }),
                     item_id,
-                    call_id: event.call_id,
                     delta,
                 }));
             }
@@ -539,7 +544,6 @@ pub fn process_responses_event(
         | "response.content_part.added"
         | "response.content_part.done"
         | "response.custom_tool_call_input.done"
-        | "response.function_call_arguments.delta"
         | "response.function_call_arguments.done"
         | "response.in_progress"
         | "response.metadata"
@@ -1033,7 +1037,8 @@ mod tests {
                 delta,
             } if item_id == "ctc_1" && call_id == "call_1" && delta == "*** Begin"
         );
-        assert_matches!(&events[1], ResponseEvent::Completed { .. });
+        assert_matches!(&events[1], ResponseEvent::ToolCallInputDelta { item_id, delta, .. } if item_id == "fc_1" && delta == "{\"input\":\"");
+        assert_matches!(&events[2], ResponseEvent::Completed { .. });
     }
 
     #[tokio::test]

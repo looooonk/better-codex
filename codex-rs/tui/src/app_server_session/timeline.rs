@@ -79,10 +79,16 @@ pub(crate) async fn load_thread_timeline(
         }
     }
     let entries: Vec<_> = pages.into_iter().rev().flatten().collect();
-    if !entries
-        .iter()
-        .any(|entry| matches!(entry, ThreadTimelineEntry::Realtime { .. }))
-    {
+    if !entries.iter().any(|entry| {
+        matches!(
+            entry,
+            ThreadTimelineEntry::Realtime { .. }
+                | ThreadTimelineEntry::TurnCompleted {
+                    output_tokens: Some(_),
+                    ..
+                }
+        )
+    }) {
         return Ok(None);
     }
     Ok(Some(ThreadTimeline {
