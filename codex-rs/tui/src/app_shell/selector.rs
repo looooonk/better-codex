@@ -1,8 +1,10 @@
 use super::composer_toolbar::ComposerControl;
 use super::settings::app_theme_label;
+use super::settings::approval_policy_label;
 use super::settings::reasoning_effort_label;
 use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::AskForApproval;
+use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -337,13 +339,21 @@ impl SelectorState<SelectorValue> {
             .current(current == &ServiceTierValue::Default),
         ];
         options.extend(tiers.iter().map(|tier| {
-            let value = ServiceTierValue::Explicit(tier.id.clone());
+            let is_current = match current {
+                ServiceTierValue::Default => false,
+                ServiceTierValue::Explicit(id) => {
+                    id == &tier.id
+                        || ServiceTier::from_request_value(id).is_some_and(|value| {
+                            Some(value) == ServiceTier::from_request_value(&tier.id)
+                        })
+                }
+            };
             SelectorOption::new(
-                SelectorValue::ServiceTier(value.clone()),
+                SelectorValue::ServiceTier(ServiceTierValue::Explicit(tier.id.clone())),
                 tier.name.clone(),
                 tier.description.clone(),
             )
-            .current(current == &value)
+            .current(is_current)
         }));
         Self::new("Select service tier", options)
     }
@@ -352,32 +362,32 @@ impl SelectorState<SelectorValue> {
         let mut policies = vec![
             (
                 AskForApproval::OnRequest,
-                "On request",
                 "Let Codex request approval when an action needs it.",
             ),
             (
                 AskForApproval::UnlessTrusted,
-                "Unless trusted (this session)",
-                "Ask before commands that are not known to be safe. Saved defaults stay unchanged.",
+                "Ask before commands that are not known to be safe.",
             ),
             (
                 AskForApproval::Never,
-                "Never",
-                "Never pause the agent to request approval.",
+                "Run without approval prompts within the active sandbox.",
             ),
         ];
         if matches!(current, AskForApproval::Granular { .. }) {
             policies.push((
                 current,
-                "Granular",
                 "Keep the current fine-grained approval configuration.",
             ));
         }
         let options = policies
             .into_iter()
-            .map(|(policy, label, detail)| {
-                SelectorOption::new(SelectorValue::ApprovalPolicy(policy), label, detail)
-                    .current(policy == current)
+            .map(|(policy, detail)| {
+                SelectorOption::new(
+                    SelectorValue::ApprovalPolicy(policy),
+                    approval_policy_label(policy),
+                    detail,
+                )
+                .current(policy == current)
             })
             .collect();
         Self::new("Select approval policy", options)

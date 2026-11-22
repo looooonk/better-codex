@@ -3,28 +3,28 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 26))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎loading sessions
- ▎ PLAN  1. Buil╭ Select service tier ─────────────────────────────────────────────╮
-         2. Wire│ › 1 ● Default  current                                           │
-         3. Rend│       Use the model's default service tier.                      │
-                │   2 ○ ultrafast                                                  │0000001
- ▌ tool exec jus│       ultrafast description                                      │ session list
-                │   3 ○ flex                                                       │
- ▌ edited 3 file│       flex description                                           │
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎loading sessions
+                ╭ Select service tier ─────────────────────────────────────────────╮
+ ▌ tool exec jus│ › 1 ● Default  current                                           │
+                │       Use the model's default service tier.                      │
+ ▌ edited 3 file│   2 ○ ultrafast                                                  │0000001
+                │       ultrafast description                                      │ session list
+ ▎ CODEX  The ne│   3 ○ flex                                                       │
+          surfac│       flex description                                           │
                 │  wheel / j k  Enter select  Esc cancel  1/3                      │
- ▎ CODEX  The ne╰──────────────────────────────────────────────────────────────────╯
-          surface.                                │
+                ╰──────────────────────────────────────────────────────────────────╯
+                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾  gpt-5-codex▾ medium▾ Default▾││
 ╰────────────────────────────────────────────────╯│

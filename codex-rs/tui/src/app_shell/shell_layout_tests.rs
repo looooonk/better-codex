@@ -40,17 +40,15 @@ fn responsive_layout_uses_sidebar_overlay_and_minimum_size_boundaries() {
         ),
         Some(ShellLayout {
             status: None,
-            header: Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 3
-            ),
+            activity: None,
             transcript: Rect::new(
-                /*x*/ 0, /*y*/ 3, /*width*/ 40, /*height*/ 15
+                /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 18
             ),
             input: Rect::new(
                 /*x*/ 0, /*y*/ 18, /*width*/ 40, /*height*/ 6
             ),
             dashboard: Some(DashboardPlacement::Overlay(Rect::new(
-                /*x*/ 0, /*y*/ 3, /*width*/ 40, /*height*/ 15,
+                /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 18,
             ))),
         })
     );
@@ -63,17 +61,15 @@ fn responsive_layout_uses_sidebar_overlay_and_minimum_size_boundaries() {
         ),
         Some(ShellLayout {
             status: None,
-            header: Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 99, /*height*/ 3
-            ),
+            activity: None,
             transcript: Rect::new(
-                /*x*/ 0, /*y*/ 3, /*width*/ 99, /*height*/ 15
+                /*x*/ 0, /*y*/ 0, /*width*/ 99, /*height*/ 18
             ),
             input: Rect::new(
                 /*x*/ 0, /*y*/ 18, /*width*/ 99, /*height*/ 6
             ),
             dashboard: Some(DashboardPlacement::Overlay(Rect::new(
-                /*x*/ 49, /*y*/ 3, /*width*/ 50, /*height*/ 15,
+                /*x*/ 49, /*y*/ 0, /*width*/ 50, /*height*/ 18,
             ))),
         })
     );
@@ -86,11 +82,9 @@ fn responsive_layout_uses_sidebar_overlay_and_minimum_size_boundaries() {
         ),
         Some(ShellLayout {
             status: None,
-            header: Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 50, /*height*/ 3
-            ),
+            activity: None,
             transcript: Rect::new(
-                /*x*/ 0, /*y*/ 3, /*width*/ 50, /*height*/ 19
+                /*x*/ 0, /*y*/ 0, /*width*/ 50, /*height*/ 22
             ),
             input: Rect::new(
                 /*x*/ 0, /*y*/ 22, /*width*/ 50, /*height*/ 6
@@ -116,11 +110,9 @@ fn hiding_the_dashboard_reclaims_the_full_width_layout() {
         ),
         Some(ShellLayout {
             status: None,
-            header: Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 3
-            ),
+            activity: None,
             transcript: Rect::new(
-                /*x*/ 0, /*y*/ 3, /*width*/ 78, /*height*/ 15
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 18
             ),
             input: Rect::new(
                 /*x*/ 0, /*y*/ 18, /*width*/ 78, /*height*/ 6
@@ -144,17 +136,15 @@ fn compact_help_preserves_the_overlay_height() {
         ),
         Some(ShellLayout {
             status: None,
-            header: Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 2
-            ),
+            activity: None,
             transcript: Rect::new(
-                /*x*/ 0, /*y*/ 2, /*width*/ 48, /*height*/ 10
+                /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 10
             ),
             input: Rect::new(
-                /*x*/ 0, /*y*/ 12, /*width*/ 48, /*height*/ 4
+                /*x*/ 0, /*y*/ 10, /*width*/ 48, /*height*/ 6
             ),
             dashboard: Some(DashboardPlacement::Overlay(Rect::new(
-                /*x*/ 0, /*y*/ 2, /*width*/ 48, /*height*/ 10,
+                /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 10,
             ))),
         })
     );

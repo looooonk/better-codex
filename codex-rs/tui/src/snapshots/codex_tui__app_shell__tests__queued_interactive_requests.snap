@@ -3,14 +3,14 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
 
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
-
  ▎ STATUS  approval requested: Run command: cargo test -p codex-tui
  ▎ STATUS  interactive request queued: Tool input: tool-input-1
  ▎ STATUS  interactive request queued: MCP github: URL request
 
  ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
 
 
 

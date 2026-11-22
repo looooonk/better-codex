@@ -3,20 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▌ tool exec printf one                           │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+   ▌ output output one                            │
+                                                  │▎◆ SESSIONS
+ ▌ tool exec printf two                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+   ▌ output output two                            │▎loading sessions
                                                   │
- ▌ tool exec printf one                           │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   ▌ output output one                            │▎+ New session  Ctrl+N
-                                                  │▎loading sessions
- ▌ tool exec printf two                           │
-                                                  │▎◆ THREAD
-   ▌ output output two                            │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
- ▌ tool exec printf three                         │▎resume, fork, archive, delete in session list
+ ▌ tool exec printf three                         │▎◆ THREAD
+                                                  │▎stage-one
+   ▌ output output three                          │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
                                                   │
-   ▌ output output three                          │
+                                                  │
                                                   │
                                                   │
                                                   │
@@ -24,5 +24,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

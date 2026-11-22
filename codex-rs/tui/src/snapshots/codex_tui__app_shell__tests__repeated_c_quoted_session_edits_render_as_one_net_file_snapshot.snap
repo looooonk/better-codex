@@ -3,15 +3,12 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──╭ Session edits ───────────────────────────────────────────────────────────────────────────────╮─
-  │ CHANGED FILES         │OLD FILE                          │NEW FILE                           │
- ▎│                       │src/tab\tname.rs                  │src/tab\tname.rs                   │
-  │ > M src/tab\tname.rs  │        @@ -1,1 +1,1 @@           │        @@ -1,1 +1,1 @@            │
- ▎│                       │    1 - old                       │    1 + final                      │
-  │                       │                                  │                                   │
- ▎│                       │                                  │                                   │
-  │                       │                                  │                                   │
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+  ╭ Session edits ───────────────────────────────────────────────────────────────────────────────╮─
+ ▎│ CHANGED FILES         │OLD FILE                          │NEW FILE                           │
+  │                       │src/tab\tname.rs                  │src/tab\tname.rs                   │
+ ▎│ > M src/tab\tname.rs  │        @@ -1,1 +1,1 @@           │        @@ -1,1 +1,1 @@            │
+  │                       │    1 - old                       │    1 + final                      │
   │                       │                                  │                                   │
   │                       │                                  │                                   │
  ▌│                       │                                  │                                   │
@@ -19,6 +16,9 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
  ▌│                       │                                  │                                   │
   │                       │                                  │                                   │
  ▎│                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
   │                       │                                  │                                   │
   │                       │                                  │                                   │
   │                       │                                  │                                   │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 │>│                       │                                  │                                   │
 │ │  ←/→ files  h/l pan  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  file 1/1  1-2/2        │
 │ ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

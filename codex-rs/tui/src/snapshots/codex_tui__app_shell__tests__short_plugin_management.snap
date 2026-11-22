@@ -2,15 +2,15 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
- better-codex                          ● thinking │
-──────────────────────────────────────────────────│   Status   │  Agents   │  Sessions   │  Help
+                                                  │
+ ▎ STATUS  plugin manager opened                │ │   Status   │  Agents   │  Sessions   │  Help
               ╭──────────────────────────────────────────────────────────────────────╮━━━──────────
-              │◆ PLUGINS                                                             │
- ▎ CODEX  The │12/12 plugin catalog  ↑↓ / j k navigate                               │
-          surf│Install / update ↵  Toggle e  Uninstall u  Refresh r                  │ns
-              │> available  Plugin 11 (local)                                        │
-╭─────────────│                                                                      │
-│> Summarize t│Action: press i or Enter to install                                   │
+ ▎ CODEX  The │◆ PLUGINS                                                             │
+          surf│12/12 plugin catalog  ↑↓ / j k navigate                               │
+              │Install / update ↵  Toggle e  Uninstall u  Refresh r                  │ns
+╭─────────────│> available  Plugin 11 (local)                                        │
+│> Summarize t│                                                                      │
+│             │Action: press i or Enter to install                                   │
 │             ╰──────────────────────────────────────────────────────────────────────╯
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││▎stage-one
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││▎stage-one
 ╰────────────────────────────────────────────────╯│

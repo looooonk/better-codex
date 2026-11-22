@@ -3,22 +3,22 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
- better-codex                                    ● thinking │   Status   │  Agents   │  Sessions   │  Help
-─────────────────────╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━━━━──────────
-                     │ › 1 ○ global.open_agents                                         │
- ▎ YOU  Create a dive│       f2 / ⌃space - select to change                             │
-                     │   2 ○ global.open_transcript                                     │ sessions
- ▎ CODEX  Started a f│       unbound - select to change                                 │
-          server turn│   3 ○ global.find_transcript                                     │
- ▎ PLAN  1. Build she│       unbound - select to change                                 │
-         2. Wire tran│   4 ○ global.focus_activity                                      │
-         3. Render da│       unbound - select to change                                 │
-                     │   5 ○ global.open_external_editor                                │000000000001
- ▌ tool exec just tes│       unbound - select to change                                 │te in session list
-                     │   6 ○ global.copy                                                │
- ▌ edited 3 files +12│       ⌃o - select to change                                      │
+ ▎ YOU  Create a divergent standalone TUI.                  │   Status   │  Agents   │  Sessions   │  Help
+                     ╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━━━━──────────
+ ▎ CODEX  Started a f│ › 1 ○ global.open_agents                                         │
+          server turn│       f2 / ⌃space - select to change                             │
+ ▎ PLAN  1. Build she│   2 ○ global.open_transcript                                     │ sessions
+         2. Wire tran│       unbound - select to change                                 │
+         3. Render da│   3 ○ global.find_transcript                                     │
+                     │       unbound - select to change                                 │
+ ▌ tool exec just tes│   4 ○ global.focus_activity                                      │
+                     │       unbound - select to change                                 │
+ ▌ edited 3 files +12│   5 ○ global.open_external_editor                                │000000000001
+                     │       unbound - select to change                                 │te in session list
+ ▎ CODEX  The new she│   6 ○ global.copy                                                │
+                     │       ⌃o - select to change                                      │
                      │   7 ○ global.clear_terminal                                      │
- ▎ CODEX  The new she│       unbound - select to change                                 │
+                     │       unbound - select to change                                 │
                      │   8 ○ global.toggle_fast_mode                                    │
                      │       unbound - select to change                                 │
                      │   9 ○ global.toggle_side_conversation                            │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 │> Summarize the new │                                                                  │
 │                    │  up / down move  f18 select  f19 cancel  1/55 ↓                  │
 │                    ╰──────────────────────────────────────────────────────────────────╯
-│ Permissions ▾         gpt-5-codex ▾   Effort ▾   Speed ▾ ││
+│ Ask for approval ▾   gpt-5-co… ▾   Default ▾   Default ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

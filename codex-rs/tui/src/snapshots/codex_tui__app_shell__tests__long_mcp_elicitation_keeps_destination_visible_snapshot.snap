@@ -3,9 +3,6 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- better-codex                                    ● thinking
-────────────────────────────────────────────────────────────
-
  ▌ edited 3 files +128 -24                                │
                                                           ┃
  ▎ CODEX  The new shell owns the fullscreen surface.      ┃
@@ -16,6 +13,9 @@ expression: rendered
 │  Review every authorization requirement before           │
 │  continuing. Review every authorization requirement      │
 │  before continuing. Review every authorization           │
+│  requirement before continuing. Review every             │
+│  authorization requirement before continuing. Review     │
+│  every authorization requirement before continuing.      │
 │  ↓ more (j/k or arrows)                                  │
 │  URL: https://auth.example.test/device                   │
 │   Accept ↵   Decline d   Cancel c                        │

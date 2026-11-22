@@ -3,9 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
+                                                │ │   Status   │  Agents   │  Sessions   │  Help
+ ▌ edited 3 files +128 -24                      │ │─────────────────────────━━━━━━━━━━━━━──────────
+                                                │ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │▎◆ SESSIONS
           surface.                              ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N

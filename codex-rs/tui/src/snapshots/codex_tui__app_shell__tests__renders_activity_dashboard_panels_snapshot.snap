@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                                       │
- better-codex                                              ◐ thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────────────────────────│
-                                                                      │◆ CONVERSATION         │ ◆ COMPOSER
- ▎ YOU  Create a divergent standalone TUI.                            │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
-                                                                      │ ↵ / c       Copy item │  ⌘⌫          Delete st…
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │ e           Branch    │  ⌥/^ + ←→    Move word
- ▎ PLAN  1. Build shell                                               │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
-         2. Wire transcript                                           │                       │  Alt+M       Model
-         3. Render dashboard                                          │◆ DASHBOARD            │  Alt+E       Effort
-                                                                      │ F1 … F4     Open tab  │  ↵           Steer turn
- ▌ tool exec just test -p codex-tui                                   │ Alt+← / →   Prev/next │  Tab         Queue next
+ ▎ YOU  Create a divergent standalone TUI.                            │   Status   │  Agents   │  Sessions   │  Help
+                                                                      │
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │◆ CONVERSATION         │ ◆ COMPOSER
+ ▎ PLAN  1. Build shell                                               │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
+         2. Wire transcript                                           │ ↵ / c       Copy item │  ⌘⌫          Delete st…
+         3. Render dashboard                                          │ e           Branch    │  ⌥/^ + ←→    Move word
+                                                                      │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
+ ▌ tool exec just test -p codex-tui                                   │                       │  Alt+M       Model
+                                                                      │◆ DASHBOARD            │  Alt+E       Effort
+ ▌ edited 3 files +128 -24                                            │ F1 … F4     Open tab  │  ↵           Steer turn
+ ▎ PLAN  1. Route activity into dashboard panels                      │ Alt+← / →   Prev/next │  Tab         Queue next
                                                                       │ Pg↑ / Pg↓   Scroll he…│
- ▌ edited 3 files +128 -24                                            │ ⇧Alt+←/→    Resize    │ ◆ APP
- ▎ PLAN  1. Route activity into dashboard panels                      │                       │  ^P          Commands
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │ ⇧Alt+←/→    Resize    │ ◆ APP
+                                                                      │                       │  ^P          Commands
                                                                       │◆ SESSIONS             │  ^D          Show/hide
- ▎ CODEX  The new shell owns the fullscreen surface.                  │ ↑↓ / jk     Select    │  ^C          Stop/canc…
+                                                                      │ ↑↓ / jk     Select    │  ^C          Stop/canc…
                                                                       │ ↵ / r       Resume    │  Esc ×2      Exit app
                                                                       │ f           Fork      │  ^N          New chat
                                                                       │ a           Archive   │
@@ -46,7 +46,7 @@ expression: "render_shell(&shell, area)"
                                                                       │
                                                                       │
                                                                       │
-                                                                      │
+ Thinking... · 0 tok/s                                                │
 ╭────────────────────────────────────────────────────────────────────╮│
 │◆ APPROVAL                                                          ││
 │? Run command: cargo test -p codex-tui                              ││

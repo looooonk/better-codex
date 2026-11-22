@@ -3,9 +3,6 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
-
  ▌ tool exec cargo test
 
    ▌ output ... 4 earlier output lines
@@ -28,9 +25,12 @@ expression: rendered
 
 
 
+
+
+
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

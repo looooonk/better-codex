@@ -3,16 +3,16 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
 
- better-codex                                                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
  ▎ YOU  Find the café response
 
  ▎ CODEX  The café serves tea
 
  ▎ CODEX  An unrelated answer
 
- ▎ CODEX  The new she╭ Find retained text: café▏ ───────────────────────────────────────╮
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+                     ╭ Find retained text: café▏ ───────────────────────────────────────╮
                      │ › 1 ○ Assistant: The café serves tea                             │
                      │                                                                  │
                      │   2 ○ You: Find the café response                                │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 │> Keep this draft                                                                                           │
 │                                                                                                            │
 │                                                                                                            │
-│ Permissions ▾                                                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

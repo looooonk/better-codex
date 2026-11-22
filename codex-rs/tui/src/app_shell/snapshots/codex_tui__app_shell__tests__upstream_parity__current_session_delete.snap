@@ -3,22 +3,22 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
- better-codex                            ● confirm deletion │   Status   │  Agents   │  Sessions   │  Help
-────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                            │
- ▎ YOU  Create a divergent standalone TUI.                  │▎◆ SESSIONS
-                                                            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  Started a fullscreen app shell backed by app-     │▎+ New session  Ctrl+N
-          server turns.                                     │▎loading sessions
- ▎ PLAN  1. Build s╭──────────────────────────────────────────────────────────────────────╮
-         2. Wire tr│◆ DELETE SESSION                                                      │
-         3. Render │Delete session: stage-one                                             │
-                   │Session ID: 01900000-0000-7000-8000-000000000001                      │0000000001
- ▌ tool exec just t│No spawned descendants will be deleted.                               │ in session list
-                   │This permanently deletes all persisted history in that subtree.       │
- ▌ edited 3 files +│                                                                      │
+ ▎ YOU  Create a divergent standalone TUI.                  │   Status   │  Agents   │  Sessions   │  Help
+                                                            │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │
+          server turns.                                     │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                                     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                                 │▎+ New session  Ctrl+N
+         3. Render dashboard                                │▎loading sessions
+                   ╭──────────────────────────────────────────────────────────────────────╮
+ ▌ tool exec just t│◆ DELETE SESSION                                                      │
+                   │Delete session: stage-one                                             │
+ ▌ edited 3 files +│Session ID: 01900000-0000-7000-8000-000000000001                      │0000000001
+                   │No spawned descendants will be deleted.                               │ in session list
+ ▎ CODEX  The new s│This permanently deletes all persisted history in that subtree.       │
+                   │                                                                      │
                    │> Delete permanently Enter/y                                          │
- ▎ CODEX  The new s│  Cancel Esc/n                                                        │
+                   │  Cancel Esc/n                                                        │
                    │                                                                      │
                    ╰──────────────────────────────────────────────────────────────────────╯
                                                             │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 │> Type a message                                          ││
 │                                                          ││
 │                                                          ││
-│ Permissions ▾         gpt-5-codex ▾   Effort ▾   Speed ▾ ││
+│ Ask for approval ▾   gpt-5-co… ▾   Default ▾   Default ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

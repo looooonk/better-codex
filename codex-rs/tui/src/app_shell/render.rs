@@ -13,7 +13,6 @@ use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::title_rect;
-use super::header::HeaderView;
 use super::input_request_layout::approval_panel_hit;
 use super::input_request_layout::elicitation_panel_hit;
 use super::input_request_layout::request_panel_hit;
@@ -81,7 +80,6 @@ pub(super) struct ShellView<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PointerPane {
-    Header,
     Transcript,
     Input,
     Dashboard,
@@ -95,7 +93,9 @@ impl ShellView<'_> {
             self.render_terminal_too_small(area, buf);
             return;
         };
-        self.render_header(layout.header, buf);
+        if let Some(area) = layout.activity {
+            self.shell.render_turn_activity(area, buf);
+        }
         if let Some(area) = layout.status {
             self.shell.render_status_surface(area, buf);
         }
@@ -224,9 +224,7 @@ impl ShellView<'_> {
 
     pub(super) fn pointer_pane_at(&self, area: Rect, position: Position) -> Option<PointerPane> {
         let layout = self.layout(area)?;
-        if layout.header.contains(position) {
-            Some(PointerPane::Header)
-        } else if layout
+        if layout
             .dashboard
             .is_some_and(|dashboard| dashboard.area().contains(position))
         {
@@ -256,9 +254,11 @@ impl ShellView<'_> {
             return screen;
         };
         let input = self.input_area(screen);
-        let anchor = ComposerToolbar::new(self.shell, input).button_area(control);
+        let toolbar = ComposerToolbar::new(self.shell, input);
+        let anchor = toolbar.button_area(control);
+        let top = toolbar.button_area(ComposerControl::Permissions).y;
         let (width, height) = selector.popup_size(control, input.width);
-        let height = height.min(anchor.y.saturating_sub(screen.y));
+        let height = height.min(top.saturating_sub(screen.y));
         let x = match control {
             ComposerControl::Permissions => anchor.x,
             ComposerControl::Model | ComposerControl::ReasoningEffort => {
@@ -267,7 +267,7 @@ impl ShellView<'_> {
             ComposerControl::ServiceTier => anchor.right().saturating_sub(width),
         }
         .clamp(input.x, input.right().saturating_sub(width));
-        Rect::new(x, anchor.y.saturating_sub(height), width, height)
+        Rect::new(x, top.saturating_sub(height), width, height)
     }
 
     pub(super) fn composer_control_at(
@@ -382,19 +382,6 @@ impl ShellView<'_> {
 
     fn layout(&self, area: Rect) -> Option<ShellLayout> {
         shell_layout::calculate(self.shell, area)
-    }
-
-    fn render_header(&self, area: Rect, buf: &mut Buffer) {
-        HeaderView {
-            cwd: &self.shell.cwd,
-            status: &self.shell.header_status(),
-            status_spinner_frame: self
-                .shell
-                .status_spinner_active()
-                .then_some(self.shell.status_spinner_frame),
-            turn_metrics: self.shell.active_turn_metrics(),
-        }
-        .render(area, buf);
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {

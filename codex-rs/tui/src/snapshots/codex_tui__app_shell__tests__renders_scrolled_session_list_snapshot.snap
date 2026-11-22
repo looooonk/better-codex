@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  10 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎   4/10 Session 04 [main]  Preview for session…
+                                                  │▎   5/10 Session 05 [main]  Preview for session…
+ ▌ tool exec just test -p codex-tui               │▎   6/10 Session 06 [main]  Preview for session…
+                                                  │▎   7/10 Session 07 [main]  Preview for session…
+ ▌ edited 3 files +128 -24                        │▎›  8/10 Session 08 [main]  Preview for session…
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎● FOCUSED  ACTIVE  10 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎   4/10 Session 04 [main]  Preview for session…
- ▎ PLAN  1. Build shell                           │▎   5/10 Session 05 [main]  Preview for session…
-         2. Wire transcript                       │▎   6/10 Session 06 [main]  Preview for session…
-         3. Render dashboard                      │▎   7/10 Session 07 [main]  Preview for session…
-                                                  │▎›  8/10 Session 08 [main]  Preview for session…
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ THREAD
- ▌ edited 3 files +128 -24                        │▎stage-one
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ THREAD
+          surface.                                │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
- ▎ CODEX  The new shell owns the fullscreen       │▎resume, fork, archive, delete in session list
-          surface.                                │
+                                                  │▎resume, fork, archive, delete in session list
+                                                  │
                                                   │
                                                   │
                                                   │
@@ -32,5 +32,5 @@ expression: rendered
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

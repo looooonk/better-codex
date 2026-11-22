@@ -210,7 +210,7 @@ impl ShellState {
                         return Ok(());
                     }
                 }
-                Some(PointerPane::Header | PointerPane::Dashboard) | None => {}
+                Some(PointerPane::Dashboard) | None => {}
             }
         }
 

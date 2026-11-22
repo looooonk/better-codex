@@ -3,14 +3,14 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▌ edited 4 files +4 -3                           │   Status   │  Agents   │  Sessions   │  Help
+ ▌          M src/app.rs                          │─────────────────────────━━━━━━━━━━━━━──────────
+ ▌          A src/new.rs                          │
+ ▌          D src/old.rs                          │▎◆ SESSIONS
+ ▌          R src/from.rs -> src/to.rs            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+                                                  │▎loading sessions
                                                   │
- ▌ edited 4 files +4 -3                           │▎◆ SESSIONS
- ▌          M src/app.rs                          │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▌          A src/new.rs                          │▎+ New session  Ctrl+N
- ▌          D src/old.rs                          │▎loading sessions
- ▌          R src/from.rs -> src/to.rs            │
                                                   │▎◆ THREAD
                                                   │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
@@ -20,5 +20,5 @@ expression: "render_shell(&shell, area)"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

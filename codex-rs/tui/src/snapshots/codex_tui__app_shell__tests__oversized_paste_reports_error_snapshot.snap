@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎loading sessions
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎loading sessions
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ THREAD
-         3. Render dashboard                      │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
- ▌ tool exec just test -p codex-tui               │▎resume, fork, archive, delete in session list
-                                                  │
- ▌ edited 3 files +128 -24                        │
- ▎ ERROR  Message exceeds the maximum size of     │
+ ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+                                                  │▎stage-one
+ ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+ ▎ ERROR  Message exceeds the maximum size of     │▎resume, fork, archive, delete in session list
           1048576 bytes (1048594 provided).       │
                                                   │
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │
                                                   │
                                                   │
+                                                  │
+                                                  │
+                                                  │
 ╭────────────────────────────────────────────────╮│
 │> draft stays intact                            ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

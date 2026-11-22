@@ -3,9 +3,6 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- better-codex                                                                               ● ready
-────────────────────────────────────────────────────────────────────────────────────────────────────
-
  SELECT 5/6  e BRANCH EDIT
  ▎ SYSTEM  switched session
  ▎ SYSTEM  loaded 2 previous turns
@@ -18,9 +15,12 @@ expression: "render_shell(&shell, area)"
  ──────── Took 1.00s ──────────────────────────────────────────────────────────────────────────────
 
 
+
+
+
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Type a message                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
-│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                         gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

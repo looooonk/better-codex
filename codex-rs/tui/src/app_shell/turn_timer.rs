@@ -1,12 +1,6 @@
 use super::ShellState;
 use std::time::Instant;
 
-#[derive(Debug, PartialEq, Eq)]
-pub(super) struct TurnMetrics {
-    pub(super) elapsed_seconds: u64,
-    pub(super) tokens_per_second: u64,
-}
-
 impl ShellState {
     pub(super) fn record_active_turn_started(&mut self, turn_id: String) {
         if self.active_turn_id.as_deref() != Some(turn_id.as_str())
@@ -34,13 +28,10 @@ impl ShellState {
         }
     }
 
-    pub(super) fn active_turn_metrics(&self) -> Option<TurnMetrics> {
-        let started = self.turn_started_at?;
-        let now = Instant::now();
-        Some(TurnMetrics {
-            elapsed_seconds: now.duration_since(started).as_secs(),
-            tokens_per_second: self.output_rate.tokens_per_second(now),
-        })
+    pub(super) fn active_turn_tps(&self) -> Option<u64> {
+        self.active_turn_id
+            .as_ref()
+            .map(|_| self.output_rate.tokens_per_second(Instant::now()))
     }
 }
 

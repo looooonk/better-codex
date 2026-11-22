@@ -2,11 +2,11 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
- better-codex                              ● thinking
-──────────────────────────────────────────────────────
-  ╭ Session edits ─────────────────────────────────╮
+    │
+    │   Status   │  Agents   │  Sessions   │  Help
+  ╭ Session edits ─────────────────────────────────╮─
  ▌│ CHANGED FILES│OLD FILE       │NEW FILE         │
-  │              │               │src/file_29.rs   │─
+  │              │               │src/file_29.rs   │
  ▌│   A file_23.…│               │    1 + file 29… │
   │   A file_24.…│               │    2 + file 29… │
  ▎│   A file_25.…│               │    3 + file 29… │
@@ -16,5 +16,5 @@ expression: rendered
 │>│ > A file_29.…│               │    7 + file 29… │ │
 │ │  h/l pan  ↑/↓  Esc  file 30/30  1-7/50  col 1  │ │
 │ ╰────────────────────────────────────────────────╯ │
-│Permissions ▾         gpt-5-codex ▾ Effort ▾ Speed ▾│
+│Ask for approval▾     gpt-5-codex▾ Default▾ Default▾│
 ╰────────────────────────────────────────────────────╯

@@ -1,3 +1,4 @@
+use super::composer_toolbar::toolbar_rows;
 use super::design::pane_content_rect;
 use ratatui::layout::Rect;
 use std::ops::Range;
@@ -132,7 +133,7 @@ pub(super) fn composer_visual_cursor(
 pub(super) fn composer_body(input: Rect) -> Rect {
     let content = pane_content_rect(input);
     Rect {
-        height: content.height.saturating_sub(1),
+        height: content.height.saturating_sub(toolbar_rows(content)),
         ..content
     }
 }

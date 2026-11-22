@@ -18,21 +18,16 @@ const DASHBOARD_WIDTH_PERCENT: u16 = 34;
 const DASHBOARD_RESIZABLE_MIN_WIDTH: u16 = 32;
 const DASHBOARD_RESIZE_STEP: u16 = 4;
 const WORKSPACE_RESIZABLE_MIN_WIDTH: u16 = 40;
-const COMPACT_HEADER_HEIGHT: u16 = 2;
-const PADDED_HEADER_HEIGHT: u16 = 3;
-const PADDED_HEADER_MIN_SCREEN_HEIGHT: u16 = 17;
 const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
 const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
 const INPUT_REQUEST_PANEL_MIN_HEIGHT: u16 = 8;
 const INPUT_REQUEST_PANEL_MAX_HEIGHT: u16 = 24;
-const COMPACT_INPUT_PANEL_MIN_HEIGHT: u16 = 4;
 const HELP_OVERLAY_MIN_HEIGHT: u16 = 10;
 const PANE_CHROME_HEIGHT: u16 = 3;
 const TRANSCRIPT_MIN_HEIGHT: u16 = 5;
 
 pub(super) const MIN_TERMINAL_WIDTH: u16 = 40;
-pub(super) const MIN_TERMINAL_HEIGHT: u16 =
-    COMPACT_HEADER_HEIGHT + PANE_CHROME_HEIGHT + INPUT_PANEL_MIN_HEIGHT;
+pub(super) const MIN_TERMINAL_HEIGHT: u16 = TRANSCRIPT_MIN_HEIGHT + INPUT_PANEL_MIN_HEIGHT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DashboardPlacement {
@@ -56,7 +51,7 @@ impl DashboardPlacement {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ShellLayout {
-    pub(super) header: Rect,
+    pub(super) activity: Option<Rect>,
     pub(super) status: Option<Rect>,
     pub(super) transcript: Rect,
     pub(super) input: Rect,
@@ -78,21 +73,19 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
     }
 
     let status_height = u16::from(shell.status_surfaces.status_visible());
-    let header_height = if area.height >= PADDED_HEADER_MIN_SCREEN_HEIGHT {
-        PADDED_HEADER_HEIGHT
-    } else {
-        COMPACT_HEADER_HEIGHT
-    };
+    let activity_height = u16::from(shell.active_turn_id.is_some());
+    let available_height = area.height.saturating_sub(status_height + activity_height);
     if !shell.dashboard_visible || area.width < DASHBOARD_SIDE_BY_SIDE_MIN_WIDTH {
-        let available_height = area.height.saturating_sub(header_height + status_height);
         let mut input_height = input_panel_height(shell, available_height, area.width);
         if shell.dashboard_visible && shell.dashboard_route == DashboardRoute::Help {
+            let toolbar_rows = super::composer_toolbar::toolbar_rows(pane_content_rect(area));
+            let compact_input_min_height = 3 + toolbar_rows;
             let max_input_height = available_height
                 .saturating_sub(HELP_OVERLAY_MIN_HEIGHT)
-                .max(available_height.min(COMPACT_INPUT_PANEL_MIN_HEIGHT));
+                .max(available_height.min(compact_input_min_height));
             input_height = input_height.min(max_input_height);
         }
-        let mut layout = workspace_layout(shell, area, header_height, input_height);
+        let mut layout = workspace_layout(shell, area, input_height);
         if shell.dashboard_visible {
             let width = dashboard_width(shell, area.width).min(layout.transcript.width);
             layout.dashboard = Some(DashboardPlacement::Overlay(Rect::new(
@@ -113,41 +106,38 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
             Constraint::Length(dashboard_width),
         ])
         .split(area);
-    let input_height = input_panel_height(
-        shell,
-        area.height.saturating_sub(header_height + status_height),
-        horizontal[0].width,
-    );
-    let mut layout = workspace_layout(shell, horizontal[0], header_height, input_height);
+    let input_height = input_panel_height(shell, available_height, horizontal[0].width);
+    let mut layout = workspace_layout(shell, horizontal[0], input_height);
     layout.dashboard = Some(DashboardPlacement::Sidebar(horizontal[1]));
     Some(layout)
 }
 
-fn workspace_layout(
-    shell: &ShellState,
-    area: Rect,
-    header_height: u16,
-    input_height: u16,
-) -> ShellLayout {
+fn workspace_layout(shell: &ShellState, area: Rect, input_height: u16) -> ShellLayout {
     let status_height = u16::from(shell.status_surfaces.status_visible());
-    // An extra zero-length constraint changes how tight layouts allocate their rows.
     let main = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(header_height + status_height),
+            Constraint::Length(status_height),
             Constraint::Min(transcript_min_height(shell, area.height)),
             Constraint::Length(input_height),
         ])
         .split(area);
-    let header = Rect {
-        height: main[0].height.saturating_sub(status_height),
-        ..main[0]
+    let mut transcript = main[1];
+    let activity = if shell.active_turn_id.is_some() && transcript.height > 0 {
+        transcript.height -= 1;
+        Some(Rect::new(
+            transcript.x,
+            transcript.bottom(),
+            transcript.width,
+            1,
+        ))
+    } else {
+        None
     };
     ShellLayout {
-        header,
-        status: (status_height > 0 && main[0].height > 0)
-            .then(|| Rect::new(header.x, header.bottom(), header.width, status_height)),
-        transcript: main[1],
+        activity,
+        status: (main[0].height > 0).then_some(main[0]),
+        transcript,
         input: main[2],
         dashboard: None,
     }
@@ -226,13 +216,13 @@ pub(super) fn adjust_dashboard_width(
 }
 
 fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u16) -> u16 {
-    let body_width = pane_content_rect(Rect::new(
+    let content = pane_content_rect(Rect::new(
         /*x*/ 0,
         /*y*/ 0,
         input_width,
         available_height,
-    ))
-    .width;
+    ));
+    let body_width = content.width;
     let request_lines = if let Some(pending) = &shell.pending_approval {
         Some(approval_lines(pending))
     } else if let Some(pending) = &shell.pending_elicitation {
@@ -265,7 +255,7 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
     )
     .unwrap_or(u16::MAX);
     let desired_height = composer_line_count
-        .saturating_add(PANE_CHROME_HEIGHT)
+        .saturating_add(2 + super::composer_toolbar::toolbar_rows(content))
         .clamp(INPUT_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);
     let max_height = available_height
         .saturating_sub(TRANSCRIPT_MIN_HEIGHT)

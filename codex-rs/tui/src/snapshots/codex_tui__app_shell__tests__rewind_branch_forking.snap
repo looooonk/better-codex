@@ -3,14 +3,14 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex            ◐ branching conversation │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ SYSTEM  switched session                       │▎◆ SESSIONS
- ▎ SYSTEM  loaded 1 previous turns                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ YOU  Rewrite this prompt.                      │▎+ New session  Ctrl+N
+ ▎ SYSTEM  switched session                       │   Status   │  Agents   │  Sessions   │  Help
+ ▎ SYSTEM  loaded 1 previous turns                │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Rewrite this prompt.                      │
+                                                  │▎◆ SESSIONS
+ ──────── Took 1.00s ──────────────────────────── │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
                                                   │▎loading sessions
- ──────── Took 1.00s ──────────────────────────── │
+                                                  │
                                                   │▎◆ THREAD
                                                   │▎rewind-source
                                                   │▎id 01900000-0000-7000-8000-000000000001
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, area)"
 │> Rewrite this prompt.                          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

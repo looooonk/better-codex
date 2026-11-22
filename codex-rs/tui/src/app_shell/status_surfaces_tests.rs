@@ -5,7 +5,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn conversation_layout_uses_native_header_with_saved_cli_status_items() {
+fn conversation_starts_at_the_top_with_saved_cli_status_items() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.context_token_usage.total_tokens = 56_000;
@@ -52,7 +52,7 @@ fn conversation_layout_uses_native_header_with_saved_cli_status_items() {
             .join("\n");
         insta::assert_snapshot!(format!("status_line_{width}"), rendered);
         let layout = crate::app_shell::shell_layout::calculate(&shell, area).unwrap();
-        assert_eq!(layout.header.bottom(), layout.transcript.y);
+        assert_eq!(layout.transcript.y, area.y);
     }
 }
 

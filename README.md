@@ -116,7 +116,8 @@ at that line and column. Press Escape to return to the conversation.
 | **Realtime voice**        | Talk with an agent through the isolated native voice helper; control microphone and playback from the workspace. |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
-The header shows an estimated token rate over the last three seconds of model activity.
+During a turn, the activity line above the composer shows the estimated token rate
+over the last three seconds of model activity.
 With the Better Codex backend, it holds during tool waits. The turn divider shows total
 elapsed time and divides reported output tokens (including reasoning) by the time
 outside those waits. Use `better-codex --no-daemon` to run the bundled backend.

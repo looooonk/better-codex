@@ -3,12 +3,12 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&permissions_shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▌ tool exec just test -p codex-tui             │ │▎◆ SESSIONS
-                                                │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▌ edited 3 files +128 -24                      │ │▎+ New session  Ctrl+N
+         2. Wire transcript                     │ │   Status   │  Agents   │  Sessions   │  Help
+         3. Render dashboard                    │ │─────────────────────────━━━━━━━━━━━━━──────────
+                                                │ │
+ ▌ tool exec just test -p codex-tui             ┃ │▎◆ SESSIONS
+                                                ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▌ edited 3 files +128 -24                      ┃ │▎+ New session  Ctrl+N
                                                 ┃ │▎loading sessions
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │▎◆ THREAD

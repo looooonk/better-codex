@@ -2,14 +2,14 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- better-codex                ● thinking
-────────────────────────────────────────
 │
 │ Status  │ Agents  │ Sessions  │ Help
+│────────────────────━━━━━━━━━━━───────
+│
 │
 ╭──────────────────────────────────────╮
 │> Summarize the new shell architecture│
 │                                      │
-│                                      │
-│Perms ▾ gpt-5-codex ▾ Effort ▾ Speed ▾│
+│Ask for approval ▾                    │
+│     gpt-5-codex ▾ Default ▾ Default ▾│
 ╰──────────────────────────────────────╯

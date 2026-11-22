@@ -65,7 +65,7 @@ impl ShellState {
                     format!("+{} -{}", stats.additions, stats.deletions)
                 }
             }
-            StatusLineItem::Status => self.header_status().into_owned(),
+            StatusLineItem::Status => self.session_status().into_owned(),
             StatusLineItem::Permissions => self
                 .active_permission_profile
                 .as_ref()

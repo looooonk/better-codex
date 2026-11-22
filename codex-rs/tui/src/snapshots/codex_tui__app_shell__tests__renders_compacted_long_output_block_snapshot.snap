@@ -2,9 +2,6 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
                             │
    ▌ output ... 118 earlier │   Status   │  Agents   │  Sessions   │  Help
    ▌        cargo build outp│─────────────────────────━━━━━━━━━━━━━──────────
@@ -15,10 +12,13 @@ expression: "render_shell(&shell, area)"
                             │▎◆ THREAD
                             │▎stage-one
                             │▎id 01900000-0000-7000-8000-000000000001
+                            │▎resume, fork, archive, delete in session list
+                            │
+                            │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

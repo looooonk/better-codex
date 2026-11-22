@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  Star╭──────────────────────────────────────────────────────────────────────╮
-          by a│◆ ACTIONS  Ctrl+P                                                     │
- ▎ PLAN  1. Bu│                                                                      │
-         2. Wi│▌ New session  Start an empty session in the c...                     │
-         3. Re│  Copy transcript item                                                │
-              │  Clear visible transcript                                            │00001
- ▌ tool exec j│  Select latest transcript item                                       │ession list
-              │  Jump transcript to top                                              │
- ▌ edited 3 fi│  Jump transcript to bottom                                           │
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wi╭──────────────────────────────────────────────────────────────────────╮
+         3. Re│◆ ACTIONS  Ctrl+P                                                     │
+              │                                                                      │
+ ▌ tool exec j│▌ New session  Start an empty session in the c...                     │
+              │  Copy transcript item                                                │
+ ▌ edited 3 fi│  Clear visible transcript                                            │00001
+              │  Select latest transcript item                                       │ession list
+ ▎ CODEX  The │  Jump transcript to top                                              │
+          surf│  Jump transcript to bottom                                           │
               │  Interrupt active turn                                               │
- ▎ CODEX  The │  Switch model                                                        │
-          surf│  Change permissions                                                  │
+              │  Switch model                                                        │
+              │  Change permissions                                                  │
               │  Resume thread                                                       │
               │  Fork thread                                                         │
               │  Import Claude Code setup                                            │
@@ -30,5 +30,5 @@ expression: "render_shell(&shell, area)"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

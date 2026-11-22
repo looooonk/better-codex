@@ -2,8 +2,6 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,))"
 ---
- better-codex                                    ◐ thinking · turn 0s · 0 tok/s
-────────────────────────────────────────────────────────────────────────────────
 
  ▎ YOU    indented content
 
@@ -12,9 +10,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,))"
 
 
 
+
+ Thinking... · 0 tok/s
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │>   indented content                                                          │
 │                                                                              │
 │                                                                              │
-│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

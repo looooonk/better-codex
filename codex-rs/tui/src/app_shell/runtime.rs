@@ -128,6 +128,7 @@ pub(crate) async fn run(
             config_path: client_config_path,
             app_theme: crate::app_theme::configured(&config),
             tui_theme: config.tui_theme.clone(),
+            shimmer_enabled: config.tui_effects.shimmer,
             animations: config.animations,
             show_tooltips: config.show_tooltips,
         },
@@ -213,14 +214,16 @@ pub(crate) async fn run(
         workspace_status_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut effort_refresh = tokio::time::interval(Duration::from_millis(/*millis*/ 40));
-        effort_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut animation_refresh = tokio::time::interval(Duration::from_millis(/*millis*/ 40));
+        animation_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut turn_timer_refresh = tokio::time::interval_at(
             tokio::time::Instant::now() + TURN_TIMER_REFRESH_INTERVAL,
             TURN_TIMER_REFRESH_INTERVAL,
         );
         turn_timer_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = 'event_loop: loop {
+            let animate_ultra = shell.animations && shell.selector.as_ref().is_some_and(super::selector::SelectorState::shows_ultra);
+            let animate_activity = shell.animations && shell.shimmer_enabled && shell.active_turn_id.is_some();
             shell.refresh_status_metadata(&app_server);
             shell.poll_automatic_recap(tui.is_focused(), &config, &app_server);
             let terminal_size = tui.terminal.size()?;
@@ -507,8 +510,8 @@ pub(crate) async fn run(
                         tui.frame_requester().schedule_frame();
                     }
                 }
-                _ = effort_refresh.tick(), if shell.animations && shell.selector.as_ref().is_some_and(super::selector::SelectorState::shows_ultra) => {
-                    if let Some(selector) = shell.selector.as_mut() {
+                _ = animation_refresh.tick(), if animate_ultra || animate_activity => {
+                    if animate_ultra && let Some(selector) = shell.selector.as_mut() {
                         selector.advance_rainbow();
                     }
                     tui.frame_requester().schedule_frame();

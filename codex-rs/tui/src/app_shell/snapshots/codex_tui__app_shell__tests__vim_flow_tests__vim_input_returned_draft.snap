@@ -2,8 +2,6 @@
 source: tui/src/app_shell/vim_flow_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
- better-codex                                                        ● thinking
-────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input returned to composer
 
@@ -12,9 +10,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 
 
 
+
+
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │> Explain this change:                                                        │
 │                                                                              │
 │  - preserve spacing                                                          │
-│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

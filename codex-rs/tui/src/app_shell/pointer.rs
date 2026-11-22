@@ -511,7 +511,7 @@ impl ShellState {
                 };
                 false
             }
-            Some(PointerPane::Header) | None => false,
+            None => false,
         }
     }
 

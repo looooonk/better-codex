@@ -2,9 +2,6 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
                             │
  ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
                             │─────────────────────────━━━━━━━━━━━━━──────────
@@ -20,9 +17,12 @@ expression: "render_shell(&shell, area)"
  ▎ CODEX  The new shell owns│
                             │
                             │
+                            │
+                            │
+                            │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

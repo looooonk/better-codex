@@ -3,24 +3,24 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎loading sessions
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎loading sessions
- ▎ PLAN  1. Build shell                           │
-         2. Wi╭──────────────────────────────────────────────────────────────────────╮
-         3. Re│◆ MCP SERVERS                                                         │
-              │Add MCP server                                                        │00001
- ▌ tool exec j│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
+ ▌ tool exec j╭──────────────────────────────────────────────────────────────────────╮
+              │◆ MCP SERVERS                                                         │
+ ▌ edited 3 fi│Add MCP server                                                        │00001
+ ▎ STATUS  mcp│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
               │                                                                      │
- ▌ edited 3 fi│…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
- ▎ STATUS  mcp│                                                                      │
+ ▎ CODEX  The │…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
+          surf│                                                                      │
               │Enter save  Esc cancel                                                │
- ▎ CODEX  The │                                                                      │
-          surf╰──────────────────────────────────────────────────────────────────────╯
+              │                                                                      │
+              ╰──────────────────────────────────────────────────────────────────────╯
                                                   │
                                                   │
                                                   │
@@ -28,5 +28,5 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

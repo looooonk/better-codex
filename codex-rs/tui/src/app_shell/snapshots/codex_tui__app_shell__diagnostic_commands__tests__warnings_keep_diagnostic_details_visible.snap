@@ -3,11 +3,11 @@ source: tui/src/app_shell/diagnostic_commands_tests.rs
 expression: text
 ---
 
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
-
-         2. Wire transcript                                                                       │
-         3. Render dashboard                                                                      │
+                                                                                                  ┃
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              ┃
+ ▎ PLAN  1. Build shell                                                                           ┃
+         2. Wire transcript                                                                       ┃
+         3. Render dashboard                                                                      ┃
                                                                                                   ┃
  ▌ tool exec just test -p codex-tui                                                               ┃
                                                                                                   ┃
@@ -22,5 +22,5 @@ expression: text
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │
-│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                         gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

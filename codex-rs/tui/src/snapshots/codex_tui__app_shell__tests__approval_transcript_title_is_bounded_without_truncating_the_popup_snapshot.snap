@@ -3,14 +3,14 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
 
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
-
  ▎ STATUS  approval requested: Run command: printf first
            printf second
            printf third...
 
  ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
 
 
 

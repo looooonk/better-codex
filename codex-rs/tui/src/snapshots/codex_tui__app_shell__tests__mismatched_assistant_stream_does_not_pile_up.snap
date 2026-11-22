@@ -2,17 +2,17 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 14,),)"
 ---
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
 
  ▎ CODEX  The authoritative first answer.
 
  ▎ CODEX  The second answer streams independently.
 
 
+
+
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

@@ -70,10 +70,8 @@ impl ShellState {
             return None;
         };
         let current = match self.service_tier.as_deref() {
-            Some(tier) if tier != SERVICE_TIER_DEFAULT_REQUEST_VALUE => {
-                ServiceTierValue::Explicit(tier.to_string())
-            }
-            Some(_) | None => ServiceTierValue::Default,
+            None | Some("" | SERVICE_TIER_DEFAULT_REQUEST_VALUE) => ServiceTierValue::Default,
+            Some(id) => ServiceTierValue::Explicit(id.to_owned()),
         };
         let tiers = preset
             .service_tiers

@@ -2,9 +2,6 @@
 source: tui/src/app_shell/slash_command_popup_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
-
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
 │▌ /config        Configure model, permissions, appearance, and integr…│
@@ -22,11 +19,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 │  /init          Create repository instructions in AGENTS.md          │
 │  /mention       Find a file to mention; accepts a search query       │
 │  /warnings      Show retained warnings and diagnostic details        │
+│  /debug-config  Inspect configuration layers and setting sources     │
+│  /rollout       Show the current session rollout path                │
+│  /approve       Inspect a denial or approve one retry by review ID   │
 │↑↓ navigate   Tab complete   Enter run   Esc close                    │
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> /                                                                                               │
 │                                                                                                  │
 │                                                                                                  │
-│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                         gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

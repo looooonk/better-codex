@@ -3,12 +3,12 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- better-codex                             ● ready │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ ERROR  This agent does not accept direct       │▎◆ SESSIONS
-          messages. Send instructions through its │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          parent conversation.                    │▎+ New session  Ctrl+N
+ ▎ ERROR  This agent does not accept direct       │   Status   │  Agents   │  Sessions   │  Help
+          messages. Send instructions through its │─────────────────────────━━━━━━━━━━━━━──────────
+          parent conversation.                    │
+                                                  │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
                                                   │▎loading sessions
                                                   │
                                                   │▎◆ THREAD
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 │> Type a message                                ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

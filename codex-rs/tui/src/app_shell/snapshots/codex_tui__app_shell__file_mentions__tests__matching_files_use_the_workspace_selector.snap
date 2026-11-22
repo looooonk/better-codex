@@ -3,24 +3,24 @@ source: tui/src/app_shell/file_mentions_tests.rs
 expression: text
 ---
 
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▎ YOU  Create a divergent standalone TUI.
 
-                                                                                                  ┃
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              ┃
- ▎ PLAN  1. Build shell                                                                           ┃
-         2. Wire transcript                                                                       ┃
-         3. Rend╭ Mention a file ──────────────────────────────────────────────────╮              ┃
-                │ › 1 ○ src/main.rs                                                │              ┃
- ▌ tool exec jus│       /workspace/project                                         │              ┃
-                │  wheel / j k  Enter select  Esc cancel  1/1                      │              ┃
- ▌ edited 3 file╰──────────────────────────────────────────────────────────────────╯              ┃
-                                                                                                  ┃
- ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+         3. Render dashboard
+
+ ▌ tool exec jus╭ Mention a file ──────────────────────────────────────────────────╮
+                │ › 1 ○ src/main.rs                                                │
+ ▌ edited 3 file│       /workspace/project                                         │
+                │  wheel / j k  Enter select  Esc cancel  1/1                      │
+ ▎ CODEX  The ne╰──────────────────────────────────────────────────────────────────╯
+
+
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │
-│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                         gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

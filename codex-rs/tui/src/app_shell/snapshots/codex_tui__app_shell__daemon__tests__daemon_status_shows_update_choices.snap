@@ -3,24 +3,24 @@ source: tui/src/app_shell/daemon_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▎ YOU  Create a divergent standalone TUI.
 
- ▎ PLAN  1. Build shell                                                                           │
-         2. Wire transcript                                                                       │
-         3. Render dashboard                                                                      ┃
-                                                                                                  ┃
- ▌ tool exec just test -p codex-tui                                                               ┃
-                                                                                                  ┃
- ▌ edited 3 files +128 -24                                                                        ┃
- ▎ SYSTEM  Connected to the local background server. Use /daemon update latest to install the     ┃
-           latest Better Codex release, or /daemon update from-cli to use this CLI. Updating      ┃
-           closes this interface and restarts the server.                                         ┃
- ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+         3. Render dashboard
+
+ ▌ tool exec just test -p codex-tui
+
+ ▌ edited 3 files +128 -24
+ ▎ SYSTEM  Connected to the local background server. Use /daemon update latest to install the
+           latest Better Codex release, or /daemon update from-cli to use this CLI. Updating closes
+           this interface and restarts the server.
+ ▎ CODEX  The new shell owns the fullscreen surface.
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │
-│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                         gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

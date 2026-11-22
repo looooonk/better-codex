@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────━━━━━━━━━━━────────────────────────
-                                                  │
- ▌ tool agent SpawnAgent                          │▎◆ AGENTS
+ ▌ tool agent SpawnAgent                          │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────━━━━━━━━━━━────────────────────────
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │▎◆ AGENTS
                                                   │▎Agents 1  ● 1 active
- ▎ CODEX  The new shell owns the fullscreen       │▎› ● running  agent-thread
-          surface.                                │▎Inspector  agent-thread  ● running
+                                                  │▎› ● running  agent-thread
+                                                  │▎Inspector  agent-thread  ● running
                                                   │▎Model  gpt-5-codex
                                                   │▎Reasoning  high
                                                   │▎Path  agent-thread
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

@@ -3,16 +3,16 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
+ ▎ STATUS  request resolved                       │   Status   │  Agents   │  Sessions   │  Help
+ ▎ STATUS  elicitation requested: MCP github:     │─────────────────────────━━━━━━━━━━━━━──────────
+           URL request                            │
  ▎ STATUS  request resolved                       │▎◆ SESSIONS
- ▎ STATUS  elicitation requested: MCP github:     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-           URL request                            │▎+ New session  Ctrl+N
- ▎ STATUS  request resolved                       │▎loading sessions
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ CODEX  The new shell owns the fullscreen       │▎+ New session  Ctrl+N
+          surface.                                │▎loading sessions
                                                   │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ THREAD
-          surface.                                │▎stage-one
+                                                  │▎◆ THREAD
+                                                  │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
                                                   │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 │> Type a message                                ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

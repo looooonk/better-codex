@@ -1307,18 +1307,17 @@ fn renders_narrow_shell_snapshot() {
 }
 
 #[test]
-fn renders_running_status_spinner_snapshot() {
+fn renders_live_activity_below_the_conversation() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.active_turn_id = Some("turn-spinner".to_string());
-    shell.turn_started_at = Some(Instant::now() - Duration::from_secs(/*secs*/ 5_147));
-    shell.status_spinner_frame = 2;
+    shell.dashboard_visible = false;
+    shell.record_active_turn_started("turn-activity".into());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
     );
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("turn 1h 25m 47s"));
+    assert!(rendered.contains("Thinking... · 0 tok/s"));
     insta::assert_snapshot!(rendered);
 }
 
@@ -1353,7 +1352,7 @@ async fn turn_timer_starts_resets_and_stops_with_turn_lifecycle() {
         (
             shell.active_turn_id.as_deref(),
             shell.turn_started_at,
-            shell.active_turn_metrics(),
+            shell.active_turn_tps(),
         ),
         (None, None, None)
     );
@@ -6062,6 +6061,7 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
             .expect("temporary config path should be absolute"),
             app_theme: TuiAppTheme::TokyoNight,
             tui_theme: None,
+            shimmer_enabled: true,
             animations: true,
             show_tooltips: true,
         },
@@ -8078,7 +8078,7 @@ async fn long_narrow_elicitation_and_tool_options_are_clickable() {
         panic!("expected URL elicitation request");
     };
     *message =
-        "Open the authorization page after reviewing the extended security notice".to_string();
+        "Open the authorization page after reviewing the extended security notice. Confirm the organization and account before continuing with the authorization request.".to_string();
     *url = "https://github.example.test/login/device/with/a/long/authorization/path".to_string();
     shell.pending_elicitation = PendingElicitation::from_request(&elicitation_request);
     let rendered = render_shell(&shell, area);

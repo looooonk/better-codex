@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ PLAN  1. Build shell                         │ │▎◆ SESSIONS
-         2. Wire transcript                     │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                ┃ │   Status   │  Agents   │  Sessions   │  Help
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │─────────────────────────━━━━━━━━━━━━━──────────
+          by app-server turns.                  ┃ │
+ ▎ PLAN  1. Build shell                         ┃ │▎◆ SESSIONS
+         2. Wire transcript                     ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
          3. Render dashboard                    ┃ │▎+ New session  Ctrl+N
                                                 ┃ │▎loading sessions
  ▌ tool exec just test -p codex-tui             ┃ │

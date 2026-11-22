@@ -8,7 +8,14 @@ fn input_area(body_width: u16, body_height: u16) -> Rect {
         /*x*/ 10,
         /*y*/ 5,
         body_width.saturating_add(2),
-        body_height.saturating_add(3),
+        body_height
+            + 2
+            + super::super::composer_toolbar::toolbar_rows(Rect::new(
+                0,
+                0,
+                body_width,
+                body_height + 2,
+            )),
     )
 }
 

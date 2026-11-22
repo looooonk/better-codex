@@ -3,9 +3,6 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
-
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
@@ -20,9 +17,12 @@ expression: rendered
  ▎ CODEX  The new shell owns the fullscreen surface.
 
 
+
+
+
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

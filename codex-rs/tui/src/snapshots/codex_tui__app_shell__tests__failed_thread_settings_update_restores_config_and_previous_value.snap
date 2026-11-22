@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- better-codex                     ● action failed │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎loading sessions
                                                   │
-                                                ┃ │▎◆ SESSIONS
- ▎ CODEX  Started a fullscreen app shell backed ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          by app-server turns.                  ┃ │▎+ New session  Ctrl+N
- ▎ PLAN  1. Build shell                         ┃ │▎loading sessions
-         2. Wire transcript                     ┃ │
-         3. Rend╭ Select approval policy ──────────────────────────────────────────╮
-                │   1 ● On request  current                                        │
- ▌ tool exec jus│       Let Codex request approval when an action needs it.        │0000001
-                │   2 ○ Unless trusted (this session)                              │ session list
- ▌ edited 3 file│       Ask before commands that are not known to be safe. Saved   │
- ▎ ERROR  failed│       defaults stay unchanged.                                   │
-          settin│ › 3 ○ Never                                                      │
-          change│       Never pause the agent to request approval.                 │
-          update│  wheel / j k  Enter select  Esc cancel  3/3                      │
-                ╰──────────────────────────────────────────────────────────────────╯
- ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │
+ ▌ tool exec jus╭ Select approval policy ──────────────────────────────────────────╮
+                │   1 ● Ask for approval  current                                  │
+ ▌ edited 3 file│       Let Codex request approval when an action needs it.        │0000001
+ ▎ ERROR  failed│   2 ○ Unless trusted                                             │ session list
+          settin│       Ask before commands that are not known to be safe.         │
+          change│ › 3 ○ Full access                                                │
+          reject│       Run without approval prompts within the active sandbox.    │
+                │  wheel / j k  Enter select  Esc cancel  3/3                      │
+ ▎ CODEX  The ne╰──────────────────────────────────────────────────────────────────╯
+          surface.                                │
+                                                  │
+                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

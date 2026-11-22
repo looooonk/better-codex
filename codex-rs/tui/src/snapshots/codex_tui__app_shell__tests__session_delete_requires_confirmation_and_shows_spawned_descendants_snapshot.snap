@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- better-codex                  ● confirm deletion │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎● FOCUSED  ACTIVE  1 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎› 1/1 Delete this investigation [main]
- ▎ PLAN  1. Bu╭──────────────────────────────────────────────────────────────────────╮
-         2. Wi│◆ DELETE SESSION                                                      │
-         3. Re│Delete session: Delete this investigation                             │
-              │Session ID: 01900000-0000-7000-8000-000000000511                      │00001
- ▌ tool exec j│2 spawned descendants will also be deleted.                           │ession list
-              │This permanently deletes all persisted history in that subtree.       │
- ▌ edited 3 fi│                                                                      │
-              │> Delete permanently Enter/y                                          │
- ▎ CODEX  The │  Cancel Esc/n                                                        │
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  1 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎› 1/1 Delete this investigation [main]
+              ╭──────────────────────────────────────────────────────────────────────╮
+ ▌ tool exec j│◆ DELETE SESSION                                                      │
+              │Delete session: Delete this investigation                             │
+ ▌ edited 3 fi│Session ID: 01900000-0000-7000-8000-000000000511                      │00001
+              │2 spawned descendants will also be deleted.                           │ession list
+ ▎ CODEX  The │This permanently deletes all persisted history in that subtree.       │
           surf│                                                                      │
+              │> Delete permanently Enter/y                                          │
+              │  Cancel Esc/n                                                        │
+              │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
                                                   │
                                                   │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

@@ -3,9 +3,6 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
-
  ▎ CODEX  Run this command:
 
           codex exec --sandbox workspace-write --config
@@ -14,9 +11,12 @@ expression: "render_shell(&shell, area)"
           every failing test."
 
 
+
+
+
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Type a message                                                            │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

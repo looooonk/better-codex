@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
 ---
                                                   │
- better-codex      ◐ thinking · turn 0s · 0 tok/s │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ SYSTEM  switched session                       │   Status   │  Agents   │  Sessions   │  Help
+ ▎ SYSTEM  loaded 1 previous turns                │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Earlier context                           │
+                                                  │▎◆ SESSIONS
+ ──────── Took 1.00s ──────────────────────────── │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+ ▎ SYSTEM  2 queued follow-ups remain on the      │▎loading sessions
+           previous session 01900000-0000-7000-   │
+           8000-000000000001. Open Sessions to    │▎◆ THREAD
+           return to it.                          │▎forked
+ ▎ YOU  Explain the request                       │▎id 01900000-0000-7000-8000-000000000202
+                                                  │▎resume, fork, archive, delete in session list
                                                   │
- ▎ SYSTEM  loaded 1 previous turns              ┃ │▎◆ SESSIONS
- ▎ YOU  Earlier context                         ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                ┃ │▎+ New session  Ctrl+N
- ──────── Took 1.00s ────────────────────────── ┃ │▎loading sessions
-                                                ┃ │
- ▎ SYSTEM  2 queued follow-ups remain on the    ┃ │▎◆ THREAD
-           previous session 01900000-0000-7000- ┃ │▎forked
-           8000-000000000001. Open Sessions to  ┃ │▎id 01900000-0000-7000-8000-000000000202
-           return to it.                        ┃ │▎resume, fork, archive, delete in session list
- ▎ YOU  Explain the request                     ┃ │
-                                                ┃ │
-                                                ┃ │
-        Also keep this clarification            ┃ │
+        Also keep this clarification              │
                                                   │
+                                                  │
+ Thinking... · 0 tok/s                            │
 ╭────────────────────────────────────────────────╮│
 │> Keep this unsent draft                        ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

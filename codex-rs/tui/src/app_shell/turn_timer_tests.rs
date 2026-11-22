@@ -102,14 +102,14 @@ fn rate_counts_streamed_output_only_for_the_active_turn() {
     expected.record(now, plan);
     expected.record(now, reasoning);
     assert_eq!(
-        shell.active_turn_metrics().unwrap().tokens_per_second,
+        shell.active_turn_tps().unwrap(),
         expected.tokens_per_second(now)
     );
 
     shell.record_active_turn_started("turn-2".into());
-    assert_eq!(shell.active_turn_metrics().unwrap().tokens_per_second, 0);
+    assert_eq!(shell.active_turn_tps().unwrap(), 0);
     shell.clear_active_turn();
-    assert_eq!(shell.active_turn_metrics(), None);
+    assert_eq!(shell.active_turn_tps(), None);
 }
 
 #[test]

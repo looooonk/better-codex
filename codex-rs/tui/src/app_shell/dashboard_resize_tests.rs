@@ -41,11 +41,9 @@ fn dragging_the_divider_resizes_and_clamps_the_sidebar() {
             },
             Some(shell_layout::ShellLayout {
                 status: None,
-                header: Rect::new(
-                    /*x*/ 0, /*y*/ 0, /*width*/ 88, /*height*/ 3,
-                ),
+                activity: None,
                 transcript: Rect::new(
-                    /*x*/ 0, /*y*/ 3, /*width*/ 88, /*height*/ 19,
+                    /*x*/ 0, /*y*/ 0, /*width*/ 88, /*height*/ 22,
                 ),
                 input: Rect::new(
                     /*x*/ 0, /*y*/ 22, /*width*/ 88, /*height*/ 6,
@@ -103,17 +101,15 @@ fn dragging_the_overlay_border_resizes_without_hiding_the_input() {
         shell_layout::calculate(&shell, area),
         Some(shell_layout::ShellLayout {
             status: None,
-            header: Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 3,
-            ),
+            activity: None,
             transcript: Rect::new(
-                /*x*/ 0, /*y*/ 3, /*width*/ 78, /*height*/ 15,
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 18,
             ),
             input: Rect::new(
                 /*x*/ 0, /*y*/ 18, /*width*/ 78, /*height*/ 6,
             ),
             dashboard: Some(shell_layout::DashboardPlacement::Overlay(Rect::new(
-                /*x*/ 46, /*y*/ 3, /*width*/ 32, /*height*/ 15,
+                /*x*/ 46, /*y*/ 0, /*width*/ 32, /*height*/ 18,
             ))),
         })
     );

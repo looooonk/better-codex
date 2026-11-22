@@ -2,19 +2,19 @@
 source: tui/src/app_shell/pointer_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
 
  ▌ edited 3 files +128 -24                                                  │
                                                                             ┃
  ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
 
 ╭────────────────────────────────────────────────────────────────────────────╮
+│> message line 01                                                           │
 │  message line 02                                                           │
 │  message line 03                                                           │
 │  message line 04                                                           │
 │  message line 05                                                           │
 │  message line 06                                                           │
 │  message line 07                                                           │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│  message line 08                                                           │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

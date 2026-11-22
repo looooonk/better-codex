@@ -3,24 +3,24 @@ source: tui/src/app_shell/workspace_commands_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▎ YOU  Create a divergent standalone TUI.
 
-                                                                                                  ┃
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              ┃
- ▎ PLAN  1. Build shell                                                                           ┃
-         2. Wire transcript                                                                       ┃
-         3. Render dashboard                                                                      ┃
-                                                                                                  ┃
- ▌ tool exec just test -p codex-tui                                                               ┃
-╭──────────────────────────────────────────────────────────────────────╮                          ┃
-│◆ COMMANDS                                                            │                          ┃
-│▌ /review  Review changes; accepts instructions or --base/--commit    │                          ┃
-│↑↓ navigate   Tab complete   Enter run   Esc close                    │                          ┃
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+         3. Render dashboard
+
+ ▌ tool exec just test -p codex-tui
+
+ ▌ edited 3 files +128 -24
+╭──────────────────────────────────────────────────────────────────────╮
+│◆ COMMANDS                                                            │
+│▌ /review  Review changes; accepts instructions or --base/--commit    │
+│↑↓ navigate   Tab complete   Enter run   Esc close                    │
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> /rev                                                                                            │
 │                                                                                                  │
 │                                                                                                  │
-│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                         gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

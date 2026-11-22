@@ -2,8 +2,6 @@
 source: tui/src/app_shell/vim_flow_tests.rs
 expression: "rendered_outcomes.join(\"\\n---\\n\")"
 ---
- better-codex                                                        ● thinking
-────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input cancelled
 
@@ -12,15 +10,15 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 
 
 
+
+
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
-│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ---
- better-codex                                                        ● thinking
-────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input cancelled
  ▎ STATUS  Vim input was empty
@@ -29,15 +27,15 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 
 
 
+
+
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
-│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ---
- better-codex                                                   ● action failed
-────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input cancelled
  ▎ STATUS  Vim input was empty
@@ -46,9 +44,11 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
  ▎ CODEX  The new shell owns the fullscreen surface.
 
 
+
+
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
-│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -2,11 +2,11 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
- better-codex                                                ◐ queueing message
-────────────────────────────────────────────────────────────────────────────────
                               │
-                              │   Status   │  Agents   │  Sessions   │  Help
-╭──────────────────────────────────────────────────────────────────────╮───────
+         3. Render dashboard  │   Status   │  Agents   │  Sessions   │  Help
+                              │─────────────────────────━━━━━━━━━━━━━──────────
+ ▌ tool exec just test -p code│▎◆ SESSIONS
+╭──────────────────────────────────────────────────────────────────────╮
 │◆ QUEUED  2                                                           │
 │   1  first queued                                                    │
 │   2  second queued                                                   │
@@ -16,5 +16,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 │> Type a message                                                              │
 │                                                                              │
 │                                                                              │
-│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

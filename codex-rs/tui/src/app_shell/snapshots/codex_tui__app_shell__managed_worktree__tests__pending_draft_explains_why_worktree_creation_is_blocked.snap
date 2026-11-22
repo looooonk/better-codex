@@ -3,9 +3,6 @@ source: tui/src/app_shell/managed_worktree_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- better-codex                                                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
  ▎ ERROR  Creating a worktree requires an idle session without queued input, active voice, or pending
           requests
 
@@ -21,9 +18,12 @@ expression: "lines.join(\"\\n\")"
 
 
 
+
+
+
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │
-│ Permissions ▾                                                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

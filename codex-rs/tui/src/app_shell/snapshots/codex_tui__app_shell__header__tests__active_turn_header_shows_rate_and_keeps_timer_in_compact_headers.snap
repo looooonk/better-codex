@@ -1,8 +1,0 @@
----
-source: tui/src/app_shell/header_tests.rs
-expression: "rows.join(\"\\n\")"
----
- better-c… ◑ turn 1h 25m 47s · 42 tok/s
- better-codex      ◑ turn 1h 25m 47s · 42 tok/s
- better-codex                         ◑ thinking · turn 1h 25m 47s · 42 tok/s
- better-codex                                                         ◑ thinking · turn 1h 25m 47s · 42 tok/s

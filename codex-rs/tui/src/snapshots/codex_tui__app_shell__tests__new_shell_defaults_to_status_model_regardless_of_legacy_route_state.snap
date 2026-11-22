@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- better-codex                             ● ready │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                  │   Status   │  Agents   │  Sessions   │  Help
+                                                  │━━━━━━━━━━━━────────────────────────────────────
                                                   │
                                                   │▎◆ SETTINGS
                                                   │▎Model │ Permissions │ Appearance │Integrations
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 │> Type a message                                ││▎cwd /workspace/better-codex
 │                                                ││▎files restricted, net restricted
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

@@ -1,6 +1,79 @@
 use super::*;
+use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ThreadItemPayload;
 use pretty_assertions::assert_eq;
+
+#[test]
+fn composer_buttons_reflect_the_active_policy_speed_and_model_effort() {
+    use composer_toolbar::ComposerControl;
+    use composer_toolbar::ComposerToolbar;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.model = "gpt-6.2-astra".into();
+    shell.available_models = codex_models_manager::bundled_models_response()
+        .unwrap()
+        .models
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    for (policy, speed, effort, expected) in [
+        (
+            AskForApproval::OnRequest,
+            None,
+            None,
+            ["Ask for approval", "low", "Default"],
+        ),
+        (
+            AskForApproval::UnlessTrusted,
+            Some("fast"),
+            None,
+            ["Unless trusted", "low", "Fast"],
+        ),
+        (
+            AskForApproval::Never,
+            Some("priority"),
+            Some(ReasoningEffort::High),
+            ["Full access", "high", "Fast"],
+        ),
+    ] {
+        shell.approval_policy = policy;
+        shell.service_tier = speed.map(str::to_owned);
+        shell.reasoning_effort = effort;
+        for width in [40, 50, 80] {
+            let area = Rect::new(0, 0, width, 20);
+            let toolbar =
+                ComposerToolbar::new(&shell, ShellView { shell: &shell }.input_area(area));
+            let buffer = render_shell_buffer(&shell, area);
+            let actual = [
+                ComposerControl::Permissions,
+                ComposerControl::ReasoningEffort,
+                ComposerControl::ServiceTier,
+            ]
+            .map(|control| {
+                let button = toolbar.button_area(control);
+                assert_eq!(toolbar.control_at(button.as_position()), Some(control));
+                buffer_contents(&buffer, button)
+                    .trim()
+                    .trim_end_matches('▾')
+                    .trim_end()
+                    .to_owned()
+            });
+            assert_eq!(actual, expected.map(str::to_owned));
+            let expected_color = if policy == AskForApproval::Never {
+                design::palette::error()
+            } else {
+                design::palette::purple()
+            };
+            assert_eq!(
+                buffer[toolbar
+                    .button_area(ComposerControl::Permissions)
+                    .as_position()]
+                .fg,
+                expected_color
+            );
+        }
+    }
+}
 
 #[test]
 fn astra_catalog_drives_model_reasoning_and_fast_selectors() {
@@ -162,11 +235,12 @@ async fn composer_permissions_button_opens_the_policy_picker() {
     let button = position_in(input, |p| {
         view.composer_control_at(area, p) == Some(composer_toolbar::ComposerControl::Permissions)
     });
-    let model = position_in(input, |p| {
-        view.composer_control_at(area, p) == Some(composer_toolbar::ComposerControl::Model)
+    let effort = position_in(input, |p| {
+        view.composer_control_at(area, p)
+            == Some(composer_toolbar::ComposerControl::ReasoningEffort)
     });
     let buffer = render_shell_buffer(&shell, area);
-    assert_eq!(buffer[button].style(), buffer[model].style());
+    assert_eq!(buffer[button].style(), buffer[effort].style());
     assert_eq!(button.y, input.bottom() - 2);
     shell
         .handle_mouse_selection_down(area, button, &config, &mut backend)

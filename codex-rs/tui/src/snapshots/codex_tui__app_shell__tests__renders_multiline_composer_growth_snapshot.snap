@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎loading sessions
                                                   │
-                                                ┃ │▎◆ SESSIONS
- ▎ CODEX  Started a fullscreen app shell backed ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          by app-server turns.                  ┃ │▎+ New session  Ctrl+N
- ▎ PLAN  1. Build shell                         ┃ │▎loading sessions
-         2. Wire transcript                     ┃ │
-         3. Render dashboard                    ┃ │▎◆ THREAD
-                                                ┃ │▎stage-one
- ▌ tool exec just test -p codex-tui             ┃ │▎id 01900000-0000-7000-8000-000000000001
-                                                ┃ │▎resume, fork, archive, delete in session list
- ▌ edited 3 files +128 -24                      ┃ │
-                                                ┃ │
- ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │
+ ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+                                                  │▎stage-one
+ ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
+                                                  │
+                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> alpha                                         ││
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, area)"
 │  charlie                                       ││
 │                                                ││
 │  delta                                         ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

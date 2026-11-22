@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  25 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎  17/25 Session 16 [main]  pagination fixture
+                                                  │▎  18/25 Session 17 [main]  pagination fixture
+ ▌ tool exec just test -p codex-tui               │▎  19/25 Session 18 [main]  pagination fixture
+                                                  │▎  20/25 Session 19 [main]  pagination fixture
+ ▌ edited 3 files +128 -24                        │▎› 21/25 Session 20 [main]  pagination fixture
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎● FOCUSED  ACTIVE  25 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎  17/25 Session 16 [main]  pagination fixture
- ▎ PLAN  1. Build shell                           │▎  18/25 Session 17 [main]  pagination fixture
-         2. Wire transcript                       │▎  19/25 Session 18 [main]  pagination fixture
-         3. Render dashboard                      │▎  20/25 Session 19 [main]  pagination fixture
-                                                  │▎› 21/25 Session 20 [main]  pagination fixture
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ THREAD
- ▌ edited 3 files +128 -24                        │▎stage-one
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ THREAD
+          surface.                                │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
- ▎ CODEX  The new shell owns the fullscreen       │▎resume, fork, archive, delete in session list
-          surface.                                │
+                                                  │▎resume, fork, archive, delete in session list
+                                                  │
                                                   │
                                                   │
                                                   │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

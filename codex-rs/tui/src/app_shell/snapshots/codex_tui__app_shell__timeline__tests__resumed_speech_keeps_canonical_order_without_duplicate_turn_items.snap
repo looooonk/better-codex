@@ -3,9 +3,6 @@ source: tui/src/app_shell/timeline_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- better-codex                                                                            ● thinking
-────────────────────────────────────────────────────────────────────────────────────────────────────
-
  ▎ YOU  Voice: Please fix the bug.
 
  ▎ CODEX  The fix is ready.
@@ -20,9 +17,12 @@ expression: "lines.join(\"\\n\")"
 
 
 
+
+
+
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │
-│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                                         gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

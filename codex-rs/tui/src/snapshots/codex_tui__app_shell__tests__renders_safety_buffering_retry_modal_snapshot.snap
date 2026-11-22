@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- better-codex       ◐ waiting · turn 0s · 0 tok/s │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-              ╭──────────────────────────────────────────────────────────────────────╮ns
- ▎ CODEX  Star│◆ SAFETY REVIEW                                                       │
-          by a│Our systems are thinking a bit more about this request before         │
- ▎ PLAN  1. Bu│responding.                                                           │
-         2. Wi│                                                                      │
-         3. Re│Hang tight or retry with a faster model for a quicker response, though│
-              │it may be less capable of handling complex requests.                  │00001
- ▌ tool exec j│                                                                      │ession list
-              │> Retry with a faster model                                           │
- ▌ edited 3 fi│  Dismiss and keep waiting                                            │
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Bu╭──────────────────────────────────────────────────────────────────────╮ns
+         2. Wi│◆ SAFETY REVIEW                                                       │
+         3. Re│Our systems are thinking a bit more about this request before         │
+              │responding.                                                           │
+ ▌ tool exec j│                                                                      │
+              │Hang tight or retry with a faster model for a quicker response, though│
+ ▌ edited 3 fi│it may be less capable of handling complex requests.                  │00001
+              │                                                                      │ession list
+ ▎ YOU  Explai│> Retry with a faster model                                           │
+              │  Dismiss and keep waiting                                            │
               │  Learn more                                                          │
- ▎ YOU  Explai│                                                                      │
+              │                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
               │close when the response is ready.                                     │
               │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
-              ╰──────────────────────────────────────────────────────────────────────╯
+ Waiting... · ╰──────────────────────────────────────────────────────────────────────╯
 ╭────────────────────────────────────────────────╮│
 │> Type a message                                ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

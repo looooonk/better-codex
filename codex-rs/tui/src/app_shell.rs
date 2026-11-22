@@ -106,7 +106,6 @@ mod external_agent_import;
 mod goal_rate_limit_recovery;
 mod guardian_activity;
 mod guardian_denials;
-mod header;
 mod hook_activity;
 mod ide;
 mod input_request_layout;
@@ -114,6 +113,7 @@ mod input_request_view;
 mod input_router;
 mod keybindings;
 mod transcript_find;
+mod turn_activity;
 pub(crate) use keybindings::validate_keymap;
 mod attachments;
 mod automatic_recap;
@@ -478,6 +478,7 @@ struct ShellState {
     tui_theme: Option<String>,
     app_theme: TuiAppTheme,
     animations: bool,
+    shimmer_enabled: bool,
     show_tooltips: bool,
     command_palette: Option<CommandPaletteState>,
     selector: Option<SelectorState<SelectorValue>>,
@@ -570,6 +571,7 @@ struct ShellClientConfig {
     app_theme: TuiAppTheme,
     tui_theme: Option<String>,
     animations: bool,
+    shimmer_enabled: bool,
     show_tooltips: bool,
 }
 
@@ -587,6 +589,7 @@ impl ShellState {
             app_theme,
             tui_theme,
             animations,
+            shimmer_enabled,
             show_tooltips,
         } = client_config;
         let model = if session.model.is_empty() {
@@ -645,6 +648,7 @@ impl ShellState {
             tui_theme,
             app_theme,
             animations,
+            shimmer_enabled,
             show_tooltips,
             command_palette: None,
             selector: None,
@@ -2414,6 +2418,7 @@ impl ShellState {
             tui_theme: None,
             app_theme: TuiAppTheme::TokyoNight,
             animations: true,
+            shimmer_enabled: true,
             show_tooltips: true,
             command_palette: None,
             selector: None,
@@ -2720,6 +2725,7 @@ pub mod bench_support {
             tui_theme: None,
             app_theme: TuiAppTheme::TokyoNight,
             animations: true,
+            shimmer_enabled: true,
             show_tooltips: true,
             command_palette: None,
             selector: None,

@@ -2,12 +2,12 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
-
- better-codex                ● thinking
-────────────────────────────────────────
 ╭──────────────────────────────────────╮
 │◆ APPROVAL                            │
 │? Run command: printf 'validated safe │
+│prefix'; printf 'validated safe       │
+│prefix'; printf 'validated safe       │
+│prefix'; printf 'validated safe       │
 │prefix'; printf 'validated safe       │
 │prefix'; printf 'validated safe       │
 │prefix'; printf 'validated safe       │

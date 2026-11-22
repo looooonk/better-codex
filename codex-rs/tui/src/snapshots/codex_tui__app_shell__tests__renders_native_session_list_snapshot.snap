@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
-                                                  │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎● FOCUSED  ACTIVE  2 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎› 1/2 Refactor dashboard navigation [main]
- ▎ PLAN  1. Build shell                           │▎  2/2 Investigate approval rendering regressio…
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ THREAD
-                                                  │▎stage-one
- ▌ tool exec just test -p codex-tui               │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
- ▌ edited 3 files +128 -24                        │
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  2 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎› 1/2 Refactor dashboard navigation [main]
+                                                  │▎  2/2 Investigate approval rendering regressio…
+ ▌ tool exec just test -p codex-tui               │
+                                                  │▎◆ THREAD
+ ▌ edited 3 files +128 -24                        │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+ ▎ CODEX  The new shell owns the fullscreen       │▎resume, fork, archive, delete in session list
           surface.                                │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │
@@ -32,5 +32,5 @@ expression: "render_shell(&shell, area)"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

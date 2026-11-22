@@ -2,27 +2,27 @@
 source: tui/src/app_shell_tests.rs
 expression: scrolled
 ---
-
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
                             │
  ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
-                            │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
- ▎ CODEX  Started a fullscre│ ⇧Alt+←/→    Resize    │  ^D          Show/hide
- ▎ PLAN  1. Build shell     │◆ SESSIONS             │  ^C          Stop/canc…
-         2. Wire transcript │ ↑↓ / jk     Select    │  Esc ×2      Exit app
-         3. Render dashboard│ ↵ / r       Resume    │  ^N          New chat
-                            │ f           Fork      │ ◆ AGENTS
- ▌ tool exec just test -p co│ a           Archive   │  ↵           Focus/log
-                            │ u           Unarchive │  ↑↓ / jk     Select
- ▌ edited 3 files +128 -24  │ v           Switch vi…│  g / G       First/last
+                            │◆ DASHBOARD            │  Alt+M       Model
+ ▎ CODEX  Started a fullscre│ F1 … F4     Open tab  │  Alt+E       Effort
+ ▎ PLAN  1. Build shell     │ Alt+← / →   Prev/next │ ◆ APP
+         2. Wire transcript │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
+         3. Render dashboard│ ⇧Alt+←/→    Resize    │  ^D          Show/hide
+                            │◆ SESSIONS             │  ^C          Stop/canc…
+ ▌ tool exec just test -p co│ ↑↓ / jk     Select    │  Esc ×2      Exit app
+                            │ ↵ / r       Resume    │  ^N          New chat
+ ▌ edited 3 files +128 -24  │ f           Fork      │ ◆ AGENTS
+                            │ a           Archive   │  ↵           Focus/log
+ ▎ CODEX  The new shell owns│ u           Unarchive │  ↑↓ / jk     Select
+                            │ v           Switch vi…│  g / G       First/last
                             │ n           Rename    │  r           Reload log
- ▎ CODEX  The new shell owns│ /           Search    │
+                            │ /           Search    │
                             │ d           Delete    │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

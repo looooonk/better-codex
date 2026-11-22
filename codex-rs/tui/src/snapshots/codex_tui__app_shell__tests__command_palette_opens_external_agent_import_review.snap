@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎loading sessions
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
-          by app-server turns.                    │▎loading sessions
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ THREAD
-         3. Re╭──────────────────────────────────────────────────────────────────────╮
-              │◆ CLAUDE CODE IMPORT                                                  │00001
- ▌ tool exec j│Review Claude Code setup  Settings 1, Skills 1                        │ession list
+ ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+              ╭──────────────────────────────────────────────────────────────────────╮
+ ▌ edited 3 fi│◆ CLAUDE CODE IMPORT                                                  │00001
+ ▎ STATUS  che│Review Claude Code setup  Settings 1, Skills 1                        │ession list
+ ▎ STATUS  rev│                                                                      │
+           imp│> [x] Settings (settings.json -> config.toml) - home                  │
+              │      Import settings from Claude Code                                │
+ ▎ CODEX  The │  [x] Skills - better-codex                                           │
+          surf│      1 skill: review                                                 │
               │                                                                      │
- ▌ edited 3 fi│> [x] Settings (settings.json -> config.toml) - home                  │
- ▎ STATUS  che│      Import settings from Claude Code                                │
- ▎ STATUS  rev│  [x] Skills - better-codex                                           │
-           imp│      1 skill: review                                                 │
+              │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
               │                                                                      │
- ▎ CODEX  The │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
-          surf│                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
                                                   │
                                                   │
@@ -32,5 +32,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

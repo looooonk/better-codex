@@ -2,9 +2,6 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ---
-
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
                             │
  ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
                             │─────────────━━━━━━━━━━━────────────────────────
@@ -19,10 +16,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │▎Model  gpt-5-codex
  ▎ CODEX  The new shell owns│▎Reasoning  high
                             │▎Path  /root/testing/failure
+                            │▎Task  Review the new TUI flow and visual
+                            │▎      hierarchy.
+                            │▎Latest  Compact flow failed
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

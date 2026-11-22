@@ -404,10 +404,10 @@ fn setting_row(
 
 pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {
     match policy {
-        AskForApproval::UnlessTrusted => "untrusted",
-        AskForApproval::OnRequest => "on-request",
-        AskForApproval::Never => "never",
-        AskForApproval::Granular { .. } => "granular",
+        AskForApproval::UnlessTrusted => "Unless trusted",
+        AskForApproval::OnRequest => "Ask for approval",
+        AskForApproval::Never => "Full access",
+        AskForApproval::Granular { .. } => "Granular",
     }
 }
 

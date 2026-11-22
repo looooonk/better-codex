@@ -9,7 +9,7 @@ use codex_protocol::ThreadId;
 use color_eyre::Result;
 
 impl ShellState {
-    pub(super) fn header_status(&self) -> std::borrow::Cow<'_, str> {
+    pub(super) fn session_status(&self) -> std::borrow::Cow<'_, str> {
         let status = self.voice.status_label().unwrap_or(&self.status);
         match (self.side_parent.is_some(), self.daybreak_enabled) {
             (true, _) => format!("side | {status}").into(),
@@ -95,6 +95,7 @@ impl ShellState {
                 config_path: self.client_config_path.clone(),
                 app_theme: self.app_theme,
                 tui_theme: self.tui_theme.clone(),
+                shimmer_enabled: self.shimmer_enabled,
                 animations: self.animations,
                 show_tooltips: self.show_tooltips,
             },

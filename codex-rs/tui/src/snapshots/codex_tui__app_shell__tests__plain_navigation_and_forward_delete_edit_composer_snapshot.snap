@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
-──────────────────────────────────────────────────│
-                                                  │◆ CONVERSATION         │ ◆ COMPOSER
- ▎ YOU  Create a divergent standalone TUI.        │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
-                                                  │ ↵ / c       Copy item │  ⌘⌫          Delete st…
- ▎ CODEX  Started a fullscreen app shell backed   │ e           Branch    │  ⌥/^ + ←→    Move word
-          by app-server turns.                    │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
- ▎ PLAN  1. Build shell                           │◆ DASHBOARD            │  Alt+M       Model
-         2. Wire transcript                       │ F1 … F4     Open tab  │  Alt+E       Effort
-         3. Render dashboard                      │ Alt+← / →   Prev/next │ ◆ APP
-                                                  │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
- ▌ tool exec just test -p codex-tui               │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
-                                                  │◆ SESSIONS             │  ^C          Stop/canc…
- ▌ edited 3 files +128 -24                        │ ↑↓ / jk     Select    │  Esc ×2      Exit app
+ ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+                                                  │
+ ▎ CODEX  Started a fullscreen app shell backed   │◆ CONVERSATION         │ ◆ COMPOSER
+          by app-server turns.                    │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
+ ▎ PLAN  1. Build shell                           │ ↵ / c       Copy item │  ⌘⌫          Delete st…
+         2. Wire transcript                       │ e           Branch    │  ⌥/^ + ←→    Move word
+         3. Render dashboard                      │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
+                                                  │◆ DASHBOARD            │  Alt+M       Model
+ ▌ tool exec just test -p codex-tui               │ F1 … F4     Open tab  │  Alt+E       Effort
+                                                  │ Alt+← / →   Prev/next │ ◆ APP
+ ▌ edited 3 files +128 -24                        │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
+                                                  │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
+ ▎ CODEX  The new shell owns the fullscreen       │◆ SESSIONS             │  ^C          Stop/canc…
+          surface.                                │ ↑↓ / jk     Select    │  Esc ×2      Exit app
                                                   │ ↵ / r       Resume    │  ^N          New chat
- ▎ CODEX  The new shell owns the fullscreen       │ f           Fork      │ ◆ AGENTS
-          surface.                                │ a           Archive   │  ↵           Focus/log
+                                                  │ f           Fork      │ ◆ AGENTS
+                                                  │ a           Archive   │  ↵           Focus/log
                                                   │ u           Unarchive │  ↑↓ / jk     Select
                                                   │ v           Switch vi…│  g / G       First/last
                                                   │ n           Rename    │  r           Reload log
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 │> alpha beta                                    ││
 │                                                ││
 │                                                ││
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
 ╰────────────────────────────────────────────────╯│

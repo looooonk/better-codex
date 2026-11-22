@@ -3,24 +3,24 @@ source: tui/src/app_shell/settings/persistence_tests.rs
 expression: rendered
 ---
 
- better-codex                                                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
  ▎ PLAN  1. Build shell
          2. Wire transcript
-         3. Render da╭ Select approval policy ──────────────────────────────────────────╮
-                     │   1 ○ On request                                                 │
- ▌ tool exec just tes│       Let Codex request approval when an action needs it.        │
-                     │ › 2 ● Unless trusted (this session)  current                     │
- ▌ edited 3 files +12│       Ask before commands that are not known to be safe. Saved   │
-                     │       defaults stay unchanged.                                   │
- ▎ CODEX  The new she│   3 ○ Never                                                      │
-                     │       Never pause the agent to request approval.                 │
+         3. Render dashboard
+
+ ▌ tool exec just test -p codex-tui
+                     ╭ Select approval policy ──────────────────────────────────────────╮
+ ▌ edited 3 files +12│   1 ○ Ask for approval                                           │
+                     │       Let Codex request approval when an action needs it.        │
+ ▎ CODEX  The new she│ › 2 ● Unless trusted  current                                    │
+                     │       Ask before commands that are not known to be safe.         │
+                     │   3 ○ Full access                                                │
+                     │       Run without approval prompts within the active sandbox.    │
                      │  wheel / j k  Enter select  Esc cancel  2/3                      │
                      ╰──────────────────────────────────────────────────────────────────╯
+
 
 
 
@@ -28,5 +28,5 @@ expression: rendered
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │
-│ Permissions ▾                                                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Unless trusted ▾                                                     gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

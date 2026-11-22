@@ -2,9 +2,6 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
-
- better-codex                                                      ● thinking
-──────────────────────────────────────────────────────────────────────────────
                             │
  ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
                             │◆ CONVERSATION         │ ◆ COMPOSER
@@ -19,10 +16,13 @@ expression: rendered
                             │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
  ▎ CODEX  The new shell owns│◆ SESSIONS             │  ^C          Stop/canc…
                             │ ↑↓ / jk     Select    │  Esc ×2      Exit app
+                            │ ↵ / r       Resume    │  ^N          New chat
+                            │ f           Fork      │ ◆ AGENTS
+                            │ a           Archive   │  ↵           Focus/log
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
-│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
+│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

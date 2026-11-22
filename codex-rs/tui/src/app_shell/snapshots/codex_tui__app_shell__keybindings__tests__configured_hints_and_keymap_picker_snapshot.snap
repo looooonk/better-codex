@@ -3,18 +3,15 @@ source: tui/src/app_shell/keybindings_tests.rs
 expression: rendered
 ---
                                                             │
- better-codex                                    ● thinking │   Status   │  Agents   │  Sessions   │  Help
-────────────────────────────────────────────────────────────│
-                                                            │CONFIGURED SHORTCUTS
- ▎ YOU  Create a divergent standalone TUI.                  │Use /keymap to change a binding; unbind disables
-                                                            │it.
- ▎ CODEX  Started a fullscreen app shell backed by app-     │f18  composer.submit
-          server turns.                                     │unbound  composer.queue
- ▎ PLAN  1. Build shell                                     │f19  editor.insert_newline
-         2. Wire transcript                                 │f20  list.accept
-         3. Render dashboard                                │
+ ▎ YOU  Create a divergent standalone TUI.                  │   Status   │  Agents   │  Sessions   │  Help
                                                             │
- ▌ tool exec just test -p codex-tui                         │
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │CONFIGURED SHORTCUTS
+          server turns.                                     │Use /keymap to change a binding; unbind disables
+ ▎ PLAN  1. Build shell                                     │it.
+         2. Wire transcript                                 │f18  composer.submit
+         3. Render dashboard                                │unbound  composer.queue
+                                                            │f19  editor.insert_newline
+ ▌ tool exec just test -p codex-tui                         │f20  list.accept
                                                             │
  ▌ edited 3 files +128 -24                                  │
                                                             │
@@ -24,9 +21,12 @@ expression: rendered
                                                             │
                                                             │
                                                             │
+                                                            │
+                                                            │
+                                                            │
 ╭──────────────────────────────────────────────────────────╮│
 │> Type a message                                          ││
 │                                                          ││
 │                                                          ││
-│ Permissions ▾         gpt-5-codex ▾   Effort ▾   Speed ▾ ││
+│ Ask for approval ▾   gpt-5-co… ▾   Default ▾   Default ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

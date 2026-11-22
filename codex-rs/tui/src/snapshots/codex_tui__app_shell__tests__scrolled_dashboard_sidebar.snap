@@ -2,12 +2,12 @@
 source: tui/src/app_shell_tests.rs
 expression: after
 ---
- better-codex                          ● thinking │
-──────────────────────────────────────────────────│   Status   │  Agents   │  Sessions   │  Help
-                                                  │━━━━━━━━━━━━────────────────────────────────────
+                                                  │
+         3. Render dashboard                    │ │   Status   │  Agents   │  Sessions   │  Help
+                                                │ │━━━━━━━━━━━━────────────────────────────────────
  ▌ tool exec just test -p codex-tui             │ │▎◆ EDITS
-                                                │ │▎3 files +128 -24
- ▌ edited 3 files +128 -24                      │ │
+                                                ┃ │▎3 files +128 -24
+ ▌ edited 3 files +128 -24                      ┃ │
                                                 ┃ │▎◆ WORKSPACE
  ▎ CODEX  The new shell owns the fullscreen     ┃ │▎profile managed
           surface.                              ┃ │▎cwd /workspace/better-codex
@@ -16,5 +16,5 @@ expression: after
 │> Summarize the new shell architecture          ││
 │                                                ││▎◆ TOKENS
 │                                                ││▎input 1k | output 240
-│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││▎Context 100% left
+│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││▎Context 100% left
 ╰────────────────────────────────────────────────╯│

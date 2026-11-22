@@ -2,11 +2,11 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 48, 16))"
 ---
- better-codex                        ● thinking
-────────────────────────────────────────────────
-│ ╭ Select model ────────────────────────────╮
-│ │ › 1 ● gpt-5-0  current                   │
-│─│       gpt-5-0 description                │─
+│
+│  Status   │  Agents   │  Sessions   │  Help
+│─╭ Select model ────────────────────────────╮─
+│▎│ › 1 ● gpt-5-0  current                   │
+│▎│       gpt-5-0 description                │
 │▎│   2 ○ gpt-5-1                            │
 │▎│       gpt-5-1 description                │
 │▎│   3 ○ gpt-5-2                            │
@@ -15,6 +15,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 48, 16))"
 ╭─│       gpt-5-3 description                │─╮
 │>│                                          │ │
 │ │  wheel / j k  Enter  Esc  1/12 ↓         │ │
-│ ╰──────────────────────────────────────────╯ │
-│Permissions ▾       gpt-5-0 ▾ Effort ▾ Speed ▾│
+│A╰──────────────────────────────────────────╯ │
+│                  gpt-5-0 ▾ medium ▾ Default ▾│
 ╰──────────────────────────────────────────────╯
