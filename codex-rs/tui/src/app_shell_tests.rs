@@ -13476,12 +13476,13 @@ fn dashboard_focus_keeps_context_readable_and_hides_composer_cursor() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
+    shell.push_system("Workspace ready");
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let conversation_row =
-        row_containing(&buf, area, "CONVERSATION").expect("conversation title should render");
-    let conversation_x = row_needle_x(&buf, area, conversation_row, "CONVERSATION")
-        .expect("conversation title should have an x position");
+        row_containing(&buf, area, "Workspace ready").expect("transcript text should render");
+    let conversation_x = row_needle_x(&buf, area, conversation_row, "Workspace ready")
+        .expect("transcript text should have an x position");
     let dashboard_row =
         row_containing(&buf, area, "Sessions").expect("dashboard tabs should render");
     let dashboard_x = row_needle_x(&buf, area, dashboard_row, "Sessions")
@@ -13493,7 +13494,7 @@ fn dashboard_focus_keeps_context_readable_and_hides_composer_cursor() {
             .add_modifier
             .contains(Modifier::DIM)
     );
-    let background_x = conversation_x + "CONVERSATION".len() as u16 + 1;
+    let background_x = conversation_x + "Workspace ready".len() as u16 + 1;
     assert_eq!(buf[(background_x, conversation_row)].symbol(), " ");
     assert_eq!(
         buf[(background_x, conversation_row)].style().bg,

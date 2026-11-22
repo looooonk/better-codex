@@ -34,7 +34,6 @@ use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -55,29 +54,21 @@ pub(super) fn render_transcript(
     buf: &mut Buffer,
 ) {
     let viewport = transcript_viewport(shell, area);
-    let title = if let Some(selected) = shell.transcript_selection {
-        let mut title = format!(
-            "CONVERSATION  SELECT {}/{}",
-            selected.saturating_add(1),
-            shell.transcript.len()
-        );
+    if viewport.layout.total_lines == 0 {
+        super::empty_conversation::render(viewport.content, buf);
+        return;
+    }
+    if let Some(selected) = shell.transcript_selection {
+        let mut hint = format!("SELECT {}/{}", selected + 1, shell.transcript.len());
         if shell.selected_transcript_is_rewindable() {
-            title.push_str("  e BRANCH EDIT");
+            hint.push_str("  e BRANCH EDIT");
         }
-        title
-    } else {
-        "CONVERSATION".to_string()
-    };
+        Paragraph::new(hint.fg(palette::muted()).bold()).render(title_rect(viewport.content), buf);
+    }
     let visible_hyperlink_lines = viewport
         .layout
         .visible_hyperlink_lines(viewport.visible_from, viewport.visible_count);
     let visible_lines = visible_lines(visible_hyperlink_lines.clone());
-    Paragraph::new(Line::from(vec![
-        "◆ ".set_style(Style::new().fg(palette::focus())),
-        title.set_style(Style::new().fg(palette::muted()).bold()),
-    ]))
-    .style(pane_style(palette::base()))
-    .render(title_rect(viewport.content), buf);
     Paragraph::new(visible_lines)
         .style(pane_style(palette::base()))
         .render(viewport.text_body, buf);
@@ -375,7 +366,11 @@ fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
             .unwrap_or(shell.transcript_scroll)
     };
     let content = pane_content_rect(area);
-    let body = body_rect_after_title(content);
+    let body = if shell.transcript_selection.is_some() {
+        body_rect_after_title(content)
+    } else {
+        content
+    };
     let cwd = std::path::Path::new(&shell.cwd);
     let mut text_body = body;
     let visible_count = usize::from(body.height);

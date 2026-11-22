@@ -105,6 +105,7 @@ mod external_agent_import;
 mod goal_rate_limit_recovery;
 mod guardian_activity;
 mod guardian_denials;
+mod empty_conversation;
 mod header;
 mod hook_activity;
 mod ide;
