@@ -3,34 +3,34 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
- ▎ CODEX  Started a fullscreen app shell backed   │▎loading sessions
-          by app-server turns.                    │
- ▎ PLAN  1. Build shell                           │▎◆ THREAD
-         2. Wi╭──────────────────────────────────────────────────────────────────────╮
-         3. Re│◆ CLAUDE CODE IMPORT                                                  │00001
-              │Review Claude Code setup  Settings 1, Skills 1                        │ession list
- ▌ tool exec j│                                                                      │
-              │> [x] Settings (settings.json -> config.toml) - home                  │
- ▌ edited 3 fi│      Import settings from Claude Code                                │
- ▎ STATUS  che│  [x] Skills - better-codex                                           │
- ▎ STATUS  rev│      1 skill: review                                                 │
-           imp│                                                                      │
-              │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
- ▎ CODEX  The │                                                                      │
-          surf╰──────────────────────────────────────────────────────────────────────╯
+ ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
+          by app-server turns.                    │▎loading sessions
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ THREAD
+         3. Re╭──────────────────────────────────────────────────────────────────────╮
+              │◆ CLAUDE CODE IMPORT                                                  │00001
+ ▌ tool exec j│Review Claude Code setup  Settings 1, Skills 1                        │ession list
+              │                                                                      │
+ ▌ edited 3 fi│> [x] Settings (settings.json -> config.toml) - home                  │
+ ▎ STATUS  che│      Import settings from Claude Code                                │
+ ▎ STATUS  rev│  [x] Skills - better-codex                                           │
+           imp│      1 skill: review                                                 │
+              │                                                                      │
+ ▎ CODEX  The │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
+          surf│                                                                      │
+              ╰──────────────────────────────────────────────────────────────────────╯
                                                   │
                                                   │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

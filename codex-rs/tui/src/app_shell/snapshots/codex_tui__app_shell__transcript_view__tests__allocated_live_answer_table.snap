@@ -3,7 +3,7 @@ source: tui/src/app_shell/transcript_view_tests.rs
 expression: painted
 ---
                                             
- ◆ CONVERSATION                             
+ ▎ SYSTEM  history-28                     │ 
  ▎ SYSTEM  history-29                     │ 
  ▎ SYSTEM  history-30                     │ 
  ▎ SYSTEM  history-31                     │ 
@@ -13,7 +13,7 @@ expression: painted
  ▎ SYSTEM  history-35                     │ 
  ▎ SYSTEM  history-36                     │ 
  ▎ SYSTEM  history-37                     │ 
- ▎ SYSTEM  history-38                     │ 
+ ▎ SYSTEM  history-38                     ┃ 
  ▎ SYSTEM  history-39                     ┃ 
  ▎ CODEX   Left            Right          ┃ 
           ━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━ ┃ 

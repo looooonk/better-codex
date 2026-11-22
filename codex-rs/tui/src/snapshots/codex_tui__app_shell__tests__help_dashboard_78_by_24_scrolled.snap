@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: scrolled
 ---
 
-  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────
                             │
- ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
- ▎ YOU  Create a divergent s│ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
-                            │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
- ▎ CODEX  Started a fullscre│◆ SESSIONS             │  ^C          Stop/canc…
- ▎ PLAN  1. Build shell     │ ↑↓ / jk     Select    │  Esc ×2      Exit app
-         2. Wire transcript │ ↵ / r       Resume    │  ^N          New chat
-         3. Render dashboard│ f           Fork      │ ◆ AGENTS
-                            │ a           Archive   │  ↵           Focus/log
- ▌ tool exec just test -p co│ u           Unarchive │  ↑↓ / jk     Select
-                            │ v           Switch vi…│  g / G       First/last
- ▌ edited 3 files +128 -24  │ n           Rename    │  r           Reload log
-                            │ /           Search    │
- ▎ CODEX  The new shell owns│ d           Delete    │
+ ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
+                            │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
+ ▎ CODEX  Started a fullscre│ ⇧Alt+←/→    Resize    │  ^D          Show/hide
+ ▎ PLAN  1. Build shell     │◆ SESSIONS             │  ^C          Stop/canc…
+         2. Wire transcript │ ↑↓ / jk     Select    │  Esc ×2      Exit app
+         3. Render dashboard│ ↵ / r       Resume    │  ^N          New chat
+                            │ f           Fork      │ ◆ AGENTS
+ ▌ tool exec just test -p co│ a           Archive   │  ↵           Focus/log
+                            │ u           Unarchive │  ↑↓ / jk     Select
+ ▌ edited 3 files +128 -24  │ v           Switch vi…│  g / G       First/last
+                            │ n           Rename    │  r           Reload log
+ ▎ CODEX  The new shell owns│ /           Search    │
+                            │ d           Delete    │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
+│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

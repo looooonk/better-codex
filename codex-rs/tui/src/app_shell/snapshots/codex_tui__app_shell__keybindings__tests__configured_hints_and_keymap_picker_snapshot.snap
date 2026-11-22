@@ -3,16 +3,15 @@ source: tui/src/app_shell/keybindings_tests.rs
 expression: rendered
 ---
                                                             │
-  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex                      ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ────────────────────────────────────────────────────────────│
                                                             │CONFIGURED SHORTCUTS
- ◆ CONVERSATION                                             │Use /keymap to change a binding; unbind disables
- ▎ YOU  Create a divergent standalone TUI.                  │it.
-                                                            │f18  composer.submit
- ▎ CODEX  Started a fullscreen app shell backed by app-     │unbound  composer.queue
-          server turns.                                     │f19  editor.insert_newline
- ▎ PLAN  1. Build shell                                     │f20  list.accept
-         2. Wire transcript                                 │
+ ▎ YOU  Create a divergent standalone TUI.                  │Use /keymap to change a binding; unbind disables
+                                                            │it.
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │f18  composer.submit
+          server turns.                                     │unbound  composer.queue
+ ▎ PLAN  1. Build shell                                     │f19  editor.insert_newline
+         2. Wire transcript                                 │f20  list.accept
          3. Render dashboard                                │
                                                             │
  ▌ tool exec just test -p codex-tui                         │
@@ -24,9 +23,10 @@ expression: rendered
                                                             │
                                                             │
                                                             │
+                                                            │
 ╭──────────────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:1                                            ││
-│> Type a message, f19 for newline                         ││
+│> Type a message                                          ││
 │                                                          ││
 │                                                          ││
+│ Permissions ▾         gpt-5-codex ▾   Effort ▾   Speed ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

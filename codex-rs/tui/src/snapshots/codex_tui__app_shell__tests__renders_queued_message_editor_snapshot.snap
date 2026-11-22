@@ -3,24 +3,24 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│
                                                   │◆ CONVERSATION         │ ◆ COMPOSER
- ◆ CONVERSATION                                   │ ↵ / c       Copy item │  ⌘← / →      Line ends
- ▎ YOU  Create a divergent standalone TUI.        │ e           Branch    │  ⌘⌫          Delete st…
-                                                  │ ^O/⌥1-9     Copy reply│  ⌥/^ + ←→    Move word
- ▎ CODEX  Started a fullscreen app shell backed   │                       │  S/A + ↵     Newline
-          by app-server turns.                    │◆ DASHBOARD            │  Alt+M       Model
- ▎ PLAN  1. Build shell                           │ F1 … F4     Open tab  │  Alt+E       Effort
-         2. Wire transcript                       │ Alt+← / →   Prev/next │  ↵ / Tab     Save edit
-         3. Render dashboard                      │ Pg↑ / Pg↓   Scroll he…│  Alt+↑ / ↓   Edit queue
-                                                  │ ⇧Alt+←/→    Resize    │  ⇧Alt+↑/↓    Reorder
- ▌ tool exec just test -p codex-tui               │                       │
-                                                  │◆ SESSIONS             │ ◆ APP
- ▌ edited 3 files +128 -24                        │ ↑↓ / jk     Select    │  ^P          Commands
-                                                  │ ↵ / r       Resume    │  ^D          Show/hide
- ▎ CODEX  The new shell owns the fullscreen       │ f           Fork      │  ^C          Stop/canc…
-          surface.                                │ a           Archive   │  Esc ×2      Exit app
+ ▎ YOU  Create a divergent standalone TUI.        │ ↵ / c       Copy item │  ⌘← / →      Line ends
+                                                  │ e           Branch    │  ⌘⌫          Delete st…
+ ▎ CODEX  Started a fullscreen app shell backed   │ ^O/⌥1-9     Copy reply│  ⌥/^ + ←→    Move word
+          by app-server turns.                    │                       │  S/A + ↵     Newline
+ ▎ PLAN  1. Build shell                           │◆ DASHBOARD            │  Alt+M       Model
+         2. Wire transcript                       │ F1 … F4     Open tab  │  Alt+E       Effort
+         3. Render dashboard                      │ Alt+← / →   Prev/next │  ↵ / Tab     Save edit
+                                                  │ Pg↑ / Pg↓   Scroll he…│  Alt+↑ / ↓   Edit queue
+ ▌ tool exec just test -p codex-tui               │ ⇧Alt+←/→    Resize    │  ⇧Alt+↑/↓    Reorder
+                                                  │                       │
+ ▌ edited 3 files +128 -24                        │◆ SESSIONS             │ ◆ APP
+                                                  │ ↑↓ / jk     Select    │  ^P          Commands
+ ▎ CODEX  The new shell owns the fullscreen       │ ↵ / r       Resume    │  ^D          Show/hide
+          surface.                                │ f           Fork      │  ^C          Stop/canc…
+                                                  │ a           Archive   │  Esc ×2      Exit app
                                                   │ u           Unarchive │  ^N          New chat
                                                   │ v           Switch vi…│
                                                   │ n           Rename    │ ◆ AGENTS
@@ -40,9 +40,9 @@ expression: "render_shell(&shell, area)"
 │▌  2  second queued follow-up                   ││
 │Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ …││
 ╰────────────────────────────────────────────────╯│
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  EDIT 2/2  1:35                       ││
+╭ EDIT 2/2 ──────────────────────────────────────╮│
 │> second queued follow-up with edits            ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

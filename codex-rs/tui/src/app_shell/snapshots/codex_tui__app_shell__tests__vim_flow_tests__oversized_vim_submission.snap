@@ -2,19 +2,19 @@
 source: tui/src/app_shell/vim_flow_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
-  Dashboard  ◆ BC             gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                          ● thinking
 ────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ STATUS  Vim input exceeds the 10000-byte submission limit; returned it to
            the composer
 
  ▎ CODEX  The new shell owns the fullscreen surface.
 
 
+
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:1                                                                │
-│> Type a message, Shift+Enter for newline                                     │
+│> Type a message                                                              │
 │                                                                              │
 │                                                                              │
+│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

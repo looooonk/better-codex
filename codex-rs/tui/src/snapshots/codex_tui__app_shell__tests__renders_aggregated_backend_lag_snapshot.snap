@@ -3,10 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ◐ thinking
+ BETTER CODEX  better-codex                                                              ◐ thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ YOU  Run just test -p codex-tui.
  ▎ SYSTEM  skipped 42 best-effort backend events
 
@@ -16,9 +15,10 @@ expression: "render_shell(&shell, area)"
 
 
 
+
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                                                   │
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

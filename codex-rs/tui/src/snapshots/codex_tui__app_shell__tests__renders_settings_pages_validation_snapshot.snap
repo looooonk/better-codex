@@ -3,24 +3,24 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SETTINGS
- ▎ YOU  Create a divergent standalone TUI.        │▎Model │ Permissions │ Appearance │Integrations
-                                                  │▎─────────────────────━━━━━━━━━━━━──────────────
- ▎ CODEX  Started a fullscreen app shell backed   │▎edit Syntax theme missing-theme▏
-          by app-server turns.                    │▎unknown syntax theme `missing-theme`
- ▎ PLAN  1. Build shell                           │▎  App theme: Tokyo Night
-         2. Wire transcript                       │▎› Syntax theme: default
-         3. Render dashboard                      │▎  Animations: on
-                                                  │▎  Tooltips: on
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ PLAN
- ▌ edited 3 files +128 -24                        │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
- ▎ CODEX  The new shell owns the fullscreen       │▎> Transcript model
-          surface.                                │▎- Approvals
+ ▎ YOU  Create a divergent standalone TUI.        │▎◆ SETTINGS
+                                                  │▎Model │ Permissions │ Appearance │Integrations
+ ▎ CODEX  Started a fullscreen app shell backed   │▎─────────────────────━━━━━━━━━━━━──────────────
+          by app-server turns.                    │▎edit Syntax theme missing-theme▏
+ ▎ PLAN  1. Build shell                           │▎unknown syntax theme `missing-theme`
+         2. Wire transcript                       │▎  App theme: Tokyo Night
+         3. Render dashboard                      │▎› Syntax theme: default
+                                                  │▎  Animations: on
+ ▌ tool exec just test -p codex-tui               │▎  Tooltips: on
+                                                  │
+ ▌ edited 3 files +128 -24                        │▎◆ PLAN
+                                                  │▎Build the standalone shell in slices.
+ ▎ CODEX  The new shell owns the fullscreen       │▎x Shell frame
+          surface.                                │▎> Transcript model
+                                                  │▎- Approvals
                                                   │
                                                   │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
@@ -29,8 +29,8 @@ expression: "render_shell(&shell, area)"
                                                   │▎3 files +128 -24
                                                   │
 ╭────────────────────────────────────────────────╮│▎◆ WORKSPACE
-│◆ MESSAGE  1:37                                 ││▎profile managed
-│> Summarize the new shell architecture          ││▎cwd /workspace/better-codex
+│> Summarize the new shell architecture          ││▎profile managed
+│                                                ││▎cwd /workspace/better-codex
 │                                                ││▎files restricted, net restricted
-│                                                ││▎roots none selected
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││▎roots none selected
 ╰────────────────────────────────────────────────╯│

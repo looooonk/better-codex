@@ -3,32 +3,32 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
-  Dashboard  ◆ BC        gpt-6.2-sol ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                ╭ Select reasoning effort ─────────────────────────────────────────╮
- ▎ CODEX  Starte│   1 ○ Default                                                    │
-          by app│       Use the model's default reasoning effort.                  │
- ▎ PLAN  1. Buil│   2 ○ Low                                                        │
-         2. Wire│       Fast responses with lighter reasoning                      │
-         3. Rend│   3 ○ Medium                                                     │0000001
-                │       Balances speed and reasoning depth for everyday tasks      │ session list
- ▌ tool exec jus│   4 ○ High                                                       │
-                │       Greater reasoning depth for complex problems               │
- ▌ edited 3 file│   5 ○ Extra high                                                 │
-                │       Extra high reasoning depth for complex problems            │
- ▎ CODEX  The ne│   6 ○ Max                                                        │
-          surfac│       Maximum reasoning depth for the hardest problems           │
-                │ › 7 ● Ultra  current                                             │
-                │       Maximum reasoning with automatic task delegation           │
-                │  wheel / j k  Enter select  Esc cancel  7/7                      │
-                ╰──────────────────────────────────────────────────────────────────╯
+ ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
+          by app-server turns.                    │▎loading sessions
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ THREAD
+         3. Render dashboard                      │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+ ▌ tool exec just test -p codex-tui               │▎resume, fork, archive, delete in session list
                                                   │
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
-│> Summarize the new shell architecture          ││
-│                                                ││
-│                                                ││
+ ▌ edited 3 files +128 -24                        │
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
+                                                  │
+                                                  │
+                                                  │
+          ╭──────────────────────────────────────╮│
+          │                 Ultra              ↺ ││
+          │              GPT-6.2-Sol             ││
+╭─────────│ •      •      •      •      •      ● ││
+│> Summari│                                      ││
+│         │ ← → adjust   Enter apply   Esc close ││
+│         ╰──────────────────────────────────────╯│
+│Permissions ▾      gpt-6.2-sol ▾ ultra ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

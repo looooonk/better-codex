@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                         │ │▎◆ SESSIONS
          2. Wire transcript                     │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         3. Render dashboard                    │ │▎+ New session  Ctrl+N
-                                                │ │▎loading sessions
+         3. Render dashboard                    ┃ │▎+ New session  Ctrl+N
+                                                ┃ │▎loading sessions
  ▌ tool exec just test -p codex-tui             ┃ │
                                                 ┃ │▎◆ THREAD
  ▌ edited 3 files +128 -24                      ┃ │▎stage-one

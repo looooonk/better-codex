@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
+          by app-server turns.                  │ │▎◆ SESSIONS
  ▎ PLAN  1. Build shell                         │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                     │ │▎+ New session  Ctrl+N
-         3. Render dashboard                    │ │▎loading sessions
+         2. Wire transcript                     ┃ │▎+ New session  Ctrl+N
+         3. Render dashboard                    ┃ │▎loading sessions
                                                 ┃ │
  ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
                                                 ┃ │▎stage-one
@@ -25,8 +25,8 @@ expression: "render_shell(&shell, area)"
           surface.                              ┃ │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

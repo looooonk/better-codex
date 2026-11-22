@@ -3,26 +3,26 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex                    gpt-5-codex ▾   default ▾   default ▾  ◐ pending
+ BETTER CODEX  better-codex                                                                         ◐ pending
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
-                                                                                                            ┃
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                        ┃
- ▎ PLAN  1. Build shell                                                                                     ┃
-         2. Wire transcript                                                                                 ┃
-         3. Render dashboard                                                                                ┃
-                                                                                                            ┃
- ▌ tool exec just test -p codex-tui                                                                         ┃
-                                                                                                            ┃
- ▌ edited 3 files +128 -24                                                                                  ┃
- ▎ STATUS  wait for settings or the session transition before running workspace commands                    ┃
-                                                                                                            ┃
- ▎ CODEX  The new shell owns the fullscreen surface.                                                        ┃
+ ▎ YOU  Create a divergent standalone TUI.
+
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+         3. Render dashboard
+
+ ▌ tool exec just test -p codex-tui
+
+ ▌ edited 3 files +128 -24
+ ▎ STATUS  wait for settings or the session transition before running workspace commands
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                                                             │
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │
+│ Permissions ▾                                                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -3,20 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  ACTIVE  2 sessions
-                                                  │▎+ New session  Ctrl+N
- ▎ CODEX  Started a fullscreen app shell backed   │▎› 1/2 Refactor dashboard navigation [main]
-          by app-server turns.                    │▎  2/2 Investigate approval rendering regressio…
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ THREAD
-         3. Render dashboard                      │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
- ▌ tool exec just test -p codex-tui               │▎resume, fork, archive, delete in session list
-                                                  │
+ ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
+                                                  │▎● FOCUSED  ACTIVE  2 sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
+          by app-server turns.                    │▎› 1/2 Refactor dashboard navigation [main]
+ ▎ PLAN  1. Build shell                           │▎  2/2 Investigate approval rendering regressio…
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ THREAD
+                                                  │▎stage-one
+ ▌ tool exec just test -p codex-tui               │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
  ▌ edited 3 files +128 -24                        │
                                                   │
  ▎ CODEX  The new shell owns the fullscreen       │
@@ -28,9 +27,10 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │
                                                   │
+                                                  │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

@@ -3,20 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
 ---
                                                               │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex                        ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                               │
- ◆ CONVERSATION                                               │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.                    │▎● FOCUSED  ACTIVE  2 sessions
-                                                              │▎+ New session  Ctrl+N
- ▎ CODEX  Started a fullscreen app shell backed by app-server │▎› 1/2 Tokyo Night polish [main]  Refining the …
-          turns.                                              │▎  2/2 Agent activity [main]  Building a bounde…
- ▎ PLAN  1. Build shell                                       │
-         2. Wire transcript                                   │▎◆ THREAD
-         3. Render dashboard                                  │▎stage-one
-                                                              │▎id 01900000-0000-7000-8000-000000000001
- ▌ tool exec just test -p codex-tui                           │▎resume, fork, archive, delete in session list
-                                                              │
+ ▎ YOU  Create a divergent standalone TUI.                    │▎◆ SESSIONS
+                                                              │▎● FOCUSED  ACTIVE  2 sessions
+ ▎ CODEX  Started a fullscreen app shell backed by app-server │▎+ New session  Ctrl+N
+          turns.                                              │▎› 1/2 Tokyo Night polish [main]  Refining the …
+ ▎ PLAN  1. Build shell                                       │▎  2/2 Agent activity [main]  Building a bounde…
+         2. Wire transcript                                   │
+         3. Render dashboard                                  │▎◆ THREAD
+                                                              │▎stage-one
+ ▌ tool exec just test -p codex-tui                           │▎id 01900000-0000-7000-8000-000000000001
+                                                              │▎resume, fork, archive, delete in session list
  ▌ edited 3 files +128 -24                                    │
                                                               │
  ▎ CODEX  The new shell owns the fullscreen surface.          │
@@ -26,9 +25,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
                                                               │
                                                               │
                                                               │
+                                                              │
 ╭────────────────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                             ││
 │> Summarize the new shell architecture                      ││
 │                                                            ││
 │                                                            ││
+│ Permissions ▾           gpt-5-codex ▾   Effort ▾   Speed ▾ ││
 ╰────────────────────────────────────────────────────────────╯│

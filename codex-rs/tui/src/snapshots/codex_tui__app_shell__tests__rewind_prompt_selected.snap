@@ -3,10 +3,10 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex            gpt-5-codex ▾   default ▾   default ▾  ● ready
+ BETTER CODEX  better-codex                                                                 ● ready
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION  SELECT 5/6  e BRANCH EDIT
+ SELECT 5/6  e BRANCH EDIT
  ▎ SYSTEM  switched session
  ▎ SYSTEM  loaded 2 previous turns
  ▎ YOU  Plan the first implementation.
@@ -19,8 +19,8 @@ expression: "render_shell(&shell, area)"
 
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:1                                                                                    │
-│> Type a message, Shift+Enter for newline                                                         │
+│> Type a message                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

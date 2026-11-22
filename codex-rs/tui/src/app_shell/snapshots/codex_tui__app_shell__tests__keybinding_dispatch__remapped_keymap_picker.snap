@@ -3,30 +3,30 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
-  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex                      ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ─────────────────────╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━━━━──────────
                      │ › 1 ○ global.open_agents                                         │
- ◆ CONVERSATION      │       f2 / ⌃space - select to change                             │
- ▎ YOU  Create a dive│   2 ○ global.open_transcript                                     │ sessions
-                     │       unbound - select to change                                 │
- ▎ CODEX  Started a f│   3 ○ global.find_transcript                                     │
-          server turn│       unbound - select to change                                 │
- ▎ PLAN  1. Build she│   4 ○ global.focus_activity                                      │
-         2. Wire tran│       unbound - select to change                                 │
-         3. Render da│   5 ○ global.open_external_editor                                │000000000001
-                     │       unbound - select to change                                 │te in session list
- ▌ tool exec just tes│   6 ○ global.copy                                                │
-                     │       ⌃o - select to change                                      │
- ▌ edited 3 files +12│   7 ○ global.clear_terminal                                      │
-                     │       unbound - select to change                                 │
- ▎ CODEX  The new she│   8 ○ global.toggle_fast_mode                                    │
+ ▎ YOU  Create a dive│       f2 / ⌃space - select to change                             │
+                     │   2 ○ global.open_transcript                                     │ sessions
+ ▎ CODEX  Started a f│       unbound - select to change                                 │
+          server turn│   3 ○ global.find_transcript                                     │
+ ▎ PLAN  1. Build she│       unbound - select to change                                 │
+         2. Wire tran│   4 ○ global.focus_activity                                      │
+         3. Render da│       unbound - select to change                                 │
+                     │   5 ○ global.open_external_editor                                │000000000001
+ ▌ tool exec just tes│       unbound - select to change                                 │te in session list
+                     │   6 ○ global.copy                                                │
+ ▌ edited 3 files +12│       ⌃o - select to change                                      │
+                     │   7 ○ global.clear_terminal                                      │
+ ▎ CODEX  The new she│       unbound - select to change                                 │
+                     │   8 ○ global.toggle_fast_mode                                    │
                      │       unbound - select to change                                 │
                      │   9 ○ global.toggle_side_conversation                            │
                      │       unbound - select to change                                 │
                      │   · ○ chat.open_presets                                          │
 ╭────────────────────│       unbound - select to change                                 │
-│◆ MESSAGE  1:37     │                                                                  │
-│> Summarize the new │  up / down move  f18 select  f19 cancel  1/55 ↓                  │
+│> Summarize the new │                                                                  │
+│                    │  up / down move  f18 select  f19 cancel  1/55 ↓                  │
 │                    ╰──────────────────────────────────────────────────────────────────╯
-│                                                          ││
+│ Permissions ▾         gpt-5-codex ▾   Effort ▾   Speed ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

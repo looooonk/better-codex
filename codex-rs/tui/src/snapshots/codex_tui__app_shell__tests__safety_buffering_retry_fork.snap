@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
 ---
                                                   │
-  Dashboard  ◆ BC  ◐ thinking · turn 0s · 0 tok/s │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX      ◐ thinking · turn 0s · 0 tok/s │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  switched session                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ SYSTEM  loaded 1 previous turns                │▎+ New session  Ctrl+N
- ▎ YOU  Earlier context                           │▎loading sessions
- ──────── Took 1.00s ──────────────────────────── │
- ▎ SYSTEM  2 queued follow-ups remain on the      │▎◆ THREAD
-           previous session 01900000-0000-7000-   │▎forked
-           8000-000000000001. Open Sessions to    │▎id 01900000-0000-7000-8000-000000000202
-           return to it.                          │▎resume, fork, archive, delete in session list
- ▎ YOU  Explain the request                       │
+ ▎ SYSTEM  switched session                       │▎◆ SESSIONS
+ ▎ SYSTEM  loaded 1 previous turns                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Earlier context                           │▎+ New session  Ctrl+N
+ ──────── Took 1.00s ──────────────────────────── │▎loading sessions
+ ▎ SYSTEM  2 queued follow-ups remain on the      │
+           previous session 01900000-0000-7000-   │▎◆ THREAD
+           8000-000000000001. Open Sessions to    │▎forked
+           return to it.                          │▎id 01900000-0000-7000-8000-000000000202
+ ▎ YOU  Explain the request                       │▎resume, fork, archive, delete in session list
                                                   │
                                                   │
         Also keep this clarification              │
                                                   │
+                                                  │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  ● RUNNING  1:23                      ││
 │> Keep this unsent draft                        ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

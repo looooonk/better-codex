@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&permissions_shell, area)"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▌ tool exec just test -p codex-tui             │ │▎◆ SESSIONS
                                                 │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▌ edited 3 files +128 -24                      │ │▎+ New session  Ctrl+N
-                                                │ │▎loading sessions
+                                                ┃ │▎loading sessions
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │▎◆ THREAD
                                                   │▎stage-one

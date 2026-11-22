@@ -1,29 +1,28 @@
 ---
 source: tui/src/app_shell_tests.rs
-assertion_line: 2925
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ---
 
-  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────
                             │
- ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
- ▎ YOU  Create a divergent s│─────────────━━━━━━━━━━━────────────────────────
-                            │▎◆ AGENTS
- ▎ CODEX  Started a fullscre│▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
- ▎ PLAN  1. Build shell     │▎  × 1 failed
-         2. Wire transcript │▎  ● running  Hypatia
-         3. Render dashboard│▎    └ ✓ completed  Picasso
-                            │▎  ! interrupted  Turing
- ▌ tool exec just test -p co│▎›   └ × errored  Socrates
-                            │▎Inspector  Socrates  × errored
- ▌ edited 3 files +128 -24  │▎Model  gpt-5-codex
-                            │▎Reasoning  high
- ▎ CODEX  The new shell owns│▎Path  /root/testing/failure
+ ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
+                            │─────────────━━━━━━━━━━━────────────────────────
+ ▎ CODEX  Started a fullscre│▎◆ AGENTS
+ ▎ PLAN  1. Build shell     │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
+         2. Wire transcript │▎  × 1 failed
+         3. Render dashboard│▎  ● running  Hypatia
+                            │▎    └ ✓ completed  Picasso
+ ▌ tool exec just test -p co│▎  ! interrupted  Turing
+                            │▎›   └ × errored  Socrates
+ ▌ edited 3 files +128 -24  │▎Inspector  Socrates  × errored
+                            │▎Model  gpt-5-codex
+ ▎ CODEX  The new shell owns│▎Reasoning  high
+                            │▎Path  /root/testing/failure
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
+│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

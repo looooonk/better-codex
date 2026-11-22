@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                                                                          │
-  Dashboard  ◆ BETTER CODEX  better-codex                 gpt-5-codex ▾   default ▾   default ▾  ◐ ready │   Status    │   Agents    │   Sessions   │   Help
+ BETTER CODEX  better-codex                                                                      ◐ ready │   Status    │   Agents    │   Sessions   │   Help
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────│━━━━━━━━━━━━━────────────────────────────────────────
                                                                                                          │
- ◆ CONVERSATION                                                                                          │▎◆ SETTINGS
- ▎ YOU  Create a divergent standalone TUI.                                                               │▎  Model  │ Permissions  │ Appearance │ Integrations
-                                                                                                         │▎─────────────────────────━━━━━━━━━━━━───────────────
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                     │▎  App theme: Tokyo Night
- ▎ PLAN  1. Build shell                                                                                  │▎  Syntax theme: default
-         2. Wire transcript                                                                              │▎  Animations: on
-         3. Render dashboard                                                                             │▎› Tooltips: on
-                                                                                                         │
- ▌ tool exec just test -p codex-tui                                                                      │▎◆ PLAN
-                                                                                                         │▎Build the standalone shell in slices.
- ▌ edited 3 files +128 -24                                                                               │▎x Shell frame
-                                                                                                         │▎> Transcript model
- ▎ CODEX  The new shell owns the fullscreen surface.                                                     │▎- Approvals
+ ▎ YOU  Create a divergent standalone TUI.                                                               │▎◆ SETTINGS
+                                                                                                         │▎  Model  │ Permissions  │ Appearance │ Integrations
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                     │▎─────────────────────────━━━━━━━━━━━━───────────────
+ ▎ PLAN  1. Build shell                                                                                  │▎  App theme: Tokyo Night
+         2. Wire transcript                                                                              │▎  Syntax theme: default
+         3. Render dashboard                                                                             │▎  Animations: on
+                                                                                                         │▎› Tooltips: on
+ ▌ tool exec just test -p codex-tui                                                                      │
+                                                                                                         │▎◆ PLAN
+ ▌ edited 3 files +128 -24                                                                               │▎Build the standalone shell in slices.
+                                                                                                         │▎x Shell frame
+ ▎ CODEX  The new shell owns the fullscreen surface.                                                     │▎> Transcript model
+                                                                                                         │▎- Approvals
                                                                                                          │
                                                                                                          │▎◆ TOOLS
                                                                                                          │▎in progress exec just test -p codex-tui
                                                                                                          │
                                                                                                          │▎◆ EDITS
 ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮│▎3 files +128 -24
-│◆ MESSAGE  1:37                                                                                        ││
-│> Summarize the new shell architecture                                                                 ││▎◆ WORKSPACE
+│> Summarize the new shell architecture                                                                 ││
+│                                                                                                       ││▎◆ WORKSPACE
 │                                                                                                       ││▎profile managed
-│                                                                                                       ││▎cwd /workspace/better-codex
+│ Permissions ▾                                                      gpt-5-codex ▾   Effort ▾   Speed ▾ ││▎cwd /workspace/better-codex
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯│

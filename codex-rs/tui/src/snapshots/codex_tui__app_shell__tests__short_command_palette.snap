@@ -2,15 +2,15 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │
+ BETTER CODEX  better-codex            ● thinking │
 ──────────────────────────────────────────────────│   Status   │  Agents   │  Sessions   │  Help
               ╭──────────────────────────────────────────────────────────────────────╮━━━──────────
- ◆ CONVERSATIO│◆ ACTIONS  Ctrl+P                                                     │
+              │◆ ACTIONS  Ctrl+P                                                     │
  ▎ CODEX  The │                                                                      │
           surf│  Fork thread                                                         │ns
               │  Import Claude Code setup                                            │
 ╭─────────────│▌ Compact context  Compact the current thread context                 │
-│◆ MESSAGE  1:│↑↓ / j k navigate   Enter select   Esc close  ↑13/13                  │
-│> Summarize t╰──────────────────────────────────────────────────────────────────────╯
-│                                                ││▎stage-one
+│> Summarize t│↑↓ / j k navigate   Enter select   Esc close  ↑13/13                  │
+│             ╰──────────────────────────────────────────────────────────────────────╯
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││▎stage-one
 ╰────────────────────────────────────────────────╯│

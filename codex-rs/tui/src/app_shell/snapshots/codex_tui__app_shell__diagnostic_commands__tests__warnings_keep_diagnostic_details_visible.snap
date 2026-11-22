@@ -3,13 +3,13 @@ source: tui/src/app_shell/diagnostic_commands_tests.rs
 expression: text
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                              ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
+         2. Wire transcript                                                                       │
          3. Render dashboard                                                                      │
-                                                                                                  │
- ▌ tool exec just test -p codex-tui                                                               │
+                                                                                                  ┃
+ ▌ tool exec just test -p codex-tui                                                               ┃
                                                                                                   ┃
  ▌ edited 3 files +128 -24                                                                        ┃
  ▎ STATUS  Project configuration ignored                                                          ┃
@@ -19,8 +19,8 @@ expression: text
  ▎ CODEX  The new shell owns the fullscreen surface.                                              ┃
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                                                   │
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

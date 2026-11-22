@@ -3,11 +3,11 @@ source: tui/src/app_shell/ide_tests.rs
 expression: rendered
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                        │
+                                                                                                            ┃
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                        ┃
  ▎ PLAN  1. Build shell                                                                                     ┃
          2. Wire transcript                                                                                 ┃
          3. Render dashboard                                                                                ┃
@@ -21,8 +21,8 @@ expression: rendered
  ▎ CODEX  The new shell owns the fullscreen surface.                                                        ┃
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                                                             │
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │
+│ Permissions ▾                                                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

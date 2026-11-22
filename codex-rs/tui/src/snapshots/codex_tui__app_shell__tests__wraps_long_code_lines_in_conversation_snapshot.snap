@@ -3,10 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ CODEX  Run this command:
 
           codex exec --sandbox workspace-write --config
@@ -14,9 +13,10 @@ expression: "render_shell(&shell, area)"
           shell_environment_policy.inherit=all "Inspect the workspace and fix
           every failing test."
 
+
 ╭────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:1                                                              │
-│> Type a message, Shift+Enter for newline                                   │
+│> Type a message                                                            │
 │                                                                            │
 │                                                                            │
+│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

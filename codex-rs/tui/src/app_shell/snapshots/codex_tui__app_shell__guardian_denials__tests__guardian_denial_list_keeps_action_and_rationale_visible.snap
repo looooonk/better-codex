@@ -1,16 +1,15 @@
 ---
 source: tui/src/app_shell/guardian_denials_tests.rs
-assertion_line: 59
 expression: "lines.join(\"\\n\")"
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
+ ▎ PLAN  1. Build shell                                                                                     │
          2. Wire transcript                                                                                 │
-         3. Render dashboard                                                                                │
-                                                                                                            │
+         3. Render dashboard                                                                                ┃
+                                                                                                            ┃
  ▌ tool exec just test -p codex-tui                                                                         ┃
                                                                                                             ┃
  ▌ edited 3 files +128 -24                                                                                  ┃
@@ -25,8 +24,8 @@ expression: "lines.join(\"\\n\")"
  ▎ CODEX  The new shell owns the fullscreen surface.                                                        ┃
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                                                             │
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │
+│ Permissions ▾                                                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

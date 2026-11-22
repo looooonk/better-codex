@@ -3,10 +3,9 @@ source: tui/src/app_shell/dashboard_focus_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                              ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
@@ -24,9 +23,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 
 
 
+
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:24                                                                                   │
 │> /statusline thread-name                                                                         │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

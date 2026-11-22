@@ -1,17 +1,16 @@
 ---
 source: tui/src/app_shell_tests.rs
-assertion_line: 9358
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────━━━━━━━━━━━────────────────────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ AGENTS
- ▌ tool agent SpawnAgent                          │▎Agents 1  ● 1 active
-                                                  │▎› ● running  agent-thread
- ▎ CODEX  The new shell owns the fullscreen       │▎Inspector  agent-thread  ● running
-          surface.                                │▎Model  gpt-5-codex
+ ▌ tool agent SpawnAgent                          │▎◆ AGENTS
+                                                  │▎Agents 1  ● 1 active
+ ▎ CODEX  The new shell owns the fullscreen       │▎› ● running  agent-thread
+          surface.                                │▎Inspector  agent-thread  ● running
+                                                  │▎Model  gpt-5-codex
                                                   │▎Reasoning  high
                                                   │▎Path  agent-thread
                                                   │▎Task  Inspect dashboard activity.
@@ -26,8 +25,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

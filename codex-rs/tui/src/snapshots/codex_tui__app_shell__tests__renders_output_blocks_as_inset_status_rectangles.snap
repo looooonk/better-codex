@@ -3,10 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
-  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▌ tool exec cargo test
 
    ▌ output ... 4 earlier output lines
@@ -28,9 +27,10 @@ expression: rendered
 
 
 
+
 ╭────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
+│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

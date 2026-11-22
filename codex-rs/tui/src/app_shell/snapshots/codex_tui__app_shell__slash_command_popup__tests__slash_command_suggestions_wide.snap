@@ -1,10 +1,9 @@
 ---
 source: tui/src/app_shell/slash_command_popup_tests.rs
-assertion_line: 115
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                              ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
@@ -26,8 +25,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 │↑↓ navigate   Tab complete   Enter run   Esc close                    │
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:2                                                                                    │
 │> /                                                                                               │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

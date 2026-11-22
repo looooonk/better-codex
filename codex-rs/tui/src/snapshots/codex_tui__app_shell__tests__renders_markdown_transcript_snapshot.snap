@@ -1,33 +1,32 @@
 ---
 source: tui/src/app_shell_tests.rs
-assertion_line: 2326
 expression: "render_shell(&shell, area)"
 ---
                                                               │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex                        ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                               │
- ◆ CONVERSATION                                               │▎◆ SESSIONS
-          • Render assistant text as markdown.              │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          • Preserve local links like render.rs (codex-rs/  ┃ │▎+ New session  Ctrl+N
-            tui/src/app_shell/render.rs:1).                 ┃ │▎loading sessions
-                                                            ┃ │
-          fn transcript() -> &'static str {                 ┃ │▎◆ THREAD
-          "markdown"                                        ┃ │▎stage-one
-          }                                                 ┃ │▎id 01900000-0000-7000-8000-000000000001
-                                                            ┃ │▎resume, fork, archive, delete in session list
-           Area     Status                                  ┃ │
-          ━━━━━━━  ━━━━━━━━                                 ┃ │
-           code     done                                    ┃ │
-          ───────  ────────                                 ┃ │
-           table    done                                    ┃ │
- ▎ PLAN  1. Keep transcript rendering width-aware.          ┃ │
-         2. Leave selection and copy mode for the next      ┃ │
-            slice.                                          ┃ │
+ ▎ CODEX  # Result                                            │▎◆ SESSIONS
+                                                              │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+          • Render assistant text as markdown.                │▎+ New session  Ctrl+N
+          • Preserve local links like render.rs (codex-rs/    │▎loading sessions
+            tui/src/app_shell/render.rs:1).                   │
+                                                              │▎◆ THREAD
+          fn transcript() -> &'static str {                   │▎stage-one
+          "markdown"                                          │▎id 01900000-0000-7000-8000-000000000001
+          }                                                   │▎resume, fork, archive, delete in session list
+                                                              │
+           Area     Status                                    │
+          ━━━━━━━  ━━━━━━━━                                   │
+           code     done                                      │
+          ───────  ────────                                   │
+           table    done                                      │
+ ▎ PLAN  1. Keep transcript rendering width-aware.            │
+         2. Leave selection and copy mode for the next slice. │
                                                               │
 ╭────────────────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:1                                              ││
-│> Type a message, Shift+Enter for newline                   ││
+│> Type a message                                            ││
 │                                                            ││
 │                                                            ││
+│ Permissions ▾           gpt-5-codex ▾   Effort ▾   Speed ▾ ││
 ╰────────────────────────────────────────────────────────────╯│

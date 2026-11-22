@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
 ---
                                                               │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex                        ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────────────────│─────────────━━━━━━━━━━━────────────────────────
                                                               │
- ◆ CONVERSATION                                               │▎◆ AGENTS
- ▎ YOU  Create a divergent standalone TUI.                    │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
-                                                              │▎  × 1 failed
- ▎ CODEX  Started a fullscreen app shell backed by app-server │▎  ● running  Hypatia
-          turns.                                              │▎    └ ✓ completed  Picasso
- ▎ PLAN  1. Build shell                                       │▎  ! interrupted  Turing
-         2. Wire transcript                                   │▎›   └ × errored  Socrates
-         3. Render dashboard                                  │▎Inspector  Socrates  × errored
-                                                              │▎Model  gpt-5-codex
- ▌ tool exec just test -p codex-tui                           │▎Reasoning  high
-                                                              │▎Path  /root/testing/failure
- ▌ edited 3 files +128 -24                                    │▎Task  Review the new TUI flow and visual
-                                                              │▎      hierarchy.
- ▎ CODEX  The new shell owns the fullscreen surface.          │▎Latest  Compact flow failed
+ ▎ YOU  Create a divergent standalone TUI.                    │▎◆ AGENTS
+                                                              │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
+ ▎ CODEX  Started a fullscreen app shell backed by app-server │▎  × 1 failed
+          turns.                                              │▎  ● running  Hypatia
+ ▎ PLAN  1. Build shell                                       │▎    └ ✓ completed  Picasso
+         2. Wire transcript                                   │▎  ! interrupted  Turing
+         3. Render dashboard                                  │▎›   └ × errored  Socrates
+                                                              │▎Inspector  Socrates  × errored
+ ▌ tool exec just test -p codex-tui                           │▎Model  gpt-5-codex
+                                                              │▎Reasoning  high
+ ▌ edited 3 files +128 -24                                    │▎Path  /root/testing/failure
+                                                              │▎Task  Review the new TUI flow and visual
+ ▎ CODEX  The new shell owns the fullscreen surface.          │▎      hierarchy.
+                                                              │▎Latest  Compact flow failed
                                                               │▎Recent
                                                               │▎  • agent spawned
                                                               │▎  • agent started
@@ -27,8 +27,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
                                                               │
                                                               │
 ╭────────────────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                             ││
 │> Summarize the new shell architecture                      ││
 │                                                            ││
 │                                                            ││
+│ Permissions ▾           gpt-5-codex ▾   Effort ▾   Speed ▾ ││
 ╰────────────────────────────────────────────────────────────╯│

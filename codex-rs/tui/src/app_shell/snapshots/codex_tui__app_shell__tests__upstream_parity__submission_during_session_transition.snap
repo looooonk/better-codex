@@ -3,10 +3,9 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
 
-  Dashboard  ◆ BC                         gpt-5-codex ▾   default ▾   default ▾  ◐ changing session
+ BETTER CODEX  better-codex                                                      ◐ changing session
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
@@ -24,9 +23,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 
 
 
-╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  ● RUNNING  1:16  [1: draft.png]                                                        │
+
+╭ [1: draft.png] ──────────────────────────────────────────────────────────────────────────────────╮
 │> Keep this draft                                                                                 │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -3,11 +3,11 @@ source: tui/src/app_shell/workspace_commands_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                              ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              │
+                                                                                                  ┃
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                              ┃
  ▎ PLAN  1. Build shell                                                                           ┃
          2. Wire transcript                                                                       ┃
          3. Render dashboard                                                                      ┃
@@ -19,8 +19,8 @@ expression: "lines.join(\"\\n\")"
 │↑↓ navigate   Tab complete   Enter run   Esc close                    │                          ┃
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:5                                                                                    │
 │> /rev                                                                                            │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

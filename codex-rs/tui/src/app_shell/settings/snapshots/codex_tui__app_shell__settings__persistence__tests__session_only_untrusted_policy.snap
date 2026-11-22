@@ -3,30 +3,30 @@ source: tui/src/app_shell/settings/persistence_tests.rs
 expression: rendered
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex                   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ YOU  Create a divergent standalone TUI.
 
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
  ▎ PLAN  1. Build shell
-         2. Wire tran╭ Select approval policy ──────────────────────────────────────────╮
-         3. Render da│   1 ○ On request                                                 │
-                     │       Let Codex request approval when an action needs it.        │
- ▌ tool exec just tes│ › 2 ● Unless trusted (this session)  current                     │
-                     │       Ask before commands that are not known to be safe. Saved   │
- ▌ edited 3 files +12│       defaults stay unchanged.                                   │
-                     │   3 ○ Never                                                      │
- ▎ CODEX  The new she│       Never pause the agent to request approval.                 │
+         2. Wire transcript
+         3. Render da╭ Select approval policy ──────────────────────────────────────────╮
+                     │   1 ○ On request                                                 │
+ ▌ tool exec just tes│       Let Codex request approval when an action needs it.        │
+                     │ › 2 ● Unless trusted (this session)  current                     │
+ ▌ edited 3 files +12│       Ask before commands that are not known to be safe. Saved   │
+                     │       defaults stay unchanged.                                   │
+ ▎ CODEX  The new she│   3 ○ Never                                                      │
+                     │       Never pause the agent to request approval.                 │
                      │  wheel / j k  Enter select  Esc cancel  2/3                      │
                      ╰──────────────────────────────────────────────────────────────────╯
 
 
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                                                             │
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │
+│ Permissions ▾                                                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

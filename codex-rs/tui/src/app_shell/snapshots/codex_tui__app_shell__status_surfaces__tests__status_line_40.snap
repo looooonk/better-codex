@@ -1,16 +1,15 @@
 ---
 source: tui/src/app_shell/status_surfaces_tests.rs
-assertion_line: 53
 expression: rendered
 ---
 
-  Dashboard  ◆ BC        gpt-5-codex ▾
+ BETTER CODEX  better-codex  ● thinking
 ────────────────────────────────────────
 
- ◆ CONVERSATION
+ ▎ CODEX  Started a fullscreen app    │
           shell backed by app-server  │
-          turns.                      │
- ▎ PLAN  1. Build shell               │
+          turns.                      ┃
+ ▎ PLAN  1. Build shell               ┃
          2. Wire transcript           ┃
          3. Render dashboard          ┃
                                       ┃
@@ -22,8 +21,8 @@ expression: rendered
           fullscreen surface.         ┃
 
 ╭──────────────────────────────────────╮
-│◆ MESSAGE  1:37                       │
 │> Summarize the new shell architecture│
 │                                      │
 │                                      │
+│Perms ▾ gpt-5-codex ▾ Effort ▾ Speed ▾│
 ╰──────────────────────────────────────╯

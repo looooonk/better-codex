@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ CODEX  Started a fullscreen app shell backed │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                ┃ │▎◆ SESSIONS
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
           by app-server turns.                  ┃ │▎+ New session  Ctrl+N
  ▎ PLAN  1. Build shell                         ┃ │▎loading sessions
          2. Wire transcript                     ┃ │
@@ -21,7 +21,6 @@ expression: "render_shell(&shell, area)"
           surface.                              ┃ │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  7:6                                  ││
 │> alpha                                         ││
 │                                                ││
 │  bravo                                         ││
@@ -29,4 +28,5 @@ expression: "render_shell(&shell, area)"
 │  charlie                                       ││
 │                                                ││
 │  delta                                         ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

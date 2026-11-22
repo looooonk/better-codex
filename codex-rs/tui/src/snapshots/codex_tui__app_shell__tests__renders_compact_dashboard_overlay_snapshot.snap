@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾
+ BETTER CODEX  better-codex          ● thinking
 ────────────────────────────────────────────────
 │
 │  Status   │  Agents   │  Sessions   │  Help
@@ -21,8 +21,8 @@ expression: "render_shell(&shell, area)"
 │
 │
 ╭──────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                               │
 │> Summarize the new shell architecture        │
 │                                              │
 │                                              │
+│Permissions ▾   gpt-5-codex ▾ Effort ▾ Speed ▾│
 ╰──────────────────────────────────────────────╯

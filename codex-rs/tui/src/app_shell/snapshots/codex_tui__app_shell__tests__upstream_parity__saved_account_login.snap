@@ -3,30 +3,30 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
- ▎ CODEX  Started a fullscreen app shell backed   │▎loading sessions
-          by app-server turns.                    │
- ▎ PLAN  1. Bu╭──────────────────────────────────────────────────────────────────────╮
-         2. Wi│◆ ACCOUNT LOGIN                                                       │
-         3. Re│Finish signing in with ChatGPT in your browser.                       │00001
-              │                                                                      │ession list
- ▌ tool exec j│https://auth.example.test/workspace                                   │
-              │                                                                      │
- ▌ edited 3 fi│Enter open link   Esc cancel                                          │
-              │                                                                      │
- ▎ CODEX  The ╰──────────────────────────────────────────────────────────────────────╯
-          surface.                                │
+ ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │▎+ New session  Ctrl+N
+          by app-server turns.                    │▎loading sessions
+ ▎ PLAN  1. Build shell                           │
+         2. Wi╭──────────────────────────────────────────────────────────────────────╮
+         3. Re│◆ ACCOUNT LOGIN                                                       │
+              │Finish signing in with ChatGPT in your browser.                       │00001
+ ▌ tool exec j│                                                                      │ession list
+              │https://auth.example.test/workspace                                   │
+ ▌ edited 3 fi│                                                                      │
+              │Enter open link   Esc cancel                                          │
+ ▎ CODEX  The │                                                                      │
+          surf╰──────────────────────────────────────────────────────────────────────╯
+                                                  │
                                                   │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

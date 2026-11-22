@@ -1,13 +1,11 @@
 ---
 source: tui/src/app_shell/recap_tests.rs
-assertion_line: 52
 expression: screen
 ---
 
-  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                                              ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ SYSTEM  Recap
 
            The updated interface supports the current model catalog and keeps existing
@@ -25,9 +23,10 @@ expression: screen
 
 
 
+
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                                                   │
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
-  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────
                             │
- ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
- ▎ YOU  Create a divergent s│─────────────────────────━━━━━━━━━━━━━──────────
-                            │▎◆ SESSIONS
- ▎ CODEX  Started a fullscre│▎● FOCUSED  ARCHIVED  0 sessions
- ▎ PLAN  1. Build shell     │▎loading sessions
-         2. Wire transcript │▎◆ THREAD
-         3. Render dashboard│▎stage-one
-                            │▎id 01900000-0000-7000-8000-000000000001
- ▌ tool exec just test -p co│▎resume, fork, archive, delete in session list
-                            │
+ ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
+                            │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Started a fullscre│▎◆ SESSIONS
+ ▎ PLAN  1. Build shell     │▎● FOCUSED  ARCHIVED  0 sessions
+         2. Wire transcript │▎loading sessions
+         3. Render dashboard│▎◆ THREAD
+                            │▎stage-one
+ ▌ tool exec just test -p co│▎id 01900000-0000-7000-8000-000000000001
+                            │▎resume, fork, archive, delete in session list
  ▌ edited 3 files +128 -24  │
                             │
  ▎ CODEX  The new shell owns│
                             │
+                            │
 ╭────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
+│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

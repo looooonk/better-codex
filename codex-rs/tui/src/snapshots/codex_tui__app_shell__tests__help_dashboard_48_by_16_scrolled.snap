@@ -2,7 +2,7 @@
 source: tui/src/app_shell_tests.rs
 expression: scrolled
 ---
-  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾
+ BETTER CODEX  better-codex          ● thinking
 ────────────────────────────────────────────────
 │
 │  Status   │  Agents   │  Sessions   │  Help
@@ -15,6 +15,6 @@ expression: scrolled
 │ d           Delete   │
 │
 ╭──────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                               │
 │> Summarize the new shell architecture        │
+│Permissions ▾   gpt-5-codex ▾ Effort ▾ Speed ▾│
 ╰──────────────────────────────────────────────╯

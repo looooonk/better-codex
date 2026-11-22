@@ -2,19 +2,19 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,))"
 ---
-  Dashboard  ◆ BC                 gpt-5-codex ▾  ◐ thinking · turn 0s · 0 tok/s
+ BETTER CODEX  better-codex                      ◐ thinking · turn 0s · 0 tok/s
 ────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ YOU    indented content
 
 
 
 
 
+
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  ● RUNNING  3:1                                                     │
 │>   indented content                                                          │
 │                                                                              │
 │                                                                              │
+│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

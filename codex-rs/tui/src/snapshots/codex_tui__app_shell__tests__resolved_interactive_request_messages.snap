@@ -3,17 +3,17 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ STATUS  request resolved                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ STATUS  elicitation requested: MCP github:     │▎+ New session  Ctrl+N
-           URL request                            │▎loading sessions
- ▎ STATUS  request resolved                       │
-                                                  │▎◆ THREAD
- ▎ CODEX  The new shell owns the fullscreen       │▎stage-one
-          surface.                                │▎id 01900000-0000-7000-8000-000000000001
+ ▎ STATUS  request resolved                       │▎◆ SESSIONS
+ ▎ STATUS  elicitation requested: MCP github:     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+           URL request                            │▎+ New session  Ctrl+N
+ ▎ STATUS  request resolved                       │▎loading sessions
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ THREAD
+          surface.                                │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
                                                   │
                                                   │
@@ -25,8 +25,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:1                                  ││
-│> Type a message, Shift+Enter for newline       ││
+│> Type a message                                ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

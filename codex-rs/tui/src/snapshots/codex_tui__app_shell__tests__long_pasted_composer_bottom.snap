@@ -3,19 +3,18 @@ source: tui/src/app_shell_tests.rs
 expression: "buffer_contents(&bottom, area)"
 ---
 
-  Dashboard  ◆ BC             gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                          ● thinking
 ────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
+         3. Render dashboard                                                  │
                                                                               │
- ▌ tool exec just test -p codex-tui                                           │
-                                                                              │
+ ▌ tool exec just test -p codex-tui                                           ┃
+                                                                              ┃
  ▌ edited 3 files +128 -24                                                    ┃
                                                                               ┃
  ▎ CODEX  The new shell owns the fullscreen surface.                          ┃
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:844                                                              │
 │  R03xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx│
 │  R04xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx│
 │  R05xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx│
@@ -25,4 +24,5 @@ expression: "buffer_contents(&bottom, area)"
 │  R09xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx│
 │  R10xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx│
 │  R11TAIL▌                                                                    │
+│ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
-  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────
                             │
- ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
- ▎ YOU  Create a divergent s│◆ CONVERSATION         │ ◆ COMPOSER
-                            │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
- ▎ CODEX  Started a fullscre│ ↵ / c       Copy item │  ⌘⌫          Delete st…
- ▎ PLAN  1. Build shell     │ e           Branch    │  ⌥/^ + ←→    Move word
-         2. Wire transcript │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
-         3. Render dashboard│◆ DASHBOARD            │  Alt+M       Model
-                            │ F1 … F4     Open tab  │  Alt+E       Effort
- ▌ tool exec just test -p co│ Alt+← / →   Prev/next │ ◆ APP
-                            │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
- ▌ edited 3 files +128 -24  │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
-                            │◆ SESSIONS             │  ^C          Stop/canc…
- ▎ CODEX  The new shell owns│ ↑↓ / jk     Select    │  Esc ×2      Exit app
+ ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
+                            │◆ CONVERSATION         │ ◆ COMPOSER
+ ▎ CODEX  Started a fullscre│ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
+ ▎ PLAN  1. Build shell     │ ↵ / c       Copy item │  ⌘⌫          Delete st…
+         2. Wire transcript │ e           Branch    │  ⌥/^ + ←→    Move word
+         3. Render dashboard│ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
+                            │◆ DASHBOARD            │  Alt+M       Model
+ ▌ tool exec just test -p co│ F1 … F4     Open tab  │  Alt+E       Effort
+                            │ Alt+← / →   Prev/next │ ◆ APP
+ ▌ edited 3 files +128 -24  │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
+                            │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
+ ▎ CODEX  The new shell owns│◆ SESSIONS             │  ^C          Stop/canc…
+                            │ ↑↓ / jk     Select    │  Esc ×2      Exit app
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
+│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

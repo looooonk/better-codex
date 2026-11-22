@@ -1,15 +1,15 @@
 ---
 source: tui/src/app_shell_tests.rs
-expression: "render_shell(&shell, Rect::new(0, 0, 60, 20))"
+expression: "render_shell(&shell, area)"
 ---
 
-  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾
+ BETTER CODEX  better-codex                      ● thinking
 ────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
+ ▌ tool exec just test -p codex-tui                       │
                                                           │
  ▌ edited 3 files +128 -24                                │
- ▎ STATUS  elicitation requested: MCP deployments: form   │
+ ▎ STATUS  elicitation requested: MCP deployments: form   ┃
            request                                        ┃
                                                           ┃
  ▎ CODEX  The new shell owns the fullscreen surface.      ┃

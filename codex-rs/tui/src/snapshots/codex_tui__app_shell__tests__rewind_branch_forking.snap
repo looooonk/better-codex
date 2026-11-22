@@ -3,14 +3,14 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+ BETTER CODEX            ◐ branching conversation │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  switched session                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ SYSTEM  loaded 1 previous turns                │▎+ New session  Ctrl+N
- ▎ YOU  Rewrite this prompt.                      │▎loading sessions
- ──────── Took 1.00s ──────────────────────────── │
+ ▎ SYSTEM  switched session                       │▎◆ SESSIONS
+ ▎ SYSTEM  loaded 1 previous turns                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Rewrite this prompt.                      │▎+ New session  Ctrl+N
+ ──────── Took 1.00s ──────────────────────────── │▎loading sessions
+                                                  │
                                                   │▎◆ THREAD
                                                   │▎rewind-source
                                                   │▎id 01900000-0000-7000-8000-000000000001
@@ -24,9 +24,9 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │
                                                   │
-╭────────────────────────────────────────────────╮│
-│◆ BRANCHING  1:8                                ││
+╭ BRANCHING  SOURCE UNCHANGED  FILES NOT REVERTED╮│
 │> Rewrite this prompt.                          ││
 │                                                ││
 │                                                ││
+│Permissions ▾     gpt-5-codex ▾ Effort ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

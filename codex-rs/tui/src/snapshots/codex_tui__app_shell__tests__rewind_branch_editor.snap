@@ -3,10 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-  Dashboard  ◆ BC              gpt-5-codex ▾   default ▾   default ▾  ● editing conversation branch
+ BETTER CODEX  better-codex                                           ● editing conversation branch
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
- ◆ CONVERSATION
  ▎ SYSTEM  switched session
  ▎ SYSTEM  loaded 2 previous turns
  ▎ YOU  Plan the first implementation.
@@ -18,9 +17,10 @@ expression: "render_shell(&shell, area)"
 
 
 
-╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ BRANCH EDIT  SOURCE UNCHANGED  LATER TURNS OMITTED  FILES NOT REVERTED  1:31                    │
+
+╭ BRANCH EDIT  SOURCE UNCHANGED  FILES NOT REVERTED ───────────────────────────────────────────────╮
 │> Replace the inherited chat UI.                                                                  │
 │                                                                                                  │
 │                                                                                                  │
+│ Permissions ▾                                                 gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

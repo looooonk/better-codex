@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+ BETTER CODEX  better-codex                                        ● thinking
 ──────────────────────────────────────────────────────────────────────────────
                             │
- ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
-   ▌ output ... 118 earlier │─────────────────────────━━━━━━━━━━━━━──────────
+   ▌ output ... 118 earlier │   Status   │  Agents   │  Sessions   │  Help
+   ▌        cargo build outp│─────────────────────────━━━━━━━━━━━━━──────────
    ▌        cargo build outp│▎◆ SESSIONS
    ▌        cargo build outp│▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   ▌        cargo build outp│▎+ New session  Ctrl+N
+                            │▎+ New session  Ctrl+N
                             │▎loading sessions
                             │▎◆ THREAD
                             │▎stage-one
                             │▎id 01900000-0000-7000-8000-000000000001
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
-│◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │
 │                                                                            │
 │                                                                            │
+│ Permissions ▾                           gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯
