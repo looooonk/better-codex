@@ -402,10 +402,7 @@ impl ShellState {
             .or_else(|| self.default_reasoning_effort(&self.model));
         self.schedule_settings_update(
             app_server,
-            SettingsChange::ReasoningEffort {
-                effort: effort.clone(),
-                thread_effort: thread_effort.clone(),
-            },
+            SettingsChange::ReasoningEffort(effort.clone()),
             build_model_selection_edits(&self.model, effort.as_ref()),
             Some(self.thread_settings_update_params(
                 /*model*/ None,

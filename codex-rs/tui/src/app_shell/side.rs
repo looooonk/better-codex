@@ -99,7 +99,6 @@ impl ShellState {
                 show_tooltips: self.show_tooltips,
             },
             self.resume_cwd_runtime.clone(),
-            self.max_concurrent_threads_per_session,
         );
         child.voice = self.voice.for_new_session();
         child.service_tier_features = self.service_tier_features.clone();

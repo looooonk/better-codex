@@ -132,7 +132,6 @@ pub(crate) async fn run(
             show_tooltips: config.show_tooltips,
         },
         resume_cwd_runtime,
-        config.multi_agent_v2.max_concurrent_threads_per_session,
     );
     if restoring_session || shell.model_provider_id != config.model_provider_id {
         shell.refresh_session_models(&app_server);

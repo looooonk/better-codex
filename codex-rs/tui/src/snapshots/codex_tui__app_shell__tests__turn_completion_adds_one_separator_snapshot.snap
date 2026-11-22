@@ -7,8 +7,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ▎ CODEX  Turn complete.                          │▎◆ SESSIONS
- ──────── Took 1.00s · 84.0 tok/s ─────────────── │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ──────── Took 1.00s · 84.0 tok/s ─────────────── │▎+ New session  Ctrl+N
                                                   │▎loading sessions
                                                   │
                                                   │▎◆ THREAD

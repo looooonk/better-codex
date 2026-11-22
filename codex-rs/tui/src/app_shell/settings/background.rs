@@ -6,7 +6,6 @@ use super::super::selector::SelectorState;
 use super::super::selector::SelectorValue;
 use super::EffortSave;
 use super::SettingsAction;
-use super::ultra_reasoning_concurrency_warning;
 use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ConfigEdit;
@@ -30,10 +29,7 @@ pub(super) enum SettingsChange {
         service_tier: Option<String>,
     },
     ServiceTier(Option<String>),
-    ReasoningEffort {
-        effort: Option<ReasoningEffort>,
-        thread_effort: Option<ReasoningEffort>,
-    },
+    ReasoningEffort(Option<ReasoningEffort>),
     ApprovalPolicy(AskForApproval),
     AppTheme(TuiAppTheme),
     Theme(Option<String>),
@@ -70,7 +66,7 @@ impl ShellState {
             );
             return;
         }
-        let saving_effort = matches!(change, SettingsChange::ReasoningEffort { .. });
+        let saving_effort = matches!(change, SettingsChange::ReasoningEffort(_));
         let selector = if saving_effort {
             None
         } else {
@@ -123,10 +119,7 @@ impl ShellState {
                 self.service_tier = service_tier;
             }
             SettingsChange::ServiceTier(service_tier) => self.service_tier = service_tier,
-            SettingsChange::ReasoningEffort {
-                effort,
-                thread_effort,
-            } => {
+            SettingsChange::ReasoningEffort(effort) => {
                 self.reasoning_effort = effort.clone();
                 if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
                     **collaboration_mode = collaboration_mode.with_updates(
@@ -134,12 +127,6 @@ impl ShellState {
                         Some(effort),
                         /*developer_instructions*/ None,
                     );
-                }
-                if let Some(warning) = ultra_reasoning_concurrency_warning(
-                    thread_effort.as_ref(),
-                    self.max_concurrent_threads_per_session,
-                ) {
-                    self.push_status(warning);
                 }
             }
             SettingsChange::ApprovalPolicy(policy) => self.approval_policy = policy,

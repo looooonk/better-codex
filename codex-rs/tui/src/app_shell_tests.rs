@@ -6071,7 +6071,6 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
             explicit_cwd: None,
             uses_remote_workspace_or_environment: false,
         },
-        /*max_concurrent_threads_per_session*/ 4,
     );
 
     assert_eq!(
@@ -16792,51 +16791,6 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         rendered.contains("missing-theme"),
         "settings validation should render the invalid theme name"
     );
-}
-
-#[tokio::test]
-async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.transcript.clear();
-    shell.settings.focused = true;
-    shell.settings.focus_action(SettingsAction::ReasoningEffort);
-    shell.max_concurrent_threads_per_session = 8;
-    shell.available_models = vec![model_preset_fixture(
-        "gpt-5-codex",
-        /*show_in_picker*/ true,
-        ReasoningEffort::Ultra,
-        &[ReasoningEffort::Ultra],
-        &[],
-    )];
-    let mut backend = RecordingBackend::default();
-
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("reasoning selector should open");
-    shell
-        .handle_selector_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("ultra reasoning should be focused");
-    shell
-        .handle_selector_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("ultra reasoning should be selected");
-    complete_backend_actions(&mut shell, &backend).await;
-
-    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Ultra));
-    let warning = shell.transcript.back().expect("warning should be rendered");
-    assert_eq!(warning.kind, TranscriptKind::Status);
-    insta::assert_snapshot!(warning.text, @"Ultra reasoning may proactively use multiple agents. This session is configured for 8 concurrent threads with up to 7 subagents which can increase usage quickly. Consider setting features.multi_agent_v2.max_concurrent_threads_per_session below 8.");
 }
 
 #[tokio::test]

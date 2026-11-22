@@ -8,7 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 
-pub(super) const RAINBOW_FRAMES: u16 = 100;
+pub(super) const RAINBOW_FRAMES: u16 = 40;
 
 pub(super) struct EffortRail {
     pub(super) area: Rect,

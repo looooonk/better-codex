@@ -266,14 +266,14 @@ fn should_separate_transcript_item(
     let Some(previous_kind) = previous_kind else {
         return false;
     };
+    // Turn dividers include their own leading and trailing space.
+    if previous_kind == TranscriptKind::Separator || current_kind == TranscriptKind::Separator {
+        return false;
+    }
     if previous_kind == TranscriptKind::Audit || current_kind == TranscriptKind::Audit {
         return true;
     }
-    if matches!(
-        previous_kind,
-        TranscriptKind::System | TranscriptKind::Separator
-    ) || current_kind == TranscriptKind::Separator
-    {
+    if previous_kind == TranscriptKind::System {
         return false;
     }
     matches!(

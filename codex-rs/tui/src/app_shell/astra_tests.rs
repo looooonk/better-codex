@@ -105,7 +105,7 @@ async fn effort_slider_previews_drags_and_applies_on_release() {
     // The 36-column rail moves right by nine columns in a quarter cycle.
     let selector = shell.selector.as_mut().unwrap();
     assert!(selector.shows_ultra());
-    for _ in 0..25 {
+    for _ in 0..10 {
         selector.advance_rainbow();
     }
     let next_frame = render_shell_buffer(&shell, area);

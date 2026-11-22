@@ -5,10 +5,7 @@ use pretty_assertions::assert_eq;
 fn failed_reasoning_update_does_not_change_effort() {
     let mut shell = ShellState::snapshot_fixture();
     let update = SettingsUpdate {
-        change: SettingsChange::ReasoningEffort {
-            effort: Some(ReasoningEffort::Max),
-            thread_effort: Some(ReasoningEffort::Max),
-        },
+        change: SettingsChange::ReasoningEffort(Some(ReasoningEffort::Max)),
         edit: None,
         selector: None,
     };

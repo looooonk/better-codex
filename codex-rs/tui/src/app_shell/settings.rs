@@ -22,7 +22,6 @@ pub(super) use background::SettingsUpdate;
 pub(super) use persistence::persist_settings_update;
 pub(super) use tabs::SettingsTabs;
 
-const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 const SETTINGS_PAGE_LINE_COUNT: usize = 6;
 
 #[derive(Debug, Clone, Default)]
@@ -434,25 +433,6 @@ pub(super) fn reasoning_effort_label(effort: &ReasoningEffort) -> String {
         ReasoningEffort::Persistent => "Persistent".to_string(),
         ReasoningEffort::Custom(effort) => effort.clone(),
     }
-}
-
-pub(super) fn ultra_reasoning_concurrency_warning(
-    effort: Option<&ReasoningEffort>,
-    max_concurrent_threads_per_session: usize,
-) -> Option<String> {
-    if effort != Some(&ReasoningEffort::Ultra)
-        || max_concurrent_threads_per_session < ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD
-    {
-        return None;
-    }
-
-    let max_subagents = max_concurrent_threads_per_session.saturating_sub(1);
-    Some(format!(
-        "Ultra reasoning may proactively use multiple agents. This session is configured for \
-         {max_concurrent_threads_per_session} concurrent threads with up to {max_subagents} \
-         subagents which can increase usage quickly. Consider setting \
-         features.multi_agent_v2.max_concurrent_threads_per_session below 8."
-    ))
 }
 
 fn on_off(enabled: bool) -> &'static str {
