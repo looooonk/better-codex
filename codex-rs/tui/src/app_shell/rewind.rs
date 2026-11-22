@@ -286,19 +286,11 @@ impl ShellState {
         self.rewind = RewindState::Editing(point);
     }
 
-    pub(super) fn rewind_input_titles(&self, position: &str) -> Option<Vec<String>> {
+    pub(super) fn rewind_input_hint(&self) -> Option<&'static str> {
         match self.rewind {
             RewindState::Idle => None,
-            RewindState::Editing(_) => Some(vec![
-                format!(
-                    "BRANCH EDIT  SOURCE UNCHANGED  LATER TURNS OMITTED  FILES NOT REVERTED  {position}"
-                ),
-                format!("BRANCH EDIT  NO FILE REVERT  {position}"),
-            ]),
-            RewindState::Forking(_) => Some(vec![
-                format!("BRANCHING  SOURCE UNCHANGED  FILES NOT REVERTED  {position}"),
-                format!("BRANCHING  {position}"),
-            ]),
+            RewindState::Editing(_) => Some("BRANCH EDIT  SOURCE UNCHANGED  FILES NOT REVERTED"),
+            RewindState::Forking(_) => Some("BRANCHING  SOURCE UNCHANGED  FILES NOT REVERTED"),
         }
     }
 }

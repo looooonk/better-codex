@@ -1,7 +1,10 @@
 use super::ShellState;
+use super::composer_layout::composer_body;
 use super::composer_render::composer_cursor_position;
 use super::composer_render::composer_visual_cursor_line;
 use super::composer_render::wrapped_composer_lines_with_selection;
+use super::composer_toolbar::ComposerControl;
+use super::composer_toolbar::ComposerToolbar;
 use super::dashboard_view;
 use super::dashboard_view::DashboardPanelPosition;
 use super::design::body_rect_after_title;
@@ -10,7 +13,6 @@ use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::title_rect;
-use super::header::HeaderControl;
 use super::header::HeaderView;
 use super::input_request_layout::approval_panel_hit;
 use super::input_request_layout::elicitation_panel_hit;
@@ -246,39 +248,13 @@ impl ShellView<'_> {
         dashboard_view::route_at(self.shell, self.layout(area)?.dashboard?, position)
     }
 
-    pub(super) fn header_control_at(
+    pub(super) fn composer_control_at(
         &self,
         area: Rect,
         position: Position,
-    ) -> Option<HeaderControl> {
-        let header = self.layout(area)?.header;
-        let effort = self
-            .shell
-            .reasoning_effort
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "default".to_string());
-        let service_tier = self
-            .shell
-            .service_tier
-            .as_deref()
-            .filter(|service_tier| !service_tier.trim().is_empty())
-            .unwrap_or("default");
-        HeaderView {
-            cwd: &self.shell.cwd,
-            model: &self.shell.model,
-            reasoning_effort: &effort,
-            service_tier,
-            status: &self.shell.header_status(),
-            status_spinner_frame: self
-                .shell
-                .status_spinner_active()
-                .then_some(self.shell.status_spinner_frame),
-            turn_metrics: self.shell.active_turn_metrics(),
-            dashboard_visible: self.shell.dashboard_visible,
-            reasoning_ripple: None,
-        }
-        .control_at(header, position)
+    ) -> Option<ComposerControl> {
+        let input = self.layout(area)?.input;
+        ComposerToolbar::new(self.shell, input).control_at(position)
     }
 
     pub(super) fn dashboard_panel_position_at(
@@ -387,40 +363,16 @@ impl ShellView<'_> {
     }
 
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
-        let effort = self
-            .shell
-            .reasoning_effort
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "default".to_string());
-        let service_tier = self
-            .shell
-            .service_tier
-            .as_deref()
-            .filter(|service_tier| !service_tier.trim().is_empty())
-            .unwrap_or("default");
-        let view = HeaderView {
+        HeaderView {
             cwd: &self.shell.cwd,
-            model: &self.shell.model,
-            reasoning_effort: &effort,
-            service_tier,
             status: &self.shell.header_status(),
             status_spinner_frame: self
                 .shell
                 .status_spinner_active()
                 .then_some(self.shell.status_spinner_frame),
             turn_metrics: self.shell.active_turn_metrics(),
-            dashboard_visible: self.shell.dashboard_visible,
-            reasoning_ripple: self
-                .shell
-                .reasoning_ripple
-                .as_ref()
-                .and_then(|ripple| ripple.frame(std::time::Instant::now())),
-        };
-        let hovered = self
-            .base_hover_position()
-            .and_then(|position| view.control_at(area, position));
-        view.render(area, hovered, buf);
+        }
+        .render(area, buf);
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
@@ -467,60 +419,26 @@ impl ShellView<'_> {
             return;
         }
 
-        let (line, column) = self.shell.composer.cursor_position();
-        let position = format!("{}:{}", line + 1, column + 1);
-        let title_width = usize::from(pane_content_rect(area).width).saturating_sub(2);
-        let queue_edit_label = self
-            .shell
-            .composer
-            .queued_edit_position()
-            .map(|(index, count)| format!("EDIT {index}/{count}"));
-        let titles = if let Some(titles) = self.shell.rewind_input_titles(&position) {
-            titles
-        } else if let Some(queue_edit_label) = queue_edit_label {
-            if self.shell.active_turn_id.is_some() {
-                vec![
-                    format!("MESSAGE  ● RUNNING  {queue_edit_label}  {position}"),
-                    format!("MESSAGE  ●  {queue_edit_label}  {position}"),
-                    format!("MESSAGE  {queue_edit_label}  {position}"),
-                    format!("{queue_edit_label}  {position}"),
-                    position.clone(),
-                ]
-            } else {
-                vec![
-                    format!("MESSAGE  {queue_edit_label}  {position}"),
-                    format!("{queue_edit_label}  {position}"),
-                    position.clone(),
-                ]
-            }
-        } else if self.shell.active_turn_id.is_some() {
-            vec![
-                format!("MESSAGE  ● RUNNING  {position}"),
-                format!("MESSAGE  ●  {position}"),
-                position.clone(),
-            ]
-        } else {
-            vec![format!("MESSAGE  {position}"), position.clone()]
-        };
-        let titles =
-            if self.shell.composer.has_images() {
-                let attachments = self.shell.composer.image_summary();
-                let mut with_images = titles
-                    .iter()
-                    .map(|title| format!("{title}  {attachments}"))
-                    .collect::<Vec<_>>();
-                with_images.extend(titles.into_iter().map(|title| {
-                    format!("{title}  [{} images]", self.shell.composer.image_count())
-                }));
-                with_images
-            } else {
-                titles
-            };
-        let title = titles
-            .into_iter()
-            .find(|title| UnicodeWidthStr::width(title.as_str()) <= title_width)
-            .unwrap_or(position);
-        let body = body_rect_after_title(pane_content_rect(area));
+        // Keep transient draft information on the border so the input always starts on row one.
+        let mut hints = Vec::new();
+        if let Some(hint) = self.shell.rewind_input_hint() {
+            hints.push(hint.to_owned());
+        }
+        if let Some((index, count)) = self.shell.composer.queued_edit_position() {
+            hints.push(format!("EDIT {index}/{count}"));
+        }
+        if self.shell.composer.has_images() {
+            hints.push(self.shell.composer.image_summary());
+        }
+        if !hints.is_empty() {
+            Paragraph::new(format!(" {} ", hints.join("  ")))
+                .fg(border_color)
+                .render(
+                    Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), 1),
+                    buf,
+                );
+        }
+        let body = composer_body(area);
         let visible_height = usize::from(body.height);
         let composer = self.shell.composer.display();
         let mut lines = wrapped_composer_lines_with_selection(
@@ -530,24 +448,6 @@ impl ShellView<'_> {
             usize::from(body.width).max(1),
             composer.selection_range(),
         );
-        if self.shell.composer.is_empty()
-            && self
-                .shell
-                .keybindings
-                .configured("editor", "insert_newline")
-        {
-            let hint = self
-                .shell
-                .keybindings
-                .hint("editor", "insert_newline", "Shift+Enter");
-            let text = format!("Type a message, {hint} for newline");
-            lines = super::composer_render::wrapped_composer_lines(
-                &text,
-                false,
-                0,
-                usize::from(body.width),
-            );
-        }
         if visible_height > 0 && lines.len() > visible_height {
             let max_start = lines.len().saturating_sub(visible_height);
             let cursor_line = composer_visual_cursor_line(
@@ -555,14 +455,15 @@ impl ShellView<'_> {
                 composer.cursor(),
                 usize::from(body.width).max(1),
             )
-            .unwrap_or(line);
+            .unwrap_or_default();
             let start = cursor_line
                 .saturating_add(1)
                 .saturating_sub(visible_height)
                 .min(max_start);
             lines = lines.into_iter().skip(start).take(visible_height).collect();
         }
-        self.render_titled_panel(area, &title, lines, palette::surface(), buf);
+        Paragraph::new(lines).render(body, buf);
+        ComposerToolbar::new(self.shell, area).render(self.shell, self.base_hover_position(), buf);
     }
 
     fn base_hover_position(&self) -> Option<Position> {

@@ -176,11 +176,11 @@ fn shell_render_limits_ripple_to_picker_backgrounds_snapshot() {
     let changed = changed_backgrounds(&baseline, &rippled, area);
     assert!(changed.iter().all(|position| {
         matches!(
-            ShellView { shell: &shell }.header_control_at(area, *position),
+            ShellView { shell: &shell }.composer_control_at(area, *position),
             Some(
-                super::super::header::HeaderControl::Model
-                    | super::super::header::HeaderControl::ReasoningEffort
-                    | super::super::header::HeaderControl::ServiceTier
+                super::super::composer_toolbar::ComposerControl::Model
+                    | super::super::composer_toolbar::ComposerControl::ReasoningEffort
+                    | super::super::composer_toolbar::ComposerControl::ServiceTier
             )
         )
     }));

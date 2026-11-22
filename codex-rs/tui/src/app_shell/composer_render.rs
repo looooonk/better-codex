@@ -4,9 +4,7 @@ use super::composer_layout::composer_layout;
 use super::composer_layout::composer_viewport;
 use super::composer_layout::composer_visual_cursor;
 use super::composer_layout::composer_visual_row_range;
-use super::design::body_rect_after_title;
 use super::design::palette;
-use super::design::pane_content_rect;
 use super::design::text_selection_style;
 use super::shell_command::ShellCommand;
 use crate::render::line_utils::push_owned_lines;
@@ -43,9 +41,7 @@ pub(super) fn wrapped_composer_lines_with_selection(
     let subsequent_indent = Line::from("  ".fg(palette::muted()));
     let mut wrapped_lines = Vec::new();
     if is_empty {
-        let placeholder = "Type a message, Shift+Enter for newline"
-            .fg(palette::muted())
-            .into();
+        let placeholder = "Type a message".fg(palette::muted()).into();
         let options = RtOptions::new(width)
             .initial_indent(initial_indent)
             .subsequent_indent(subsequent_indent);
@@ -61,7 +57,11 @@ pub(super) fn wrapped_composer_lines_with_selection(
         text.split('\n').zip(layout.lines).enumerate()
     {
         if logical_line.is_empty() {
-            wrapped_lines.push(Line::default());
+            wrapped_lines.push(if logical_index == 0 {
+                initial_indent.clone()
+            } else {
+                Line::default()
+            });
             continue;
         }
         let command_range = if logical_index == 0 {

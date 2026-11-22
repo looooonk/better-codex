@@ -1,3 +1,4 @@
+use super::super::composer_layout::composer_body;
 use super::*;
 use pretty_assertions::assert_eq;
 use ratatui::style::Modifier;
@@ -12,7 +13,7 @@ fn input_area(body_width: u16, body_height: u16) -> Rect {
 }
 
 fn position_in_body(area: Rect, column: u16, row: u16) -> Position {
-    let body = body_rect_after_title(pane_content_rect(area));
+    let body = composer_body(area);
     Position::new(body.x.saturating_add(column), body.y.saturating_add(row))
 }
 
@@ -178,7 +179,7 @@ fn inside_hit_resolves_indent_eol_spaces_wide_and_combining_graphemes() {
         ]
     );
 
-    let body = body_rect_after_title(pane_content_rect(area));
+    let body = composer_body(area);
     assert_eq!(
         [
             composer_text_hit_inside(
@@ -251,7 +252,7 @@ fn display_expanded_tab_spaces_remain_individually_hittable() {
 fn viewport_hits_follow_the_same_cursor_scrolling_as_cursor_rendering() {
     let area = input_area(/*body_width*/ 10, /*body_height*/ 3);
     let text = "r0\nr1\nr2\nr3\nr4\nr5";
-    let body = body_rect_after_title(pane_content_rect(area));
+    let body = composer_body(area);
     let cursor_position = composer_cursor_position(area, text, text.len())
         .expect("cursor should be in the visible viewport");
 

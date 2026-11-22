@@ -1,9 +1,8 @@
 use super::ShellState;
 use super::composer_layout::ComposerVerticalDirection;
 use super::composer_layout::ComposerVerticalTarget;
+use super::composer_layout::composer_body;
 use super::composer_layout::composer_vertical_target;
-use super::design::body_rect_after_title;
-use super::design::pane_content_rect;
 use super::render::ShellView;
 use ratatui::layout::Rect;
 
@@ -46,7 +45,7 @@ impl ShellState {
         direction: ComposerVerticalDirection,
     ) -> ComposerVerticalTarget {
         let input = (ShellView { shell: self }).input_area(area);
-        let body = body_rect_after_title(pane_content_rect(input));
+        let body = composer_body(input);
         if body.width == 0 {
             return ComposerVerticalTarget::Boundary;
         }

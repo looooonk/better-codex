@@ -2656,8 +2656,8 @@ async fn rewind_blocks_pointer_actions_while_editing_and_forking() {
 
     press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
     let model_control = position_in(area, |position| {
-        ShellView { shell: &shell }.header_control_at(area, position)
-            == Some(header::HeaderControl::Model)
+        ShellView { shell: &shell }.composer_control_at(area, position)
+            == Some(composer_toolbar::ComposerControl::Model)
     });
 
     shell
@@ -7026,81 +7026,6 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
 }
 
 #[tokio::test]
-async fn dashboard_header_button_toggles_in_sidebar_and_overlay_layouts() {
-    let config = test_config().await;
-    for (area, is_overlay) in [
-        (
-            Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
-            ),
-            false,
-        ),
-        (
-            Rect::new(
-                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
-            ),
-            true,
-        ),
-    ] {
-        let mut shell = ShellState::snapshot_fixture();
-        shell.session_list.focused = true;
-        shell.settings.focused = true;
-        shell.agents_focused = true;
-        let mut backend = RecordingBackend::default();
-        let button_positions = |shell: &ShellState| {
-            (area.x..area.right())
-                .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
-                .filter(|position| {
-                    ShellView { shell }.header_control_at(area, *position)
-                        == Some(header::HeaderControl::Dashboard)
-                })
-                .collect::<Vec<_>>()
-        };
-        let visible_buttons = button_positions(&shell);
-        let button = visible_buttons
-            .first()
-            .copied()
-            .expect("dashboard button should be visible");
-        let visible_input_width = ShellView { shell: &shell }.input_area(area).width;
-
-        assert_eq!(visible_input_width == area.width, is_overlay);
-        shell
-            .handle_mouse_click(area, button, &config, &mut backend)
-            .await
-            .expect("dashboard button should hide the dashboard");
-
-        assert_eq!(
-            (
-                shell.dashboard_visible,
-                shell.session_list.focused,
-                shell.settings.focused,
-                shell.agents_focused,
-                ShellView { shell: &shell }.input_area(area).width,
-            ),
-            (false, false, false, false, area.width)
-        );
-        assert_eq!(button_positions(&shell), visible_buttons);
-
-        shell
-            .handle_mouse_click(area, button, &config, &mut backend)
-            .await
-            .expect("dashboard button should restore the dashboard");
-
-        assert_eq!(
-            (
-                shell.dashboard_visible,
-                shell.session_list.focused,
-                shell.settings.focused,
-                shell.agents_focused,
-                ShellView { shell: &shell }.input_area(area).width,
-            ),
-            (true, false, false, false, visible_input_width)
-        );
-        assert_eq!(backend.calls(), Vec::new());
-    }
-}
-
-#[tokio::test]
 async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
@@ -7585,7 +7510,7 @@ async fn clicking_new_session_starts_a_clear_session_and_focuses_the_composer() 
 }
 
 #[test]
-fn pointer_hover_uses_existing_header_hit_geometry() {
+fn pointer_hover_uses_composer_hit_geometry() {
     let mut shell = ShellState::snapshot_fixture();
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
@@ -7593,8 +7518,8 @@ fn pointer_hover_uses_existing_header_hit_geometry() {
     let position = (area.x..area.right())
         .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
         .find(|position| {
-            ShellView { shell: &shell }.header_control_at(area, *position)
-                == Some(header::HeaderControl::Model)
+            ShellView { shell: &shell }.composer_control_at(area, *position)
+                == Some(composer_toolbar::ComposerControl::Model)
         })
         .expect("model chip should be visible");
     shell.pointer_position = Some(position);
@@ -7605,7 +7530,7 @@ fn pointer_hover_uses_existing_header_hit_geometry() {
 }
 
 #[test]
-fn dashboard_button_hover_uses_its_hit_geometry_in_both_states() {
+fn permissions_button_hover_uses_its_hit_geometry_in_both_layouts() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -7615,10 +7540,10 @@ fn dashboard_button_hover_uses_its_hit_geometry_in_both_states() {
         let position = (area.x..area.right())
             .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
             .find(|position| {
-                ShellView { shell: &shell }.header_control_at(area, *position)
-                    == Some(header::HeaderControl::Dashboard)
+                ShellView { shell: &shell }.composer_control_at(area, *position)
+                    == Some(composer_toolbar::ComposerControl::Permissions)
             })
-            .expect("dashboard button should be visible");
+            .expect("permissions button should be visible");
         shell.pointer_position = Some(position);
 
         assert_eq!(
@@ -13016,10 +12941,6 @@ async fn shift_enter_preserves_multiline_composer_when_typing() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("MESSAGE  2:2"),
-        "composer should render the cursor on the second line"
-    );
-    assert!(
         rendered.contains("  a"),
         "composer should keep typed text on the second line"
     );
@@ -13112,16 +13033,13 @@ async fn repeated_shift_enter_keeps_blank_line_cursor_visible() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
     let view = ShellView { shell: &shell };
-    let buf = render_shell_buffer(&shell, area);
     let input_area = view.input_area(area);
-    let title_row = row_containing(&buf, input_area, "MESSAGE  9:1")
-        .expect("composer should render the ninth logical line");
     let cursor = view
         .cursor_position(area)
         .expect("composer cursor should be visible");
 
-    assert!(title_row <= 18, "composer panel should grow upward");
-    assert!(cursor.y > title_row);
+    assert!(input_area.y <= 18, "composer panel should grow upward");
+    assert_eq!(cursor.y, input_area.y + 9);
     assert_eq!(cursor.x, 3);
 }
 
@@ -13187,7 +13105,7 @@ fn composer_cursor_wraps_at_a_boundary_space() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
     let input = ShellView { shell: &shell }.input_area(area);
-    let body = design::body_rect_after_title(design::pane_content_rect(input));
+    let body = composer_layout::composer_body(input);
     let content_width = usize::from(body.width).saturating_sub(2);
     shell.composer.set_text("x".repeat(content_width));
     let boundary = ShellView { shell: &shell }
@@ -13241,7 +13159,7 @@ fn composer_preserves_multiple_boundary_spaces_before_text() {
     for space_count in [1, 3] {
         let mut shell = ShellState::snapshot_fixture();
         let input = ShellView { shell: &shell }.input_area(area);
-        let body = design::body_rect_after_title(design::pane_content_rect(input));
+        let body = composer_layout::composer_body(input);
         let content_width = usize::from(body.width).saturating_sub(2);
         shell.composer.set_text(format!(
             "{}{}Z",
@@ -13286,7 +13204,7 @@ fn composer_wraps_multirow_spaces_and_wide_text() {
     );
     let shell = ShellState::snapshot_fixture();
     let input = ShellView { shell: &shell }.input_area(area);
-    let body = design::body_rect_after_title(design::pane_content_rect(input));
+    let body = composer_layout::composer_body(input);
     let content_width = usize::from(body.width).saturating_sub(2);
     let cases = [
         (
@@ -13335,7 +13253,7 @@ fn composer_boundary_space_precedes_the_next_logical_line() {
     {
         let mut shell = ShellState::snapshot_fixture();
         let input = ShellView { shell: &shell }.input_area(area);
-        let body = design::body_rect_after_title(design::pane_content_rect(input));
+        let body = composer_layout::composer_body(input);
         let content_width = usize::from(body.width).saturating_sub(2);
         shell
             .composer
@@ -13385,7 +13303,7 @@ fn long_pasted_single_line_exposes_every_wrapped_row_at_navigation_extents() {
     shell.dashboard_visible = false;
     shell.composer.clear();
     let initial_input = ShellView { shell: &shell }.input_area(area);
-    let initial_body = design::body_rect_after_title(design::pane_content_rect(initial_input));
+    let initial_body = composer_layout::composer_body(initial_input);
     let content_width = usize::from(initial_body.width).saturating_sub(2);
     let mut pasted = (0..ROWS - 1)
         .map(|row| format!("R{row:02}{}", "x".repeat(content_width.saturating_sub(3))))
@@ -13394,7 +13312,7 @@ fn long_pasted_single_line_exposes_every_wrapped_row_at_navigation_extents() {
     shell.insert_pasted_text(&pasted);
 
     let input = ShellView { shell: &shell }.input_area(area);
-    let body = design::body_rect_after_title(design::pane_content_rect(input));
+    let body = composer_layout::composer_body(input);
     let wrapped = composer_render::wrapped_composer_lines(
         shell.composer.text(),
         shell.composer.is_empty(),
@@ -16943,8 +16861,8 @@ async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
         let effort_picker_cells = (area.y..area.bottom())
             .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
             .filter(|position| {
-                ShellView { shell: &shell }.header_control_at(area, *position)
-                    == Some(super::header::HeaderControl::ReasoningEffort)
+                ShellView { shell: &shell }.composer_control_at(area, *position)
+                    == Some(super::composer_toolbar::ComposerControl::ReasoningEffort)
             })
             .collect::<Vec<_>>();
         let effort_picker = effort_picker_cells

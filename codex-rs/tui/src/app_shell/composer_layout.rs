@@ -1,4 +1,3 @@
-use super::design::body_rect_after_title;
 use super::design::pane_content_rect;
 use ratatui::layout::Rect;
 use std::ops::Range;
@@ -130,12 +129,20 @@ pub(super) fn composer_visual_cursor(
     composer_layout(text, cursor, width).map(|layout| layout.cursor)
 }
 
+pub(super) fn composer_body(input: Rect) -> Rect {
+    let content = pane_content_rect(input);
+    Rect {
+        height: content.height.saturating_sub(1),
+        ..content
+    }
+}
+
 pub(super) fn composer_viewport(
     input_area: Rect,
     text: &str,
     cursor: usize,
 ) -> Option<ComposerViewport> {
-    let body = body_rect_after_title(pane_content_rect(input_area));
+    let body = composer_body(input_area);
     if body.width == 0 || body.height == 0 {
         return None;
     }
