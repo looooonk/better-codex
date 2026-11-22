@@ -1,6 +1,7 @@
 use super::super::design::fill_rect;
 use super::super::design::palette;
 use super::super::design::pane_style;
+use super::Presentation;
 use super::SelectorOption;
 use super::SelectorState;
 use crate::render::line_utils::prefix_lines;
@@ -33,9 +34,10 @@ pub(super) struct SelectorGeometry {
 
 impl<T> SelectorState<T> {
     pub(in super::super) fn render(&self, area: Rect, pointer: Option<Position>, buf: &mut Buffer) {
-        if let Some(slider) = &self.slider {
-            slider.render(area, self, buf);
-            return;
+        match &self.presentation {
+            Presentation::Slider(slider) => return slider.render(area, self, buf),
+            Presentation::Menu(control) => return self.render_menu(area, *control, pointer, buf),
+            Presentation::Modal => {}
         }
         let geometry = selector_geometry(area, &self.options, self.selected);
         let hovered = pointer.and_then(|position| self.option_at(area, position));

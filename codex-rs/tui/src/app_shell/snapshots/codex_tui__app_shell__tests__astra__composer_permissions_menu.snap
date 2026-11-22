@@ -1,0 +1,15 @@
+---
+source: tui/src/app_shell/astra_tests.rs
+expression: "buffer_contents(&popup, panel)"
+---
+╭────────────────────────────────────────────╮
+│ Permissions                                │
+│ On request                               ✓ │
+│ Let Codex request approval when an action  │
+│ needs it.                                  │
+│ Unless trusted (this session)              │
+│ Ask before commands that are not known to  │
+│ be safe. Saved defaults stay unchanged.    │
+│ Never                                      │
+│ Never pause the agent to request approval. │
+╰────────────────────────────────────────────╯

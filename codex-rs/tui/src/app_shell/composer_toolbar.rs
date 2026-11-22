@@ -107,8 +107,11 @@ impl ComposerToolbar {
         Self { buttons }
     }
 
-    pub(super) fn effort_area(&self) -> Rect {
-        self.buttons[2].area
+    pub(super) fn button_area(&self, control: ComposerControl) -> Rect {
+        self.buttons
+            .iter()
+            .find(|button| button.control == control)
+            .map_or(Rect::default(), |button| button.area)
     }
 
     pub(super) fn control_at(&self, position: Position) -> Option<ComposerControl> {

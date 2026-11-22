@@ -1,6 +1,7 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::backend_actions::ActionGroup;
+use super::composer_toolbar::ComposerControl;
 use super::selector::ReasoningEffortValue;
 use super::selector::SelectorOutcome;
 use super::selector::SelectorState;
@@ -14,6 +15,21 @@ use ratatui::layout::Position;
 use ratatui::layout::Rect;
 
 impl ShellState {
+    pub(super) fn open_composer_picker(&mut self, control: ComposerControl) {
+        let selector = match control {
+            ComposerControl::Permissions => SelectorState::approval_policies(self.approval_policy),
+            ComposerControl::Model => SelectorState::models(&self.model, &self.available_models),
+            ComposerControl::ReasoningEffort => return self.open_reasoning_selector(),
+            ComposerControl::ServiceTier => {
+                let Some(selector) = self.service_tier_selector() else {
+                    return;
+                };
+                selector
+            }
+        };
+        self.open_selector(selector.anchored_menu(control));
+    }
+
     pub(super) fn open_model_selector(&mut self) {
         let selector = SelectorState::models(&self.model, &self.available_models);
         self.open_selector(selector);
@@ -38,6 +54,12 @@ impl ShellState {
     }
 
     pub(super) fn open_service_tier_selector(&mut self) {
+        if let Some(selector) = self.service_tier_selector() {
+            self.open_selector(selector);
+        }
+    }
+
+    fn service_tier_selector(&mut self) -> Option<SelectorState<SelectorValue>> {
         let Some(preset) = self
             .available_models
             .iter()
@@ -45,7 +67,7 @@ impl ShellState {
         else {
             self.settings
                 .set_error(format!("model metadata unavailable for `{}`", self.model));
-            return;
+            return None;
         };
         let current = match self.service_tier.as_deref() {
             Some(tier) if tier != SERVICE_TIER_DEFAULT_REQUEST_VALUE => {
@@ -59,8 +81,7 @@ impl ShellState {
             .filter(|tier| self.service_tier_features.service_tier_enabled(&tier.id))
             .cloned()
             .collect::<Vec<_>>();
-        let selector = SelectorState::service_tiers(&current, &tiers);
-        self.open_selector(selector);
+        Some(SelectorState::service_tiers(&current, &tiers))
     }
 
     pub(super) fn open_approval_selector(&mut self) {
@@ -112,15 +133,28 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        let panel = (super::render::ShellView { shell: self }).selector_area(area);
         let saving = self.selector_waiting_for_settings();
-        let area = (super::render::ShellView { shell: self }).selector_area(area);
         let Some(selector) = &mut self.selector else {
             return Ok(false);
         };
-        if saving && (!selector.is_effort_slider() || area.contains(position)) {
+        if let Some(open_control) = selector.composer_control()
+            && !panel.contains(position)
+        {
+            self.selector = None;
+            if !self.has_pending_backend_action(ActionGroup::Settings)
+                && let Some(control) =
+                    (super::render::ShellView { shell: self }).composer_control_at(area, position)
+                && control != open_control
+            {
+                self.open_composer_picker(control);
+            }
             return Ok(true);
         }
-        let outcome = selector.select_at(area, position);
+        if saving {
+            return Ok(true);
+        }
+        let outcome = selector.select_at(panel, position);
         self.resolve_selector_outcome(outcome, app_server).await?;
         Ok(true)
     }

@@ -172,6 +172,79 @@ async fn composer_permissions_button_opens_the_policy_picker() {
         .handle_mouse_selection_down(area, button, &config, &mut backend)
         .await
         .unwrap();
-    assert!(render_shell(&shell, area).contains("Select approval policy"));
+    let panel = ShellView { shell: &shell }.selector_area(area);
+    assert_eq!(panel.bottom(), button.y);
+    assert_eq!(panel.x, button.x);
+    let popup = render_shell_buffer(&shell, area);
+    assert_eq!(popup[(area.x, area.y)], buffer[(area.x, area.y)]);
+    insta::assert_snapshot!("composer_permissions_menu", buffer_contents(&popup, panel));
     assert!(backend.calls().is_empty());
+}
+
+#[tokio::test]
+async fn composer_menus_switch_anchors_and_select_visible_rows_after_resize() {
+    use composer_toolbar::ComposerControl;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.model = "gpt-6.2-astra".to_string();
+    shell.available_models = codex_models_manager::bundled_models_response()
+        .unwrap()
+        .models
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let wide = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 110, /*height*/ 28,
+    );
+    for (control, snapshot) in [
+        (ComposerControl::ServiceTier, "composer_speed_menu"),
+        (ComposerControl::Model, "composer_model_menu"),
+    ] {
+        let view = ShellView { shell: &shell };
+        let input = view.input_area(wide);
+        let button = position_in(input, |p| {
+            view.composer_control_at(wide, p) == Some(control)
+        });
+        shell
+            .handle_mouse_click(wide, button, &config, &mut backend)
+            .await
+            .unwrap();
+        let panel = ShellView { shell: &shell }.selector_area(wide);
+        assert_eq!(panel.bottom(), button.y);
+        assert!(panel.x <= button.x && panel.right() > button.x);
+        insta::assert_snapshot!(
+            snapshot,
+            buffer_contents(&render_shell_buffer(&shell, wide), panel)
+        );
+    }
+
+    let narrow = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 11,
+    );
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::End).await;
+    let panel = ShellView { shell: &shell }.selector_area(narrow);
+    let selector = shell.selector.as_ref().unwrap();
+    let count = shell
+        .available_models
+        .iter()
+        .filter(|m| m.show_in_picker)
+        .count();
+    let last = position_in(panel, |p| selector.option_at(panel, p) == Some(count - 1));
+    let buf = render_shell_buffer(&shell, narrow);
+    let label = buffer_contents(&buf, Rect::new(panel.x + 1, last.y, panel.width - 2, 1));
+    let expected = shell
+        .available_models
+        .iter()
+        .find(|m| m.display_name == label.trim())
+        .expect("last visible menu row names a catalog model")
+        .model
+        .clone();
+    shell
+        .handle_mouse_click(narrow, last, &config, &mut backend)
+        .await
+        .unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.model, expected);
+    assert!(shell.selector.is_none());
 }

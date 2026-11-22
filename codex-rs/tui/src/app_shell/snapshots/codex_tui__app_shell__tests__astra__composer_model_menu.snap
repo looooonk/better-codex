@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/astra_tests.rs
+expression: "buffer_contents(&render_shell_buffer(&shell, wide), panel)"
+---
+╭────────────────────────╮
+│ Select model           │
+│ GPT-6.2-Sol            │
+│ GPT-6.2-Astra        ✓ │
+│ GPT-6.1-Sol            │
+│ GPT-6.1 Terra          │
+│ GPT-6-Astra            │
+│ GPT-6-Sol              │
+│ GPT-6-Luna             │
+│ GPT-5.6-Sol            │
+│ GPT-5.6-Terra          │
+│ GPT-5.6-Luna           │
+│ GPT-5.5                │
+╰────────────────────────╯

@@ -2,7 +2,6 @@ use super::ShellState;
 use super::agent_activity_render;
 use super::backend::AppShellBackend;
 use super::command_palette_view;
-use super::composer_toolbar::ComposerControl;
 use super::external_agent_import::ExternalAgentImportState;
 use super::modal_view;
 use super::navigation::DashboardRoute;
@@ -253,12 +252,7 @@ impl ShellState {
             None => {}
         }
         if let Some(control) = (ShellView { shell: self }).composer_control_at(area, position) {
-            match control {
-                ComposerControl::Permissions => self.open_approval_selector(),
-                ComposerControl::Model => self.open_model_selector(),
-                ComposerControl::ReasoningEffort => self.open_reasoning_selector(),
-                ComposerControl::ServiceTier => self.open_service_tier_selector(),
-            }
+            self.open_composer_picker(control);
             return Ok(());
         }
         if let Some(destination) =

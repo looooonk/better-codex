@@ -639,7 +639,7 @@ impl ShellState {
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::ALT) && matches!(key.code, KeyCode::Char('m')) {
-            self.open_model_selector();
+            self.open_composer_picker(super::composer_toolbar::ComposerControl::Model);
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::ALT) && matches!(key.code, KeyCode::Char('e')) {

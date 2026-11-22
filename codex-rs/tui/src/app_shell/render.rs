@@ -249,21 +249,24 @@ impl ShellView<'_> {
     }
 
     pub(super) fn selector_area(&self, screen: Rect) -> Rect {
-        if !self
-            .shell
-            .selector
-            .as_ref()
-            .is_some_and(super::selector::SelectorState::is_effort_slider)
-        {
+        let Some(selector) = &self.shell.selector else {
             return screen;
-        }
+        };
+        let Some(control) = selector.composer_control() else {
+            return screen;
+        };
         let input = self.input_area(screen);
-        let anchor = ComposerToolbar::new(self.shell, input).effort_area();
-        let width = input.width.min(40);
-        let height = anchor.y.saturating_sub(screen.y).min(7);
-        let x = (anchor.x + anchor.width / 2)
-            .saturating_sub(width / 2)
-            .clamp(input.x, input.right().saturating_sub(width));
+        let anchor = ComposerToolbar::new(self.shell, input).button_area(control);
+        let (width, height) = selector.popup_size(control, input.width);
+        let height = height.min(anchor.y.saturating_sub(screen.y));
+        let x = match control {
+            ComposerControl::Permissions => anchor.x,
+            ComposerControl::Model | ComposerControl::ReasoningEffort => {
+                (anchor.x + anchor.width / 2).saturating_sub(width / 2)
+            }
+            ComposerControl::ServiceTier => anchor.right().saturating_sub(width),
+        }
+        .clamp(input.x, input.right().saturating_sub(width));
         Rect::new(x, anchor.y.saturating_sub(height), width, height)
     }
 

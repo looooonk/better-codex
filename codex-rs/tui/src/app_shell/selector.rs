@@ -1,3 +1,4 @@
+use super::composer_toolbar::ComposerControl;
 use super::settings::app_theme_label;
 use super::settings::reasoning_effort_label;
 use crate::app_theme::TuiAppTheme;
@@ -11,6 +12,9 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
+
+#[path = "composer_menu.rs"]
+mod composer_menu;
 
 #[path = "effort_slider.rs"]
 mod effort_slider;
@@ -87,12 +91,19 @@ pub(super) enum SelectorOutcome<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum Presentation {
+    Modal,
+    Menu(ComposerControl),
+    Slider(effort_slider::EffortSlider),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SelectorState<T> {
     title: String,
     options: Vec<SelectorOption<T>>,
     selected: usize,
     key_hints: Option<String>,
-    slider: Option<effort_slider::EffortSlider>,
+    presentation: Presentation,
 }
 
 impl<T> SelectorState<T> {
@@ -106,7 +117,20 @@ impl<T> SelectorState<T> {
             options,
             selected,
             key_hints: None,
-            slider: None,
+            presentation: Presentation::Modal,
+        }
+    }
+
+    pub(super) fn anchored_menu(mut self, control: ComposerControl) -> Self {
+        self.presentation = Presentation::Menu(control);
+        self
+    }
+
+    pub(super) fn composer_control(&self) -> Option<ComposerControl> {
+        match self.presentation {
+            Presentation::Menu(control) => Some(control),
+            Presentation::Slider(_) => Some(ComposerControl::ReasoningEffort),
+            Presentation::Modal => None,
         }
     }
 
@@ -115,8 +139,15 @@ impl<T> SelectorState<T> {
     }
 
     pub(super) fn option_at(&self, area: Rect, position: Position) -> Option<usize> {
-        if self.slider.is_some() {
-            return self.slider_stop_at(area, position);
+        match self.presentation {
+            Presentation::Menu(control) => {
+                return self
+                    .menu_rows(area, control)
+                    .into_iter()
+                    .find_map(|(i, row)| row.contains(position).then_some(i));
+            }
+            Presentation::Slider(_) => return self.slider_stop_at(area, position),
+            Presentation::Modal => {}
         }
         selector_geometry(area, &self.options, self.selected)
             .rows
@@ -136,7 +167,7 @@ impl<T: Clone> SelectorState<T> {
         {
             return SelectorOutcome::Pending;
         }
-        if let Some(slider) = &mut self.slider {
+        if let Presentation::Slider(slider) = &mut self.presentation {
             slider.dragging = false;
             let stop = slider.active_stop(self.selected);
             let last = self.options.len().saturating_sub(1);
@@ -200,13 +231,12 @@ impl<T: Clone> SelectorState<T> {
     }
 
     pub(super) fn select_at(&mut self, area: Rect, position: Position) -> SelectorOutcome<T> {
-        if self.slider.is_some() {
-            return self.press_slider(area, position);
-        }
-        if !selector_geometry(area, &self.options, self.selected)
-            .modal
-            .contains(position)
-        {
+        let panel = match self.presentation {
+            Presentation::Slider(_) => return self.press_slider(area, position),
+            Presentation::Menu(_) => area,
+            Presentation::Modal => selector_geometry(area, &self.options, self.selected).modal,
+        };
+        if !panel.contains(position) {
             return SelectorOutcome::Cancelled;
         }
         let Some(index) = self.option_at(area, position) else {
@@ -293,7 +323,7 @@ impl SelectorState<SelectorValue> {
         }));
         let slider = effort_slider::EffortSlider::new(model);
         let mut state = Self::new("Reasoning effort", options);
-        state.slider = Some(slider);
+        state.presentation = Presentation::Slider(slider);
         state
     }
 

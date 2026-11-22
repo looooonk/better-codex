@@ -1,6 +1,7 @@
 //! The effort picker previews a model-catalog value until Enter or pointer release.
 //! Option zero restores the model default. The rail contains only explicit effort levels.
 
+use super::Presentation;
 use super::SelectorOutcome;
 use super::SelectorState;
 use crate::app_shell::design::fill_rect;
@@ -108,17 +109,15 @@ fn reset_area(panel: Rect) -> Rect {
 
 impl<T> SelectorState<T> {
     pub(in crate::app_shell) fn is_effort_slider(&self) -> bool {
-        self.slider.is_some()
+        matches!(self.presentation, Presentation::Slider(_))
     }
 
     pub(in crate::app_shell) fn shows_ultra(&self) -> bool {
-        self.slider
-            .as_ref()
-            .is_some_and(|s| s.ultra_stop == Some(s.active_stop(self.selected)))
+        matches!(&self.presentation, Presentation::Slider(s) if s.ultra_stop == Some(s.active_stop(self.selected)))
     }
 
     pub(in crate::app_shell) fn advance_rainbow(&mut self) {
-        if let Some(slider) = &mut self.slider {
+        if let Presentation::Slider(slider) = &mut self.presentation {
             slider.rainbow_frame = (slider.rainbow_frame + 1) % RAINBOW_FRAMES;
         }
     }
@@ -135,7 +134,7 @@ impl<T> SelectorState<T> {
     }
 
     pub(in crate::app_shell) fn drag_slider(&mut self, panel: Rect, position: Position) {
-        if self.slider.as_ref().is_some_and(|slider| slider.dragging) {
+        if matches!(&self.presentation, Presentation::Slider(slider) if slider.dragging) {
             self.selected = self.effort_rail(panel).nearest_stop(position.x);
         }
     }
@@ -151,7 +150,7 @@ impl<T: Clone> SelectorState<T> {
             return self.selected_value();
         }
         if let Some(stop) = self.slider_stop_at(panel, position)
-            && let Some(slider) = &mut self.slider
+            && let Presentation::Slider(slider) = &mut self.presentation
         {
             slider.dragging = true;
             self.selected = stop;
@@ -164,7 +163,9 @@ impl<T: Clone> SelectorState<T> {
         panel: Rect,
         position: Position,
     ) -> Option<SelectorOutcome<T>> {
-        let slider = self.slider.as_mut()?;
+        let Presentation::Slider(slider) = &mut self.presentation else {
+            return None;
+        };
         if !std::mem::take(&mut slider.dragging) {
             return None;
         }
