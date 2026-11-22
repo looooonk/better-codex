@@ -17,13 +17,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
               │                                                                      │ession list
  ▎ YOU  Explai│> Retry with a faster model                                           │
               │  Dismiss and keep waiting                                            │
-              │  Learn more                                                          │
+          Wait│  Learn more                                                          │
               │                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
               │close when the response is ready.                                     │
               │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
- Waiting... · ╰──────────────────────────────────────────────────────────────────────╯
+              ╰──────────────────────────────────────────────────────────────────────╯
 ╭────────────────────────────────────────────────╮│
 │> Type a message                                ││
 │                                                ││

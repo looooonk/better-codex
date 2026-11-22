@@ -93,9 +93,6 @@ impl ShellView<'_> {
             self.render_terminal_too_small(area, buf);
             return;
         };
-        if let Some(area) = layout.activity {
-            self.shell.render_turn_activity(area, buf);
-        }
         if let Some(area) = layout.status {
             self.shell.render_status_surface(area, buf);
         }

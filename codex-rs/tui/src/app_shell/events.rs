@@ -415,6 +415,11 @@ impl ShellState {
                 if started.thread_id == self.thread_id.to_string() {
                     self.mark_thread_revert_hydration_stale();
                     self.mark_retry_recovered(&started.turn_id);
+                    if let ThreadItemPayload::ContextCompaction { id } = &started.item.payload
+                        && self.active_turn_id.as_ref() == Some(&started.turn_id)
+                    {
+                        self.compaction_item_id = Some(id.clone());
+                    }
                     self.mark_active_agent_threads(&started.item);
                     self.agent_activity.reduce_started(&started.item);
                     self.mark_agent_item_live(&started.item);
@@ -448,6 +453,12 @@ impl ShellState {
                 if completed.thread_id == self.thread_id.to_string() {
                     self.mark_thread_revert_hydration_stale();
                     self.mark_retry_recovered(&completed.turn_id);
+                    if let ThreadItemPayload::ContextCompaction { id } = &completed.item.payload
+                        && self.active_turn_id.as_ref() == Some(&completed.turn_id)
+                        && self.compaction_item_id.as_ref() == Some(id)
+                    {
+                        self.compaction_item_id = None;
+                    }
                     self.mark_active_agent_threads(&completed.item);
                     let rewind_anchor = match &completed.item.payload {
                         ThreadItemPayload::UserMessage {
@@ -608,6 +619,9 @@ impl ShellState {
             }
             ServerNotification::Error(error) => {
                 if error.thread_id == self.thread_id.to_string() {
+                    if !error.will_retry && self.active_turn_id.as_ref() == Some(&error.turn_id) {
+                        self.compaction_item_id = None;
+                    }
                     let handled_safety_error =
                         !error.will_retry && self.handle_safety_access_error(&error.error.message);
                     if !handled_safety_error {

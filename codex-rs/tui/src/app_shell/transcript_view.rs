@@ -54,7 +54,7 @@ pub(super) fn render_transcript(
     buf: &mut Buffer,
 ) {
     let viewport = transcript_viewport(shell, area);
-    if viewport.layout.total_lines == 0 {
+    if viewport.layout.total_lines == 0 && shell.active_turn_id.is_none() {
         return;
     }
     if let Some(selected) = shell.transcript_selection {
@@ -76,6 +76,12 @@ pub(super) fn render_transcript(
         viewport.text_body,
         &visible_hyperlink_lines,
         /*scroll_rows*/ 0,
+    );
+    shell.render_turn_activity(
+        viewport.text_body,
+        viewport.layout.activity_row,
+        viewport.visible_from,
+        buf,
     );
     render_card_hover(shell, &viewport, hover_position, buf);
     if let Some(scrollbar) = viewport.scrollbar {
@@ -377,20 +383,27 @@ fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
         .transcript_render_cache
         .borrow_mut()
         .layout(shell, text_body.width, cwd);
-    let mut max_scroll = layout.total_lines.saturating_sub(visible_count);
+    // The live indicator scrolls with the text but is never selectable history.
+    let scroll_height = |layout: &TranscriptLayout| {
+        if shell.active_turn_id.is_some() {
+            layout.activity_row + 1
+        } else {
+            layout.total_lines
+        }
+    };
+    let mut max_scroll = scroll_height(&layout).saturating_sub(visible_count);
     if max_scroll > 0 && body.width > 2 {
         text_body.width = text_body.width.saturating_sub(2);
         layout = shell
             .transcript_render_cache
             .borrow_mut()
             .layout(shell, text_body.width, cwd);
-        max_scroll = layout.total_lines.saturating_sub(visible_count);
+        max_scroll = scroll_height(&layout).saturating_sub(visible_count);
     }
     shell.transcript_scroll_max.set(max_scroll);
     let scroll = previous_scroll.min(max_scroll);
-    let mut visible_from = layout
-        .total_lines
-        .saturating_sub(visible_count.saturating_add(scroll));
+    let mut visible_from =
+        scroll_height(&layout).saturating_sub(visible_count.saturating_add(scroll));
     if previous_scroll > 0
         && let Some(anchor) = &previous_anchor
         && let Some(anchor_row) = layout.row_for_viewport_anchor(anchor)
@@ -424,7 +437,7 @@ fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
         .then(|| layout.viewport_anchor_at_or_after(visible_from, text_body.width))
         .flatten();
     let scrollbar = transcript_scrollbar_metrics(
-        layout.total_lines,
+        scroll_height(&layout),
         body.height,
         visible_from,
         TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT,
@@ -609,7 +622,7 @@ pub(super) fn render_transcript_line_with_visualizations(
     rendered_lines
 }
 
-fn transcript_prefix_width(kind: TranscriptKind) -> usize {
+pub(super) fn transcript_prefix_width(kind: TranscriptKind) -> usize {
     kind.label().width() + 4 // "▎ " before the label and two spaces after it.
 }
 

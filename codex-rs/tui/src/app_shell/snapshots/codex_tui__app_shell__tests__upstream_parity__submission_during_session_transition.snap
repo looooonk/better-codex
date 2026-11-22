@@ -17,13 +17,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 
  ▎ CODEX  The new shell owns the fullscreen surface.
 
+          Changing session... · 0 tok/s
 
 
 
 
 
 
- Changing session... · 0 tok/s
 ╭ [1: draft.png] ──────────────────────────────────────────────────────────────────────────────────╮
 │> Keep this draft                                                                                 │
 │                                                                                                  │

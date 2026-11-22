@@ -51,7 +51,6 @@ impl DashboardPlacement {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct ShellLayout {
-    pub(super) activity: Option<Rect>,
     pub(super) status: Option<Rect>,
     pub(super) transcript: Rect,
     pub(super) input: Rect,
@@ -73,8 +72,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
     }
 
     let status_height = u16::from(shell.status_surfaces.status_visible());
-    let activity_height = u16::from(shell.active_turn_id.is_some());
-    let available_height = area.height.saturating_sub(status_height + activity_height);
+    let available_height = area.height.saturating_sub(status_height);
     if !shell.dashboard_visible || area.width < DASHBOARD_SIDE_BY_SIDE_MIN_WIDTH {
         let mut input_height = input_panel_height(shell, available_height, area.width);
         if shell.dashboard_visible && shell.dashboard_route == DashboardRoute::Help {
@@ -122,22 +120,9 @@ fn workspace_layout(shell: &ShellState, area: Rect, input_height: u16) -> ShellL
             Constraint::Length(input_height),
         ])
         .split(area);
-    let mut transcript = main[1];
-    let activity = if shell.active_turn_id.is_some() && transcript.height > 0 {
-        transcript.height -= 1;
-        Some(Rect::new(
-            transcript.x,
-            transcript.bottom(),
-            transcript.width,
-            1,
-        ))
-    } else {
-        None
-    };
     ShellLayout {
-        activity,
         status: (main[0].height > 0).then_some(main[0]),
-        transcript,
+        transcript: main[1],
         input: main[2],
         dashboard: None,
     }

@@ -378,6 +378,8 @@ pub(super) struct TranscriptViewportAnchor {
 pub(super) struct TranscriptLayout {
     chunks: Vec<TranscriptChunk>,
     pub(super) total_lines: usize,
+    /// Row for live activity after the output and its blank separator.
+    pub(super) activity_row: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -400,14 +402,14 @@ impl TranscriptLayout {
         // Between items the following chunk owns the gap. At the end of the
         // transcript the divider still needs a blank row beneath it.
         let trailing_rows = usize::from(last_kind == Some(TranscriptKind::Separator));
-        let total_lines = chunks
+        let output_rows: usize = chunks
             .iter()
             .map(|chunk| chunk.lines.len() + usize::from(chunk.separator_before))
-            .sum::<usize>()
-            + trailing_rows;
+            .sum();
         Self {
             chunks,
-            total_lines,
+            total_lines: output_rows + trailing_rows,
+            activity_row: output_rows + usize::from(output_rows > 0),
         }
     }
 

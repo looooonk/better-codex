@@ -1,6 +1,8 @@
-//! Live activity occupies one row above the composer for the duration of a turn.
+//! Animated status at the live end of the conversation.
 
 use super::ShellState;
+use super::TranscriptKind;
+use super::transcript_view::transcript_prefix_width;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::terminal_palette::rgb_color;
 use ratatui::buffer::Buffer;
@@ -12,17 +14,40 @@ use ratatui::widgets::Widget;
 use std::time::Duration;
 
 impl ShellState {
-    pub(super) fn render_turn_activity(&self, area: Rect, buf: &mut Buffer) {
+    pub(super) fn render_turn_activity(
+        &self,
+        body: Rect,
+        activity_row: usize,
+        visible_from: usize,
+        buf: &mut Buffer,
+    ) {
         let Some(rate) = self.active_turn_tps() else {
             return;
         };
+        let Some(row) = activity_row
+            .checked_sub(visible_from)
+            .and_then(|offset| body.rows().nth(offset))
+        else {
+            return;
+        };
+        let indent = transcript_prefix_width(TranscriptKind::Assistant) as u16;
+        let area = Rect::new(
+            row.x.saturating_add(indent),
+            row.y,
+            row.width.saturating_sub(indent),
+            row.height,
+        );
         let elapsed = self
             .turn_started_at
             .filter(|_| self.animations && self.shimmer_enabled)
             .map(|started| started.elapsed());
-        let status = match self.status.as_str() {
-            "" | "ready" => "working",
-            status => status,
+        let status = if self.compaction_item_id.is_some() {
+            "compacting"
+        } else {
+            match self.status.as_str() {
+                "" | "ready" => "working",
+                status => status,
+            }
         };
         render_activity(status, rate, elapsed, area, buf);
     }
@@ -35,12 +60,6 @@ fn render_activity(
     area: Rect,
     buf: &mut Buffer,
 ) {
-    let area = Rect::new(
-        area.x + 1,
-        area.y,
-        area.width.saturating_sub(2),
-        area.height,
-    );
     if area.is_empty() {
         return;
     }

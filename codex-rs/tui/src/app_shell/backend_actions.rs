@@ -420,10 +420,7 @@ impl ShellState {
                 }
             }
             BackendActionResult::Compaction { result } => match result {
-                Ok(()) => {
-                    self.status = "context compaction started".to_string();
-                    self.push_status("context compaction started");
-                }
+                Ok(()) => self.push_status("context compaction started"),
                 Err(err) => self.report_action_error("failed to start context compaction", err),
             },
             BackendActionResult::ConversationFork {

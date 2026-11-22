@@ -17,7 +17,7 @@ expression: "render_shell(&shell, area)"
                                                                       │ Pg↑ / Pg↓   Scroll he…│
  ▎ CODEX  The new shell owns the fullscreen surface.                  │ ⇧Alt+←/→    Resize    │ ◆ APP
                                                                       │                       │  ^P          Commands
-                                                                      │◆ SESSIONS             │  ^D          Show/hide
+          Thinking... · 0 tok/s                                       │◆ SESSIONS             │  ^D          Show/hide
                                                                       │ ↑↓ / jk     Select    │  ^C          Stop/canc…
                                                                       │ ↵ / r       Resume    │  Esc ×2      Exit app
                                                                       │ f           Fork      │  ^N          New chat
@@ -46,7 +46,7 @@ expression: "render_shell(&shell, area)"
                                                                       │
                                                                       │
                                                                       │
- Thinking... · 0 tok/s                                                │
+                                                                      │
 ╭────────────────────────────────────────────────────────────────────╮│
 │◆ APPROVAL                                                          ││
 │? Run command: cargo test -p codex-tui                              ││

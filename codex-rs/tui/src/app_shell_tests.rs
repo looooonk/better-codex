@@ -3404,7 +3404,10 @@ async fn command_palette_starts_context_compaction_in_background() {
         backend.calls(),
         vec![RecordedBackendCall::Compact(shell.thread_id)]
     );
-    assert_eq!(shell.status, "context compaction started");
+    assert_eq!(
+        shell.transcript.back().unwrap().text,
+        "context compaction started"
+    );
 }
 
 #[tokio::test]

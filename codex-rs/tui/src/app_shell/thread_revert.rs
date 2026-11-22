@@ -145,6 +145,7 @@ impl ShellState {
             .map(|turn| turn.id.clone());
         let live_active_turn_id = self.active_turn_id.clone();
         let live_started_at = self.turn_started_at;
+        let live_compaction = self.compaction_item_id.take();
         let live_rate = std::mem::take(&mut self.output_rate);
         let pending_approval = self.pending_approval.take();
         let pending_elicitation = self.pending_elicitation.take();
@@ -217,6 +218,7 @@ impl ShellState {
             self.record_active_turn_started(turn_id.clone());
             if Some(turn_id) == live_active_turn_id.as_ref() {
                 self.turn_started_at = live_started_at;
+                self.compaction_item_id = live_compaction;
                 self.output_rate = live_rate;
             }
             if !status_tracks_active_turn {

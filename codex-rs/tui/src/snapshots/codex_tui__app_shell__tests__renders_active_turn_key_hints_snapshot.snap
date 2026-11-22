@@ -18,7 +18,7 @@ expression: "render_shell(&shell, area)"
  ▎ CODEX  The new shell owns the fullscreen       │                       │
           surface.                                │◆ SESSIONS             │ ◆ APP
                                                   │ ↑↓ / jk     Select    │  ^P          Commands
-                                                  │ ↵ / r       Resume    │  ^D          Show/hide
+          Thinking... · 0 tok/s                   │ ↵ / r       Resume    │  ^D          Show/hide
                                                   │ f           Fork      │  ^C          Stop/canc…
                                                   │ a           Archive   │  Esc ×2      Exit app
                                                   │ u           Unarchive │  ^N          New chat

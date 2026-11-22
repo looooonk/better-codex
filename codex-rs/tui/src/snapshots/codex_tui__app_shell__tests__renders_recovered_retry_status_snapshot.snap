@@ -7,11 +7,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 16,),)"
 
  ▎ CODEX  Recovered response.
 
+          Thinking... · 3 tok/s
 
 
 
 
- Thinking... · 3 tok/s
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │
 │                                                                            │

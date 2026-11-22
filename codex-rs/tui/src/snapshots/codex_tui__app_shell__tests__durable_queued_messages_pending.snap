@@ -3,9 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
                               │
-         3. Render dashboard  │   Status   │  Agents   │  Sessions   │  Help
-                              │─────────────────────────━━━━━━━━━━━━━──────────
- ▌ tool exec just test -p code│▎◆ SESSIONS
+                              │   Status   │  Agents   │  Sessions   │  Help
+ ▌ tool exec just test -p code│─────────────────────────━━━━━━━━━━━━━──────────
+                              │▎◆ SESSIONS
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ QUEUED  2                                                           │
 │   1  first queued                                                    │

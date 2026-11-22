@@ -24,7 +24,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
  ▌ tool mcp progress: live mcp progress survives
  ▎ ERROR  live retry detail survives
 
-
+          Thinking... · 0 tok/s
 
 
 ╭──────────────────────────────────────────────────────────────────────╮

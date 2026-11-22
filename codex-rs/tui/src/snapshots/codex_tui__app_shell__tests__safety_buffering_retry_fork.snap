@@ -18,8 +18,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
                                                   │
         Also keep this clarification              │
                                                   │
+          Thinking... · 0 tok/s                   │
                                                   │
- Thinking... · 0 tok/s                            │
 ╭────────────────────────────────────────────────╮│
 │> Keep this unsent draft                        ││
 │                                                ││

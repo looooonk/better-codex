@@ -9,6 +9,7 @@ impl ShellState {
             if let Some(previous) = self.active_turn_id.take() {
                 self.turn_outputs.remove(&previous);
             }
+            self.compaction_item_id = None;
             self.turn_started_at = Some(Instant::now());
             self.output_rate = Default::default();
         }
@@ -18,6 +19,7 @@ impl ShellState {
     pub(super) fn clear_active_turn(&mut self) {
         self.turn_outputs.clear();
         self.active_turn_id = None;
+        self.compaction_item_id = None;
         self.turn_started_at = None;
         self.output_rate = Default::default();
     }
