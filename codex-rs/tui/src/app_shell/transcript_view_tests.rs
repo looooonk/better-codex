@@ -177,7 +177,13 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
                     .width(),
             );
             let mut buffer = Buffer::empty(screen);
-            render_transcript(&shell, area, /*hover_position*/ None, &mut buffer);
+            render_transcript(
+                &shell,
+                area,
+                /*overlay*/ None,
+                /*hover_position*/ None,
+                &mut buffer,
+            );
             if kind == TranscriptKind::Assistant && width == 44 {
                 let painted = (area.y..area.bottom())
                     .map(|y| {
@@ -372,7 +378,7 @@ fn card_hover_uses_each_card_indent() {
         let hover = Position::new(viewport.text_body.x.saturating_add(indent), y);
         let mut buf = Buffer::empty(area);
 
-        render_transcript(&shell, area, Some(hover), &mut buf);
+        render_transcript(&shell, area, /*overlay*/ None, Some(hover), &mut buf);
 
         assert_eq!(
             buf[(viewport.text_body.x.saturating_add(indent), y)]
@@ -782,7 +788,9 @@ fn text_selection_patches_only_selected_grapheme_cells() {
     let selection = NormalizedVisualRange::from_hits(anchor, focus);
     let mut buf = Buffer::empty(area);
 
-    render_transcript(&shell, area, /*hover_position*/ None, &mut buf);
+    render_transcript(
+        &shell, area, /*overlay*/ None, /*hover_position*/ None, &mut buf,
+    );
     render_transcript_text_selection(&shell, area, selection, &mut buf);
 
     let y = viewport.text_body.y;
@@ -838,7 +846,9 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
     let selection = NormalizedVisualRange::from_hits(anchor, focus);
     let mut buf = Buffer::empty(area);
 
-    render_transcript(&shell, area, /*hover_position*/ None, &mut buf);
+    render_transcript(
+        &shell, area, /*overlay*/ None, /*hover_position*/ None, &mut buf,
+    );
     render_transcript_text_selection(&shell, area, selection, &mut buf);
 
     let rendered_rows = (0..viewport.layout.total_lines)

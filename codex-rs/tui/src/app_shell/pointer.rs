@@ -445,8 +445,9 @@ impl ShellState {
             }
             return false;
         }
+        let selector_area = (ShellView { shell: self }).selector_area(area);
         if let Some(selector) = &mut self.selector {
-            if selector.option_at(area, position).is_some() {
+            if selector.option_at(selector_area, position).is_some() {
                 selector.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
             }
             return false;

@@ -1051,7 +1051,6 @@ impl ShellState {
         self.transcript_scroll = 0;
         self.clear_transcript_viewport_anchor();
         self.transcript_selection = None;
-        self.push_system("visible transcript cleared");
     }
 
     fn confirm_exit(&mut self) -> bool {

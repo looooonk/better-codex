@@ -32,8 +32,7 @@ impl ShellState {
             ReasoningEffortValue::Default,
             ReasoningEffortValue::Explicit,
         );
-        let selector =
-            SelectorState::reasoning_efforts(&current, &preset.supported_reasoning_efforts);
+        let selector = SelectorState::reasoning_efforts(&current, preset);
         self.open_selector(selector);
     }
 
@@ -116,6 +115,7 @@ impl ShellState {
         if self.has_pending_backend_action(ActionGroup::Settings) {
             return Ok(self.selector.is_some());
         }
+        let area = (super::render::ShellView { shell: self }).selector_area(area);
         let Some(selector) = &mut self.selector else {
             return Ok(false);
         };
@@ -144,7 +144,7 @@ impl ShellState {
         self.clear_text_selections();
     }
 
-    async fn resolve_selector_outcome<S>(
+    pub(super) async fn resolve_selector_outcome<S>(
         &mut self,
         outcome: SelectorOutcome<SelectorValue>,
         app_server: &mut S,

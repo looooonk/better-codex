@@ -1,5 +1,6 @@
 use super::*;
 use codex_app_server_protocol::ThreadItemPayload;
+use pretty_assertions::assert_eq;
 
 #[test]
 fn astra_catalog_drives_model_reasoning_and_fast_selectors() {
@@ -51,4 +52,106 @@ fn astra_async_question_is_visible_while_the_turn_runs() {
         "astra_async_question",
         render_shell(&shell, Rect::new(0, 0, 100, 30))
     );
+}
+
+#[tokio::test]
+async fn effort_slider_previews_drags_and_applies_on_release() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.model = "gpt-6.2-astra".to_string();
+    shell.reasoning_effort = Some(ReasoningEffort::Medium);
+    shell.available_models = vec![model_preset_fixture(
+        &shell.model,
+        true,
+        ReasoningEffort::Medium,
+        &[
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::Ultra,
+        ],
+        &[],
+    )];
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(0, 0, 100, 28);
+    let view = ShellView { shell: &shell };
+    let button = position_in(view.input_area(area), |p| {
+        view.composer_control_at(area, p)
+            == Some(composer_toolbar::ComposerControl::ReasoningEffort)
+    });
+    shell
+        .handle_mouse_selection_down(area, button, &config, &mut backend)
+        .await
+        .unwrap();
+    shell
+        .handle_mouse_selection_release(area, button, &config, &mut backend)
+        .await
+        .unwrap();
+    let panel = ShellView { shell: &shell }.selector_area(area);
+    let rail = position_in(panel, |p| {
+        shell.selector.as_ref().unwrap().option_at(panel, p) == Some(1)
+    });
+    let right = Position::new(panel.right() + 1, rail.y);
+    shell
+        .handle_mouse_selection_down(area, rail, &config, &mut backend)
+        .await
+        .unwrap();
+    shell.handle_mouse_selection_drag(area, right);
+    let preview = render_shell_buffer(&shell, area);
+    assert!(buffer_contents(&preview, panel).contains("Ultra"));
+    assert_ne!(preview[rail].bg, preview[(rail.x + 8, rail.y)].bg);
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
+    assert!(backend.calls().is_empty());
+
+    // Esc cancels the drag, including a delayed terminal mouse-up.
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Esc).await;
+    shell
+        .handle_mouse_selection_release(area, right, &config, &mut backend)
+        .await
+        .unwrap();
+    assert!(backend.calls().is_empty());
+
+    shell.open_reasoning_selector();
+    shell
+        .handle_mouse_selection_down(area, rail, &config, &mut backend)
+        .await
+        .unwrap();
+    shell.handle_mouse_selection_drag(area, right);
+    shell
+        .handle_mouse_selection_release(area, right, &config, &mut backend)
+        .await
+        .unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Ultra));
+    assert!(shell.selector.is_none());
+
+    shell.open_reasoning_selector();
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Left).await;
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
+}
+
+#[tokio::test]
+async fn composer_permissions_button_opens_the_policy_picker() {
+    let mut shell = ShellState::snapshot_fixture();
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(0, 0, 100, 28);
+    let view = ShellView { shell: &shell };
+    let input = view.input_area(area);
+    let button = position_in(input, |p| {
+        view.composer_control_at(area, p) == Some(composer_toolbar::ComposerControl::Permissions)
+    });
+    let model = position_in(input, |p| {
+        view.composer_control_at(area, p) == Some(composer_toolbar::ComposerControl::Model)
+    });
+    let buffer = render_shell_buffer(&shell, area);
+    assert_eq!(buffer[button].style(), buffer[model].style());
+    assert_eq!(button.y, input.bottom() - 2);
+    shell
+        .handle_mouse_selection_down(area, button, &config, &mut backend)
+        .await
+        .unwrap();
+    assert!(render_shell(&shell, area).contains("Select approval policy"));
+    assert!(backend.calls().is_empty());
 }

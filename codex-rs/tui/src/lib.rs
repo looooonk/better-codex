@@ -1203,7 +1203,7 @@ pub async fn run_main(
     if bedrock_onboarding {
         app_server_target = AppServerTarget::Embedded;
     }
-    let mut daemon_startup_warning = daemon_exclusion.filter(|_| config.features.enabled(codex_features::Feature::DaemonAutoStart)).map(|reason| format!("Running without the shared background server: {reason} requires an independent session."));
+    let mut daemon_startup_warning = daemon_exclusion.filter(|_| !cli.no_daemon && config.features.enabled(codex_features::Feature::DaemonAutoStart)).map(|reason| format!("Running without the shared background server: {reason} requires an independent session."));
     if config
         .features
         .enabled(codex_features::Feature::DaemonAutoStart)

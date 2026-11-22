@@ -8,6 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 
@@ -53,7 +54,9 @@ impl HeaderView<'_> {
         );
         let status = if status_width > usize::from(status_area.width) && self.turn_metrics.is_some()
         {
-            self.turn_metrics_line()
+            let mut compact = self.turn_metrics_line();
+            compact.spans.insert(0, self.status_indicator());
+            compact
         } else {
             full_status
         };
@@ -69,7 +72,7 @@ impl HeaderView<'_> {
             );
     }
 
-    fn status_line(&self) -> Line<'static> {
+    fn status_indicator(&self) -> Span<'static> {
         let color = match self.status {
             "ready" => palette::success(),
             "failed" | "error" | "disconnected" => palette::error(),
@@ -80,8 +83,12 @@ impl HeaderView<'_> {
             .status_spinner_frame
             .map(|frame| STATUS_SPINNER_FRAMES[frame % STATUS_SPINNER_FRAMES.len()])
             .unwrap_or("●");
+        format!("{indicator} ").fg(color)
+    }
+
+    fn status_line(&self) -> Line<'static> {
         let mut spans = vec![
-            format!("{indicator} ").fg(color),
+            self.status_indicator(),
             self.status.to_string().fg(palette::text()).bold(),
         ];
         if self.turn_metrics.is_some() {

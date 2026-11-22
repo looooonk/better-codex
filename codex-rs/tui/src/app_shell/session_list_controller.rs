@@ -505,7 +505,13 @@ impl ShellState {
         self.pending_session_delete = None;
         self.selector = None;
         self.safety_buffering.clear();
-        self.push_system("switched session");
+        if !turns.is_empty()
+            || timeline
+                .as_ref()
+                .is_some_and(|history| !history.entries.is_empty())
+        {
+            self.push_system("switched session");
+        }
         self.restore_thread_lifecycle(thread_status, &turns);
         self.ingest_thread_history(turns, timeline);
         self.install_agent_history(agent_threads, agent_history_task);

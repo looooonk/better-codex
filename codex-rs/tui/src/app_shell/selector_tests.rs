@@ -30,10 +30,13 @@ fn initial_selection_uses_the_current_option() {
 fn reasoning_default_is_an_explicit_typed_choice() {
     let state = SelectorState::reasoning_efforts(
         &ReasoningEffortValue::Default,
-        &[ReasoningEffortPreset {
-            effort: ReasoningEffort::High,
-            description: "Deep reasoning for difficult tasks.".to_string(),
-        }],
+        &crate::app_shell::tests::model_preset_fixture(
+            "test-model",
+            true,
+            ReasoningEffort::High,
+            &[ReasoningEffort::High],
+            &[],
+        ),
     );
 
     assert_eq!(state.selected, 0);

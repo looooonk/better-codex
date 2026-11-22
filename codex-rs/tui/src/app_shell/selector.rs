@@ -5,13 +5,15 @@ use codex_app_server_protocol::AskForApproval;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::openai_models::ReasoningEffortPreset;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
+
+#[path = "effort_slider.rs"]
+mod effort_slider;
 
 #[path = "selector_view.rs"]
 mod view;
@@ -90,6 +92,7 @@ pub(super) struct SelectorState<T> {
     options: Vec<SelectorOption<T>>,
     selected: usize,
     key_hints: Option<String>,
+    slider: Option<effort_slider::EffortSlider>,
 }
 
 impl<T> SelectorState<T> {
@@ -103,6 +106,7 @@ impl<T> SelectorState<T> {
             options,
             selected,
             key_hints: None,
+            slider: None,
         }
     }
 
@@ -111,6 +115,9 @@ impl<T> SelectorState<T> {
     }
 
     pub(super) fn option_at(&self, area: Rect, position: Position) -> Option<usize> {
+        if self.slider.is_some() {
+            return self.slider_stop_at(area, position);
+        }
         selector_geometry(area, &self.options, self.selected)
             .rows
             .into_iter()
@@ -129,6 +136,21 @@ impl<T: Clone> SelectorState<T> {
         {
             return SelectorOutcome::Pending;
         }
+        if let Some(slider) = &mut self.slider {
+            slider.dragging = false;
+            let stop = slider.active_stop(self.selected);
+            let last = self.options.len().saturating_sub(1);
+            match key.code {
+                KeyCode::Left => self.set_selected(stop.saturating_sub(1).max(1).min(last)),
+                KeyCode::Right => self.set_selected(stop.saturating_add(1).min(last)),
+                _ => return self.handle_list_key(key),
+            }
+            return SelectorOutcome::Pending;
+        }
+        self.handle_list_key(key)
+    }
+
+    fn handle_list_key(&mut self, key: KeyEvent) -> SelectorOutcome<T> {
         match key.code {
             KeyCode::Esc => SelectorOutcome::Cancelled,
             KeyCode::Enter => self.selected_value(),
@@ -178,6 +200,9 @@ impl<T: Clone> SelectorState<T> {
     }
 
     pub(super) fn select_at(&mut self, area: Rect, position: Position) -> SelectorOutcome<T> {
+        if self.slider.is_some() {
+            return self.press_slider(area, position);
+        }
         if !selector_geometry(area, &self.options, self.selected)
             .modal
             .contains(position)
@@ -248,10 +273,7 @@ impl SelectorState<SelectorValue> {
         Self::new("Select model", options)
     }
 
-    pub(super) fn reasoning_efforts(
-        current: &ReasoningEffortValue,
-        efforts: &[ReasoningEffortPreset],
-    ) -> Self {
+    pub(super) fn reasoning_efforts(current: &ReasoningEffortValue, model: &ModelPreset) -> Self {
         let mut options = vec![
             SelectorOption::new(
                 SelectorValue::ReasoningEffort(ReasoningEffortValue::Default),
@@ -260,7 +282,7 @@ impl SelectorState<SelectorValue> {
             )
             .current(current == &ReasoningEffortValue::Default),
         ];
-        options.extend(efforts.iter().map(|preset| {
+        options.extend(model.supported_reasoning_efforts.iter().map(|preset| {
             let value = ReasoningEffortValue::Explicit(preset.effort.clone());
             SelectorOption::new(
                 SelectorValue::ReasoningEffort(value.clone()),
@@ -269,7 +291,10 @@ impl SelectorState<SelectorValue> {
             )
             .current(current == &value)
         }));
-        Self::new("Select reasoning effort", options)
+        let slider = effort_slider::EffortSlider::new(model);
+        let mut state = Self::new("Reasoning effort", options);
+        state.slider = Some(slider);
+        state
     }
 
     pub(super) fn service_tiers(current: &ServiceTierValue, tiers: &[ModelServiceTier]) -> Self {

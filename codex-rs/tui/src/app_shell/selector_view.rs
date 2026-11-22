@@ -33,6 +33,10 @@ pub(super) struct SelectorGeometry {
 
 impl<T> SelectorState<T> {
     pub(in super::super) fn render(&self, area: Rect, pointer: Option<Position>, buf: &mut Buffer) {
+        if let Some(slider) = &self.slider {
+            slider.render(area, self, buf);
+            return;
+        }
         let geometry = selector_geometry(area, &self.options, self.selected);
         let hovered = pointer.and_then(|position| self.option_at(area, position));
         buf.set_style(area, Style::new().add_modifier(Modifier::DIM));

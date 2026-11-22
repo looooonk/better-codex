@@ -251,10 +251,7 @@ async fn vim_submissions_dispatch_local_commands_and_preserve_the_draft() {
         ),
         (
             LocalSlashCommandOutcome::Continue,
-            Some((
-                TranscriptKind::System,
-                "visible transcript cleared".to_string(),
-            )),
+            None,
             LocalSlashCommandOutcome::Exit,
             LocalSlashCommandOutcome::Continue,
             existing_draft.to_string(),

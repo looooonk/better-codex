@@ -1,6 +1,7 @@
 use super::ShellState;
 use super::design::palette;
 use super::design::pane_content_rect;
+use super::reasoning_ripple::ReasoningRippleFrame;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
@@ -39,7 +40,11 @@ impl ComposerToolbar {
             content.height.min(1),
         );
         let compact = row.width < 58;
-        let permissions = if row.width < 44 { "Perms" } else { "Permissions" };
+        let permissions = if row.width < 44 {
+            "Perms"
+        } else {
+            "Permissions"
+        };
         let effort = shell
             .reasoning_effort
             .as_ref()
@@ -104,6 +109,10 @@ impl ComposerToolbar {
         Self { buttons, row }
     }
 
+    pub(super) fn effort_area(&self) -> Rect {
+        self.buttons[2].area
+    }
+
     pub(super) fn control_at(&self, position: Position) -> Option<ComposerControl> {
         self.buttons
             .iter()
@@ -111,8 +120,13 @@ impl ComposerToolbar {
             .map(|button| button.control)
     }
 
-    pub(super) fn render(self, shell: &ShellState, pointer: Option<Position>, buf: &mut Buffer) {
-        let effort = self.buttons[2].area;
+    pub(super) fn render(
+        self,
+        ripple: Option<ReasoningRippleFrame>,
+        pointer: Option<Position>,
+        buf: &mut Buffer,
+    ) {
+        let effort = self.effort_area();
         let ripple_areas = [self.buttons[1].area, effort, self.buttons[3].area];
         for button in self.buttons {
             let hovered = pointer.is_some_and(|position| button.area.contains(position));
@@ -131,11 +145,7 @@ impl ComposerToolbar {
                 })
                 .render(button.area, buf);
         }
-        if let Some(frame) = shell
-            .reasoning_ripple
-            .as_ref()
-            .and_then(|ripple| ripple.frame(std::time::Instant::now()))
-        {
+        if let Some(frame) = ripple {
             frame.render(self.row, effort, ripple_areas, buf);
         }
     }

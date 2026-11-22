@@ -50,12 +50,17 @@ const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 pub(super) fn render_transcript(
     shell: &ShellState,
     area: Rect,
+    overlay: Option<Rect>,
     hover_position: Option<Position>,
     buf: &mut Buffer,
 ) {
     let viewport = transcript_viewport(shell, area);
     if viewport.layout.total_lines == 0 {
-        super::empty_conversation::render(viewport.content, buf);
+        let mut exposed = area;
+        if let Some(overlay) = overlay {
+            exposed.width = overlay.x.saturating_sub(area.x).min(area.width);
+        }
+        super::empty_conversation::render(pane_content_rect(exposed), buf);
         return;
     }
     if let Some(selected) = shell.transcript_selection {

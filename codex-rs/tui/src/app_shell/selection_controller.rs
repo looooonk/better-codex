@@ -223,6 +223,11 @@ impl ShellState {
         if self.update_dashboard_resize(area, position) {
             return;
         }
+        let panel = (ShellView { shell: self }).selector_area(area);
+        if let Some(selector) = &mut self.selector {
+            selector.drag_slider(panel, position);
+            return;
+        }
         let Some(drag) = self.text_selection.drag.clone() else {
             return;
         };
@@ -306,6 +311,13 @@ impl ShellState {
         S: AppShellBackend,
     {
         if self.finish_dashboard_resize(area, position) {
+            return Ok(());
+        }
+        let panel = (ShellView { shell: self }).selector_area(area);
+        if let Some(selector) = &mut self.selector {
+            if let Some(outcome) = selector.release_slider(panel, position) {
+                self.resolve_selector_outcome(outcome, app_server).await?;
+            }
             return Ok(());
         }
         let Some(pending) = self.text_selection.drag.clone() else {

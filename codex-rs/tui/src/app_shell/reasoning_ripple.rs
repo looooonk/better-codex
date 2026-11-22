@@ -46,13 +46,25 @@ impl ReasoningRippleTone {
             | None => None,
         }
     }
+}
 
-    fn color(self) -> Color {
-        match self {
-            Self::Max => palette::warning(),
-            Self::Ultra => palette::purple(),
-        }
+pub(super) fn ultra_color(x: usize, span: usize) -> Color {
+    let stops = [
+        palette::error(),
+        palette::warning(),
+        palette::success(),
+        palette::cyan(),
+        palette::focus(),
+        palette::purple(),
+    ];
+    let t = x as f32 / span.max(1) as f32 * (stops.len() - 1) as f32;
+    let index = t as usize;
+    let start = stops[index];
+    let end = stops[(index + 1).min(stops.len() - 1)];
+    if let (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) = (start, end) {
+        return crate::terminal_palette::rgb_color(blend((r2, g2, b2), (r1, g1, b1), t.fract()));
     }
+    start
 }
 
 #[derive(Debug)]
@@ -113,13 +125,9 @@ impl ReasoningRippleFrame {
         if area.is_empty() || origin.is_empty() {
             return;
         }
-        let Color::Rgb(ripple_red, ripple_green, ripple_blue) = self.tone.color() else {
-            return;
-        };
         let Color::Rgb(base_red, base_green, base_blue) = palette::dark() else {
             return;
         };
-        let ripple_rgb = (ripple_red, ripple_green, ripple_blue);
         let base_rgb = (base_red, base_green, base_blue);
         let center_x = f32::from(origin.x) + (f32::from(origin.width) - 1.0) / 2.0;
         let center_y = f32::from(origin.y) + (f32::from(origin.height) - 1.0) / 2.0;
@@ -181,7 +189,18 @@ impl ReasoningRippleFrame {
                     )
                     | None => base_rgb,
                 };
-                let (red, green, blue) = blend(ripple_rgb, background_rgb, alpha);
+                let color = match self.tone {
+                    ReasoningRippleTone::Max => palette::warning(),
+                    ReasoningRippleTone::Ultra => {
+                        let span = origin.width.saturating_sub(1);
+                        ultra_color(
+                            usize::from(x.saturating_sub(origin.x).min(span)),
+                            usize::from(span),
+                        )
+                    }
+                };
+                let Color::Rgb(r, g, b) = color else { continue };
+                let (red, green, blue) = blend((r, g, b), background_rgb, alpha);
                 #[expect(
                     clippy::disallowed_methods,
                     reason = "The ripple blends RGB values from the full-screen theme palette."

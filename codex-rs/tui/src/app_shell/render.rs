@@ -102,6 +102,10 @@ impl ShellView<'_> {
         render_transcript(
             self.shell,
             layout.transcript,
+            match layout.dashboard {
+                Some(shell_layout::DashboardPlacement::Overlay(overlay)) => Some(overlay),
+                Some(shell_layout::DashboardPlacement::Sidebar(_)) | None => None,
+            },
             self.base_hover_position(),
             buf,
         );
@@ -140,7 +144,7 @@ impl ShellView<'_> {
             super::account_auth::render(state, area, buf);
         }
         if let Some(selector) = &self.shell.selector {
-            selector.render(area, self.shell.pointer_position, buf);
+            selector.render(self.selector_area(area), self.shell.pointer_position, buf);
         }
         if let Some(log) = &self.shell.agent_log {
             super::agent_log_view::render_agent_log(log, area, buf);
@@ -246,6 +250,25 @@ impl ShellView<'_> {
         position: Position,
     ) -> Option<DashboardRoute> {
         dashboard_view::route_at(self.shell, self.layout(area)?.dashboard?, position)
+    }
+
+    pub(super) fn selector_area(&self, screen: Rect) -> Rect {
+        if !self
+            .shell
+            .selector
+            .as_ref()
+            .is_some_and(|selector| selector.is_effort_slider())
+        {
+            return screen;
+        }
+        let input = self.input_area(screen);
+        let anchor = ComposerToolbar::new(self.shell, input).effort_area();
+        let width = input.width.min(40);
+        let height = anchor.y.saturating_sub(screen.y).min(7);
+        let x = (anchor.x + anchor.width / 2)
+            .saturating_sub(width / 2)
+            .clamp(input.x, input.right().saturating_sub(width));
+        Rect::new(x, anchor.y.saturating_sub(height), width, height)
     }
 
     pub(super) fn composer_control_at(
@@ -463,7 +486,12 @@ impl ShellView<'_> {
             lines = lines.into_iter().skip(start).take(visible_height).collect();
         }
         Paragraph::new(lines).render(body, buf);
-        ComposerToolbar::new(self.shell, area).render(self.shell, self.base_hover_position(), buf);
+        let ripple = self
+            .shell
+            .reasoning_ripple
+            .as_ref()
+            .and_then(|ripple| ripple.frame(std::time::Instant::now()));
+        ComposerToolbar::new(self.shell, area).render(ripple, self.base_hover_position(), buf);
     }
 
     fn base_hover_position(&self) -> Option<Position> {

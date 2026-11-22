@@ -4136,13 +4136,7 @@ fn command_palette_clear_resets_visible_transcript() {
 
     shell.clear_visible_transcript();
 
-    assert_eq!(
-        shell.transcript.iter().cloned().collect::<Vec<_>>(),
-        vec![TranscriptLine::new(
-            TranscriptKind::System,
-            "visible transcript cleared"
-        )]
-    );
+    assert!(shell.transcript.is_empty());
     assert_eq!(shell.streaming_assistant, "");
     assert_eq!(shell.streaming_plan, "");
     assert_eq!(shell.transcript_scroll, 0);
@@ -4167,13 +4161,7 @@ async fn partial_clear_slash_command_completes_and_runs_without_submitting_turn(
         .await
         .expect("clear command should be handled locally");
 
-    assert_eq!(
-        shell.transcript.iter().cloned().collect::<Vec<_>>(),
-        vec![TranscriptLine::new(
-            TranscriptKind::System,
-            "visible transcript cleared"
-        )]
-    );
+    assert!(shell.transcript.is_empty());
     assert_eq!(shell.streaming_assistant, "");
     assert_eq!(shell.streaming_plan, "");
     assert_eq!(shell.composer.text(), "");
@@ -14140,7 +14128,7 @@ fn safety_buffering_notification(
     }
 }
 
-fn model_preset_fixture(
+pub(super) fn model_preset_fixture(
     slug: &str,
     show_in_picker: bool,
     default_reasoning_effort: ReasoningEffort,
@@ -16849,6 +16837,7 @@ async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
         ];
         let mut backend = RecordingBackend::default();
 
+        let before_update = std::time::Instant::now();
         match path {
             SettingsPath::Model => shell.apply_model("max-model".to_string(), &mut backend),
             SettingsPath::ReasoningEffort => {
@@ -16857,18 +16846,18 @@ async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
         }
         complete_backend_actions(&mut shell, &backend).await;
 
-        let buffer = render_shell_buffer(&shell, area);
-        let effort_picker_cells = (area.y..area.bottom())
-            .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
-            .filter(|position| {
-                ShellView { shell: &shell }.composer_control_at(area, *position)
-                    == Some(super::composer_toolbar::ComposerControl::ReasoningEffort)
-            })
-            .collect::<Vec<_>>();
-        let effort_picker = effort_picker_cells
-            .get(effort_picker_cells.len() / 2)
-            .copied()
-            .expect("effort picker should be visible");
+        let mut buffer = render_shell_buffer(&shell, area);
+        let _theme = crate::app_theme::activate(shell.app_theme);
+        let input = ShellView { shell: &shell }.input_area(area);
+        let toolbar = composer_toolbar::ComposerToolbar::new(&shell, input);
+        let effort = toolbar.effort_area();
+        let effort_picker = Position::new(effort.x + effort.width / 2, effort.y);
+        // Sample the first frame regardless of how long the backend or renderer took.
+        let first_frame = shell
+            .reasoning_ripple
+            .as_ref()
+            .and_then(|ripple| ripple.frame(before_update));
+        toolbar.render(first_frame, /*pointer*/ None, &mut buffer);
         observations.push((
             path,
             shell.reasoning_effort,
@@ -16892,15 +16881,15 @@ async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
             (
                 SettingsPath::Model,
                 Some(ReasoningEffort::Max),
-                Position::new(/*x*/ 52, /*y*/ 1),
+                Position::new(/*x*/ 65, /*y*/ 22),
                 Some(Color::Rgb(0xa1, 0x80, 0x3a)),
                 Some(Color::Rgb(0x28, 0x28, 0x28)),
             ),
             (
                 SettingsPath::ReasoningEffort,
                 Some(ReasoningEffort::Ultra),
-                Position::new(/*x*/ 51, /*y*/ 1),
-                Some(Color::Rgb(0x8e, 0x66, 0x6e)),
+                Position::new(/*x*/ 64, /*y*/ 22),
+                Some(Color::Rgb(0x77, 0x80, 0x4a)),
                 Some(Color::Rgb(0x28, 0x28, 0x28)),
             ),
         ],
