@@ -10,7 +10,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
                                                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ──────── Took 1.00s · 84.0 tok/s ─────────────── │▎+ New session  Ctrl+N
                                                   │▎loading sessions
-                                                  │
+ ▎ YOU  Next turn.                                │
                                                   │▎◆ THREAD
                                                   │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001

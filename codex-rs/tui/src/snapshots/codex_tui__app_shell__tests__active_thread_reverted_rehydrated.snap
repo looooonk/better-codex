@@ -19,13 +19,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
 
    ▌ output authoritative command output
    ▌        live command output survives
+
  ──────── Took 1.00s ──────────────────────────────────────────────────────────────────────────────
+
  ▎ YOU  current queued follower
 
  ▌ tool mcp progress: live mcp progress survives
  ▎ ERROR  live retry detail survives
-
-
 
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ QUEUED  1                                                           │

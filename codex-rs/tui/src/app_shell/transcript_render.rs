@@ -161,7 +161,7 @@ impl TranscriptRenderCache {
         }
 
         self.items = current_items;
-        let layout = Arc::new(TranscriptLayout::new(chunks));
+        let layout = Arc::new(TranscriptLayout::new(chunks, previous_kind));
         self.layouts.push_back(CachedTranscriptLayout {
             width,
             cwd: cwd.to_path_buf(),
@@ -263,13 +263,13 @@ fn should_separate_transcript_item(
     previous_kind: Option<TranscriptKind>,
     current_kind: TranscriptKind,
 ) -> bool {
+    if current_kind == TranscriptKind::Separator || previous_kind == Some(TranscriptKind::Separator)
+    {
+        return true;
+    }
     let Some(previous_kind) = previous_kind else {
         return false;
     };
-    // Turn dividers include their own leading and trailing space.
-    if previous_kind == TranscriptKind::Separator || current_kind == TranscriptKind::Separator {
-        return false;
-    }
     if previous_kind == TranscriptKind::Audit || current_kind == TranscriptKind::Audit {
         return true;
     }
@@ -396,11 +396,15 @@ impl<'a> TranscriptLayoutRow<'a> {
 }
 
 impl TranscriptLayout {
-    fn new(chunks: Vec<TranscriptChunk>) -> Self {
+    fn new(chunks: Vec<TranscriptChunk>, last_kind: Option<TranscriptKind>) -> Self {
+        // Between items the following chunk owns the gap. At the end of the
+        // transcript the divider still needs a blank row beneath it.
+        let trailing_rows = usize::from(last_kind == Some(TranscriptKind::Separator));
         let total_lines = chunks
             .iter()
             .map(|chunk| chunk.lines.len() + usize::from(chunk.separator_before))
-            .sum();
+            .sum::<usize>()
+            + trailing_rows;
         Self {
             chunks,
             total_lines,
@@ -442,6 +446,9 @@ impl TranscriptLayout {
                 break;
             }
         }
+        if logical_row < self.total_lines && (visible_from..visible_to).contains(&logical_row) {
+            visible.push(HyperlinkLine::new(Default::default()));
+        }
         visible
     }
 
@@ -471,7 +478,7 @@ impl TranscriptLayout {
                 break;
             }
         }
-        None
+        (row < self.total_lines).then_some(TranscriptLayoutRow::Blank)
     }
 
     /// Return the stored transcript item that owns a rendered logical row.

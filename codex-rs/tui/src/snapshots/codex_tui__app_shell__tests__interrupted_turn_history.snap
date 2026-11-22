@@ -5,12 +5,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,))"
  better-codex                                                           ● ready
 ────────────────────────────────────────────────────────────────────────────────
 
- ▎ SYSTEM  switched session
- ▎ SYSTEM  loaded 1 previous turns
- ▎ YOU  Keep this interrupted prompt
- ▎ STATUS  turn interrupted
- ──────── Took 1.00s ──────────────────────────────────────────────────────────
-
+ ▎ SYSTEM  loaded 1 previous turns                                            ┃
+ ▎ YOU  Keep this interrupted prompt                                          ┃
+ ▎ STATUS  turn interrupted                                                   ┃
+                                                                              ┃
+ ──────── Took 1.00s ──────────────────────────────────────────────────────── ┃
+                                                                              ┃
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │> Type a message                                                              │

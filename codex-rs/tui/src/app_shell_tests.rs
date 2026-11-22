@@ -6970,6 +6970,7 @@ fn turn_completion_adds_one_separator_snapshot() {
                 .item_id("turn-separator"),
         ])
     );
+    shell.push_user("Next turn.");
     insta::assert_snapshot!(render_shell(
         &shell,
         Rect::new(

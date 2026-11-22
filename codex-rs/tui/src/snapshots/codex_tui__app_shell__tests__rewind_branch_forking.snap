@@ -9,8 +9,8 @@ expression: "render_shell(&shell, area)"
  ▎ SYSTEM  switched session                       │▎◆ SESSIONS
  ▎ SYSTEM  loaded 1 previous turns                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎ YOU  Rewrite this prompt.                      │▎+ New session  Ctrl+N
- ──────── Took 1.00s ──────────────────────────── │▎loading sessions
-                                                  │
+                                                  │▎loading sessions
+ ──────── Took 1.00s ──────────────────────────── │
                                                   │▎◆ THREAD
                                                   │▎rewind-source
                                                   │▎id 01900000-0000-7000-8000-000000000001

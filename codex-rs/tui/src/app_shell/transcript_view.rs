@@ -535,11 +535,10 @@ pub(super) fn render_transcript_line_with_visualizations(
     inline_visualization_context: Option<&crate::inline_visualization::InlineVisualizationContext>,
 ) -> Vec<HyperlinkLine> {
     if kind == TranscriptKind::Separator {
-        return vec![
-            HyperlinkLine::new(Line::default()),
-            HyperlinkLine::new(turn_separator_line(text, usize::from(width))),
-            HyperlinkLine::new(Line::default()),
-        ];
+        return vec![HyperlinkLine::new(turn_separator_line(
+            text,
+            usize::from(width),
+        ))];
     }
     if let Some(status) = tool_status
         && matches!(
