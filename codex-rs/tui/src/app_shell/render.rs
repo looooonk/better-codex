@@ -257,7 +257,7 @@ impl ShellView<'_> {
             .shell
             .selector
             .as_ref()
-            .is_some_and(|selector| selector.is_effort_slider())
+            .is_some_and(super::selector::SelectorState::is_effort_slider)
         {
             return screen;
         }
