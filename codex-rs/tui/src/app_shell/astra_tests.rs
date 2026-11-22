@@ -98,7 +98,18 @@ async fn effort_slider_previews_drags_and_applies_on_release() {
     shell.handle_mouse_selection_drag(area, right);
     let preview = render_shell_buffer(&shell, area);
     assert!(buffer_contents(&preview, panel).contains("Ultra"));
-    assert_ne!(preview[rail].bg, preview[(rail.x + 8, rail.y)].bg);
+    let middle = rail.y + 1;
+    let start = rail.x + 9;
+    let color = preview[(start, middle)].bg;
+    assert_ne!(preview[(start + 9, middle)].bg, color);
+    // The 36-column rail moves right by nine columns in a quarter cycle.
+    let selector = shell.selector.as_mut().unwrap();
+    assert!(selector.shows_ultra());
+    for _ in 0..25 {
+        selector.advance_rainbow();
+    }
+    let next_frame = render_shell_buffer(&shell, area);
+    assert_eq!(next_frame[(start + 9, middle)].bg, color);
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
     assert!(backend.calls().is_empty());
 
@@ -122,13 +133,22 @@ async fn effort_slider_previews_drags_and_applies_on_release() {
         .unwrap();
     complete_backend_actions(&mut shell, &backend).await;
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Ultra));
-    assert!(shell.selector.is_none());
+    assert!(shell.selector.as_ref().unwrap().shows_ultra());
 
-    shell.open_reasoning_selector();
     press_plain_key(&mut shell, &config, &mut backend, KeyCode::Left).await;
     press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    assert!(!shell.selector.as_ref().unwrap().shows_ultra());
+    // Choose another stop before the preceding write completes, then dismiss.
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Left).await;
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    shell
+        .handle_mouse_selection_down(area, Position::new(2, 2), &config, &mut backend)
+        .await
+        .unwrap();
+    assert!(shell.selector.is_none());
     complete_backend_actions(&mut shell, &backend).await;
-    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Low));
+    assert!(shell.selector.is_none());
 }
 
 #[tokio::test]

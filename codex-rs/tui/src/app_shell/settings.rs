@@ -3,6 +3,7 @@ use super::design::palette;
 use super::design::selection_style;
 use super::integrations::McpInventorySummary;
 use super::integrations::PluginInventorySummary;
+use super::selector::ReasoningEffortValue;
 use crate::app_theme::TuiAppTheme;
 use crate::text_input::EditableText;
 use crate::text_input::TextInputAction;
@@ -31,6 +32,16 @@ pub(super) struct SettingsState {
     pub(super) focused: bool,
     edit: Option<SettingsEdit>,
     feedback: Option<SettingsFeedback>,
+    pub(super) effort_save: EffortSave,
+}
+
+/// Keep the last committed stop while a previous effort write is in flight.
+#[derive(Debug, Clone, Default)]
+pub(super) enum EffortSave {
+    #[default]
+    Idle,
+    Saving,
+    Queued(ReasoningEffortValue),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

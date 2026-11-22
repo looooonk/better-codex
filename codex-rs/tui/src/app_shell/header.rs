@@ -43,8 +43,11 @@ impl HeaderView<'_> {
         };
         let status_width = line_width(&status) as u16;
         let project_width = content.width.saturating_sub(status_width + 1);
-        Paragraph::new(truncate_line_with_ellipsis_if_overflow(project, usize::from(project_width)))
-            .render(content, buf);
+        Paragraph::new(truncate_line_with_ellipsis_if_overflow(
+            project,
+            usize::from(project_width),
+        ))
+        .render(content, buf);
         let status_area = Rect::new(content.right() - status_width, content.y, status_width, 1);
         Paragraph::new(status)
             .right_aligned()

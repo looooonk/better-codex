@@ -6,7 +6,6 @@ use super::SelectorState;
 use crate::app_shell::design::fill_rect;
 use crate::app_shell::design::palette;
 use crate::app_shell::design::pane_style;
-use crate::app_shell::reasoning_ripple::ultra_color;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::buffer::Buffer;
@@ -19,12 +18,19 @@ use ratatui::widgets::BorderType;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 
+#[path = "effort_rail.rs"]
+mod effort_rail;
+
+use effort_rail::EffortRail;
+use effort_rail::RAINBOW_FRAMES;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct EffortSlider {
     model: String,
     default_stop: usize,
     ultra_stop: Option<usize>,
     pub(super) dragging: bool,
+    rainbow_frame: u16,
 }
 
 impl EffortSlider {
@@ -41,6 +47,7 @@ impl EffortSlider {
             default_stop: stop(&preset.default_reasoning_effort).unwrap_or_default(),
             ultra_stop: stop(&ReasoningEffort::Ultra),
             dragging: false,
+            rainbow_frame: 0,
         }
     }
 
@@ -53,7 +60,7 @@ impl EffortSlider {
     }
 
     pub(super) fn render<T>(&self, panel: Rect, selector: &SelectorState<T>, buf: &mut Buffer) {
-        if panel.height < 6 || panel.width < 8 {
+        if panel.height < 7 || panel.width < 8 {
             return;
         }
         fill_rect(buf, panel, palette::elevated());
@@ -89,53 +96,10 @@ impl EffortSlider {
                 },
                 buf,
             );
-        let track = track_area(panel);
-        let stops = selector.options.len().saturating_sub(1);
-        let span = usize::from(track.width.saturating_sub(1));
-        let intervals = stops.saturating_sub(1).max(1);
-        let offset = |index: usize| (index.saturating_sub(1) * span + intervals / 2) / intervals;
-        let thumb = offset(stop);
-        for x in 0..usize::from(track.width) {
-            let fill = if self.ultra_stop == Some(stop) {
-                ultra_color(x, span)
-            } else {
-                palette::purple()
-            };
-            let (symbol, fg) = if x == thumb {
-                ("●", palette::text())
-            } else if (1..=stops).any(|index| offset(index) == x) {
-                (
-                    "•",
-                    if x < thumb {
-                        palette::dark()
-                    } else {
-                        palette::muted()
-                    },
-                )
-            } else {
-                (" ", palette::muted())
-            };
-            buf[(track.x + x as u16, track.y)]
-                .set_symbol(symbol)
-                .set_fg(fg)
-                .set_bg(if x <= thumb { fill } else { palette::border() });
-        }
-        let hints = selector
-            .key_hints
-            .as_deref()
-            .unwrap_or("← → adjust   Enter apply   Esc close");
-        Paragraph::new(hints)
-            .centered()
-            .fg(palette::muted())
-            .render(
-                Rect::new(panel.x + 1, panel.bottom() - 2, panel.width - 2, 1),
-                buf,
-            );
+        let rail = selector.effort_rail(panel);
+        let rainbow = (self.ultra_stop == Some(stop)).then_some(self.rainbow_frame);
+        rail.render(stop, rainbow, buf);
     }
-}
-
-fn track_area(panel: Rect) -> Rect {
-    Rect::new(panel.x + 2, panel.y + 3, panel.width.saturating_sub(4), 1).intersection(panel)
 }
 
 fn reset_area(panel: Rect) -> Rect {
@@ -147,23 +111,32 @@ impl<T> SelectorState<T> {
         self.slider.is_some()
     }
 
-    fn nearest_stop(&self, track: Rect, x: u16) -> usize {
-        let stops = self.options.len().saturating_sub(1);
-        let span = usize::from(track.width.saturating_sub(1)).max(1);
-        let x = usize::from(x.saturating_sub(track.x)).min(span);
-        (1 + (x * stops.saturating_sub(1) + span / 2) / span).min(stops)
+    pub(in crate::app_shell) fn shows_ultra(&self) -> bool {
+        self.slider
+            .as_ref()
+            .is_some_and(|s| s.ultra_stop == Some(s.active_stop(self.selected)))
+    }
+
+    pub(in crate::app_shell) fn advance_rainbow(&mut self) {
+        if let Some(slider) = &mut self.slider {
+            slider.rainbow_frame = (slider.rainbow_frame + 1) % RAINBOW_FRAMES;
+        }
+    }
+
+    fn effort_rail(&self, panel: Rect) -> EffortRail {
+        EffortRail::new(panel, self.options.len().saturating_sub(1))
     }
 
     pub(super) fn slider_stop_at(&self, panel: Rect, position: Position) -> Option<usize> {
-        let track = track_area(panel);
-        track
+        let rail = self.effort_rail(panel);
+        rail.area
             .contains(position)
-            .then(|| self.nearest_stop(track, position.x))
+            .then(|| rail.nearest_stop(position.x))
     }
 
     pub(in crate::app_shell) fn drag_slider(&mut self, panel: Rect, position: Position) {
         if self.slider.as_ref().is_some_and(|slider| slider.dragging) {
-            self.selected = self.nearest_stop(track_area(panel), position.x);
+            self.selected = self.effort_rail(panel).nearest_stop(position.x);
         }
     }
 }
@@ -195,7 +168,7 @@ impl<T: Clone> SelectorState<T> {
         if !std::mem::take(&mut slider.dragging) {
             return None;
         }
-        self.selected = self.nearest_stop(track_area(panel), position.x);
+        self.selected = self.effort_rail(panel).nearest_stop(position.x);
         Some(self.selected_value())
     }
 }

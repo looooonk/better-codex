@@ -3,7 +3,8 @@ use super::super::backend::AppShellBackend;
 use super::super::is_unmodified_action_key;
 use super::super::is_unmodified_key_event;
 use super::super::is_unmodified_key_press;
-use super::super::reasoning_ripple::ReasoningRippleTone;
+use super::super::selector::ReasoningEffortValue;
+use super::EffortSave;
 use super::SettingsAction;
 use super::SettingsView;
 use super::background::SettingsChange;
@@ -307,10 +308,6 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        let current_thread_effort = self
-            .reasoning_effort
-            .clone()
-            .or_else(|| self.default_reasoning_effort(&self.model));
         let preset = self
             .available_models
             .iter()
@@ -343,10 +340,6 @@ impl ShellState {
             SettingsChange::Model {
                 model: model.clone(),
                 effort: effort.clone(),
-                ripple_tone: ReasoningRippleTone::for_transition(
-                    current_thread_effort.as_ref(),
-                    effort.as_ref(),
-                ),
                 service_tier,
             },
             edits,
@@ -391,15 +384,19 @@ impl ShellState {
 
     pub(in crate::app_shell) fn apply_reasoning_effort<S>(
         &mut self,
-        effort: Option<ReasoningEffort>,
-        app_server: &mut S,
+        choice: ReasoningEffortValue,
+        app_server: &S,
     ) where
         S: AppShellBackend,
     {
-        let current_thread_effort = self
-            .reasoning_effort
-            .clone()
-            .or_else(|| self.default_reasoning_effort(&self.model));
+        if !matches!(self.settings.effort_save, EffortSave::Idle) {
+            self.settings.effort_save = EffortSave::Queued(choice);
+            return;
+        }
+        let effort = match choice {
+            ReasoningEffortValue::Default => None,
+            ReasoningEffortValue::Explicit(effort) => Some(effort),
+        };
         let thread_effort = effort
             .clone()
             .or_else(|| self.default_reasoning_effort(&self.model));
@@ -407,10 +404,6 @@ impl ShellState {
             app_server,
             SettingsChange::ReasoningEffort {
                 effort: effort.clone(),
-                ripple_tone: ReasoningRippleTone::for_transition(
-                    current_thread_effort.as_ref(),
-                    thread_effort.as_ref(),
-                ),
                 thread_effort: thread_effort.clone(),
             },
             build_model_selection_edits(&self.model, effort.as_ref()),

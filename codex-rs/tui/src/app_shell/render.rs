@@ -482,12 +482,7 @@ impl ShellView<'_> {
             lines = lines.into_iter().skip(start).take(visible_height).collect();
         }
         Paragraph::new(lines).render(body, buf);
-        let ripple = self
-            .shell
-            .reasoning_ripple
-            .as_ref()
-            .and_then(|ripple| ripple.frame(std::time::Instant::now()));
-        ComposerToolbar::new(self.shell, area).render(ripple, self.base_hover_position(), buf);
+        ComposerToolbar::new(self.shell, area).render(self.base_hover_position(), buf);
     }
 
     fn base_hover_position(&self) -> Option<Position> {

@@ -1,7 +1,6 @@
 use super::ShellState;
 use super::design::palette;
 use super::design::pane_content_rect;
-use super::reasoning_ripple::ReasoningRippleFrame;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
@@ -27,7 +26,6 @@ struct Button {
 
 pub(super) struct ComposerToolbar {
     buttons: [Button; 4],
-    row: Rect,
 }
 
 impl ComposerToolbar {
@@ -106,7 +104,7 @@ impl ComposerToolbar {
             button.area = Rect::new(x, row.y, width, row.height).intersection(row);
             right = x.saturating_sub(1);
         }
-        Self { buttons, row }
+        Self { buttons }
     }
 
     pub(super) fn effort_area(&self) -> Rect {
@@ -120,14 +118,7 @@ impl ComposerToolbar {
             .map(|button| button.control)
     }
 
-    pub(super) fn render(
-        self,
-        ripple: Option<ReasoningRippleFrame>,
-        pointer: Option<Position>,
-        buf: &mut Buffer,
-    ) {
-        let effort = self.effort_area();
-        let ripple_areas = [self.buttons[1].area, effort, self.buttons[3].area];
+    pub(super) fn render(self, pointer: Option<Position>, buf: &mut Buffer) {
         for button in self.buttons {
             let hovered = pointer.is_some_and(|position| button.area.contains(position));
             let color = match button.control {
@@ -144,9 +135,6 @@ impl ComposerToolbar {
                     palette::elevated()
                 })
                 .render(button.area, buf);
-        }
-        if let Some(frame) = ripple {
-            frame.render(self.row, effort, ripple_areas, buf);
         }
     }
 }

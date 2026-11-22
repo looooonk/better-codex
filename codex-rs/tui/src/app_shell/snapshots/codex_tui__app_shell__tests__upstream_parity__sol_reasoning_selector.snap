@@ -3,7 +3,7 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
- BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ▎ YOU  Create a divergent standalone TUI.        │▎◆ SESSIONS
@@ -26,9 +26,9 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
           ╭──────────────────────────────────────╮│
           │                 Ultra              ↺ ││
           │              GPT-6.2-Sol             ││
-╭─────────│ •      •      •      •      •      ● ││
-│> Summari│                                      ││
-│         │ ← → adjust   Enter apply   Esc close ││
+╭─────────│ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ││
+│> Summari│   •     •     •      •     •     ●   ││
+│         │ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││
 │         ╰──────────────────────────────────────╯│
 │Permissions ▾      gpt-6.2-sol ▾ ultra ▾ Speed ▾││
 ╰────────────────────────────────────────────────╯│

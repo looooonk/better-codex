@@ -1,6 +1,7 @@
 use super::*;
 use crate::app_shell::ShellState;
 use crate::app_shell::backend::AppShellBackend;
+use crate::app_shell::selector::ReasoningEffortValue;
 use crate::key_hint::alt;
 use crate::key_hint::ctrl;
 use crate::key_hint::plain;
@@ -242,7 +243,10 @@ impl ShellState {
                             .saturating_add_signed(isize::from(step))
                             .min(choices.len().saturating_sub(1));
                         let effort = choices[next].effort.clone();
-                        self.apply_reasoning_effort(Some(effort), app_server);
+                        self.apply_reasoning_effort(
+                            ReasoningEffortValue::Explicit(effort),
+                            app_server,
+                        );
                     }
                 }
             }

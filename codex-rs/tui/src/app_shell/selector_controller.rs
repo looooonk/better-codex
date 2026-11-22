@@ -6,6 +6,7 @@ use super::selector::SelectorOutcome;
 use super::selector::SelectorState;
 use super::selector::SelectorValue;
 use super::selector::ServiceTierValue;
+use super::settings::EffortSave;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use color_eyre::Result;
 use crossterm::event::KeyEvent;
@@ -78,10 +79,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        if self.has_pending_backend_action(ActionGroup::Settings) {
-            return Ok(());
-        }
-        if self.handle_transcript_find_key(key) {
+        if !self.has_pending_backend_action(ActionGroup::Settings)
+            && self.handle_transcript_find_key(key)
+        {
             return Ok(());
         }
         self.handle_selector_navigation(key, app_server).await
@@ -92,7 +92,7 @@ impl ShellState {
         key: KeyEvent,
         app_server: &mut S,
     ) -> Result<()> {
-        if self.has_pending_backend_action(ActionGroup::Settings) {
+        if self.selector_waiting_for_settings() {
             return Ok(());
         }
         let outcome = self
@@ -112,16 +112,26 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        if self.has_pending_backend_action(ActionGroup::Settings) {
-            return Ok(self.selector.is_some());
-        }
+        let saving = self.selector_waiting_for_settings();
         let area = (super::render::ShellView { shell: self }).selector_area(area);
         let Some(selector) = &mut self.selector else {
             return Ok(false);
         };
+        if saving && (!selector.is_effort_slider() || area.contains(position)) {
+            return Ok(true);
+        }
         let outcome = selector.select_at(area, position);
         self.resolve_selector_outcome(outcome, app_server).await?;
         Ok(true)
+    }
+
+    fn selector_waiting_for_settings(&self) -> bool {
+        self.has_pending_backend_action(ActionGroup::Settings)
+            && (matches!(self.settings.effort_save, EffortSave::Idle)
+                || !self
+                    .selector
+                    .as_ref()
+                    .is_some_and(SelectorState::is_effort_slider))
     }
 
     pub(super) fn open_selector(&mut self, mut selector: SelectorState<SelectorValue>) {
@@ -169,11 +179,8 @@ impl ShellState {
                 self.selector = None;
             }
             SelectorValue::Model(model) => self.apply_model(model, app_server),
-            SelectorValue::ReasoningEffort(ReasoningEffortValue::Default) => {
-                self.apply_reasoning_effort(None, app_server);
-            }
-            SelectorValue::ReasoningEffort(ReasoningEffortValue::Explicit(effort)) => {
-                self.apply_reasoning_effort(Some(effort), app_server);
+            SelectorValue::ReasoningEffort(choice) => {
+                self.apply_reasoning_effort(choice, app_server)
             }
             SelectorValue::ServiceTier(ServiceTierValue::Default) => {
                 self.apply_service_tier(

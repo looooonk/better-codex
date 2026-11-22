@@ -9,7 +9,6 @@ use super::backend::AppShellBackend;
 use super::backend::shutdown_app_shell_backend;
 use super::backend_actions::TurnSubmission;
 use super::local_app_theme;
-use super::reasoning_ripple;
 use super::render::draw_shell;
 use super::shell_layout::terminal_size_supported;
 use super::startup_availability_nux;
@@ -215,8 +214,8 @@ pub(crate) async fn run(
         workspace_status_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut reasoning_ripple_refresh = tokio::time::interval(reasoning_ripple::FRAME_INTERVAL);
-        reasoning_ripple_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut effort_refresh = tokio::time::interval(Duration::from_millis(/*millis*/ 40));
+        effort_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut turn_timer_refresh = tokio::time::interval_at(
             tokio::time::Instant::now() + TURN_TIMER_REFRESH_INTERVAL,
             TURN_TIMER_REFRESH_INTERVAL,
@@ -509,14 +508,9 @@ pub(crate) async fn run(
                         tui.frame_requester().schedule_frame();
                     }
                 }
-                _ = reasoning_ripple_refresh.tick(), if shell.reasoning_ripple.is_some() => {
-                    let now = std::time::Instant::now();
-                    if shell
-                        .reasoning_ripple
-                        .as_ref()
-                        .is_some_and(|ripple| ripple.is_expired(now))
-                    {
-                        shell.reasoning_ripple = None;
+                _ = effort_refresh.tick(), if shell.animations && shell.selector.as_ref().is_some_and(super::selector::SelectorState::shows_ultra) => {
+                    if let Some(selector) = shell.selector.as_mut() {
+                        selector.advance_rainbow();
                     }
                     tui.frame_requester().schedule_frame();
                 }

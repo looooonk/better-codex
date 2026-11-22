@@ -2,10 +2,9 @@ use super::super::ShellState;
 use super::super::backend::AppShellBackend;
 use super::super::backend_actions::ActionGroup;
 use super::super::backend_actions::BackendActionResult;
-use super::super::reasoning_ripple::ReasoningRipple;
-use super::super::reasoning_ripple::ReasoningRippleTone;
 use super::super::selector::SelectorState;
 use super::super::selector::SelectorValue;
+use super::EffortSave;
 use super::SettingsAction;
 use super::ultra_reasoning_concurrency_warning;
 use crate::app_theme::TuiAppTheme;
@@ -28,13 +27,11 @@ pub(super) enum SettingsChange {
     Model {
         model: String,
         effort: Option<ReasoningEffort>,
-        ripple_tone: Option<ReasoningRippleTone>,
         service_tier: Option<String>,
     },
     ServiceTier(Option<String>),
     ReasoningEffort {
         effort: Option<ReasoningEffort>,
-        ripple_tone: Option<ReasoningRippleTone>,
         thread_effort: Option<ReasoningEffort>,
     },
     ApprovalPolicy(AskForApproval),
@@ -73,10 +70,16 @@ impl ShellState {
             );
             return;
         }
+        let saving_effort = matches!(change, SettingsChange::ReasoningEffort { .. });
+        let selector = if saving_effort {
+            None
+        } else {
+            self.selector.clone()
+        };
         let update = SettingsUpdate {
             change,
             edit: self.settings.edit_value(),
-            selector: self.selector.clone(),
+            selector,
         };
         if !self
             .backend_actions
@@ -86,6 +89,8 @@ impl ShellState {
             })
         {
             self.push_status("settings update is already in progress");
+        } else if saving_effort {
+            self.settings.effort_save = EffortSave::Saving;
         }
     }
 
@@ -104,7 +109,6 @@ impl ShellState {
             SettingsChange::Model {
                 model,
                 effort,
-                ripple_tone,
                 service_tier,
             } => {
                 if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
@@ -116,25 +120,14 @@ impl ShellState {
                 }
                 self.model = model;
                 self.reasoning_effort = effort;
-                self.reasoning_ripple = if self.animations {
-                    ripple_tone.map(|tone| ReasoningRipple::new(tone, std::time::Instant::now()))
-                } else {
-                    None
-                };
                 self.service_tier = service_tier;
             }
             SettingsChange::ServiceTier(service_tier) => self.service_tier = service_tier,
             SettingsChange::ReasoningEffort {
                 effort,
-                ripple_tone,
                 thread_effort,
             } => {
                 self.reasoning_effort = effort.clone();
-                self.reasoning_ripple = if self.animations {
-                    ripple_tone.map(|tone| ReasoningRipple::new(tone, std::time::Instant::now()))
-                } else {
-                    None
-                };
                 if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
                     **collaboration_mode = collaboration_mode.with_updates(
                         /*model*/ None,
@@ -152,12 +145,7 @@ impl ShellState {
             SettingsChange::ApprovalPolicy(policy) => self.approval_policy = policy,
             SettingsChange::AppTheme(app_theme) => self.app_theme = app_theme,
             SettingsChange::Theme(theme) => self.tui_theme = theme,
-            SettingsChange::Animations(animations) => {
-                self.animations = animations;
-                if !animations {
-                    self.reasoning_ripple = None;
-                }
-            }
+            SettingsChange::Animations(animations) => self.animations = animations,
             SettingsChange::Tooltips(show_tooltips) => self.show_tooltips = show_tooltips,
         }
         if let Some((action, draft)) = update.edit {

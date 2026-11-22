@@ -452,7 +452,11 @@ impl ShellState {
                 ),
             },
             BackendActionResult::Settings { update, result } => {
-                self.complete_settings_update(update, result)
+                let effort_save = std::mem::take(&mut self.settings.effort_save);
+                self.complete_settings_update(update, result);
+                if let super::settings::EffortSave::Queued(choice) = effort_save {
+                    self.apply_reasoning_effort(choice, app_server);
+                }
             }
             BackendActionResult::QueueHydration { thread_id, result } => {
                 self.complete_queue_hydration(app_server, thread_id, result)

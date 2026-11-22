@@ -136,7 +136,6 @@ mod plugin_management;
 mod pointer;
 mod queued_message_popup_view;
 mod queued_messages;
-mod reasoning_ripple;
 mod recap;
 mod render;
 mod rewind;
@@ -226,7 +225,6 @@ use mcp_management::McpManagementState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
 use queued_messages::DurableQueueState;
-use reasoning_ripple::ReasoningRipple;
 pub(crate) use runtime::run;
 #[cfg(test)]
 use runtime::start_selected_session;
@@ -458,7 +456,6 @@ struct ShellState {
     active_permission_profile: Option<codex_protocol::models::ActivePermissionProfile>,
     runtime_workspace_roots: Vec<codex_utils_absolute_path::AbsolutePathBuf>,
     reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
-    reasoning_ripple: Option<ReasoningRipple>,
     service_tier: Option<String>,
     collaboration_mode: Option<Box<codex_protocol::config_types::CollaborationMode>>,
     max_concurrent_threads_per_session: usize,
@@ -628,7 +625,6 @@ impl ShellState {
             active_permission_profile: session.active_permission_profile,
             runtime_workspace_roots: session.runtime_workspace_roots,
             reasoning_effort: session.reasoning_effort,
-            reasoning_ripple: None,
             service_tier: session.service_tier,
             collaboration_mode: session.collaboration_mode,
             max_concurrent_threads_per_session,
@@ -2399,7 +2395,6 @@ impl ShellState {
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
-            reasoning_ripple: None,
             service_tier: None,
             collaboration_mode: None,
             max_concurrent_threads_per_session: 4,
@@ -2707,7 +2702,6 @@ pub mod bench_support {
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
-            reasoning_ripple: None,
             service_tier: None,
             collaboration_mode: None,
             max_concurrent_threads_per_session: 4,
