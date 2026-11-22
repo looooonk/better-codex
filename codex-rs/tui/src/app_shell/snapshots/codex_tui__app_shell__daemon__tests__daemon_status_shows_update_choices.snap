@@ -3,7 +3,7 @@ source: tui/src/app_shell/daemon_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- BETTER CODEX  better-codex                                                              ● thinking
+ better-codex                                                                            ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ PLAN  1. Build shell                                                                           │

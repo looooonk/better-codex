@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "buffer_contents(&bottom, area)"
 ---
 
- BETTER CODEX  better-codex                                          ● thinking
+ better-codex                                                        ● thinking
 ────────────────────────────────────────────────────────────────────────────────
 
          3. Render dashboard                                                  │

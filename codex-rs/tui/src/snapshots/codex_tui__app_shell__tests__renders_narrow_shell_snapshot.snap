@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- BETTER CODEX  better-codex                                        ● thinking
+ better-codex                                                      ● thinking
 ──────────────────────────────────────────────────────────────────────────────
                             │
  ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help

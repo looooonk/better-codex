@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: after
 ---
                                                   │
- BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ▎ CODEX  Started a fullscreen app shell backed │ │▎◆ SESSIONS

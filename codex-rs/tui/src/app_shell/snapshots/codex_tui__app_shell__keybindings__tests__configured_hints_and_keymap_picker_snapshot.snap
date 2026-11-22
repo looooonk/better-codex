@@ -3,7 +3,7 @@ source: tui/src/app_shell/keybindings_tests.rs
 expression: rendered
 ---
                                                             │
- BETTER CODEX  better-codex                      ● thinking │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                                    ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ────────────────────────────────────────────────────────────│
                                                             │CONFIGURED SHORTCUTS
  ▎ YOU  Create a divergent standalone TUI.                  │Use /keymap to change a binding; unbind disables

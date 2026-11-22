@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- BETTER CODEX  better-codex            ◑ thinking · turn 1h 25m 47s · 0 tok/s
+ better-codex                          ◑ thinking · turn 1h 25m 47s · 0 tok/s
 ──────────────────────────────────────────────────────────────────────────────
                             │
  ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help

@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- BETTER CODEX  locked                  ● thinking │   Status   │  Agents   │  Sessions   │  Help
+ locked                                ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ▎ YOU  Create a divergent standalone TUI.        │▎◆ SETTINGS

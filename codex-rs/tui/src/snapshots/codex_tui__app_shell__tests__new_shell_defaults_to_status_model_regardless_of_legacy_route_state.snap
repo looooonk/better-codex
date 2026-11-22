@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- BETTER CODEX  better-codex               ● ready │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                             ● ready │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
                                                   │▎◆ SETTINGS
                                                   │▎Model │ Permissions │ Appearance │Integrations
                                                   │▎━━━━━━─────────────────────────────────────────
                                                   │▎› Model: gpt-5-codex
-   █   █ █         █         █           █    █   │▎  Reasoning: default
-   █ ▄ █ █▀▄  ▀▀▄ ▀█▀   ▄▀▀▀ █▀▄ ▄▀▄ █ █ █  ▄▀█   │▎  Service tier: default
-   █▄▀▄█ █ █ ▄▀▀█  █     ▀▀▄ █ █ █ █ █ █ █  █ █   │▎
-   ▀   ▀ ▀ ▀  ▀▀▀  ▀▀   ▀▀▀  ▀ ▀  ▀   ▀▀  ▀  ▀▀   │
+                                                  │▎  Reasoning: default
+                                                  │▎  Service tier: default
+                                                  │▎
+                                                  │
                                                   │▎◆ PLAN
-                     █       ▀ █    █ ▄▀▀▄        │▎no active plan
-        █   █ ▄▀▀▄   █▀▄ █ █ █ █  ▄▀█   ▄▀        │
-        █ █ █ █▀▀▀   █ █ █ █ █ █  █ █  ▀          │▎◆ TOOLS
-         ▀ ▀   ▀▀▀   ▀▀   ▀▀ ▀  ▀  ▀▀  ▀          │▎idle
+                                                  │▎no active plan
+                                                  │
+                                                  │▎◆ TOOLS
+                                                  │▎idle
                                                   │
                                                   │▎◆ EDITS
                                                   │▎no changes

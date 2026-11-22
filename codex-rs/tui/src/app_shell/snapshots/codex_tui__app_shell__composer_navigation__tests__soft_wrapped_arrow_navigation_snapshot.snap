@@ -2,7 +2,7 @@
 source: tui/src/app_shell/composer_navigation_tests.rs
 expression: "render_shell_with_visible_cursor(&shell, area)"
 ---
- BETTER CODEX  better-codex            ● thinking
+ better-codex                          ● thinking
 ──────────────────────────────────────────────────
 
  ▌ tool exec just test -p codex-tui             │

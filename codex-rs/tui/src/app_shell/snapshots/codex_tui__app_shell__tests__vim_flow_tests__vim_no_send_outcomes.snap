@@ -2,7 +2,7 @@
 source: tui/src/app_shell/vim_flow_tests.rs
 expression: "rendered_outcomes.join(\"\\n---\\n\")"
 ---
- BETTER CODEX  better-codex                                          ● thinking
+ better-codex                                                        ● thinking
 ────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input cancelled
@@ -19,7 +19,7 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 │ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ---
- BETTER CODEX  better-codex                                          ● thinking
+ better-codex                                                        ● thinking
 ────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input cancelled
@@ -36,7 +36,7 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 │ Permissions ▾                             gpt-5-codex ▾   Effort ▾   Speed ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ---
- BETTER CODEX  better-codex                                     ● action failed
+ better-codex                                                   ● action failed
 ────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input cancelled

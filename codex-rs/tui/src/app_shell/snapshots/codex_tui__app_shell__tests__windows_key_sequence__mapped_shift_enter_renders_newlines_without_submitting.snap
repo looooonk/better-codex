@@ -3,7 +3,7 @@ source: tui/src/app_shell/windows_key_sequence_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24))"
 ---
                                                   │
- BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
                                                 ┃ │▎◆ SESSIONS

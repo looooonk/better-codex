@@ -2,7 +2,7 @@
 source: tui/src/app_shell/vim_flow_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
- BETTER CODEX  better-codex                                          ● thinking
+ better-codex                                                        ● thinking
 ────────────────────────────────────────────────────────────────────────────────
 
  ▎ STATUS  Vim input exceeds the 10000-byte submission limit; returned it to

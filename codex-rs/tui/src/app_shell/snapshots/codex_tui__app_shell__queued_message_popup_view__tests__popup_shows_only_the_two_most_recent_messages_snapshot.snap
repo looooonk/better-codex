@@ -3,7 +3,7 @@ source: tui/src/app_shell/queued_message_popup_view_tests.rs
 expression: rendered
 ---
 
- BETTER CODEX  better-codex                                        ● thinking
+ better-codex                                                      ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
          3. Render dashboard                                                │

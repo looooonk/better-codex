@@ -79,6 +79,7 @@ fn active_turn_header_shows_rate_and_keeps_timer_in_compact_headers() {
             .collect::<String>();
 
         assert!(rendered.contains("1h 25m 47s"), "width {width}: {rendered}");
+        assert!(rendered.contains("42 tok/s"), "width {width}: {rendered}");
         rows.push(rendered.trim_end().to_string());
     }
     insta::assert_snapshot!(rows.join("\n"));

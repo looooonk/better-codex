@@ -3,7 +3,7 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
- BETTER CODEX  better-codex              ● confirm deletion │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                            ● confirm deletion │   Status   │  Agents   │  Sessions   │  Help
 ────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                             │
  ▎ YOU  Create a divergent standalone TUI.                  │▎◆ SESSIONS

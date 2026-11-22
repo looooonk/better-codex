@@ -2,7 +2,7 @@
 source: tui/src/app_shell/pointer_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- BETTER CODEX  better-codex                                        ● thinking
+ better-codex                                                      ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
  ▌ edited 3 files +128 -24                                                  │

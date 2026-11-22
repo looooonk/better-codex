@@ -3,7 +3,7 @@ source: tui/src/app_shell/voice_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- BETTER CODEX  better-codex                                                                        ● thinking
+ better-codex                                                                                      ● thinking
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ SYSTEM  Voice settings

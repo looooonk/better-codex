@@ -3,7 +3,7 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
 
- BETTER CODEX  better-codex                                                                        ● thinking
+ better-codex                                                                                      ● thinking
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ YOU  Find the café response

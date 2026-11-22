@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
 ---
 
- BETTER CODEX  better-codex                                          ◐ thinking · turn 0s · 0 tok/s
+ better-codex                                                        ◐ thinking · turn 0s · 0 tok/s
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ SYSTEM  session reverted

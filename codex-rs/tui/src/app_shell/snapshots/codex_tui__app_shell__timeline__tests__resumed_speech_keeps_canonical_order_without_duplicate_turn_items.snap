@@ -3,7 +3,7 @@ source: tui/src/app_shell/timeline_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- BETTER CODEX  better-codex                                                              ● thinking
+ better-codex                                                                            ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ YOU  Voice: Please fix the bug.

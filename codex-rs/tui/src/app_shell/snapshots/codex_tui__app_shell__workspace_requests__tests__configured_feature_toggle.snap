@@ -3,7 +3,7 @@ source: tui/src/app_shell/workspace_requests_tests.rs
 expression: rendered
 ---
 
- BETTER CODEX  better-codex                                                              ● thinking
+ better-codex                                                                            ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ SYSTEM  shell_snapshot enabled in configuration

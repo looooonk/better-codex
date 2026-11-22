@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- BETTER CODEX            ◐ branching conversation │   Status   │  Agents   │  Sessions   │  Help
+ better-codex            ◐ branching conversation │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ▎ SYSTEM  switched session                       │▎◆ SESSIONS

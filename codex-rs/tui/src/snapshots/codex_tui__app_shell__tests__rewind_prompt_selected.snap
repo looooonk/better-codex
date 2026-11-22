@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- BETTER CODEX  better-codex                                                                 ● ready
+ better-codex                                                                               ● ready
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  SELECT 5/6  e BRANCH EDIT

@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- BETTER CODEX  better-codex                      ● thinking
+ better-codex                                    ● thinking
 ────────────────────────────────────────────────────────────
 
  ▌ tool exec just test -p codex-tui                       │

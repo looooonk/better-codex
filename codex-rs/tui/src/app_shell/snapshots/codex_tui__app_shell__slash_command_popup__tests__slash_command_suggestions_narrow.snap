@@ -3,7 +3,7 @@ source: tui/src/app_shell/slash_command_popup_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 48, 18))"
 ---
 
- BETTER CODEX  better-codex          ● thinking
+ better-codex                        ● thinking
 ────────────────────────────────────────────────
 
                                               │

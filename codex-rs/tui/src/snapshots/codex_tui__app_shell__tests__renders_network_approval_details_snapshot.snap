@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- BETTER CODEX  better-codex            ● thinking │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                          ● thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ▎ PLAN  1. Build shell                         │ │▎◆ SESSIONS

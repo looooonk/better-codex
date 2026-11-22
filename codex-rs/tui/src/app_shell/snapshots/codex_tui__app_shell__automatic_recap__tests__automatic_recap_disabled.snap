@@ -3,7 +3,7 @@ source: tui/src/app_shell/automatic_recap_tests.rs
 expression: screen
 ---
 
- BETTER CODEX  better-codex                                                              ● thinking
+ better-codex                                                                            ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ SYSTEM  Automatic recaps off. Manual /recap remains available.

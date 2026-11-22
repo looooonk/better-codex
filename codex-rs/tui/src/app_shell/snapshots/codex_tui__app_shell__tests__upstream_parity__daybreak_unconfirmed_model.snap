@@ -3,7 +3,7 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- BETTER CODEX  better-codex    ● Daybreak | ready │   Status   │  Agents   │  Sessions   │  Help
+ better-codex                  ● Daybreak | ready │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ▎ ERROR  Daybreak support for model gpt-5-       │▎◆ SESSIONS

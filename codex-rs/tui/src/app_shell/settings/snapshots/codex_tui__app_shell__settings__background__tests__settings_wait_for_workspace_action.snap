@@ -3,7 +3,7 @@ source: tui/src/app_shell/settings/background_tests.rs
 expression: rendered
 ---
 
- BETTER CODEX  better-codex                                                                         ◐ pending
+ better-codex                                                                                       ◐ pending
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ YOU  Create a divergent standalone TUI.

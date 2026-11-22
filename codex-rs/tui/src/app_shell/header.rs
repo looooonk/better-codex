@@ -36,11 +36,11 @@ impl HeaderView<'_> {
         let status = if line_width(&full_status) > status_budget && self.turn_metrics.is_some() {
             let mut compact = self.turn_metrics_line();
             compact.spans.insert(0, self.status_indicator());
-            compact
+            // Prefer the complete timer and throughput once the status is compact.
+            truncate_line_with_ellipsis_if_overflow(compact, width.saturating_sub(2))
         } else {
-            full_status
+            truncate_line_with_ellipsis_if_overflow(full_status, status_budget)
         };
-        let status = truncate_line_with_ellipsis_if_overflow(status, status_budget);
         let status_width = line_width(&status) as u16;
         let project_width = content.width.saturating_sub(status_width + 1);
         Paragraph::new(truncate_line_with_ellipsis_if_overflow(project, usize::from(project_width)))

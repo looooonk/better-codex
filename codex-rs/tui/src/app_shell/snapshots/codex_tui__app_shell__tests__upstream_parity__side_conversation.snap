@@ -3,7 +3,7 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
 
- BETTER CODEX  better-codex                                              ● side | side conversation
+ better-codex                                                            ● side | side conversation
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ▎ SYSTEM  Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to

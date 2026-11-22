@@ -3,7 +3,7 @@ source: tui/src/app_shell/queued_message_popup_view_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- BETTER CODEX  better-codex                                        ● thinking
+ better-codex                                                      ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
          3. Render dashboard                                                │

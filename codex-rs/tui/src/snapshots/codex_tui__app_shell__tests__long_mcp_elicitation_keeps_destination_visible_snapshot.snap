@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- BETTER CODEX  better-codex                      ● thinking
+ better-codex                                    ● thinking
 ────────────────────────────────────────────────────────────
 
  ▌ edited 3 files +128 -24                                │

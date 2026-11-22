@@ -2,7 +2,7 @@
 source: tui/src/app_shell/source_preview_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- BETTER CODEX  better-codex                          ● thinking
+ better-codex                                        ● thinking
 ────────────────────────────────────────────────────────────────
   ╭ Source ──────────────────────────────────────────────────╮
   │ ./Makefile:5:3                                           │
