@@ -3,7 +3,7 @@ use super::design::palette;
 use super::design::pane_content_rect;
 use super::turn_timer::TurnMetrics;
 use crate::line_truncation::line_width;
-use crate::text_formatting::truncate_text;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize;
@@ -30,36 +30,22 @@ impl HeaderView<'_> {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or(self.cwd);
-        let full_brand = Line::from(vec![
-            "BETTER CODEX".bold(),
-            "  ".into(),
-            truncate_text(workspace, /*max_graphemes*/ 18).fg(palette::muted()),
-        ]);
         let width = usize::from(content.width);
-        let status_width = line_width(&full_status);
-        let brand = if line_width(&full_brand) + 2 + status_width <= width {
-            full_brand
-        } else if 13 + status_width <= width {
-            "BETTER CODEX".bold().into()
-        } else {
-            "BC".bold().into()
-        };
-        let brand_width = line_width(&brand) as u16;
-        Paragraph::new(brand).render(content, buf);
-        let status_area = Rect::new(
-            content.x + brand_width + 1,
-            content.y,
-            content.width.saturating_sub(brand_width + 1),
-            1,
-        );
-        let status = if status_width > usize::from(status_area.width) && self.turn_metrics.is_some()
-        {
+        let project = Line::from(workspace.to_owned().bold());
+        let status_budget = width.saturating_sub(line_width(&project).min(10) + 1);
+        let status = if line_width(&full_status) > status_budget && self.turn_metrics.is_some() {
             let mut compact = self.turn_metrics_line();
             compact.spans.insert(0, self.status_indicator());
             compact
         } else {
             full_status
         };
+        let status = truncate_line_with_ellipsis_if_overflow(status, status_budget);
+        let status_width = line_width(&status) as u16;
+        let project_width = content.width.saturating_sub(status_width + 1);
+        Paragraph::new(truncate_line_with_ellipsis_if_overflow(project, usize::from(project_width)))
+            .render(content, buf);
+        let status_area = Rect::new(content.right() - status_width, content.y, status_width, 1);
         Paragraph::new(status)
             .right_aligned()
             .render(status_area, buf);

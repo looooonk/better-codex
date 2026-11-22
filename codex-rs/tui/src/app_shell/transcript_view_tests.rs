@@ -180,7 +180,6 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
             render_transcript(
                 &shell,
                 area,
-                /*overlay*/ None,
                 /*hover_position*/ None,
                 &mut buffer,
             );
@@ -378,7 +377,7 @@ fn card_hover_uses_each_card_indent() {
         let hover = Position::new(viewport.text_body.x.saturating_add(indent), y);
         let mut buf = Buffer::empty(area);
 
-        render_transcript(&shell, area, /*overlay*/ None, Some(hover), &mut buf);
+        render_transcript(&shell, area, Some(hover), &mut buf);
 
         assert_eq!(
             buf[(viewport.text_body.x.saturating_add(indent), y)]
@@ -789,7 +788,7 @@ fn text_selection_patches_only_selected_grapheme_cells() {
     let mut buf = Buffer::empty(area);
 
     render_transcript(
-        &shell, area, /*overlay*/ None, /*hover_position*/ None, &mut buf,
+        &shell, area, /*hover_position*/ None, &mut buf,
     );
     render_transcript_text_selection(&shell, area, selection, &mut buf);
 
@@ -847,7 +846,7 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
     let mut buf = Buffer::empty(area);
 
     render_transcript(
-        &shell, area, /*overlay*/ None, /*hover_position*/ None, &mut buf,
+        &shell, area, /*hover_position*/ None, &mut buf,
     );
     render_transcript_text_selection(&shell, area, selection, &mut buf);
 

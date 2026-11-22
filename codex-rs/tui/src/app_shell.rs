@@ -100,7 +100,6 @@ mod diff_view;
 mod diff_view_controller;
 mod diff_view_view;
 mod elicitation;
-mod empty_conversation;
 mod events;
 mod extension_commands;
 mod external_agent_import;

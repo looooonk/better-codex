@@ -102,10 +102,6 @@ impl ShellView<'_> {
         render_transcript(
             self.shell,
             layout.transcript,
-            match layout.dashboard {
-                Some(shell_layout::DashboardPlacement::Overlay(overlay)) => Some(overlay),
-                Some(shell_layout::DashboardPlacement::Sidebar(_)) | None => None,
-            },
             self.base_hover_position(),
             buf,
         );
