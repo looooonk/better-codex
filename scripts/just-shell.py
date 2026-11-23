@@ -31,6 +31,11 @@ def main() -> int:
     recipe_name = sys.argv[2] if len(sys.argv) > 2 else ""
     recipe_args = sys.argv[3:]
 
+    # Prefer rustup's proxies so a system Rust earlier on PATH cannot bypass the pin.
+    cargo_bin = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")) / "bin"
+    if shutil.which("rustup", path=str(cargo_bin)):
+        os.environ["PATH"] = os.pathsep.join([str(cargo_bin), os.environ["PATH"]])
+
     if re.search(r"\bcargo\s+(?:build|run|clippy|nextest|bench)\b", command):
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from rusty_v8 import prepare

@@ -46,7 +46,7 @@ cargo install --locked dotslash
 cargo install --locked cargo-nextest
 
 # Build the internal Cargo binary used by Better Codex.
-CARGO_INCREMENTAL=0 just build --profile dev-small
+just build --profile dev-small
 
 # Launch the development build with a sample prompt. The Cargo target remains
 # named codex internally.
@@ -61,10 +61,12 @@ just fix -p <crate-you-touched>
 just test -p codex-tui
 ```
 
-The root `justfile` runs Rust commands in `codex-rs` automatically. Its Cargo
-run recipes default to `dev-small`; `CODEX_CARGO_PROFILE=dev just codex --no-daemon`
-selects the full development profile for the CLI and its helper together. Its Cargo
-recipes verify and cache the pinned sandbox-enabled V8 archive and matching Rust
+The root `justfile` runs Rust commands in `codex-rs` automatically. Development
+builds and tests keep incremental compiler data only for `codex-tui`. Cargo
+still reuses compiled dependencies when their inputs are unchanged.
+The run recipes default to `dev-small`. Use `CODEX_CARGO_PROFILE=dev just codex --no-daemon`
+to select the full development profile for the CLI and its helpers.
+The Cargo recipes verify and cache the pinned sandbox-enabled V8 archive and matching Rust
 bindings under `codex-rs/target/rusty-v8`. The trusted release-manifest checksums
 live under `third_party/v8`. For direct Cargo commands, use
 `python3 ../scripts/rusty_v8.py -- cargo build ...` from `codex-rs`, or provide your
