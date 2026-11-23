@@ -232,3 +232,12 @@ jobs:
             --generate-notes \
             --notes "Unsigned macOS preview: Gatekeeper may require approval in System Settings." \
             "${options[@]}"
+
+  update-installer:
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release-index.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}

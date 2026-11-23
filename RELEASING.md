@@ -15,8 +15,9 @@ x86_64 Linux. The workflow publishes archives only for tags.
 
 The release workflow validates the tag against Cargo.toml, builds and smoke
 tests all four packages, creates SHA-256 files and build attestations, then
-publishes the GitHub release. Tags containing a prerelease suffix are marked as
-prereleases.
+publishes the GitHub release. The final job updates `scripts/latest-release` on
+`main` so the installer and `better-codex update` pick up the new version.
+Tags containing a prerelease suffix are marked as prereleases.
 
 If all four packages passed their smoke tests and publishing failed, rerun the
 current release workflow with the tag and the failed run's numeric ID:
