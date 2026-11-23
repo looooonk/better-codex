@@ -10,7 +10,7 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                                                                              │  ● ⓘ Ask for approval
          3. Render dashboard                                                                             │  ○ ⛨ Unless trusted
                                                                                                          │  ○ ⚠ Full access
- > Editing files...                                                                                      │
+        > Edited files                                                                                   │
                                                                                                          │◆ APPEARANCE
  ▎ CODEX  The new shell owns the fullscreen surface.                                                     │  ● Tokyo Night
                                                                                                          │  ○ Gruvbox Dark

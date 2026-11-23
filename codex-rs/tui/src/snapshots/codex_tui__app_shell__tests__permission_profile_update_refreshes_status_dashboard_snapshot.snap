@@ -11,9 +11,9 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
          2. Wire transcript                       │▎x Shell frame
          3. Render dashboard                      │▎> Transcript model
                                                   │▎- Approvals
- > Editing files...                               │
+        > Edited files                            │
                                                   │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+ ▎ CODEX  The new shell owns the fullscreen       │▎completed exec just test -p codex-tui
           surface.                                │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24

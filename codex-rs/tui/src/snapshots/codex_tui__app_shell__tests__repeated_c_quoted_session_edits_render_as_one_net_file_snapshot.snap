@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
   │                       │    1 - old                       │    1 + final                      │
   │                       │                                  │                                   │
   │                       │                                  │                                   │
- >│                       │                                  │                                   │
+  │                       │                                  │                                   │
   │                       │                                  │                                   │
  ▎│                       │                                  │                                   │
   │                       │                                  │                                   │

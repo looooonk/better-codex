@@ -8520,7 +8520,12 @@ fn diff_summaries_use_addition_and_removal_colors() {
 #[test]
 fn renders_tool_progress_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.push_tool("mcp progress: indexed 42 files\npreparing search results");
+    shell.push_tool_with_status_for_item(
+        "mcp-index",
+        "mcp progress: indexed 42 files\npreparing search results",
+        ToolBlockStatus::Running,
+        Some(tool_groups::ToolAction::Call("search/index".into())),
+    );
     let start = shell.tool_groups().last().unwrap().rows.start;
     shell.toggle_tool_group(start);
     let area = Rect::new(

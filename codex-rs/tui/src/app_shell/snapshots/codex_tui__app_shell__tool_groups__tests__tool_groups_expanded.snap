@@ -4,16 +4,16 @@ expression: live.1
 ---
 ▎ CODEX  I’ll check both sources.
 
-⌄ Searching web...
+       ⌄ Searched web
 
-▌ tool functions/exec_command
+         ▌ tool functions/exec_command
 
-  ▌ output build passed
+           ▌ output build passed
 
-▌ tool agent ListAgents: 0 targets
+         ▌ tool agent ListAgents: 0 targets
 
-▌ tool web search: build documentation
+         ▌ tool web search: build documentation
 
 ▎ CODEX  The build passed.
 
-> Calling docs/lookup...
+       > Called docs/lookup

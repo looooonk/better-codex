@@ -285,7 +285,7 @@ struct TranscriptLine {
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
     rewind_anchor: Option<rewind::RewindAnchor>,
-    tool_label: Option<String>,
+    tool_action: Option<tool_groups::ToolAction>,
     tool_group_expanded: bool,
     render_revision: u64,
 }
@@ -299,7 +299,7 @@ impl TranscriptLine {
             tool_status: None,
             item_id: None,
             rewind_anchor: None,
-            tool_label: None,
+            tool_action: None,
             tool_group_expanded: false,
             render_revision: next_transcript_render_revision(),
         }
@@ -314,7 +314,7 @@ impl TranscriptLine {
             tool_status: Some(status),
             item_id: Some(item_id),
             rewind_anchor: None,
-            tool_label: None,
+            tool_action: None,
             tool_group_expanded: false,
             render_revision: next_transcript_render_revision(),
         }
@@ -350,7 +350,7 @@ impl Clone for TranscriptLine {
             tool_status: self.tool_status,
             item_id: self.item_id.clone(),
             rewind_anchor: self.rewind_anchor.clone(),
-            tool_label: self.tool_label.clone(),
+            tool_action: self.tool_action.clone(),
             tool_group_expanded: self.tool_group_expanded,
             render_revision: next_transcript_render_revision(),
         }
@@ -390,6 +390,8 @@ enum ToolBlockStatus {
     Running,
     Success,
     Fail,
+    Interrupted,
+    Unconfirmed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -790,6 +792,7 @@ impl ShellState {
                 self.push_status("turn interrupted");
             }
             if turn.status != TurnStatus::InProgress {
+                self.finish_pending_tool_calls(&turn.status);
                 self.push_turn_separator(&turn_id, duration, /*observed_wait*/ None);
             }
         }
@@ -1792,7 +1795,13 @@ impl ShellState {
         rewind_anchor: Option<rewind::RewindAnchor>,
     ) {
         self.agent_activity.reduce_completed(&item);
-        let tool_label = tool_groups::activity_label(&item.payload);
+        let tool_action = tool_groups::tool_action(&item.payload);
+        let replayed_start = origin != CompletedItemOrigin::Live && item.completed_at_ms.is_none();
+        let status_from_timestamps = if replayed_start && item.started_at_ms.is_some() {
+            ToolBlockStatus::Running
+        } else {
+            ToolBlockStatus::Success
+        };
         match item.payload {
             ThreadItemPayload::UserMessage {
                 client_id, content, ..
@@ -1861,7 +1870,7 @@ impl ShellState {
                     id.clone(),
                     title,
                     ToolBlockStatus::Success,
-                    tool_label,
+                    tool_action,
                 );
                 if let Some(text) = tool_payload::function_output(&output) {
                     self.push_output_with_status_for_item(id, text, ToolBlockStatus::Success);
@@ -1906,7 +1915,7 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_label);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_action);
                 if let Some(output) = aggregated_output.and_then(nonempty_output_text) {
                     self.push_output_with_status_for_item(id, output, tool_status);
                 } else {
@@ -1947,7 +1956,7 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_label);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_action);
                 if let Some(output) = result.as_deref().and_then(tool_payload::mcp_output) {
                     self.push_output_with_status_for_item(id.clone(), output, tool_status);
                 }
@@ -1987,7 +1996,7 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_label);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_action);
                 if let Some(output) = content_items
                     .as_deref()
                     .and_then(tool_payload::dynamic_output)
@@ -2012,7 +2021,7 @@ impl ShellState {
                     id,
                     title,
                     tool_status_from_debug(&status),
-                    tool_label,
+                    tool_action,
                 );
             }
             ThreadItemPayload::SubAgentActivity {
@@ -2026,6 +2035,16 @@ impl ShellState {
             }
             ThreadItemPayload::WebSearch(item) => {
                 let title = format!("web search: {}", item.query);
+                // Legacy search-begin records have neither a query, an action, nor results.
+                let status = if replayed_start
+                    && item.query.is_empty()
+                    && item.action.is_none()
+                    && item.results.is_none()
+                {
+                    ToolBlockStatus::Running
+                } else {
+                    ToolBlockStatus::Success
+                };
                 self.upsert_tool_activity(
                     item.id.clone(),
                     title.clone(),
@@ -2033,29 +2052,15 @@ impl ShellState {
                         .as_ref()
                         .map_or_else(|| "completed".to_string(), |action| format!("{action:?}")),
                 );
-                self.push_tool_with_status_for_item(
-                    item.id.clone(),
-                    title,
-                    ToolBlockStatus::Success,
-                    tool_label,
-                );
+                self.push_tool_with_status_for_item(item.id.clone(), title, status, tool_action);
                 if let Some(output) = item.results.as_deref().and_then(tool_payload::web_results) {
-                    self.push_output_with_status_for_item(
-                        item.id,
-                        output,
-                        ToolBlockStatus::Success,
-                    );
+                    self.push_output_with_status_for_item(item.id, output, status);
                 }
             }
             ThreadItemPayload::ImageView { id, path } => {
                 let title = format!("view image: {path}");
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
-                self.push_tool_with_status_for_item(
-                    id,
-                    title,
-                    ToolBlockStatus::Success,
-                    tool_label,
-                );
+                self.push_tool_with_status_for_item(id, title, status_from_timestamps, tool_action);
             }
             ThreadItemPayload::Sleep(item) => {
                 let codex_app_server_protocol::SleepItem {
@@ -2063,12 +2068,7 @@ impl ShellState {
                 } = item;
                 let title = format!("sleep {duration_ms}ms");
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
-                self.push_tool_with_status_for_item(
-                    id,
-                    title,
-                    ToolBlockStatus::Success,
-                    tool_label,
-                );
+                self.push_tool_with_status_for_item(id, title, status_from_timestamps, tool_action);
             }
             ThreadItemPayload::ImageGeneration(item) => {
                 let host = if self.resume_cwd_runtime.uses_remote_workspace_or_environment {
@@ -2087,7 +2087,7 @@ impl ShellState {
                     item.id.clone(),
                     title,
                     tool_status,
-                    tool_label,
+                    tool_action,
                 );
                 if let Some(output) = output {
                     self.push_output_with_status_for_item(item.id, output, tool_status);
@@ -2159,13 +2159,6 @@ impl ShellState {
         self.upsert_line(TranscriptLine::new(TranscriptKind::Plan, text).item_id(item_id));
     }
 
-    fn push_tool(&mut self, text: impl Into<String>) {
-        let mut line =
-            TranscriptLine::new(TranscriptKind::Tool, text).tool_status(ToolBlockStatus::Running);
-        line.tool_label = Some("Running tool".into());
-        self.push_line(line);
-    }
-
     fn push_tool_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
         self.push_line(TranscriptLine::new(TranscriptKind::Tool, text).tool_status(status));
     }
@@ -2175,7 +2168,7 @@ impl ShellState {
         item_id: impl Into<String>,
         text: impl Into<String>,
         status: ToolBlockStatus,
-        tool_label: Option<String>,
+        tool_action: Option<tool_groups::ToolAction>,
     ) {
         let item_id = item_id.into();
         let text = text.into();
@@ -2183,7 +2176,7 @@ impl ShellState {
         let mut line = TranscriptLine::new(TranscriptKind::Tool, text)
             .tool_status(status)
             .item_id(item_id);
-        line.tool_label = tool_label;
+        line.tool_action = tool_action;
         self.upsert_line(line);
     }
 
@@ -2340,7 +2333,7 @@ impl ShellState {
             && let Some(first) = self.transcript.pop_front()
         {
             let mut removed = 1;
-            if first.activity_label().is_some() {
+            if first.tool_action().is_some() {
                 while self
                     .transcript
                     .front()
@@ -2351,7 +2344,7 @@ impl ShellState {
                 }
                 if first.tool_group_expanded
                     && let Some(next) = self.transcript.front_mut()
-                    && next.activity_label().is_some()
+                    && next.tool_action().is_some()
                 {
                     next.tool_group_expanded = true;
                     next.mark_render_changed();
@@ -2373,8 +2366,8 @@ impl ShellState {
             })
         {
             line.tool_group_expanded = existing.tool_group_expanded;
-            if line.tool_label.is_none() {
-                line.tool_label = existing.tool_label.take();
+            if line.tool_action.is_none() {
+                line.tool_action = existing.tool_action.take();
             }
             *existing = line;
             return;
@@ -2575,7 +2568,7 @@ impl ShellState {
             tool_activity: VecDeque::from([ToolActivity {
                 id: "tool-1".to_string(),
                 title: "exec just test -p codex-tui".to_string(),
-                status: "in progress".to_string(),
+                status: "completed".to_string(),
             }]),
             agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
@@ -2623,7 +2616,12 @@ impl ShellState {
         shell.push_user("Create a divergent standalone TUI.");
         shell.push_assistant("Started a fullscreen app shell backed by app-server turns.");
         shell.push_plan("1. Build shell\n2. Wire transcript\n3. Render dashboard");
-        shell.push_tool("exec just test -p codex-tui");
+        shell.push_tool_with_status_for_item(
+            "tool-1",
+            "exec just test -p codex-tui",
+            ToolBlockStatus::Success,
+            Some(tool_groups::ToolAction::Command),
+        );
         shell.push_diff("3 files +128 -24");
         shell
     }
@@ -2732,7 +2730,7 @@ pub mod bench_support {
             BENCH_TOOL_ITEM_ID,
             "exec cargo build --workspace",
             ToolBlockStatus::Running,
-            Some("Running command".into()),
+            Some(tool_groups::ToolAction::Command),
         );
         let initial_output = (0..TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
             .map(|line| {
@@ -3004,22 +3002,14 @@ fn tool_status_from_debug<T: std::fmt::Debug>(status: &T) -> ToolBlockStatus {
 }
 
 fn tool_status_from_str(status: &str) -> ToolBlockStatus {
-    let status = status.to_ascii_lowercase();
-    if status.contains("fail")
-        || status.contains("error")
-        || status.contains("cancel")
-        || status.contains("declin")
-    {
-        ToolBlockStatus::Fail
-    } else if status.contains("complete")
-        || status.contains("success")
-        || status.contains("succeed")
-        || status == "ok"
-        || status.contains("done")
-    {
-        ToolBlockStatus::Success
-    } else {
-        ToolBlockStatus::Running
+    match status.to_ascii_lowercase().as_str() {
+        "inprogress" | "in_progress" | "running" | "generating" | "queued" | "pending" => {
+            ToolBlockStatus::Running
+        }
+        "interrupted" | "cancelled" | "canceled" => ToolBlockStatus::Interrupted,
+        "failed" | "failure" | "errored" | "error" | "declined" => ToolBlockStatus::Fail,
+        "completed" | "success" | "succeeded" | "ok" | "done" => ToolBlockStatus::Success,
+        _ => ToolBlockStatus::Unconfirmed,
     }
 }
 

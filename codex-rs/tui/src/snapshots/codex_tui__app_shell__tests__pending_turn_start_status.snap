@@ -10,7 +10,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
          2. Wire transcript
          3. Render dashboard
 
- > Editing files...
+        > Edited files
  ▎ STATUS  wait for the turn submission to finish
 
  ▎ CODEX  The new shell owns the fullscreen surface.

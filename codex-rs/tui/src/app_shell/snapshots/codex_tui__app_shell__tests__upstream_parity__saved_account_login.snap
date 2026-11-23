@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- > Editing fil╭──────────────────────────────────────────────────────────────────────╮
+        > Edit╭──────────────────────────────────────────────────────────────────────╮
               │◆ ACCOUNT LOGIN                                                       │
  ▎ CODEX  The │Finish signing in with ChatGPT in your browser.                       │00001
           surf│                                                                      │ession list

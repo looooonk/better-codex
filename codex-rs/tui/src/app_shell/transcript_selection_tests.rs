@@ -15,7 +15,12 @@ fn selection_navigation_only_visits_user_messages() {
     shell.push_system("system");
     shell.push_user("first");
     shell.push_assistant("assistant");
-    shell.push_tool("tool");
+    shell.push_tool_with_status_for_item(
+        "command",
+        "exec pwd",
+        crate::app_shell::ToolBlockStatus::Success,
+        Some(crate::app_shell::tool_groups::ToolAction::Command),
+    );
     shell.push_user("second");
     shell.push_diff("diff");
     shell.push_user("third");

@@ -266,6 +266,7 @@ impl ShellState {
                         TurnStatus::InProgress => "thinking".to_string(),
                     };
                     if completed_active_turn && turn_ended {
+                        self.finish_pending_tool_calls(&completed.turn.status);
                         let duration = super::turn_summary::turn_duration(
                             completed.turn.duration_ms,
                             completed.turn.started_at,
@@ -441,7 +442,7 @@ impl ShellState {
                                 item_id,
                                 title,
                                 super::ToolBlockStatus::Running,
-                                super::tool_groups::activity_label(&started.item.payload),
+                                super::tool_groups::tool_action(&started.item.payload),
                             );
                         }
                     }
@@ -585,7 +586,7 @@ impl ShellState {
                             progress.item_id,
                             transcript,
                             super::ToolBlockStatus::Running,
-                            /*tool_label*/ None,
+                            /*tool_action*/ None,
                         );
                     }
                 } else if self.prepare_active_agent_thread(&progress.thread_id) {

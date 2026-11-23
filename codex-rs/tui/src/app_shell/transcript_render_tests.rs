@@ -9,6 +9,47 @@ use std::path::Path;
 const WIDTH: u16 = 80;
 
 #[test]
+fn grouped_cards_align_with_reply_text_even_when_output_arrives_first() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.clear_visible_transcript();
+    shell.push_assistant("Reply");
+    shell.push_output_with_status_for_item("patch", "Change applied", ToolBlockStatus::Success);
+    let cwd = PathBuf::from(&shell.cwd);
+    let mut cache = TranscriptRenderCache::default();
+    let before = cache.layout(&shell, WIDTH, &cwd);
+    let output = &chunk_lines(&before, shell.transcript[1].render_revision)[0];
+    assert_eq!(output.line.to_string().find('▌'), Some(2));
+
+    shell.push_tool_with_status_for_item(
+        "patch",
+        "exec check",
+        ToolBlockStatus::Success,
+        Some(crate::app_shell::tool_groups::ToolAction::Command),
+    );
+    // The group first appears when its call arrives.
+    let start = shell.tool_groups().next().unwrap().rows.start;
+    shell.toggle_tool_group(start);
+    for width in [WIDTH, 36] {
+        let layout = cache.layout(&shell, width, &cwd);
+        let rows = layout.visible_hyperlink_lines(/*visible_from*/ 0, layout.total_lines);
+        let rail = |label: &str| {
+            rows.iter()
+                .find_map(|row| row.line.to_string().find(label))
+                .expect("label should be visible")
+        };
+        let reply = rows[0].line.to_string();
+        let reply_column = reply.split_once("Reply").unwrap().0.chars().count();
+        assert_eq!(rail("⌄ ") + 2, reply_column);
+        assert_eq!(rail("▌ tool"), reply_column);
+        assert_eq!(rail("▌ output"), reply_column + 2);
+        assert!(
+            rows.iter()
+                .all(|row| row.line.width() <= usize::from(width))
+        );
+    }
+}
+
+#[test]
 fn unchanged_items_reuse_rendered_lines() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -202,7 +243,7 @@ fn logical_rows_resolve_to_stored_transcript_sources() {
         expected.extend(std::iter::repeat_n(chunk.target, chunk.lines.len()));
     }
     let actual = (0..layout.total_lines)
-        .map(|row| layout.target_at_row(row))
+        .map(|row| layout.target_at_row(row).map(|(target, _)| target))
         .collect::<Vec<_>>();
 
     assert_eq!(actual, expected);
@@ -255,7 +296,7 @@ fn audit_items_have_exactly_one_blank_row_between_neighbors() {
     let layout = TranscriptRenderCache::default().layout(&shell, WIDTH, cwd);
 
     let rows = (0..layout.total_lines)
-        .map(|row| layout.target_at_row(row))
+        .map(|row| layout.target_at_row(row).map(|(target, _)| target))
         .collect::<Vec<_>>();
 
     assert_eq!(

@@ -6,7 +6,7 @@ expression: "render_shell(&shell, area)"
          2. Wi│  Status   │  Agents  │  Sessions  │  Settings
   ╭ Source ──────────────────────────────────────────────────╮─
   │ ./Makefile:5:3                                           │
- >│                                                          │
+  │                                                          │
   │     2  two                                               │
  ▎│     3  three                                             │
   │     4  four                                              │

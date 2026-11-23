@@ -12,7 +12,7 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎loading sessions
          3. Render dashboard                      │
                                                   │▎◆ THREAD
- > Editing files...                               │▎stage-one
+        > Edited files                            │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
  ▎ CODEX  The new shell owns the fullscreen       │▎resume, fork, archive, delete in session list
           surface.                                │

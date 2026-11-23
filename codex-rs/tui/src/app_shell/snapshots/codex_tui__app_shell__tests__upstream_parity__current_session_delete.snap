@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
          2. Wire transcript                                 │▎+ New session  Ctrl+N
          3. Render dashboard                                │▎loading sessions
                    ╭──────────────────────────────────────────────────────────────────────╮
- > Editing files...│◆ DELETE SESSION                                                      │
+        > Edited fi│◆ DELETE SESSION                                                      │
                    │Delete session: stage-one                                             │
  ▎ CODEX  The new s│Session ID: 01900000-0000-7000-8000-000000000001                      │0000000001
                    │No spawned descendants will be deleted.                               │ in session list

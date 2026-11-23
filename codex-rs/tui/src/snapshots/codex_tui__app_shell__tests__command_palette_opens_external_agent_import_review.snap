@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- > Editing files...                               │▎◆ THREAD
+        > Edited files                            │▎◆ THREAD
  ▎ STATUS  che╭──────────────────────────────────────────────────────────────────────╮
  ▎ STATUS  rev│◆ CLAUDE CODE IMPORT                                                  │00001
            imp│Review Claude Code setup  Settings 1, Skills 1                        │ession list

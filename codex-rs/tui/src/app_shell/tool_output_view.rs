@@ -73,48 +73,48 @@ fn status_visual(
     Color,
     ScrollbackFooterMode,
 ) {
-    match (status, truncated) {
-        (ToolBlockStatus::Running, false) => (
+    let (glyph, label, color, footer_mode) = match status {
+        ToolBlockStatus::Running => (
             "●",
             "Running",
-            "Live output updates automatically",
             palette::cyan(),
             ScrollbackFooterMode::ToolOutputRunning,
         ),
-        (ToolBlockStatus::Success, false) => (
+        ToolBlockStatus::Success => (
             "✓",
             "Completed",
-            "Full captured output",
             palette::success(),
             ScrollbackFooterMode::ToolOutputCompleted,
         ),
-        (ToolBlockStatus::Fail, false) => (
+        ToolBlockStatus::Fail => (
             "✕",
             "Failed",
-            "Full captured output",
             palette::error(),
             ScrollbackFooterMode::ToolOutputFailed,
         ),
-        (ToolBlockStatus::Running, true) => (
-            "●",
-            "Running",
-            "Live tail; earlier output omitted",
-            palette::cyan(),
-            ScrollbackFooterMode::ToolOutputRunning,
+        ToolBlockStatus::Interrupted => (
+            "■",
+            "Interrupted",
+            palette::warning(),
+            ScrollbackFooterMode::ToolOutputInterrupted,
         ),
-        (ToolBlockStatus::Success, true) => (
-            "✓",
-            "Completed",
-            "Retained tail; earlier output omitted",
-            palette::success(),
-            ScrollbackFooterMode::ToolOutputCompleted,
+        ToolBlockStatus::Unconfirmed => (
+            "?",
+            "Result unavailable",
+            palette::warning(),
+            ScrollbackFooterMode::ToolOutputUnconfirmed,
         ),
-        (ToolBlockStatus::Fail, true) => (
-            "✕",
-            "Failed",
-            "Retained tail; earlier output omitted",
-            palette::error(),
-            ScrollbackFooterMode::ToolOutputFailed,
-        ),
-    }
+    };
+    let detail = if truncated {
+        if status == ToolBlockStatus::Running {
+            "Live tail; earlier output omitted"
+        } else {
+            "Retained tail; earlier output omitted"
+        }
+    } else if status == ToolBlockStatus::Running {
+        "Live output updates automatically"
+    } else {
+        "Full captured output"
+    };
+    (glyph, label, detail, color, footer_mode)
 }

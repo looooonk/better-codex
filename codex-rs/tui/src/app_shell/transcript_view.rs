@@ -112,13 +112,6 @@ impl TranscriptCardHit {
             }
         }
     }
-
-    fn block_indent(self) -> usize {
-        match self {
-            Self::ToolOutput { .. } => OUTPUT_BLOCK_INDENT,
-            Self::ToolGroup { .. } | Self::Diff { .. } => 0,
-        }
-    }
 }
 
 pub(super) fn transcript_card_at(
@@ -127,7 +120,7 @@ pub(super) fn transcript_card_at(
     position: Position,
 ) -> Option<TranscriptCardHit> {
     let viewport = transcript_viewport(shell, area);
-    transcript_card_hit_at(shell, &viewport, position)
+    transcript_card_hit_at(shell, &viewport, position).map(|(hit, _)| hit)
 }
 
 /// Keep the clicked header in place when opening a group adds more than a screen of rows.
@@ -313,7 +306,7 @@ fn transcript_card_hit_at(
     shell: &ShellState,
     viewport: &TranscriptViewport,
     position: Position,
-) -> Option<TranscriptCardHit> {
+) -> Option<(TranscriptCardHit, u16)> {
     if !viewport.text_body.contains(position) {
         return None;
     }
@@ -321,29 +314,33 @@ fn transcript_card_hit_at(
     let logical_row = viewport
         .visible_from
         .saturating_add(usize::from(position.y.saturating_sub(viewport.text_body.y)));
-    let transcript_index = match viewport.layout.target_at_row(logical_row)? {
+    let (target, mut indent) = viewport.layout.target_at_row(logical_row)?;
+    let hit = match target {
         TranscriptTarget::ToolGroup(transcript_index) => {
-            return Some(TranscriptCardHit::ToolGroup { transcript_index });
+            TranscriptCardHit::ToolGroup { transcript_index }
         }
-        TranscriptTarget::Item(index) => index,
+        TranscriptTarget::Item(transcript_index) => {
+            let item = shell.transcript.get(transcript_index)?;
+            item.tool_status?;
+            match item.kind {
+                TranscriptKind::Output => {
+                    indent += OUTPUT_BLOCK_INDENT as u16;
+                    TranscriptCardHit::ToolOutput { transcript_index }
+                }
+                TranscriptKind::Diff => TranscriptCardHit::Diff { transcript_index },
+                TranscriptKind::System
+                | TranscriptKind::User
+                | TranscriptKind::Assistant
+                | TranscriptKind::Plan
+                | TranscriptKind::Tool
+                | TranscriptKind::Separator
+                | TranscriptKind::Status
+                | TranscriptKind::Audit
+                | TranscriptKind::Error => return None,
+            }
+        }
     };
-    let item = shell.transcript.get(transcript_index)?;
-    item.tool_status?;
-    let hit = match item.kind {
-        TranscriptKind::Output => TranscriptCardHit::ToolOutput { transcript_index },
-        TranscriptKind::Diff => TranscriptCardHit::Diff { transcript_index },
-        TranscriptKind::System
-        | TranscriptKind::User
-        | TranscriptKind::Assistant
-        | TranscriptKind::Plan
-        | TranscriptKind::Tool
-        | TranscriptKind::Separator
-        | TranscriptKind::Status
-        | TranscriptKind::Audit
-        | TranscriptKind::Error => return None,
-    };
-    let block_indent = u16::try_from(hit.block_indent()).unwrap_or(u16::MAX);
-    (position.x >= viewport.text_body.x.saturating_add(block_indent)).then_some(hit)
+    (position.x >= viewport.text_body.x.saturating_add(indent)).then_some((hit, indent))
 }
 
 fn render_card_hover(
@@ -352,7 +349,7 @@ fn render_card_hover(
     hover_position: Option<Position>,
     buf: &mut Buffer,
 ) {
-    let Some(hit) =
+    let Some((hit, block_indent)) =
         hover_position.and_then(|position| transcript_card_hit_at(shell, viewport, position))
     else {
         return;
@@ -367,7 +364,6 @@ fn render_card_hover(
         return;
     }
 
-    let block_indent = u16::try_from(hit.block_indent()).unwrap_or(u16::MAX);
     let y_offset =
         u16::try_from(hover_start.saturating_sub(viewport.visible_from)).unwrap_or(u16::MAX);
     let height = u16::try_from(hover_end.saturating_sub(hover_start)).unwrap_or(u16::MAX);
@@ -809,6 +805,9 @@ impl ToolBlockStatus {
             Self::Running => Style::new().fg(palette::cyan()).bg(palette::surface()),
             Self::Success => Style::new().fg(palette::success()).bg(palette::surface()),
             Self::Fail => Style::new().fg(palette::error()).bg(palette::surface()),
+            Self::Interrupted | Self::Unconfirmed => {
+                Style::new().fg(palette::warning()).bg(palette::surface())
+            }
         }
     }
 }

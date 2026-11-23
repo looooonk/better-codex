@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
          2. Wi│◆ SAFETY REVIEW                                                       │
          3. Re│Our systems are thinking a bit more about this request before         │
               │responding.                                                           │
- > Editing fil│                                                                      │
+        > Edit│                                                                      │
               │Hang tight or retry with a faster model for a quicker response, though│
  ▎ YOU  Explai│it may be less capable of handling complex requests.                  │00001
               │                                                                      │ession list

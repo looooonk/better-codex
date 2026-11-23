@@ -11,14 +11,14 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎Complete the unchecked dashboard progress item
          3. Render dashboard                      │▎1m | 12,345/50,000 tokens
                                                   │
- > Editing files...                               │▎◆ PLAN
+        > Edited files                            │▎◆ PLAN
                                                   │▎Build the standalone shell in slices.
  ▎ CODEX  The new shell owns the fullscreen       │▎x Shell frame
           surface.                                │▎> Transcript model
                                                   │▎- Approvals
                                                   │
                                                   │▎◆ TOOLS
-                                                  │▎in progress exec just test -p codex-tui
+                                                  │▎completed exec just test -p codex-tui
                                                   │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24

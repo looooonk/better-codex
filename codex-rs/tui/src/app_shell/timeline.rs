@@ -111,6 +111,7 @@ impl ShellState {
                         started_at.or_else(|| turn.and_then(|t| t.started_at)),
                         completed_at.or_else(|| turn.and_then(|t| t.completed_at)),
                     );
+                    self.finish_pending_tool_calls(&status);
                     self.push_turn_separator(&turn_id, duration, /*observed_wait*/ None);
                 }
             }

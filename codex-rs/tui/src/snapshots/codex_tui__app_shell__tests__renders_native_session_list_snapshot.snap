@@ -11,7 +11,7 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎› 1/2 Refactor dashboard navigation [main]
                                                   │▎  2/2 Investigate approval rendering regressio…
- > Editing files...                               │
+        > Edited files                            │
                                                   │▎◆ THREAD
  ▎ CODEX  The new shell owns the fullscreen       │▎stage-one
           surface.                                │▎id 01900000-0000-7000-8000-000000000001

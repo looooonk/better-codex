@@ -10,7 +10,7 @@ expression: text
          2. Wire transcript
          3. Render dashboard
 
- > Editing files...
+        > Edited files
  ▎ STATUS  Project configuration ignored
  ▎ SYSTEM  Project configuration ignored
            /workspace/.codex/config.toml

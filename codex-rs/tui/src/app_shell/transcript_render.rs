@@ -4,9 +4,11 @@ use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::transcript_view::render_transcript_line_with_visualizations;
+use super::transcript_view::transcript_prefix_width;
 use crate::app_theme::TuiAppTheme;
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::terminal_hyperlinks::HyperlinkLine;
+use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::Path;
@@ -69,7 +71,17 @@ impl TranscriptRenderCache {
         );
         let mut chunks = Vec::with_capacity(current_items.capacity());
         let mut previous_kind = None;
+        let context = CachedRenderContext {
+            width,
+            indent: 0,
+            cwd,
+            app_theme: shell.app_theme,
+            visualization_context,
+        };
 
+        // Leave room for the card label and value on very narrow terminals.
+        let detail_indent = (transcript_prefix_width(TranscriptKind::Assistant) as u16)
+            .min(width.saturating_sub(12));
         let mut groups = shell.tool_groups().peekable();
         for (index, item) in shell.transcript.iter().enumerate() {
             if groups.peek().is_some_and(|group| group.rows.end <= index) {
@@ -84,20 +96,24 @@ impl TranscriptRenderCache {
                     },
                 )
             };
-            if let Some(group) = groups.peek().filter(|group| group.rows.contains(&index)) {
+            let group = groups.peek().filter(|group| group.rows.contains(&index));
+            if let Some(group) = group {
                 if index == group.rows.start {
                     let _theme = crate::app_theme::activate(shell.app_theme);
+                    // The disclosure marker sits in the gutter beside the activity text.
+                    let indent = detail_indent.saturating_sub(2);
+                    let header =
+                        group.header(width - indent, shell.transcript_selection == Some(index));
                     chunks.push(TranscriptChunk {
                         target: Some(TranscriptTarget::ToolGroup(index)),
+                        indent,
                         revision: item.render_revision,
                         anchor_source: anchor_source(),
                         separator_before: should_separate_transcript_item(
                             previous_kind,
                             TranscriptKind::Tool,
                         ),
-                        lines: Arc::new([
-                            group.header(width, shell.transcript_selection == Some(index))
-                        ]),
+                        lines: indent_lines(vec![header], indent),
                     });
                     previous_kind = Some(TranscriptKind::Tool);
                 }
@@ -121,10 +137,8 @@ impl TranscriptRenderCache {
                     selected,
                 },
                 CachedRenderContext {
-                    width,
-                    cwd,
-                    app_theme: shell.app_theme,
-                    visualization_context,
+                    indent: if group.is_some() { detail_indent } else { 0 },
+                    ..context
                 },
             );
         }
@@ -150,12 +164,7 @@ impl TranscriptRenderCache {
                     tool_status: None,
                     selected: false,
                 },
-                CachedRenderContext {
-                    width,
-                    cwd,
-                    app_theme: shell.app_theme,
-                    visualization_context,
-                },
+                context,
             );
         }
         if !shell.streaming_assistant.is_empty() {
@@ -179,12 +188,7 @@ impl TranscriptRenderCache {
                     tool_status: None,
                     selected: false,
                 },
-                CachedRenderContext {
-                    width,
-                    cwd,
-                    app_theme: shell.app_theme,
-                    visualization_context,
-                },
+                context,
             );
         }
 
@@ -253,6 +257,7 @@ struct CachedSource<'a> {
 #[derive(Clone, Copy)]
 struct CachedRenderContext<'a> {
     width: u16,
+    indent: u16,
     cwd: &'a Path,
     app_theme: TuiAppTheme,
     visualization_context: Option<&'a InlineVisualizationContext>,
@@ -268,16 +273,10 @@ fn push_cached_chunk(
 ) {
     let separator_before = should_separate_transcript_item(*previous_kind, source.kind);
     let mut cached = previous_items.remove(&source.revision).unwrap_or_default();
-    let lines = cached.lines(
-        &source,
-        context.width,
-        context.cwd,
-        source.selected,
-        context.app_theme,
-        context.visualization_context,
-    );
+    let lines = cached.lines(&source, context);
     chunks.push(TranscriptChunk {
         target: source.transcript_index.map(TranscriptTarget::Item),
+        indent: context.indent,
         revision: source.revision,
         anchor_source: source.anchor_source.clone(),
         separator_before,
@@ -323,15 +322,20 @@ impl CachedTranscriptItem {
     fn lines(
         &mut self,
         source: &CachedSource<'_>,
-        width: u16,
-        cwd: &Path,
-        selected: bool,
-        app_theme: TuiAppTheme,
-        visualization_context: Option<&InlineVisualizationContext>,
+        context: CachedRenderContext<'_>,
     ) -> Arc<[HyperlinkLine]> {
+        let CachedRenderContext {
+            width,
+            indent,
+            cwd,
+            app_theme,
+            visualization_context,
+        } = context;
+        let selected = source.selected;
         if !crate::inline_visualization::contains_inline_visualization(source.text)
             && let Some(index) = self.variants.iter().position(|variant| {
                 variant.width == width
+                    && variant.indent == indent
                     && variant.cwd.as_path() == cwd
                     && variant.selected == selected
                     && variant.app_theme == app_theme
@@ -344,18 +348,19 @@ impl CachedTranscriptItem {
         }
 
         let _active_theme = crate::app_theme::activate(app_theme);
-        let lines: Arc<[HyperlinkLine]> = render_transcript_line_with_visualizations(
+        let lines = render_transcript_line_with_visualizations(
             source.kind,
             source.text,
             source.tool_status,
-            width,
+            width - indent,
             cwd,
             selected,
             visualization_context,
-        )
-        .into();
+        );
+        let lines = indent_lines(lines, indent);
         self.variants.push_back(CachedRenderVariant {
             width,
+            indent,
             cwd: cwd.to_path_buf(),
             selected,
             app_theme,
@@ -370,10 +375,22 @@ impl CachedTranscriptItem {
 
 struct CachedRenderVariant {
     width: u16,
+    indent: u16,
     cwd: PathBuf,
     selected: bool,
     app_theme: TuiAppTheme,
     lines: Arc<[HyperlinkLine]>,
+}
+
+fn indent_lines(mut lines: Vec<HyperlinkLine>, indent: u16) -> Arc<[HyperlinkLine]> {
+    if indent > 0 {
+        let margin = ratatui::text::Span::from(" ".repeat(usize::from(indent)));
+        lines = prefix_hyperlink_lines(lines, margin.clone(), margin);
+        if let Some(first) = lines.first_mut() {
+            first.synthetic_prefix_width += usize::from(indent);
+        }
+    }
+    lines.into()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -384,6 +401,7 @@ pub(super) enum TranscriptTarget {
 
 struct TranscriptChunk {
     target: Option<TranscriptTarget>,
+    indent: u16,
     #[cfg_attr(not(test), allow(dead_code))]
     revision: u64,
     anchor_source: TranscriptAnchorSource,
@@ -518,11 +536,11 @@ impl TranscriptLayout {
         (row < self.total_lines).then_some(TranscriptLayoutRow::Blank)
     }
 
-    /// Return the stored transcript item that owns a rendered logical row.
+    /// Return the target and left margin of the chunk that owns a rendered row.
     ///
     /// Separator rows and streaming-only chunks have no stored transcript
     /// source, so they intentionally return `None`.
-    pub(super) fn target_at_row(&self, row: usize) -> Option<TranscriptTarget> {
+    pub(super) fn target_at_row(&self, row: usize) -> Option<(TranscriptTarget, u16)> {
         let mut logical_row = 0usize;
         for chunk in &self.chunks {
             if chunk.separator_before {
@@ -534,7 +552,7 @@ impl TranscriptLayout {
 
             let chunk_end = logical_row.saturating_add(chunk.lines.len());
             if (logical_row..chunk_end).contains(&row) {
-                return chunk.target;
+                return chunk.target.map(|target| (target, chunk.indent));
             }
             logical_row = chunk_end;
             if logical_row > row {

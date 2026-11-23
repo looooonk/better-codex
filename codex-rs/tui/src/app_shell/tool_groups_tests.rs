@@ -72,7 +72,7 @@ fn expanding_a_long_group_keeps_its_header_clickable_at_the_same_position() {
             &id,
             format!("exec check-{i}"),
             ToolBlockStatus::Running,
-            Some("Running command".into()),
+            Some(ToolAction::Command),
         );
         shell.push_output_with_status_for_item(&id, "progress", ToolBlockStatus::Running);
     }
@@ -108,14 +108,14 @@ fn pending_calls_keep_their_group_position_and_expansion_across_late_completion(
         "mcp",
         "mcp files/read",
         ToolBlockStatus::Running,
-        Some("Calling files/read".into()),
+        Some(ToolAction::Call("files/read".into())),
     );
     shell.toggle_tool_group(0);
     shell.push_tool_with_status_for_item(
         "second",
         "exec pwd",
         ToolBlockStatus::Running,
-        Some("Running command".into()),
+        Some(ToolAction::Command),
     );
     shell.push_assistant("Another update");
     let error: ThreadItem = serde_json::from_value(json!({
@@ -146,7 +146,7 @@ fn output_arriving_before_its_call_is_never_absorbed_by_an_unrelated_call() {
         "first",
         "exec pwd",
         ToolBlockStatus::Success,
-        Some("Running command".into()),
+        Some(ToolAction::Command),
     );
     shell.push_output_with_status_for_item("late", "unmatched result", ToolBlockStatus::Running);
     assert!(rows(&shell).contains("unmatched result"));
@@ -155,10 +155,10 @@ fn output_arriving_before_its_call_is_never_absorbed_by_an_unrelated_call() {
         "late",
         "docs/lookup",
         ToolBlockStatus::Success,
-        Some("Calling docs/lookup".into()),
+        Some(ToolAction::Call("docs/lookup".into())),
     );
     let folded = rows(&shell);
-    assert!(folded.contains("> Calling docs/lookup..."));
+    assert!(folded.contains("> Called docs/lookup"));
     assert!(!folded.contains("unmatched result"));
     shell.toggle_tool_group(0);
     assert!(rows(&shell).contains("unmatched result"));
@@ -199,7 +199,7 @@ fn trimming_an_expanded_group_evicts_whole_calls_and_preserves_the_remaining_gro
             &id,
             format!("exec {i}"),
             ToolBlockStatus::Success,
-            Some("Running command".into()),
+            Some(ToolAction::Command),
         );
         shell.push_output_with_status_for_item(
             &id,
@@ -217,5 +217,105 @@ fn trimming_an_expanded_group_evicts_whole_calls_and_preserves_the_remaining_gro
     shell.toggle_tool_group(0);
     let folded = rows(&shell);
     assert!(!folded.contains("output"));
-    assert!(folded.contains("> Running command..."));
+    assert!(folded.contains("> Ran command"));
+}
+
+#[test]
+fn parallel_tool_header_tracks_unfinished_calls_then_the_latest_invocation_result() {
+    let mut shell = shell();
+    shell.push_tool_with_status_for_item(
+        "command",
+        "exec pwd",
+        ToolBlockStatus::Running,
+        Some(ToolAction::Command),
+    );
+    assert_eq!(rows(&shell).trim(), "> Running command...");
+    shell.push_tool_with_status_for_item(
+        "search",
+        "web search: docs",
+        ToolBlockStatus::Running,
+        Some(ToolAction::Search),
+    );
+    assert_eq!(rows(&shell).trim(), "> Searching web...");
+    shell.push_tool_with_status_for_item(
+        "search",
+        "web search: docs",
+        ToolBlockStatus::Success,
+        Some(ToolAction::Search),
+    );
+    assert_eq!(rows(&shell).trim(), "> Running command...");
+    shell.push_tool_with_status_for_item(
+        "command",
+        "exec pwd",
+        ToolBlockStatus::Success,
+        Some(ToolAction::Command),
+    );
+    assert_eq!(rows(&shell).trim(), "> Searched web");
+
+    shell.push_assistant("I’ll run one final check.");
+    let failed: ThreadItem = serde_json::from_value(json!({
+        "type":"commandExecution", "id":"failed", "command":"false", "cwd":"/tmp",
+        "status":"completed", "commandActions":[], "exitCode":1
+    }))
+    .unwrap();
+    shell.ingest_completed_item(failed, CompletedItemOrigin::Live);
+    assert!(rows(&shell).ends_with("> Command failed"));
+}
+
+#[test]
+fn a_turn_ending_without_an_item_result_closes_running_labels_in_live_output_and_history() {
+    use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::Turn;
+    use codex_app_server_protocol::TurnCompletedNotification;
+
+    let item: ThreadItem = serde_json::from_value(json!({
+        "type":"commandExecution", "id":"cmd", "command":"sleep 10", "cwd":"/tmp",
+        "status":"inProgress", "commandActions":[], "aggregatedOutput":"before interruption"
+    }))
+    .unwrap();
+    for (status, expected, block_status) in [
+        (
+            TurnStatus::Interrupted,
+            "> Command interrupted",
+            ToolBlockStatus::Interrupted,
+        ),
+        (
+            TurnStatus::Failed,
+            "> Command result unavailable",
+            ToolBlockStatus::Unconfirmed,
+        ),
+        (
+            TurnStatus::Completed,
+            "> Command result unavailable",
+            ToolBlockStatus::Unconfirmed,
+        ),
+    ] {
+        let turn: Turn =
+            serde_json::from_value(json!({"id":"turn", "status":status, "items":[item]})).unwrap();
+
+        let mut live = shell();
+        live.record_active_turn_started("turn".into());
+        live.ingest_completed_item(item.clone(), CompletedItemOrigin::Live);
+        assert!(live.open_tool_output_at(/*transcript_index*/ 1));
+        live.handle_notification(ServerNotification::TurnCompleted(
+            TurnCompletedNotification {
+                thread_id: live.thread_id.to_string(),
+                turn: turn.clone(),
+            },
+        ));
+        assert_eq!(
+            live.tool_output.as_ref().unwrap().target.status,
+            block_status
+        );
+
+        let mut restored = shell();
+        restored.ingest_turn_history(vec![turn]);
+        for displayed in [rows(&live), rows(&restored)] {
+            assert!(
+                displayed.lines().any(|line| line.trim() == expected),
+                "{displayed}"
+            );
+            assert!(!displayed.contains("Running command..."));
+        }
+    }
 }

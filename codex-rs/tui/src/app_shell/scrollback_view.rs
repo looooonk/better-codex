@@ -34,6 +34,8 @@ pub(super) enum ScrollbackFooterMode {
     ToolOutputRunning,
     ToolOutputCompleted,
     ToolOutputFailed,
+    ToolOutputInterrupted,
+    ToolOutputUnconfirmed,
 }
 
 pub(super) fn render_scrollback_frame(
@@ -166,6 +168,16 @@ fn scrollback_footer(
         ScrollbackFooterMode::ToolOutputCompleted => (
             format!("completed · {range}"),
             palette::success(),
+            tool_output_hints(),
+        ),
+        ScrollbackFooterMode::ToolOutputInterrupted => (
+            format!("interrupted · {range}"),
+            palette::warning(),
+            tool_output_hints(),
+        ),
+        ScrollbackFooterMode::ToolOutputUnconfirmed => (
+            format!("result unavailable · {range}"),
+            palette::warning(),
             tool_output_hints(),
         ),
         ScrollbackFooterMode::ToolOutputFailed => (

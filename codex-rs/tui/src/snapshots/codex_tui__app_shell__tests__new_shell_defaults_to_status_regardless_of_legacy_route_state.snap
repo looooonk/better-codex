@@ -10,10 +10,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │▎no active plan
                    ⢀⣠⣴⠶⠿⠛⠛⠿⠶⣦⣄⡀                   │
                  ⢀⣴⠟⠋        ⠙⠻⣦⡀                 │▎◆ TOOLS
-                ⢀⣾⠋            ⠙⣷⡀                │▎idle
-                ⣼⡇              ⢸⣧                │
-                ⣿       >_       ⣿                │▎◆ EDITS
-                ⢻⡇              ⢸⡟                │▎no changes
+                ⢀⣾⠋ ⣠⡀         ⠙⣷⡀                │▎idle
+                ⣼⡇  ⠈⠛⢶⣄        ⢸⣧                │
+                ⣿     ⣠⡿⠃        ⣿                │▎◆ EDITS
+                ⢻⡇  ⢠⠾⠋  ⣤⣤⣤⣤⡄  ⢸⡟                │▎no changes
                 ⠈⢿⣄            ⣠⡿⠁                │
                  ⠈⠻⣦⣄        ⣠⣴⠟⠁                 │▎◆ WORKSPACE
                    ⠈⠙⠻⠶⣶⣤⣤⣶⠶⠟⠋⠁                   │▎profile managed

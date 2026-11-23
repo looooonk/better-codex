@@ -10,10 +10,10 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                                           │▎Build the standalone shell in slices.
          3. Render dashboard                                          │▎x Shell frame
                                                                       │▎> Transcript model
- > Editing files...                                                   │▎- Approvals
+        > Edited files                                                │▎- Approvals
  ▎ PLAN  1. Route activity into dashboard panels                      │
                                                                       │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen surface.                  │▎in progress exec just test -p codex-tui
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │▎completed exec just test -p codex-tui
                                                                       │
           Thinking... · 0 tok/s                                       │▎◆ EDITS
                                                                       │▎3 files +128 -24

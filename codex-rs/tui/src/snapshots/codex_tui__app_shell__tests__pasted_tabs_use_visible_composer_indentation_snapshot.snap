@@ -11,7 +11,7 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- > Editing files...                               │▎◆ THREAD
+        > Edited files                            │▎◆ THREAD
                                                   │▎stage-one
  ▎ CODEX  The new shell owns the fullscreen       │▎id 01900000-0000-7000-8000-000000000001
           surface.                                │▎resume, fork, archive, delete in session list

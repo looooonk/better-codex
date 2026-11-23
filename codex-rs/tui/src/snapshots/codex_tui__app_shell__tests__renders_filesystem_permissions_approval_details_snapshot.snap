@@ -8,7 +8,7 @@ expression: "render_shell(&permissions_shell, area)"
          2. Wire transcript                     ┃ │
          3. Render dashboard                    ┃ │▎◆ SESSIONS
                                                 ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- > Editing files...                             ┃ │▎+ New session  Ctrl+N
+        > Edited files                          ┃ │▎+ New session  Ctrl+N
                                                 ┃ │▎loading sessions
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │▎◆ THREAD

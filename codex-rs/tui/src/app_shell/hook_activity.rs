@@ -17,7 +17,7 @@ impl ShellState {
             run.id.clone(),
             title,
             status,
-            /*tool_label*/ None,
+            /*tool_action*/ None,
         );
         let output = run
             .status_message

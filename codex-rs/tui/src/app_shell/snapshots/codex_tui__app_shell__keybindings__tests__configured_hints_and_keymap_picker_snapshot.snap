@@ -11,7 +11,7 @@ expression: rendered
          2. Wire transcript                                 │  ○ ⛨ Unless trusted
          3. Render dashboard                                │  ○ ⚠ Full access
                                                             │
- > Editing files...                                         │◆ APPEARANCE
+        > Edited files                                      │◆ APPEARANCE
                                                             │  ● Tokyo Night
  ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Gruvbox Dark
                                                             │  ○ Catppuccin Mocha

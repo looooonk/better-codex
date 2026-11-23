@@ -10,7 +10,7 @@ expression: rendered
          2. Wire transcript
          3. Render dashboard
 
- > Editing files...
+        > Edited files
  ▎ STATUS  wait for the workspace action or session transition before saving settings
 
  ▎ CODEX  The new shell owns the fullscreen surface.

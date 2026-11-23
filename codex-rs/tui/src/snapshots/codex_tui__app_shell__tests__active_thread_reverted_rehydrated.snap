@@ -9,7 +9,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
 
  ▎ CODEX  retained response
 
- > Running command...
+        > Command result unavailable
 
  ──────── Took 1.00s ──────────────────────────────────────────────────────────────────────────────
 

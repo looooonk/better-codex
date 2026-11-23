@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
          2. Wire transcript                                 │▎+ New session  Ctrl+N
          3. Render dashboard                                │▎loading sessions
                                                             │
- > Editing files...                                         │▎◆ THREAD
+        > Edited files                                      │▎◆ THREAD
  ▎ STATUS  preset loaded; press Enter to send               │▎stage-one
  ▎ SYSTEM  Preset ready; your draft was kept:               │▎id 01900000-0000-7000-8000-000000000001
            Another preset                                   │▎resume, fork, archive, delete in session list

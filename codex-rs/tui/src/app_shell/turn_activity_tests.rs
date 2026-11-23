@@ -51,13 +51,13 @@ fn activity_follows_tool_cards_and_wrapped_output_and_scrolls_with_them() {
         "tool",
         "Inspect files",
         ToolBlockStatus::Running,
-        Some("Inspecting files".into()),
+        Some(crate::app_shell::tool_groups::ToolAction::Edit),
     );
     let rendered = render_shell(&shell, area);
     let rows: Vec<_> = rendered.lines().collect();
     let tool = rows
         .iter()
-        .position(|row| row.contains("Inspecting files"))
+        .position(|row| row.contains("Editing files"))
         .unwrap();
     assert!(rows[tool + 1].is_empty());
     assert!(rows[tool + 2].contains("Thinking..."));
@@ -78,7 +78,7 @@ fn activity_follows_tool_cards_and_wrapped_output_and_scrolls_with_them() {
     let output_indent = rows[last].width() - rows[last].trim_start().width();
     assert_eq!(indent.width(), output_indent);
     shell.scroll_transcript_to_top();
-    assert!(render_shell(&shell, area).contains("Inspecting files"));
+    assert!(render_shell(&shell, area).contains("Editing files"));
     assert!(!render_shell(&shell, area).contains("Thinking..."));
     shell.scroll_transcript_to_bottom();
     assert_eq!(render_shell(&shell, area), rendered);

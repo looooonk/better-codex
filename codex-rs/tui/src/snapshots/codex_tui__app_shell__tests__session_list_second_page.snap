@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎  17/25 Session 16 [main]  pagination fixture
                                                   │▎  18/25 Session 17 [main]  pagination fixture
- > Editing files...                               │▎  19/25 Session 18 [main]  pagination fixture
+        > Edited files                            │▎  19/25 Session 18 [main]  pagination fixture
                                                   │▎  20/25 Session 19 [main]  pagination fixture
  ▎ CODEX  The new shell owns the fullscreen       │▎› 21/25 Session 20 [main]  pagination fixture
           surface.                                │

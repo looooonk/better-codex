@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎filter* needle▏  · Enter search all
                                                   │▎no matching sessions
- > Editing files...                               │
+        > Edited files                            │
                                                   │▎◆ THREAD
  ▎ CODEX  The new shell owns the fullscreen       │▎stage-one
           surface.                                │▎id 01900000-0000-7000-8000-000000000001

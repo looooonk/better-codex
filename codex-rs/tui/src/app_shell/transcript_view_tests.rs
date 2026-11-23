@@ -50,7 +50,7 @@ fn output_hit_testing_tracks_the_scrolled_render_viewport() {
         .min(viewport.layout.total_lines);
     let (logical_row, transcript_index) = (viewport.visible_from..visible_to)
         .find_map(|row| {
-            let TranscriptTarget::Item(index) = viewport.layout.target_at_row(row)? else {
+            let (TranscriptTarget::Item(index), _) = viewport.layout.target_at_row(row)? else {
                 return None;
             };
             (shell.transcript[index].kind == TranscriptKind::Output).then_some((row, index))
@@ -297,7 +297,7 @@ fn resizing_keeps_the_selected_transcript_item_visible() {
 }
 
 #[test]
-fn diff_hit_testing_tracks_the_scrolled_render_viewport_and_full_width() {
+fn diff_hit_testing_tracks_the_scrolled_card_and_excludes_its_gutter() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.clear_streaming_assistant();
@@ -320,7 +320,7 @@ fn diff_hit_testing_tracks_the_scrolled_render_viewport_and_full_width() {
         .min(viewport.layout.total_lines);
     let (logical_row, transcript_index) = (viewport.visible_from..visible_to)
         .find_map(|row| {
-            let TranscriptTarget::Item(index) = viewport.layout.target_at_row(row)? else {
+            let (TranscriptTarget::Item(index), _) = viewport.layout.target_at_row(row)? else {
                 return None;
             };
             (shell.transcript[index].kind == TranscriptKind::Diff).then_some((row, index))
@@ -332,7 +332,13 @@ fn diff_hit_testing_tracks_the_scrolled_render_viewport_and_full_width() {
     );
 
     assert!(viewport.scrollbar.is_some());
-    for x in [viewport.text_body.x, viewport.text_body.right() - 1] {
+    let card_left =
+        viewport.text_body.x + transcript_prefix_width(TranscriptKind::Assistant) as u16;
+    assert_eq!(
+        transcript_card_at(&shell, area, Position::new(card_left - 1, y)),
+        None
+    );
+    for x in [card_left, viewport.text_body.right() - 1] {
         assert_eq!(
             transcript_card_at(&shell, area, Position::new(x, y)),
             Some(TranscriptCardHit::Diff { transcript_index })
@@ -365,7 +371,8 @@ fn card_hover_uses_each_card_indent() {
     );
     let viewport = transcript_viewport(&shell, area);
 
-    for (transcript_index, indent) in [(0, 0), (1, OUTPUT_BLOCK_INDENT)] {
+    let assistant_indent = transcript_prefix_width(TranscriptKind::Assistant);
+    for (transcript_index, indent) in [(0, assistant_indent), (1, OUTPUT_BLOCK_INDENT)] {
         let rows = viewport
             .layout
             .transcript_row_range(transcript_index)

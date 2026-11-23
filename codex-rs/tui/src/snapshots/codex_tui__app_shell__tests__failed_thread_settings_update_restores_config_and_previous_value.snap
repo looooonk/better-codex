@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- > Editing files...                               │▎◆ THREAD
+        > Edited files                            │▎◆ THREAD
  ▎ ERROR  failed to save settings: thread         │▎stage-one
           settings update failed; global config   │▎id 01900000-0000-7000-8000-000000000001
           changes were rolled back: thread update │▎resume, fork, archive, delete in session list

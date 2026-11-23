@@ -21,7 +21,7 @@ impl ShellState {
             id.clone(),
             format!("Approval review: {label}"),
             status,
-            /*tool_label*/ None,
+            /*tool_action*/ None,
         );
         if let Some(rationale) = review.rationale.filter(|text| !text.is_empty()) {
             self.push_output_with_status_for_item(id, rationale, status);

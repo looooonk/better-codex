@@ -10,7 +10,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
          2. Wire transcript │▎  × 1 failed
          3. Render dashboard│▎  ● running  Hypatia
                             │▎    └ ✓ completed  Picasso
- > Editing files...         │▎  ! interrupted  Turing
+        > Edited files      │▎  ! interrupted  Turing
                             │▎›   └ × errored  Socrates
  ▎ CODEX  The new shell owns│▎Inspector  Socrates  × errored
                             │▎Model  gpt-5-codex

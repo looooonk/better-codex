@@ -11,7 +11,7 @@ expression: "render_shell(&shell, area)"
          2. Wi╭──────────────────────────────────────────────────────────────────────╮
          3. Re│◆ ACTIONS  Ctrl+P                                                     │
               │                                                                      │
- > Editing fil│▌ New session  Start an empty session in the c...                     │
+        > Edit│▌ New session  Start an empty session in the c...                     │
               │  Copy transcript item                                                │
  ▎ CODEX  The │  Clear visible transcript                                            │00001
           surf│  Select latest transcript item                                       │ession list

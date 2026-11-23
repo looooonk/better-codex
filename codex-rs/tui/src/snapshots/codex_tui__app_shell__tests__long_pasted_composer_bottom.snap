@@ -10,7 +10,7 @@ expression: "buffer_contents(&bottom, area)"
          2. Wire transcript
          3. Render dashboard
 
- > Editing files...
+        > Edited files
 
  ▎ CODEX  The new shell owns the fullscreen surface.
 

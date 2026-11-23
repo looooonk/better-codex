@@ -11,7 +11,7 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- > Editing fil╭──────────────────────────────────────────────────────────────────────╮
+        > Edit╭──────────────────────────────────────────────────────────────────────╮
  ▎ STATUS  mcp│◆ MCP SERVERS                                                         │
               │Add MCP server                                                        │00001
  ▎ CODEX  The │Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list

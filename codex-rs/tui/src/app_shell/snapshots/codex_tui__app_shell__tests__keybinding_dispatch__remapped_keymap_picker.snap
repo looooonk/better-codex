@@ -11,7 +11,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
          2. Wire tran│       unbound - select to change                                 │
          3. Render da│   3 ○ global.find_transcript                                     │
                      │       unbound - select to change                                 │
- > Editing files...  │   4 ○ global.focus_activity                                      │
+        > Edited file│   4 ○ global.focus_activity                                      │
                      │       unbound - select to change                                 │
  ▎ CODEX  The new she│   5 ○ global.open_external_editor                                │000000000001
                      │       unbound - select to change                                 │te in session list

@@ -9,17 +9,17 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                     ┃ │▎◆ SESSIONS
          3. Render dashboard                    ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                 ┃ │▎+ New session  Ctrl+N
- ⌄ Editing files...                             ┃ │▎loading sessions
+        ⌄ Edited files                          ┃ │▎loading sessions
                                                 ┃ │
- ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
+          ▌ tool exec just test -p codex-tui    ┃ │▎◆ THREAD
                                                 ┃ │▎stage-one
- ▌ edited 3 files +128 -24                      ┃ │▎id 01900000-0000-7000-8000-000000000001
+          ▌ edited 3 files +128 -24             ┃ │▎id 01900000-0000-7000-8000-000000000001
                                                 ┃ │▎resume, fork, archive, delete in session list
- ▌ edited 4 files +4 -3                         ┃ │
- ▌          M src/app.rs                        ┃ │
- ▌          A src/new.rs                        ┃ │
- ▌          D src/old.rs                        ┃ │
- ▌          R src/from.rs -> src/to.rs          ┃ │
+          ▌ edited 4 files +4 -3                ┃ │
+          ▌          M src/app.rs               ┃ │
+          ▌          A src/new.rs               ┃ │
+          ▌          D src/old.rs               ┃ │
+          ▌          R src/from.rs -> src/to.rs ┃ │
                                                 ┃ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │
