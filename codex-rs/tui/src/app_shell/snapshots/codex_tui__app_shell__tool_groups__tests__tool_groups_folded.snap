@@ -1,0 +1,11 @@
+---
+source: tui/src/app_shell/tool_groups_tests.rs
+expression: live.0
+---
+▎ CODEX  I’ll check both sources.
+
+> Searching web...
+
+▎ CODEX  The build passed.
+
+> Calling docs/lookup...

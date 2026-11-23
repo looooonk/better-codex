@@ -177,7 +177,16 @@ impl ShellState {
                         transcript_view::transcript_text_hit_at(self, transcript, position)
                     {
                         self.composer.clear_selection();
-                        self.clear_transcript_selection();
+                        // Selection mode adds a title row. Keep the header under the pointer
+                        // until release decides between folding the group and selecting text.
+                        if self.transcript_selection.is_some()
+                            && !matches!(
+                                transcript_view::transcript_card_at(self, transcript, position),
+                                Some(transcript_view::TranscriptCardHit::ToolGroup { .. })
+                            )
+                        {
+                            self.clear_transcript_selection();
+                        }
                         self.text_selection.transcript = None;
                         self.text_selection.drag = Some(TextSelectionDrag::Transcript {
                             anchor,

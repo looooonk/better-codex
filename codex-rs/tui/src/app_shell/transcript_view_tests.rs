@@ -50,7 +50,9 @@ fn output_hit_testing_tracks_the_scrolled_render_viewport() {
         .min(viewport.layout.total_lines);
     let (logical_row, transcript_index) = (viewport.visible_from..visible_to)
         .find_map(|row| {
-            let index = viewport.layout.transcript_index_at_row(row)?;
+            let TranscriptTarget::Item(index) = viewport.layout.target_at_row(row)? else {
+                return None;
+            };
             (shell.transcript[index].kind == TranscriptKind::Output).then_some((row, index))
         })
         .expect("a scrolled output card should be visible");
@@ -306,6 +308,7 @@ fn diff_hit_testing_tracks_the_scrolled_render_viewport_and_full_width() {
             ToolBlockStatus::Success,
         );
     }
+    shell.toggle_tool_group(0);
     shell.transcript_scroll = 4;
     let area = Rect::new(
         /*x*/ 7, /*y*/ 3, /*width*/ 54, /*height*/ 10,
@@ -317,7 +320,9 @@ fn diff_hit_testing_tracks_the_scrolled_render_viewport_and_full_width() {
         .min(viewport.layout.total_lines);
     let (logical_row, transcript_index) = (viewport.visible_from..visible_to)
         .find_map(|row| {
-            let index = viewport.layout.transcript_index_at_row(row)?;
+            let TranscriptTarget::Item(index) = viewport.layout.target_at_row(row)? else {
+                return None;
+            };
             (shell.transcript[index].kind == TranscriptKind::Diff).then_some((row, index))
         })
         .expect("a scrolled diff card should be visible");
@@ -354,6 +359,7 @@ fn card_hover_uses_each_card_indent() {
         ToolBlockStatus::Success,
     );
     shell.push_output_with_status_for_item("exec-1", "command output", ToolBlockStatus::Success);
+    shell.toggle_tool_group(0);
     let area = Rect::new(
         /*x*/ 2, /*y*/ 3, /*width*/ 60, /*height*/ 14,
     );

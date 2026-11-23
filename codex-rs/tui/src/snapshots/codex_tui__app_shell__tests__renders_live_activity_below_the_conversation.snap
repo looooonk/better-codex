@@ -10,13 +10,13 @@ expression: rendered
          2. Wire transcript
          3. Render dashboard
 
- ▌ tool exec just test -p codex-tui
-
- ▌ edited 3 files +128 -24
+ > Editing files...
 
  ▎ CODEX  The new shell owns the fullscreen surface.
 
           Thinking... · 0 tok/s
+
+
 
 
 

@@ -154,12 +154,6 @@ impl ShellState {
         })
     }
 
-    pub(super) fn selected_transcript_is_output(&self) -> bool {
-        self.transcript_selection
-            .and_then(|selected| self.transcript.get(selected))
-            .is_some_and(|line| line.kind == TranscriptKind::Output)
-    }
-
     pub(super) fn transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
         self.selected_transcript_copy_text().or_else(|| {
             self.response_copy_text(ResponseOrdinal::LATEST)

@@ -47,12 +47,17 @@ fn activity_follows_tool_cards_and_wrapped_output_and_scrolls_with_them() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 60, /*height*/ 18,
     );
-    shell.push_tool_with_status_for_item("tool", "Inspect files", ToolBlockStatus::Running);
+    shell.push_tool_with_status_for_item(
+        "tool",
+        "Inspect files",
+        ToolBlockStatus::Running,
+        Some("Inspecting files".into()),
+    );
     let rendered = render_shell(&shell, area);
     let rows: Vec<_> = rendered.lines().collect();
     let tool = rows
         .iter()
-        .position(|row| row.contains("Inspect files"))
+        .position(|row| row.contains("Inspecting files"))
         .unwrap();
     assert!(rows[tool + 1].is_empty());
     assert!(rows[tool + 2].contains("Thinking..."));
@@ -73,7 +78,7 @@ fn activity_follows_tool_cards_and_wrapped_output_and_scrolls_with_them() {
     let output_indent = rows[last].width() - rows[last].trim_start().width();
     assert_eq!(indent.width(), output_indent);
     shell.scroll_transcript_to_top();
-    assert!(render_shell(&shell, area).contains("Inspect files"));
+    assert!(render_shell(&shell, area).contains("Inspecting files"));
     assert!(!render_shell(&shell, area).contains("Thinking..."));
     shell.scroll_transcript_to_bottom();
     assert_eq!(render_shell(&shell, area), rendered);

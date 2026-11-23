@@ -10,11 +10,11 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript │▎+ New session  Ctrl+N
          3. Render dashboard│▎loading sessions
                             │▎◆ THREAD
- ▌ tool exec just test -p co│▎stage-one
+ > Editing files...         │▎stage-one
                             │▎id 01900000-0000-7000-8000-000000000001
- ▌ edited 3 files +128 -24  │▎resume, fork, archive, delete in session list
+ ▎ CODEX  The new shell owns│▎resume, fork, archive, delete in session list
                             │
- ▎ CODEX  The new shell owns│
+                            │
                             │
                             │
                             │

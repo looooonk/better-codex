@@ -291,6 +291,10 @@ impl ShellState {
         }
         if let Some(card) = (ShellView { shell: self }).transcript_card_at(area, position) {
             match card {
+                TranscriptCardHit::ToolGroup { transcript_index } => {
+                    let pane = (ShellView { shell: self }).transcript_area(area);
+                    super::transcript_view::toggle_tool_group_at(self, pane, transcript_index);
+                }
                 TranscriptCardHit::ToolOutput { transcript_index } => {
                     self.open_tool_output_at(transcript_index);
                 }

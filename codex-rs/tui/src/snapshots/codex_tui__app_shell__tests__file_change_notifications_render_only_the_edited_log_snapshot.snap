@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▌ edited 4 files +4 -3                           │  Status   │  Agents  │  Sessions  │  Settings
- ▌          M src/app.rs                          │───────────────────────━━━━━━━━━━━━─────────────
- ▌          A src/new.rs                          │
- ▌          D src/old.rs                          │▎◆ SESSIONS
- ▌          R src/from.rs -> src/to.rs            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
-                                                  │▎loading sessions
+ ⌄ Editing files...                               │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │───────────────────────━━━━━━━━━━━━─────────────
+ ▌ edited 4 files +4 -3                           │
+ ▌          M src/app.rs                          │▎◆ SESSIONS
+ ▌          A src/new.rs                          │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▌          D src/old.rs                          │▎+ New session  Ctrl+N
+ ▌          R src/from.rs -> src/to.rs            │▎loading sessions
                                                   │
                                                   │▎◆ THREAD
                                                   │▎stage-one

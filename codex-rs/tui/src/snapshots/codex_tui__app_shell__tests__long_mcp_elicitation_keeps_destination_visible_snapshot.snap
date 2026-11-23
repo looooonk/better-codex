@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- ▌ edited 3 files +128 -24                                │
+ > Editing files...                                       │
                                                           ┃
  ▎ CODEX  The new shell owns the fullscreen surface.      ┃
 

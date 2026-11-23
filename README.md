@@ -116,6 +116,10 @@ at that line and column. Press Escape to return to the conversation.
 | **Realtime voice**        | Talk with an agent through the isolated native voice helper; control microphone and playback from the workspace. |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
+Consecutive tool calls share a row in the conversation. Click the row to show or hide
+the original calls and their output. From the keyboard, press Alt+Up to select the
+transcript, Tab to move to a tool group, and Space to toggle it.
+
 During a turn, the activity line beneath the latest output shows the estimated token rate
 over the last three seconds of model activity.
 With the Better Codex backend, it holds during tool waits. The turn divider shows total

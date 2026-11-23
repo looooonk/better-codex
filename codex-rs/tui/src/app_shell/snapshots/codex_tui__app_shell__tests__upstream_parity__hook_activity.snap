@@ -11,16 +11,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+ > Editing files...                               │▎◆ THREAD
                                                   │▎stage-one
- ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+ ▌ tool Hook: PostToolUse                         │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
- ▌ tool Hook: PostToolUse                         │
-                                                  │
    ▌ output Workspace checks passed.              │
                                                   │
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

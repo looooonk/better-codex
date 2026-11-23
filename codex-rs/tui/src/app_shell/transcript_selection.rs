@@ -7,7 +7,8 @@ impl ShellState {
         self.transcript_selection = self
             .transcript
             .iter()
-            .rposition(|line| line.kind == TranscriptKind::User);
+            .rposition(|line| line.kind == TranscriptKind::User)
+            .or_else(|| self.tool_groups().last().map(|group| group.rows.start));
         self.transcript_selection_needs_reveal
             .set(self.transcript_selection.is_some());
         self.scroll_transcript_to_bottom();
@@ -18,7 +19,8 @@ impl ShellState {
         self.transcript_selection = self
             .transcript
             .iter()
-            .position(|line| line.kind == TranscriptKind::User);
+            .position(|line| line.kind == TranscriptKind::User)
+            .or_else(|| self.tool_groups().next().map(|group| group.rows.start));
         self.transcript_selection_needs_reveal
             .set(self.transcript_selection.is_some());
         self.scroll_transcript_to_top();

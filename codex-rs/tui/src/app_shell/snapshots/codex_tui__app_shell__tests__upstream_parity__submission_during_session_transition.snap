@@ -10,14 +10,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
          2. Wire transcript
          3. Render dashboard
 
- ▌ tool exec just test -p codex-tui
-
- ▌ edited 3 files +128 -24
+ > Editing files...
  ▎ STATUS  wait for the session transition before sending a message
 
  ▎ CODEX  The new shell owns the fullscreen surface.
 
           Changing session... · 0 tok/s
+
+
 
 
 

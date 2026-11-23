@@ -22,6 +22,7 @@ use super::text_selection::graphemes_in_columns;
 use super::text_selection::trim_synthetic_right_padding;
 use super::transcript_render::TranscriptLayout;
 use super::transcript_render::TranscriptLayoutRow;
+use super::transcript_render::TranscriptTarget;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
 use crate::markdown;
@@ -59,6 +60,12 @@ pub(super) fn render_transcript(
     }
     if let Some(selected) = shell.transcript_selection {
         let mut hint = format!("SELECT {}/{}", selected + 1, shell.transcript.len());
+        if shell.tool_group_start(selected).is_some() {
+            hint.push_str("  Space FOLD/UNFOLD");
+        }
+        if shell.tool_groups().next().is_some() {
+            hint.push_str("  Tab TOOLS");
+        }
         if shell.selected_transcript_is_rewindable() {
             hint.push_str("  e BRANCH EDIT");
         }
@@ -91,15 +98,17 @@ pub(super) fn render_transcript(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TranscriptCardHit {
+    ToolGroup { transcript_index: usize },
     ToolOutput { transcript_index: usize },
     Diff { transcript_index: usize },
 }
 
 impl TranscriptCardHit {
-    pub(super) fn transcript_index(self) -> usize {
+    fn target(self) -> TranscriptTarget {
         match self {
+            Self::ToolGroup { transcript_index } => TranscriptTarget::ToolGroup(transcript_index),
             Self::ToolOutput { transcript_index } | Self::Diff { transcript_index } => {
-                transcript_index
+                TranscriptTarget::Item(transcript_index)
             }
         }
     }
@@ -107,7 +116,7 @@ impl TranscriptCardHit {
     fn block_indent(self) -> usize {
         match self {
             Self::ToolOutput { .. } => OUTPUT_BLOCK_INDENT,
-            Self::Diff { .. } => 0,
+            Self::ToolGroup { .. } | Self::Diff { .. } => 0,
         }
     }
 }
@@ -121,6 +130,23 @@ pub(super) fn transcript_card_at(
     transcript_card_hit_at(shell, &viewport, position)
 }
 
+/// Keep the clicked header in place when opening a group adds more than a screen of rows.
+pub(super) fn toggle_tool_group_at(shell: &mut ShellState, area: Rect, index: usize) {
+    let before = transcript_viewport(shell, area);
+    let target = TranscriptTarget::ToolGroup(index);
+    let Some(rows) = before.layout.target_rows(target) else {
+        return;
+    };
+    let offset = rows.start.saturating_sub(before.visible_from);
+    shell.toggle_tool_group(index);
+    let after = transcript_viewport(shell, area);
+    if let Some(rows) = after.layout.target_rows(target) {
+        let top = rows.start.saturating_sub(offset);
+        shell.transcript_scroll = shell.transcript_scroll_max.get().saturating_sub(top);
+        shell.clear_transcript_viewport_anchor();
+    }
+}
+
 pub(super) fn transcript_output_at(
     shell: &ShellState,
     area: Rect,
@@ -128,7 +154,7 @@ pub(super) fn transcript_output_at(
 ) -> Option<usize> {
     match transcript_card_at(shell, area, position) {
         Some(TranscriptCardHit::ToolOutput { transcript_index }) => Some(transcript_index),
-        Some(TranscriptCardHit::Diff { .. }) | None => None,
+        Some(TranscriptCardHit::Diff { .. } | TranscriptCardHit::ToolGroup { .. }) | None => None,
     }
 }
 
@@ -295,7 +321,12 @@ fn transcript_card_hit_at(
     let logical_row = viewport
         .visible_from
         .saturating_add(usize::from(position.y.saturating_sub(viewport.text_body.y)));
-    let transcript_index = viewport.layout.transcript_index_at_row(logical_row)?;
+    let transcript_index = match viewport.layout.target_at_row(logical_row)? {
+        TranscriptTarget::ToolGroup(transcript_index) => {
+            return Some(TranscriptCardHit::ToolGroup { transcript_index });
+        }
+        TranscriptTarget::Item(index) => index,
+    };
     let item = shell.transcript.get(transcript_index)?;
     item.tool_status?;
     let hit = match item.kind {
@@ -326,8 +357,7 @@ fn render_card_hover(
     else {
         return;
     };
-    let transcript_index = hit.transcript_index();
-    let Some(rows) = viewport.layout.transcript_row_range(transcript_index) else {
+    let Some(rows) = viewport.layout.target_rows(hit.target()) else {
         return;
     };
     let visible_end = viewport.visible_from.saturating_add(viewport.visible_count);

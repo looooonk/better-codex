@@ -11,12 +11,12 @@ expression: rendered
          2. Wire transcript                       │▎x Shell frame
          3. Render dashboard                      │▎> Transcript model
                                                   │▎- Approvals
- ▌ tool exec just test -p codex-tui               │
+ > Editing files...                               │
                                                   │▎◆ TOOLS
- ▌ edited 3 files +128 -24                        │▎in progress exec just test -p codex-tui
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ EDITS
-          surface.                                │▎1 files +1 -1
+ ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+          surface.                                │
+                                                  │▎◆ EDITS
+                                                  │▎1 files +1 -1
                                                   │▎retained subset; totals may be incomplete
                                                   │
                                                   │▎◆ WORKSPACE

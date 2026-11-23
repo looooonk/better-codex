@@ -134,6 +134,11 @@ impl ShellState {
             );
             return;
         };
+        if let Some(start) = self.tool_group_start(index)
+            && !self.transcript[start].tool_group_expanded
+        {
+            self.toggle_tool_group(start);
+        }
         self.transcript_selection = Some(index);
         self.transcript_selection_needs_reveal.set(true);
         self.dashboard_visible = false;

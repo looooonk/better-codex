@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▌ edited 3 files +128 -24                      │ │  Status   │  Agents  │  Sessions  │  Settings
+ > Editing files...                             │ │  Status   │  Agents  │  Sessions  │  Settings
                                                 │ │───────────────────────━━━━━━━━━━━━─────────────
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │▎◆ SESSIONS

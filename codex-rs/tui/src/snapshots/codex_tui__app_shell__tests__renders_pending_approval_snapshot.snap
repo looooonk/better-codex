@@ -4,8 +4,8 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
                                                 │ │  Status   │  Agents  │  Sessions  │  Settings
- ▌ edited 3 files +128 -24                      │ │───────────────────────━━━━━━━━━━━━─────────────
-                                                │ │
+ > Editing files...                             │ │───────────────────────━━━━━━━━━━━━─────────────
+                                                ┃ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │▎◆ SESSIONS
           surface.                              ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N

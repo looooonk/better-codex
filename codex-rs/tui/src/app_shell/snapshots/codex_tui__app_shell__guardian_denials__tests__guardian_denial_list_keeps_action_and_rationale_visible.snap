@@ -10,9 +10,7 @@ expression: "lines.join(\"\\n\")"
          2. Wire transcript
          3. Render dashboard
 
- ▌ tool exec just test -p codex-tui
-
- ▌ edited 3 files +128 -24
+ > Editing files...
 
  ▌ tool Approval review: Denied
 
@@ -22,6 +20,8 @@ expression: "lines.join(\"\\n\")"
            This command changes files outside the requested directory.
            Use /approve <review-id> to allow one retry. The retry still goes through auto-review.
  ▎ CODEX  The new shell owns the fullscreen surface.
+
+
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                                      │

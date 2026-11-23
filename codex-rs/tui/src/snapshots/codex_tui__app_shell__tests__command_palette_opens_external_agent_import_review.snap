@@ -11,15 +11,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- ▌ tool exec just test -p codex-tui               │▎◆ THREAD
-              ╭──────────────────────────────────────────────────────────────────────╮
- ▌ edited 3 fi│◆ CLAUDE CODE IMPORT                                                  │00001
- ▎ STATUS  che│Review Claude Code setup  Settings 1, Skills 1                        │ession list
- ▎ STATUS  rev│                                                                      │
-           imp│> [x] Settings (settings.json -> config.toml) - home                  │
-              │      Import settings from Claude Code                                │
- ▎ CODEX  The │  [x] Skills - better-codex                                           │
-          surf│      1 skill: review                                                 │
+ > Editing files...                               │▎◆ THREAD
+ ▎ STATUS  che╭──────────────────────────────────────────────────────────────────────╮
+ ▎ STATUS  rev│◆ CLAUDE CODE IMPORT                                                  │00001
+           imp│Review Claude Code setup  Settings 1, Skills 1                        │ession list
+              │                                                                      │
+ ▎ CODEX  The │> [x] Settings (settings.json -> config.toml) - home                  │
+          surf│      Import settings from Claude Code                                │
+              │  [x] Skills - better-codex                                           │
+              │      1 skill: review                                                 │
               │                                                                      │
               │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
               │                                                                      │

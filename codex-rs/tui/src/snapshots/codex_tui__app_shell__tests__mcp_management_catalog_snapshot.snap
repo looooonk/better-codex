@@ -11,12 +11,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
          2. Wire transcript                                 │  ○ ⛨ Unless trusted
          3. Render dashboard                                │  ○ ⚠ Full access
                                                             │
- ▌ tool exec just test -p codex-tui                         │◆ APPEARANCE
-                                                            │  ● Tokyo Night
- ▌ edited 3 files +128 -24                                  │  ○ Gruvbox Dark
- ▎ STATUS  mcp manager opened                               │  ○ Catppuccin Mocha
+ > Editing files...                                         │◆ APPEARANCE
+ ▎ STATUS  mcp manager opened                               │  ● Tokyo Night
+                                                            │  ○ Gruvbox Dark
+ ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Catppuccin Mocha
                    ╭──────────────────────────────────────────────────────────────────────╮
- ▎ CODEX  The new s│◆ MCP SERVERS                                                         │
+                   │◆ MCP SERVERS                                                         │
                    │1/2 mcp servers  ↑↓ / j k navigate                                    │
                    │Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
                    │> login        github 2 tools                                         │

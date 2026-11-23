@@ -10,11 +10,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
          2. Wire transcript │  ○ ⛨ Unless trusted
          3. Render dashboard│  ○ ⚠ Full access
                             │
- ▌ tool exec just test -p co│◆ APPEARANCE
+ > Editing files...         │◆ APPEARANCE
                             │  ● Tokyo Night
- ▌ edited 3 files +128 -24  │  ○ Gruvbox Dark
+ ▎ CODEX  The new shell owns│  ○ Gruvbox Dark
                             │  ○ Catppuccin Mocha
- ▎ CODEX  The new shell owns│  ○ Monochrome
+                            │  ○ Monochrome
                             │  Syntax theme: default
                             │  Animations: on
                             │  Tooltips: on

@@ -266,6 +266,7 @@ fn full_output_survives_preview_compaction_and_live_updates() {
         "exec-1",
         "exec cargo build --workspace",
         ToolBlockStatus::Running,
+        Some("Running command".into()),
     );
     let initial = (0..=super::super::TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
         .map(|index| format!("compile line {index:03}: checking workspace dependency"))

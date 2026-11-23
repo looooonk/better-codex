@@ -1,0 +1,19 @@
+---
+source: tui/src/app_shell/tool_groups_tests.rs
+expression: live.1
+---
+▎ CODEX  I’ll check both sources.
+
+⌄ Searching web...
+
+▌ tool functions/exec_command
+
+  ▌ output build passed
+
+▌ tool agent ListAgents: 0 targets
+
+▌ tool web search: build documentation
+
+▎ CODEX  The build passed.
+
+> Calling docs/lookup...

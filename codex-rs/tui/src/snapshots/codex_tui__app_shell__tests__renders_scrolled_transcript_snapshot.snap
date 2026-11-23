@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-         3. Render dashboard                    │ │  Status   │  Agents  │  Sessions  │  Settings
-                                                │ │───────────────────────━━━━━━━━━━━━─────────────
- ▌ tool exec just test -p codex-tui             ┃ │
+ ▎ PLAN  1. Build shell                         │ │  Status   │  Agents  │  Sessions  │  Settings
+         2. Wire transcript                     │ │───────────────────────━━━━━━━━━━━━─────────────
+         3. Render dashboard                    ┃ │
                                                 ┃ │▎◆ SESSIONS
- ▌ edited 3 files +128 -24                      ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ > Editing files...                             ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎ STATUS  first checkpoint                     ┃ │▎+ New session  Ctrl+N
  ▎ STATUS  second checkpoint                    │ │▎loading sessions
  ▎ STATUS  third checkpoint                     │ │

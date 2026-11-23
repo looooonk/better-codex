@@ -11,11 +11,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
          2. Wire transcript                                 │▎+ New session  Ctrl+N
          3. Render dashboard                                │▎loading sessions
                    ╭──────────────────────────────────────────────────────────────────────╮
- ▌ tool exec just t│◆ DELETE SESSION                                                      │
+ > Editing files...│◆ DELETE SESSION                                                      │
                    │Delete session: stage-one                                             │
- ▌ edited 3 files +│Session ID: 01900000-0000-7000-8000-000000000001                      │0000000001
+ ▎ CODEX  The new s│Session ID: 01900000-0000-7000-8000-000000000001                      │0000000001
                    │No spawned descendants will be deleted.                               │ in session list
- ▎ CODEX  The new s│This permanently deletes all persisted history in that subtree.       │
+                   │This permanently deletes all persisted history in that subtree.       │
                    │                                                                      │
                    │> Delete permanently Enter/y                                          │
                    │  Cancel Esc/n                                                        │

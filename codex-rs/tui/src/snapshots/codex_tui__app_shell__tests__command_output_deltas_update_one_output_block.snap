@@ -3,9 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▌ tool exec cargo test                           │  Status   │  Agents  │  Sessions  │  Settings
+ > Running command...                             │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   ▌ output pytest 100%                           │
+                                                  │
                                                   │▎◆ SESSIONS
                                                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N

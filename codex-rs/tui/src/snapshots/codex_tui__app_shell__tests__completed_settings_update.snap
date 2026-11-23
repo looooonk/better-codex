@@ -10,11 +10,11 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                                                                              │  ● ⓘ Ask for approval
          3. Render dashboard                                                                             │  ○ ⛨ Unless trusted
                                                                                                          │  ○ ⚠ Full access
- ▌ tool exec just test -p codex-tui                                                                      │
+ > Editing files...                                                                                      │
                                                                                                          │◆ APPEARANCE
- ▌ edited 3 files +128 -24                                                                               │  ● Tokyo Night
+ ▎ CODEX  The new shell owns the fullscreen surface.                                                     │  ● Tokyo Night
                                                                                                          │  ○ Gruvbox Dark
- ▎ CODEX  The new shell owns the fullscreen surface.                                                     │  ○ Catppuccin Mocha
+                                                                                                         │  ○ Catppuccin Mocha
                                                                                                          │  ○ Monochrome
                                                                                                          │  Syntax theme: default
                                                                                                          │  Animations: on

@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- ▌ tool agent SpawnAgent                          │  Status   │  Agents  │  Sessions  │  Settings
+ > Starting agent...                              │  Status   │  Agents  │  Sessions  │  Settings
                                                   │────────────━━━━━━━━━━──────────────────────────
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │▎◆ AGENTS

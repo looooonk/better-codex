@@ -11,13 +11,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
          2. Wire transcript                                 │▎+ New session  Ctrl+N
          3. Render dashboard                                │▎loading sessions
                                                             │
- ▌ tool exec just test -p codex-tui                         │▎◆ THREAD
-                                                            │▎stage-one
- ▌ edited 3 files +128 -24                                  │▎id 01900000-0000-7000-8000-000000000001
- ▎ STATUS  preset loaded; press Enter to send               │▎resume, fork, archive, delete in session list
- ▎ SYSTEM  Preset ready; your draft was kept:               │
-           Another preset                                   │
+ > Editing files...                                         │▎◆ THREAD
+ ▎ STATUS  preset loaded; press Enter to send               │▎stage-one
+ ▎ SYSTEM  Preset ready; your draft was kept:               │▎id 01900000-0000-7000-8000-000000000001
+           Another preset                                   │▎resume, fork, archive, delete in session list
  ▎ CODEX  The new shell owns the fullscreen surface.        │
+                                                            │
+                                                            │
                                                             │
                                                             │
                                                             │

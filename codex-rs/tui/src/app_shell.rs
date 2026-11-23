@@ -173,6 +173,7 @@ mod text_selection;
 mod thread_revert;
 mod thread_usage;
 mod timeline;
+mod tool_groups;
 mod tool_output;
 mod tool_output_view;
 mod tool_payload;
@@ -284,6 +285,8 @@ struct TranscriptLine {
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
     rewind_anchor: Option<rewind::RewindAnchor>,
+    tool_label: Option<String>,
+    tool_group_expanded: bool,
     render_revision: u64,
 }
 
@@ -296,6 +299,8 @@ impl TranscriptLine {
             tool_status: None,
             item_id: None,
             rewind_anchor: None,
+            tool_label: None,
+            tool_group_expanded: false,
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -309,6 +314,8 @@ impl TranscriptLine {
             tool_status: Some(status),
             item_id: Some(item_id),
             rewind_anchor: None,
+            tool_label: None,
+            tool_group_expanded: false,
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -343,6 +350,8 @@ impl Clone for TranscriptLine {
             tool_status: self.tool_status,
             item_id: self.item_id.clone(),
             rewind_anchor: self.rewind_anchor.clone(),
+            tool_label: self.tool_label.clone(),
+            tool_group_expanded: self.tool_group_expanded,
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -980,6 +989,21 @@ impl ShellState {
                 self.begin_rewind_edit();
                 Some(false)
             }
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.select_adjacent_tool_group(key.code);
+                Some(false)
+            }
+            KeyCode::Char(' ') => {
+                if let Some(start) = self
+                    .transcript_selection
+                    .and_then(|index| self.tool_group_start(index))
+                {
+                    self.toggle_tool_group(start);
+                    self.transcript_selection = Some(start);
+                    self.transcript_selection_needs_reveal.set(true);
+                }
+                Some(false)
+            }
             KeyCode::Backspace
             | KeyCode::Left
             | KeyCode::Right
@@ -996,9 +1020,7 @@ impl ShellState {
             | KeyCode::Menu
             | KeyCode::KeypadBegin
             | KeyCode::Media(_)
-            | KeyCode::Modifier(_)
-            | KeyCode::Tab
-            | KeyCode::BackTab => Some(false),
+            | KeyCode::Modifier(_) => Some(false),
         }
     }
 
@@ -1770,6 +1792,7 @@ impl ShellState {
         rewind_anchor: Option<rewind::RewindAnchor>,
     ) {
         self.agent_activity.reduce_completed(&item);
+        let tool_label = tool_groups::activity_label(&item.payload);
         match item.payload {
             ThreadItemPayload::UserMessage {
                 client_id, content, ..
@@ -1834,7 +1857,12 @@ impl ShellState {
             } => {
                 let title = namespace
                     .map_or_else(|| name.clone(), |namespace| format!("{namespace}/{name}"));
-                self.push_tool_with_status_for_item(id.clone(), title, ToolBlockStatus::Success);
+                self.push_tool_with_status_for_item(
+                    id.clone(),
+                    title,
+                    ToolBlockStatus::Success,
+                    tool_label,
+                );
                 if let Some(text) = tool_payload::function_output(&output) {
                     self.push_output_with_status_for_item(id, text, ToolBlockStatus::Success);
                 }
@@ -1878,7 +1906,7 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id.clone(), title, tool_status);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_label);
                 if let Some(output) = aggregated_output.and_then(nonempty_output_text) {
                     self.push_output_with_status_for_item(id, output, tool_status);
                 } else {
@@ -1919,12 +1947,18 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id.clone(), title, tool_status);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_label);
                 if let Some(output) = result.as_deref().and_then(tool_payload::mcp_output) {
-                    self.push_output_with_status_for_item(id, output, tool_status);
+                    self.push_output_with_status_for_item(id.clone(), output, tool_status);
                 }
                 if let Some(error) = error {
-                    self.push_error(format!("mcp error: {}", error.message));
+                    self.upsert_line(
+                        TranscriptLine::new(
+                            TranscriptKind::Error,
+                            format!("mcp error: {}", error.message),
+                        )
+                        .item_id(id),
+                    );
                 }
             }
             ThreadItemPayload::DynamicToolCall {
@@ -1953,7 +1987,7 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id.clone(), title, tool_status);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status, tool_label);
                 if let Some(output) = content_items
                     .as_deref()
                     .and_then(tool_payload::dynamic_output)
@@ -1974,15 +2008,12 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                match origin {
-                    CompletedItemOrigin::Historical
-                    | CompletedItemOrigin::UnconfirmedHistorical => {}
-                    CompletedItemOrigin::Live => self.push_tool_with_status_for_item(
-                        id,
-                        title,
-                        tool_status_from_debug(&status),
-                    ),
-                }
+                self.push_tool_with_status_for_item(
+                    id,
+                    title,
+                    tool_status_from_debug(&status),
+                    tool_label,
+                );
             }
             ThreadItemPayload::SubAgentActivity {
                 id,
@@ -2006,6 +2037,7 @@ impl ShellState {
                     item.id.clone(),
                     title,
                     ToolBlockStatus::Success,
+                    tool_label,
                 );
                 if let Some(output) = item.results.as_deref().and_then(tool_payload::web_results) {
                     self.push_output_with_status_for_item(
@@ -2018,7 +2050,12 @@ impl ShellState {
             ThreadItemPayload::ImageView { id, path } => {
                 let title = format!("view image: {path}");
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
-                self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
+                self.push_tool_with_status_for_item(
+                    id,
+                    title,
+                    ToolBlockStatus::Success,
+                    tool_label,
+                );
             }
             ThreadItemPayload::Sleep(item) => {
                 let codex_app_server_protocol::SleepItem {
@@ -2026,7 +2063,12 @@ impl ShellState {
                 } = item;
                 let title = format!("sleep {duration_ms}ms");
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
-                self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
+                self.push_tool_with_status_for_item(
+                    id,
+                    title,
+                    ToolBlockStatus::Success,
+                    tool_label,
+                );
             }
             ThreadItemPayload::ImageGeneration(item) => {
                 let host = if self.resume_cwd_runtime.uses_remote_workspace_or_environment {
@@ -2041,7 +2083,12 @@ impl ShellState {
                     .unwrap_or_else(|| "image generation".to_string());
                 let tool_status = tool_status_from_str(&item.status);
                 self.upsert_tool_activity(item.id.clone(), title.clone(), item.status);
-                self.push_tool_with_status_for_item(item.id.clone(), title, tool_status);
+                self.push_tool_with_status_for_item(
+                    item.id.clone(),
+                    title,
+                    tool_status,
+                    tool_label,
+                );
                 if let Some(output) = output {
                     self.push_output_with_status_for_item(item.id, output, tool_status);
                 }
@@ -2113,7 +2160,10 @@ impl ShellState {
     }
 
     fn push_tool(&mut self, text: impl Into<String>) {
-        self.push_tool_with_status(text, ToolBlockStatus::Running);
+        let mut line =
+            TranscriptLine::new(TranscriptKind::Tool, text).tool_status(ToolBlockStatus::Running);
+        line.tool_label = Some("Running tool".into());
+        self.push_line(line);
     }
 
     fn push_tool_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
@@ -2125,15 +2175,16 @@ impl ShellState {
         item_id: impl Into<String>,
         text: impl Into<String>,
         status: ToolBlockStatus,
+        tool_label: Option<String>,
     ) {
         let item_id = item_id.into();
         let text = text.into();
         self.update_open_tool_output_title(&item_id, &text, status);
-        self.upsert_line(
-            TranscriptLine::new(TranscriptKind::Tool, text)
-                .tool_status(status)
-                .item_id(item_id),
-        );
+        let mut line = TranscriptLine::new(TranscriptKind::Tool, text)
+            .tool_status(status)
+            .item_id(item_id);
+        line.tool_label = tool_label;
+        self.upsert_line(line);
     }
 
     #[cfg(test)]
@@ -2285,10 +2336,29 @@ impl ShellState {
         if self.transcript.len() > MAX_TRANSCRIPT_LINES {
             self.clear_transcript_text_selection();
         }
-        while self.transcript.len() > MAX_TRANSCRIPT_LINES {
-            self.transcript.pop_front();
+        while self.transcript.len() > MAX_TRANSCRIPT_LINES
+            && let Some(first) = self.transcript.pop_front()
+        {
+            let mut removed = 1;
+            if first.activity_label().is_some() {
+                while self
+                    .transcript
+                    .front()
+                    .is_some_and(|line| line.is_tool_child_of(first.item_id.as_deref()))
+                {
+                    self.transcript.pop_front();
+                    removed += 1;
+                }
+                if first.tool_group_expanded
+                    && let Some(next) = self.transcript.front_mut()
+                    && next.activity_label().is_some()
+                {
+                    next.tool_group_expanded = true;
+                    next.mark_render_changed();
+                }
+            }
             if let Some(selected) = self.transcript_selection {
-                self.transcript_selection = selected.checked_sub(1);
+                self.transcript_selection = selected.checked_sub(removed);
                 if self.transcript_selection.is_none() {
                     self.transcript_selection_needs_reveal.set(false);
                 }
@@ -2296,19 +2366,23 @@ impl ShellState {
         }
     }
 
-    fn upsert_line(&mut self, line: TranscriptLine) {
+    fn upsert_line(&mut self, mut line: TranscriptLine) {
         if let Some(item_id) = line.item_id.as_deref()
             && let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
                 existing.kind == line.kind && existing.item_id.as_deref() == Some(item_id)
             })
         {
+            line.tool_group_expanded = existing.tool_group_expanded;
+            if line.tool_label.is_none() {
+                line.tool_label = existing.tool_label.take();
+            }
             *existing = line;
             return;
         }
 
         if let Some(item_id) = line.item_id.as_deref() {
             let insert_at = match line.kind {
-                TranscriptKind::Output => self
+                TranscriptKind::Output | TranscriptKind::Error => self
                     .transcript
                     .iter()
                     .rposition(|existing| existing.item_id.as_deref() == Some(item_id))
@@ -2324,8 +2398,7 @@ impl ShellState {
                 | TranscriptKind::Diff
                 | TranscriptKind::Separator
                 | TranscriptKind::Status
-                | TranscriptKind::Audit
-                | TranscriptKind::Error => None,
+                | TranscriptKind::Audit => None,
             };
             if let Some(insert_at) = insert_at {
                 self.clear_transcript_text_selection();
@@ -2659,6 +2732,7 @@ pub mod bench_support {
             BENCH_TOOL_ITEM_ID,
             "exec cargo build --workspace",
             ToolBlockStatus::Running,
+            Some("Running command".into()),
         );
         let initial_output = (0..TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
             .map(|line| {

@@ -11,15 +11,15 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎Ship the standalone shell
          3. Render dashboard                      │▎1m | 12,345 tokens
                                                   │
- ▌ tool exec just test -p codex-tui               │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
- ▌ edited 3 files +128 -24                        │▎x Shell frame
- ▎ STATUS  goal set: Ship the standalone shell    │▎> Transcript model
- ▎ STATUS  goal active. Objective: Ship the       │▎- Approvals
-           standalone shell Time: 1m.             │
-                                                  │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │
+ > Editing files...                               │▎◆ PLAN
+ ▎ STATUS  goal set: Ship the standalone shell    │▎Build the standalone shell in slices.
+ ▎ STATUS  goal active. Objective: Ship the       │▎x Shell frame
+           standalone shell Time: 1m.             │▎> Transcript model
+                                                  │▎- Approvals
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │▎◆ TOOLS
+                                                  │▎in progress exec just test -p codex-tui
+                                                  │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
                                                   │

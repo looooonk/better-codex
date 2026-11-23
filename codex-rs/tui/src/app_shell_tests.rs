@@ -8476,6 +8476,8 @@ fn renders_decision_audit_snapshot() {
 fn renders_file_change_detail_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.push_diff(file_change_detail(&sample_file_changes()));
+    let start = shell.tool_groups().last().unwrap().rows.start;
+    shell.toggle_tool_group(start);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -8489,6 +8491,7 @@ fn diff_summaries_use_addition_and_removal_colors() {
     shell.transcript.clear();
     shell.clear_streaming_assistant();
     shell.push_diff("9 files +8 -7");
+    shell.toggle_tool_group(0);
     shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 60,
@@ -8518,6 +8521,8 @@ fn diff_summaries_use_addition_and_removal_colors() {
 fn renders_tool_progress_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.push_tool("mcp progress: indexed 42 files\npreparing search results");
+    let start = shell.tool_groups().last().unwrap().rows.start;
+    shell.toggle_tool_group(start);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -9111,6 +9116,7 @@ fn completed_tool_item_updates_existing_transcript_status() {
         ),
     }));
 
+    shell.toggle_tool_group(0);
     let running_buf = render_shell_buffer(&shell, area);
     assert_eq!(
         accent_color_for_row(&running_buf, area, "exec cargo test"),
@@ -9605,6 +9611,27 @@ async fn clicking_running_output_opens_a_live_full_output_popup() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
     );
+    shell.transcript_selection = Some(0);
+    let header = area
+        .positions()
+        .find(|&position| {
+            (ShellView { shell: &shell }).transcript_card_at(area, position)
+                == Some(TranscriptCardHit::ToolGroup {
+                    transcript_index: 0,
+                })
+        })
+        .expect("selected tool group should expose its header");
+    for expanded in [true, false, true] {
+        shell
+            .handle_mouse_selection_down(area, header, &config, &mut backend)
+            .await
+            .unwrap();
+        shell
+            .handle_mouse_selection_release(area, header, &config, &mut backend)
+            .await
+            .unwrap();
+        assert_eq!(shell.transcript[0].tool_group_expanded, expanded);
+    }
     let output_index = shell
         .transcript
         .iter()
@@ -10206,6 +10233,8 @@ fn file_change_notifications_render_only_the_edited_log_snapshot() {
         ])
     );
     assert_eq!(shell.tool_activity, VecDeque::new());
+    let start = shell.tool_groups().last().unwrap().rows.start;
+    shell.toggle_tool_group(start);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
     );
@@ -10236,6 +10265,7 @@ async fn clicking_edited_card_opens_and_refreshes_the_diff_popup() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
     );
+    shell.toggle_tool_group(0);
     let diff_index = shell
         .transcript
         .iter()

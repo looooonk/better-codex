@@ -10,9 +10,9 @@ expression: "lines.join(\"\\n\")"
          2. Wire transcript
          3. Render dashboard
 
- ▌ tool exec just test -p codex-tui
+ > Editing files...
 
- ▌ edited 3 files +128 -24
+ ▎ CODEX  The new shell owns the fullscreen surface.
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
 │▌ /review  Review changes; accepts instructions or --base/--commit    │

@@ -11,11 +11,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
          2. Wire transcript                                 │  ○ ⛨ Unless trusted
          3. Render dashboard                                │  ○ ⚠ Full access
                                                             │
- ▌ tool exec just test -p codex-tui                         │◆ APPEARANCE
+ > Editing files...                                         │◆ APPEARANCE
                                                             │  ● Tokyo Night
- ▌ edited 3 files +128 -24                                  │  ○ Gruvbox Dark
+ ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Gruvbox Dark
                                                             │  ○ Catppuccin Mocha
- ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Monochrome
+                                                            │  ○ Monochrome
                                                             │  Syntax theme: default
                                                             │  Animations: on
                                                             │  Tooltips: on

@@ -423,7 +423,14 @@ impl ShellState {
                     self.mark_active_agent_threads(&started.item);
                     self.agent_activity.reduce_started(&started.item);
                     self.mark_agent_item_live(&started.item);
-                    if let Some(title) = item_activity_title(&started.item) {
+                    if let ThreadItemPayload::FileChange { id, changes, .. } = &started.item.payload
+                    {
+                        self.push_diff_with_status_for_item(
+                            id.clone(),
+                            super::file_change_detail(changes),
+                            super::ToolBlockStatus::Running,
+                        );
+                    } else if let Some(title) = item_activity_title(&started.item) {
                         let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
                         if !matches!(
@@ -434,6 +441,7 @@ impl ShellState {
                                 item_id,
                                 title,
                                 super::ToolBlockStatus::Running,
+                                super::tool_groups::activity_label(&started.item.payload),
                             );
                         }
                     }
@@ -577,6 +585,7 @@ impl ShellState {
                             progress.item_id,
                             transcript,
                             super::ToolBlockStatus::Running,
+                            /*tool_label*/ None,
                         );
                     }
                 } else if self.prepare_active_agent_thread(&progress.thread_id) {

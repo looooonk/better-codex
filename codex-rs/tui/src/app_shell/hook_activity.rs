@@ -13,7 +13,12 @@ impl ShellState {
             }
         };
         let title = format!("Hook: {:?}", run.event_name);
-        self.push_tool_with_status_for_item(run.id.clone(), title, status);
+        self.push_tool_with_status_for_item(
+            run.id.clone(),
+            title,
+            status,
+            /*tool_label*/ None,
+        );
         let output = run
             .status_message
             .into_iter()

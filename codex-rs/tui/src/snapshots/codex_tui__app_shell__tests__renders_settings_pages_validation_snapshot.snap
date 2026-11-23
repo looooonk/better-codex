@@ -11,12 +11,12 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │  ○ ⛨ Unless trusted
          3. Render dashboard                      │  ○ ⚠ Full access
                                                   │
- ▌ tool exec just test -p codex-tui               │◆ APPEARANCE
+ > Editing files...                               │◆ APPEARANCE
                                                   │  ● Tokyo Night
- ▌ edited 3 files +128 -24                        │  ○ Gruvbox Dark
-                                                  │  ○ Catppuccin Mocha
- ▎ CODEX  The new shell owns the fullscreen       │  ○ Monochrome
-          surface.                                │› Syntax theme: default
+ ▎ CODEX  The new shell owns the fullscreen       │  ○ Gruvbox Dark
+          surface.                                │  ○ Catppuccin Mocha
+                                                  │  ○ Monochrome
+                                                  │› Syntax theme: default
                                                   │  Edit missing-theme▏
                                                   │unknown syntax theme `missing-theme`
                                                   │  Animations: on

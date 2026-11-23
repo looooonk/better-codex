@@ -3,12 +3,12 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&permissions_shell, area)"
 ---
                                                   │
-         2. Wire transcript                     │ │  Status   │  Agents  │  Sessions  │  Settings
-         3. Render dashboard                    │ │───────────────────────━━━━━━━━━━━━─────────────
-                                                │ │
- ▌ tool exec just test -p codex-tui             ┃ │▎◆ SESSIONS
+          by app-server turns.                  │ │  Status   │  Agents  │  Sessions  │  Settings
+ ▎ PLAN  1. Build shell                         │ │───────────────────────━━━━━━━━━━━━─────────────
+         2. Wire transcript                     ┃ │
+         3. Render dashboard                    ┃ │▎◆ SESSIONS
                                                 ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▌ edited 3 files +128 -24                      ┃ │▎+ New session  Ctrl+N
+ > Editing files...                             ┃ │▎+ New session  Ctrl+N
                                                 ┃ │▎loading sessions
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │▎◆ THREAD

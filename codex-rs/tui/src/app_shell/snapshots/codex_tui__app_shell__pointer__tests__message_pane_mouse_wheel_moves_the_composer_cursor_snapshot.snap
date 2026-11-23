@@ -3,7 +3,7 @@ source: tui/src/app_shell/pointer_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- ▌ edited 3 files +128 -24                                                  │
+ > Editing files...                                                         │
                                                                             ┃
  ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
 

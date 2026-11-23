@@ -11,12 +11,12 @@ expression: "render_shell(&rename, Rect::new(0, 0, 100, 28,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
                                                   │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
- ▌ tool exec just test -p codex-tui               │
+ > Editing files...                               │
                                                   │▎◆ THREAD
- ▌ edited 3 files +128 -24                        │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
- ▎ CODEX  The new shell owns the fullscreen       │▎resume, fork, archive, delete in session list
-          surface.                                │
+ ▎ CODEX  The new shell owns the fullscreen       │▎stage-one
+          surface.                                │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+                                                  │
                                                   │
                                                   │
                                                   │

@@ -3,11 +3,11 @@ source: tui/src/app_shell/slash_command_popup_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 48, 18))"
 ---
 
- ▎ PLAN  1. Build shell                       │
-         2. Wire transcript                   │
+ ▎ CODEX  Started a fullscreen app shell      │
+          backed by app-server turns.         ┃
+ ▎ PLAN  1. Build shell                       ┃
+         2. Wire transcript                   ┃
          3. Render dashboard                  ┃
-                                              ┃
- ▌ tool exec just test -p codex-tui           ┃
 ╭──────────────────────────────────────────────╮
 │◆ COMMANDS                                    │
 │  /login   Sign in to your OpenAI account     │

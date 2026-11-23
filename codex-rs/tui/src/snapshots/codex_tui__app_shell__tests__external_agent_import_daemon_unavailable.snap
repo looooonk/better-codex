@@ -11,17 +11,17 @@ expression: "render_shell(&daemon_shell, Rect::new(0, 0, 100, 28,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- ▌ tool exec just test -p codex-tui               │▎◆ THREAD
-                                                  │▎stage-one
- ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
- ▎ ERROR  Import from Claude Code is unavailable  │▎resume, fork, archive, delete in session list
-          while Better Codex is connected to      │
-          the local app-server daemon. Stop the   │
+ > Editing files...                               │▎◆ THREAD
+ ▎ ERROR  Import from Claude Code is unavailable  │▎stage-one
+          while Better Codex is connected to      │▎id 01900000-0000-7000-8000-000000000001
+          the local app-server daemon. Stop the   │▎resume, fork, archive, delete in session list
           daemon, restart Better Codex, and run / │
           import.                                 │
                                                   │
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │
+                                                  │
+                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

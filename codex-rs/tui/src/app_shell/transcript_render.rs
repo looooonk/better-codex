@@ -70,7 +70,41 @@ impl TranscriptRenderCache {
         let mut chunks = Vec::with_capacity(current_items.capacity());
         let mut previous_kind = None;
 
+        let mut groups = shell.tool_groups().peekable();
         for (index, item) in shell.transcript.iter().enumerate() {
+            if groups.peek().is_some_and(|group| group.rows.end <= index) {
+                groups.next();
+            }
+            let anchor_source = || {
+                item.item_id.as_ref().map_or(
+                    TranscriptAnchorSource::Revision(item.render_revision),
+                    |id| TranscriptAnchorSource::Item {
+                        kind: item.kind,
+                        item_id: id.clone(),
+                    },
+                )
+            };
+            if let Some(group) = groups.peek().filter(|group| group.rows.contains(&index)) {
+                if index == group.rows.start {
+                    let _theme = crate::app_theme::activate(shell.app_theme);
+                    chunks.push(TranscriptChunk {
+                        target: Some(TranscriptTarget::ToolGroup(index)),
+                        revision: item.render_revision,
+                        anchor_source: anchor_source(),
+                        separator_before: should_separate_transcript_item(
+                            previous_kind,
+                            TranscriptKind::Tool,
+                        ),
+                        lines: Arc::new([
+                            group.header(width, shell.transcript_selection == Some(index))
+                        ]),
+                    });
+                    previous_kind = Some(TranscriptKind::Tool);
+                }
+                if !group.expanded {
+                    continue;
+                }
+            }
             let selected = shell.transcript_selection == Some(index);
             push_cached_chunk(
                 &mut chunks,
@@ -80,13 +114,7 @@ impl TranscriptRenderCache {
                 CachedSource {
                     transcript_index: Some(index),
                     revision: item.render_revision,
-                    anchor_source: item.item_id.as_ref().map_or(
-                        TranscriptAnchorSource::Revision(item.render_revision),
-                        |item_id| TranscriptAnchorSource::Item {
-                            kind: item.kind,
-                            item_id: item_id.clone(),
-                        },
-                    ),
+                    anchor_source: anchor_source(),
                     kind: item.kind,
                     text: &item.text,
                     tool_status: item.tool_status,
@@ -249,7 +277,7 @@ fn push_cached_chunk(
         context.visualization_context,
     );
     chunks.push(TranscriptChunk {
-        transcript_index: source.transcript_index,
+        target: source.transcript_index.map(TranscriptTarget::Item),
         revision: source.revision,
         anchor_source: source.anchor_source.clone(),
         separator_before,
@@ -348,8 +376,14 @@ struct CachedRenderVariant {
     lines: Arc<[HyperlinkLine]>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TranscriptTarget {
+    Item(usize),
+    ToolGroup(usize),
+}
+
 struct TranscriptChunk {
-    transcript_index: Option<usize>,
+    target: Option<TranscriptTarget>,
     #[cfg_attr(not(test), allow(dead_code))]
     revision: u64,
     anchor_source: TranscriptAnchorSource,
@@ -371,6 +405,7 @@ pub(super) enum TranscriptAnchorSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptViewportAnchor {
     source: TranscriptAnchorSource,
+    group_header: bool,
     line_offset: usize,
     pub(super) width: u16,
 }
@@ -487,7 +522,7 @@ impl TranscriptLayout {
     ///
     /// Separator rows and streaming-only chunks have no stored transcript
     /// source, so they intentionally return `None`.
-    pub(super) fn transcript_index_at_row(&self, row: usize) -> Option<usize> {
+    pub(super) fn target_at_row(&self, row: usize) -> Option<TranscriptTarget> {
         let mut logical_row = 0usize;
         for chunk in &self.chunks {
             if chunk.separator_before {
@@ -499,7 +534,7 @@ impl TranscriptLayout {
 
             let chunk_end = logical_row.saturating_add(chunk.lines.len());
             if (logical_row..chunk_end).contains(&row) {
-                return chunk.transcript_index;
+                return chunk.target;
             }
             logical_row = chunk_end;
             if logical_row > row {
@@ -509,15 +544,17 @@ impl TranscriptLayout {
         None
     }
 
-    pub(super) fn transcript_row_range(
-        &self,
-        transcript_index: usize,
-    ) -> Option<std::ops::Range<usize>> {
+    pub(super) fn transcript_row_range(&self, index: usize) -> Option<std::ops::Range<usize>> {
+        self.target_rows(TranscriptTarget::Item(index))
+            .or_else(|| self.target_rows(TranscriptTarget::ToolGroup(index)))
+    }
+
+    pub(super) fn target_rows(&self, target: TranscriptTarget) -> Option<std::ops::Range<usize>> {
         let mut logical_row = 0usize;
         for chunk in &self.chunks {
             logical_row = logical_row.saturating_add(usize::from(chunk.separator_before));
             let chunk_end = logical_row.saturating_add(chunk.lines.len());
-            if chunk.transcript_index == Some(transcript_index) {
+            if chunk.target == Some(target) {
                 return Some(logical_row..chunk_end);
             }
             logical_row = chunk_end;
@@ -539,6 +576,7 @@ impl TranscriptLayout {
             if chunk_end > row {
                 return Some(TranscriptViewportAnchor {
                     source: chunk.anchor_source.clone(),
+                    group_header: matches!(chunk.target, Some(TranscriptTarget::ToolGroup(_))),
                     line_offset: row
                         .saturating_sub(chunk_start)
                         .min(chunk_end.saturating_sub(chunk_start).saturating_sub(1)),
@@ -560,7 +598,10 @@ impl TranscriptLayout {
             let chunk_end = chunk_start
                 .saturating_add(usize::from(chunk.separator_before))
                 .saturating_add(chunk.lines.len());
-            if chunk.anchor_source == anchor.source {
+            if chunk.anchor_source == anchor.source
+                && matches!(chunk.target, Some(TranscriptTarget::ToolGroup(_)))
+                    == anchor.group_header
+            {
                 return Some(
                     chunk_start.saturating_add(
                         anchor

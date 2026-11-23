@@ -3,17 +3,17 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,))"
 ---
                                                   │
- ▌ tool exec printf one                           │  Status   │  Agents  │  Sessions  │  Settings
+ > Running command...                             │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   ▌ output output one                            │
-                                                  │▎◆ SESSIONS
- ▌ tool exec printf two                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
-   ▌ output output two                            │▎loading sessions
                                                   │
- ▌ tool exec printf three                         │▎◆ THREAD
+                                                  │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+                                                  │▎loading sessions
+                                                  │
+                                                  │▎◆ THREAD
                                                   │▎stage-one
-   ▌ output output three                          │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
                                                   │
                                                   │

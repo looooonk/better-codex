@@ -199,19 +199,28 @@ fn logical_rows_resolve_to_stored_transcript_sources() {
         if chunk.separator_before {
             expected.push(None);
         }
-        expected.extend(std::iter::repeat_n(
-            chunk.transcript_index,
-            chunk.lines.len(),
-        ));
+        expected.extend(std::iter::repeat_n(chunk.target, chunk.lines.len()));
     }
     let actual = (0..layout.total_lines)
-        .map(|row| layout.transcript_index_at_row(row))
+        .map(|row| layout.target_at_row(row))
         .collect::<Vec<_>>();
 
     assert_eq!(actual, expected);
-    assert_eq!(layout.transcript_index_at_row(layout.total_lines), None);
-    assert_eq!(actual.iter().filter(|index| **index == Some(0)).count(), 1);
-    assert_eq!(actual.iter().filter(|index| **index == Some(1)).count(), 2);
+    assert_eq!(layout.target_at_row(layout.total_lines), None);
+    assert_eq!(
+        actual
+            .iter()
+            .filter(|index| **index == Some(TranscriptTarget::Item(0)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        actual
+            .iter()
+            .filter(|index| **index == Some(TranscriptTarget::Item(1)))
+            .count(),
+        2
+    );
     assert!(actual.ends_with(&[None, None]));
     assert_eq!(layout.transcript_row_range(0), Some(0..1));
     assert_eq!(layout.transcript_row_range(1), Some(2..4));
@@ -246,23 +255,23 @@ fn audit_items_have_exactly_one_blank_row_between_neighbors() {
     let layout = TranscriptRenderCache::default().layout(&shell, WIDTH, cwd);
 
     let rows = (0..layout.total_lines)
-        .map(|row| layout.transcript_index_at_row(row))
+        .map(|row| layout.target_at_row(row))
         .collect::<Vec<_>>();
 
     assert_eq!(
         rows,
         vec![
-            Some(0),
+            Some(TranscriptTarget::Item(0)),
             None,
-            Some(1),
+            Some(TranscriptTarget::Item(1)),
             None,
-            Some(2),
+            Some(TranscriptTarget::Item(2)),
             None,
-            Some(3),
+            Some(TranscriptTarget::Item(3)),
             None,
-            Some(4),
+            Some(TranscriptTarget::Item(4)),
             None,
-            Some(5),
+            Some(TranscriptTarget::Item(5)),
         ]
     );
 }

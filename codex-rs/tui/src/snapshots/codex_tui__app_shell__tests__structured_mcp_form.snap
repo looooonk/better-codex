@@ -3,12 +3,12 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-         2. Wire transcript                               │
-         3. Render dashboard                              │
-                                                          │
- ▌ tool exec just test -p codex-tui                       ┃
+          server turns.                                   │
+ ▎ PLAN  1. Build shell                                   │
+         2. Wire transcript                               ┃
+         3. Render dashboard                              ┃
                                                           ┃
- ▌ edited 3 files +128 -24                                ┃
+ > Editing files...                                       ┃
  ▎ STATUS  elicitation requested: MCP deployments: form   ┃
            request                                        ┃
                                                           ┃

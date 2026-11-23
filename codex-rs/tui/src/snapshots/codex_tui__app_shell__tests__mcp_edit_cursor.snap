@@ -11,13 +11,13 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- ▌ tool exec j╭──────────────────────────────────────────────────────────────────────╮
-              │◆ MCP SERVERS                                                         │
- ▌ edited 3 fi│Add MCP server                                                        │00001
- ▎ STATUS  mcp│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
-              │                                                                      │
- ▎ CODEX  The │…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
+ > Editing fil╭──────────────────────────────────────────────────────────────────────╮
+ ▎ STATUS  mcp│◆ MCP SERVERS                                                         │
+              │Add MCP server                                                        │00001
+ ▎ CODEX  The │Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
           surf│                                                                      │
+              │…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
+              │                                                                      │
               │Enter save  Esc cancel                                                │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

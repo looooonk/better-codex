@@ -11,12 +11,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
          2. Wire transcript                                 │  ○ ⛨ Unless trusted
          3. Render dashboard                                │  ○ ⚠ Full access
                                                             │
- ▌ tool exec just test -p codex-tui                         │◆ APPEARANCE
-                                                            │  ● Tokyo Night
- ▌ edited 3 files +128 -24                                  │  ○ Gruvbox Dark
- ▎ STATUS  plugin manager opened                            │  ○ Catppuccin Mocha
+ > Editing files...                                         │◆ APPEARANCE
+ ▎ STATUS  plugin manager opened                            │  ● Tokyo Night
+                                                            │  ○ Gruvbox Dark
+ ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Catppuccin Mocha
                    ╭──────────────────────────────────────────────────────────────────────╮
- ▎ CODEX  The new s│◆ PLUGINS                                                             │
+                   │◆ PLUGINS                                                             │
                    │1/2 plugin catalog  ↑↓ / j k navigate                                 │
                    │Install / update ↵  Toggle e  Uninstall u  Refresh r                  │
                    │> enabled    Calendar (local)                                         │

@@ -11,17 +11,17 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎loading sessions
                                                   │
- ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+ ⌄ Running tool...                                │▎◆ THREAD
                                                   │▎stage-one
- ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+ ▌ tool exec just test -p codex-tui               │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
+ ▌ edited 3 files +128 -24                        │
+                                                  │
  ▌ tool mcp progress: indexed 42 files            │
  ▌      preparing search results                  │
                                                   │
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │
-                                                  │
-                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

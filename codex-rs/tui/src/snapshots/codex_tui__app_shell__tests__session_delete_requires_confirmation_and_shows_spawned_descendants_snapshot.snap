@@ -11,12 +11,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎› 1/1 Delete this investigation [main]
               ╭──────────────────────────────────────────────────────────────────────╮
- ▌ tool exec j│◆ DELETE SESSION                                                      │
+ > Editing fil│◆ DELETE SESSION                                                      │
               │Delete session: Delete this investigation                             │
- ▌ edited 3 fi│Session ID: 01900000-0000-7000-8000-000000000511                      │00001
-              │2 spawned descendants will also be deleted.                           │ession list
- ▎ CODEX  The │This permanently deletes all persisted history in that subtree.       │
-          surf│                                                                      │
+ ▎ CODEX  The │Session ID: 01900000-0000-7000-8000-000000000511                      │00001
+          surf│2 spawned descendants will also be deleted.                           │ession list
+              │This permanently deletes all persisted history in that subtree.       │
+              │                                                                      │
               │> Delete permanently Enter/y                                          │
               │  Cancel Esc/n                                                        │
               │                                                                      │

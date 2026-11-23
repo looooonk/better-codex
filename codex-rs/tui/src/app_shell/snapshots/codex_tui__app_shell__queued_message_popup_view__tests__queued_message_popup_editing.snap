@@ -3,16 +3,16 @@ source: tui/src/app_shell/queued_message_popup_view_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.        │
- ▎ PLAN  1. Build shell                                                     ┃
-         2. Wire transcript                                                 ┃
-         3. Render dashboard                                                ┃
-                                                                            ┃
-╭──────────────────────────────────────────────────────────────────────╮    ┃
-│◆ QUEUED  3                                                           │    ┃
-│   2  second queued message                                           │    ┃
-│▌  3  newest queued message continued                                 │    ┃
-│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder                │    ┃
+ ▎ YOU  Create a divergent standalone TUI.
+
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+╭──────────────────────────────────────────────────────────────────────╮
+│◆ QUEUED  3                                                           │
+│   2  second queued message                                           │
+│▌  3  newest queued message continued                                 │
+│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder                │
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭ EDIT 3/3 ──────────────────────────────────────────────────────────────────╮
 │> newest queued message                                                     │

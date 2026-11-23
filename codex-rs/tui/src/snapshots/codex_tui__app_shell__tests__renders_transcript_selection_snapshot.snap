@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- SELECT 1/5                                       │  Status   │  Agents  │  Sessions  │  Settings
+ SELECT 1/5  Tab TOOLS                            │  Status   │  Agents  │  Sessions  │  Settings
  ▶ YOU  Create a divergent standalone TUI.        │───────────────────────━━━━━━━━━━━━─────────────
                                                   │
  ▎ CODEX  Started a fullscreen app shell backed   │▎◆ SESSIONS
@@ -12,12 +12,12 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎loading sessions
          3. Render dashboard                      │
                                                   │▎◆ THREAD
- ▌ tool exec just test -p codex-tui               │▎stage-one
+ > Editing files...                               │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
- ▌ edited 3 files +128 -24                        │▎resume, fork, archive, delete in session list
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │
+ ▎ CODEX  The new shell owns the fullscreen       │▎resume, fork, archive, delete in session list
           surface.                                │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

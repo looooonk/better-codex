@@ -9,13 +9,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
 
  ▎ CODEX  retained response
 
- ▌ edited 1 files +1 -0
- ▌          A src/retained.rs
-
- ▌ tool exec cargo test
-
-   ▌ output authoritative command output
-   ▌        live command output survives
+ > Running command...
 
  ──────── Took 1.00s ──────────────────────────────────────────────────────────────────────────────
 
@@ -25,6 +19,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
  ▎ ERROR  live retry detail survives
 
           Thinking... · 0 tok/s
+
+
+
+
+
+
 
 
 ╭──────────────────────────────────────────────────────────────────────╮

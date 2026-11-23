@@ -11,12 +11,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
          2. Wire transcript                       │▎+ New session  Ctrl+N
          3. Render dashboard                      │▎  17/25 Session 16 [main]  pagination fixture
                                                   │▎  18/25 Session 17 [main]  pagination fixture
- ▌ tool exec just test -p codex-tui               │▎  19/25 Session 18 [main]  pagination fixture
+ > Editing files...                               │▎  19/25 Session 18 [main]  pagination fixture
                                                   │▎  20/25 Session 19 [main]  pagination fixture
- ▌ edited 3 files +128 -24                        │▎› 21/25 Session 20 [main]  pagination fixture
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ THREAD
-          surface.                                │▎stage-one
+ ▎ CODEX  The new shell owns the fullscreen       │▎› 21/25 Session 20 [main]  pagination fixture
+          surface.                                │
+                                                  │▎◆ THREAD
+                                                  │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
                                                   │

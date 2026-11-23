@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: after
 ---
                                                   │
-         3. Render dashboard                    │ │  Status   │  Agents  │  Sessions  │  Settings
-                                                │ │━━━━━━━━━━━─────────────────────────────────────
- ▌ tool exec just test -p codex-tui             │ │▎◆ EDITS
+ ▎ PLAN  1. Build shell                         │ │  Status   │  Agents  │  Sessions  │  Settings
+         2. Wire transcript                     │ │━━━━━━━━━━━─────────────────────────────────────
+         3. Render dashboard                    ┃ │▎◆ EDITS
                                                 ┃ │▎3 files +128 -24
- ▌ edited 3 files +128 -24                      ┃ │
+ > Editing files...                             ┃ │
                                                 ┃ │▎◆ WORKSPACE
  ▎ CODEX  The new shell owns the fullscreen     ┃ │▎profile managed
           surface.                              ┃ │▎cwd /workspace/better-codex

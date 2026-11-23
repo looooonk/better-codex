@@ -11,13 +11,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
          2. Wi│◆ SAFETY REVIEW                                                       │
          3. Re│Our systems are thinking a bit more about this request before         │
               │responding.                                                           │
- ▌ tool exec j│                                                                      │
+ > Editing fil│                                                                      │
               │Hang tight or retry with a faster model for a quicker response, though│
- ▌ edited 3 fi│it may be less capable of handling complex requests.                  │00001
+ ▎ YOU  Explai│it may be less capable of handling complex requests.                  │00001
               │                                                                      │ession list
- ▎ YOU  Explai│> Retry with a faster model                                           │
+          Wait│> Retry with a faster model                                           │
               │  Dismiss and keep waiting                                            │
-          Wait│  Learn more                                                          │
+              │  Learn more                                                          │
               │                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
               │close when the response is ready.                                     │

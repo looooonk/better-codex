@@ -11,12 +11,12 @@ expression: rendered
          2. Wire transcript                       │▎x Inspect measurement
          3. Render dashboard                      │▎x Truncate styled lines
                                                   │▎> Preserve hit targets
- ▌ tool exec just test -p codex-tui               │▎- Verify narrow rendering
+ > Editing files...                               │▎- Verify narrow rendering
                                                   │▎- Final plan row remains visible
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │▎◆ TOOLS
+                                                  │▎in progress exec just test -p codex-tui
+                                                  │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
                                                   │
