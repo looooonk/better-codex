@@ -2,6 +2,7 @@
 
 use super::SelectorOption;
 use super::SelectorState;
+use super::effort_slider::EffortSlider;
 use crate::app_shell::composer_toolbar::ComposerControl;
 use crate::app_shell::design::fill_rect;
 use crate::app_shell::design::palette;
@@ -37,7 +38,7 @@ impl<T> SelectorState<T> {
             .max()
             .unwrap_or_default();
         let width = match control {
-            ComposerControl::ReasoningEffort => return (40.min(available), 7),
+            ComposerControl::ReasoningEffort => return (40.min(available), EffortSlider::HEIGHT),
             ComposerControl::Permissions => 46,
             ComposerControl::Model => (max_label + 7).clamp(26, 44) as u16,
             ComposerControl::ServiceTier => (max_label + 7).clamp(20, 36) as u16,

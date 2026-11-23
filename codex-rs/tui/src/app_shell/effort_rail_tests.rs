@@ -4,11 +4,11 @@ use pretty_assertions::assert_eq;
 #[test]
 fn stage_ticks_match_the_hit_targets_and_the_end_of_the_fill() {
     let panel = Rect::new(
-        /*x*/ 5, /*y*/ 3, /*width*/ 40, /*height*/ 7,
+        /*x*/ 5, /*y*/ 3, /*width*/ 40, /*height*/ 6,
     );
     let rail = EffortRail::new(panel, /*stops*/ 5);
     let mut buf = Buffer::empty(panel);
-    let bar_y = rail.area.y + 1;
+    let bar_y = rail.area.y;
     let stops = [7, 16, 25, 33, 42];
 
     for (index, &selected_x) in stops.iter().enumerate() {
@@ -37,16 +37,16 @@ fn stage_ticks_match_the_hit_targets_and_the_end_of_the_fill() {
 #[test]
 fn a_single_supported_stage_fills_its_track_and_has_one_centered_tick() {
     let panel = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 7,
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 6,
     );
     let rail = EffortRail::new(panel, /*stops*/ 1);
     let mut buf = Buffer::empty(panel);
     rail.render(/*selected*/ 1, /*rainbow_frame*/ None, &mut buf);
     let middle = rail.area.x + rail.area.width / 2;
     for x in rail.area.x..rail.area.right() {
-        assert_eq!(buf[(x, rail.area.y + 1)].bg, palette::purple());
+        assert_eq!(buf[(x, rail.area.y)].bg, palette::purple());
         assert_eq!(
-            buf[(x, rail.area.y + 2)].symbol(),
+            buf[(x, rail.area.y + 1)].symbol(),
             if x == middle { "▴" } else { " " }
         );
         assert_eq!(rail.nearest_stop(x), 1);

@@ -27,7 +27,6 @@ use effort_rail::RAINBOW_FRAMES;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct EffortSlider {
-    model: String,
     default_stop: usize,
     ultra_stop: Option<usize>,
     pub(super) dragging: bool,
@@ -35,6 +34,8 @@ pub(super) struct EffortSlider {
 }
 
 impl EffortSlider {
+    pub(super) const HEIGHT: u16 = 6;
+
     pub(super) fn new(preset: &ModelPreset) -> Self {
         let stop = |effort: &ReasoningEffort| {
             preset
@@ -44,7 +45,6 @@ impl EffortSlider {
                 .map(|index| index + 1)
         };
         Self {
-            model: preset.display_name.clone(),
             default_stop: stop(&preset.default_reasoning_effort).unwrap_or_default(),
             ultra_stop: stop(&ReasoningEffort::Ultra),
             dragging: false,
@@ -61,7 +61,7 @@ impl EffortSlider {
     }
 
     pub(super) fn render<T>(&self, panel: Rect, selector: &SelectorState<T>, buf: &mut Buffer) {
-        if panel.height < 7 || panel.width < 8 {
+        if panel.height < Self::HEIGHT || panel.width < 8 {
             return;
         }
         fill_rect(buf, panel, palette::elevated());
@@ -87,20 +87,18 @@ impl EffortSlider {
             .centered()
             .fg(palette::muted())
             .render(reset_area(panel), buf);
-        Paragraph::new(selector.save_error.as_deref().unwrap_or(&self.model))
-            .centered()
-            .fg(if selector.save_error.is_some() {
-                palette::error()
-            } else {
-                palette::muted()
-            })
-            .render(
-                Rect {
-                    y: inner.y + 1,
-                    ..inner
-                },
-                buf,
-            );
+        if let Some(error) = &selector.save_error {
+            Paragraph::new(error.as_str())
+                .centered()
+                .fg(palette::error())
+                .render(
+                    Rect {
+                        y: inner.y + 1,
+                        ..inner
+                    },
+                    buf,
+                );
+        }
         let rail = selector.effort_rail(panel);
         let rainbow = (self.ultra_stop == Some(stop)).then_some(self.rainbow_frame);
         rail.render(stop, rainbow, buf);

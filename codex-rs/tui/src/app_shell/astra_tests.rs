@@ -189,10 +189,9 @@ async fn effort_slider_previews_drags_and_applies_on_release() {
     shell.handle_mouse_selection_drag(area, right);
     let preview = render_shell_buffer(&shell, area);
     assert!(buffer_contents(&preview, panel).contains("Ultra"));
-    let middle = rail.y + 1;
     let start = rail.x + 9;
-    let color = preview[(start, middle)].bg;
-    assert_ne!(preview[(start + 9, middle)].bg, color);
+    let color = preview[(start, rail.y)].bg;
+    assert_ne!(preview[(start + 9, rail.y)].bg, color);
     // The 36-column rail moves right by nine columns in a quarter cycle.
     let selector = shell.selector.as_mut().unwrap();
     assert!(selector.shows_ultra());
@@ -200,7 +199,7 @@ async fn effort_slider_previews_drags_and_applies_on_release() {
         selector.advance_rainbow();
     }
     let next_frame = render_shell_buffer(&shell, area);
-    assert_eq!(next_frame[(start + 9, middle)].bg, color);
+    assert_eq!(next_frame[(start + 9, rail.y)].bg, color);
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
     assert!(backend.calls().is_empty());
 

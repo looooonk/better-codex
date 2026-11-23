@@ -16,7 +16,7 @@ pub(super) struct EffortRail {
 
 impl EffortRail {
     pub(super) fn new(panel: Rect, stops: usize) -> Self {
-        let mut area = Rect::new(panel.x + 2, panel.y + 3, panel.width.saturating_sub(4), 3)
+        let mut area = Rect::new(panel.x + 2, panel.y + 3, panel.width.saturating_sub(4), 2)
             .intersection(panel);
         if stops <= 1 {
             let width = if stops == 0 { 0 } else { area.width.min(5) };
@@ -44,7 +44,7 @@ impl EffortRail {
     }
 
     pub(super) fn render(&self, selected: usize, rainbow_frame: Option<u16>, buf: &mut Buffer) {
-        if self.area.height < 3 || self.area.width == 0 {
+        if self.area.height < 2 || self.area.width == 0 {
             return;
         }
         let selected_x = (selected > 0).then(|| self.stop_x(selected));
@@ -53,7 +53,7 @@ impl EffortRail {
         } else {
             selected_x.map_or(self.area.x, |x| x + 1)
         };
-        let bar_y = self.area.y + 1;
+        let bar_y = self.area.y;
         for x in self.area.left()..self.area.right() {
             let color = if x >= fill_end {
                 palette::border()
