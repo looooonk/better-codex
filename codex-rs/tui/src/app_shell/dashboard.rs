@@ -84,10 +84,7 @@ impl DashboardPanel {
     }
 }
 
-pub(super) fn dashboard_panels(
-    shell: &ShellState,
-    width: usize,
-) -> Vec<DashboardPanel> {
+pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {
     dashboard_panel_kinds(shell.dashboard_route)
         .iter()
         .filter_map(|kind| dashboard_panel(shell, width, *kind))
@@ -152,7 +149,9 @@ fn dashboard_panel(
 ) -> Option<DashboardPanel> {
     let content_width = width.saturating_sub(1);
     match kind {
-        DashboardPanelKind::Navigation => Some(dashboard_navigation_panel(shell.dashboard_route, width)),
+        DashboardPanelKind::Navigation => {
+            Some(dashboard_navigation_panel(shell.dashboard_route, width))
+        }
         DashboardPanelKind::Sessions => Some(DashboardPanel::new(
             "Sessions",
             shell.session_list.lines(content_width),

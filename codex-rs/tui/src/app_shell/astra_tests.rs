@@ -278,7 +278,10 @@ async fn composer_permissions_button_opens_the_policy_picker() {
     complete_backend_actions(&mut shell, &backend).await;
     assert_eq!(shell.approval_policy, AskForApproval::Never);
     let buffer = render_shell_buffer(&shell, area);
-    assert_eq!(text_color_for_row(&buffer, input, "⚠ Full access"), full_access);
+    assert_eq!(
+        text_color_for_row(&buffer, input, "⚠ Full access"),
+        full_access
+    );
 }
 
 #[tokio::test]

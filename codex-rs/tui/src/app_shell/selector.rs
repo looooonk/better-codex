@@ -404,7 +404,6 @@ impl SelectorState<SelectorValue> {
             .collect();
         Self::new("Select approval policy", options).anchored_menu(ComposerControl::Permissions)
     }
-
 }
 
 #[cfg(test)]

@@ -1868,9 +1868,7 @@ fn renders_settings_pages_validation_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
-    shell
-        .settings
-        .start_theme_edit("missing-theme".to_string());
+    shell.settings.start_theme_edit("missing-theme".to_string());
     shell
         .settings
         .set_error("unknown syntax theme `missing-theme`");
@@ -3245,8 +3243,14 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
 
     let route = shell.dashboard_route;
     for (action, control) in [
-        (CommandPaletteAction::SwitchModel, composer_toolbar::ComposerControl::Model),
-        (CommandPaletteAction::ChangePermissions, composer_toolbar::ComposerControl::Permissions),
+        (
+            CommandPaletteAction::SwitchModel,
+            composer_toolbar::ComposerControl::Model,
+        ),
+        (
+            CommandPaletteAction::ChangePermissions,
+            composer_toolbar::ComposerControl::Permissions,
+        ),
     ] {
         shell.open_command_palette();
         select_command_palette_action(&mut shell, action);
@@ -3255,7 +3259,13 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
             .await
             .unwrap();
         assert_eq!(shell.dashboard_route, route);
-        assert_eq!(shell.selector.as_ref().and_then(SelectorState::composer_control), Some(control));
+        assert_eq!(
+            shell
+                .selector
+                .as_ref()
+                .and_then(SelectorState::composer_control),
+            Some(control)
+        );
     }
 }
 
@@ -4992,9 +5002,7 @@ async fn printable_character_repeat_reaches_text_entry_overlays() {
     settings.composer.clear();
     settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
-    settings
-        .settings
-        .start_theme_edit(String::new());
+    settings.settings.start_theme_edit(String::new());
     settings
         .handle_key(repeat, &config, &mut backend)
         .await
@@ -5073,9 +5081,7 @@ async fn paste_reaches_text_entry_overlays() {
     settings.composer.clear();
     settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
-    settings
-        .settings
-        .start_theme_edit(String::new());
+    settings.settings.start_theme_edit(String::new());
     settings.insert_pasted_text("solarized");
     assert_eq!(
         (settings.settings.edit_value(), settings.composer.text()),
@@ -5196,9 +5202,7 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     let mut settings = ShellState::snapshot_fixture();
     settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
-    settings
-        .settings
-        .start_theme_edit("alpha beta".to_string());
+    settings.settings.start_theme_edit("alpha beta".to_string());
     settings
         .handle_key(
             KeyEvent::new(KeyCode::Left, KeyModifiers::SUPER),
@@ -12288,14 +12292,22 @@ async fn app_theme_selection_applies_only_after_local_persistence_succeeds() {
     let mut shell = ShellState::snapshot_fixture();
     let client_config_path = shell.client_config_path.clone();
     let backend = RecordingBackend::default();
-    shell.run_workspace_command(
-        workspace_commands::WorkspaceCommand::Theme,
-        "",
-        &test_config().await,
-        &mut backend.clone(),
-    ).await.unwrap();
-    assert_eq!((shell.dashboard_route, shell.settings.selected_action()),
-        (DashboardRoute::Settings, SettingsAction::AppTheme(shell.app_theme)));
+    shell
+        .run_workspace_command(
+            workspace_commands::WorkspaceCommand::Theme,
+            "",
+            &test_config().await,
+            &mut backend.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (shell.dashboard_route, shell.settings.selected_action()),
+        (
+            DashboardRoute::Settings,
+            SettingsAction::AppTheme(shell.app_theme)
+        )
+    );
 
     for key in [KeyCode::Down, KeyCode::Enter] {
         shell
@@ -12323,14 +12335,22 @@ async fn failed_app_theme_write_keeps_the_previous_theme_and_shows_the_error() {
     let previous_theme = shell.app_theme;
     let client_config_path = shell.client_config_path.clone();
     let backend = RecordingBackend::default();
-    shell.run_workspace_command(
-        workspace_commands::WorkspaceCommand::Theme,
-        "",
-        &test_config().await,
-        &mut backend.clone(),
-    ).await.unwrap();
-    assert_eq!((shell.dashboard_route, shell.settings.selected_action()),
-        (DashboardRoute::Settings, SettingsAction::AppTheme(shell.app_theme)));
+    shell
+        .run_workspace_command(
+            workspace_commands::WorkspaceCommand::Theme,
+            "",
+            &test_config().await,
+            &mut backend.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        (shell.dashboard_route, shell.settings.selected_action()),
+        (
+            DashboardRoute::Settings,
+            SettingsAction::AppTheme(shell.app_theme)
+        )
+    );
     backend.fail_next_action("config write rejected");
 
     for key in [KeyCode::Down, KeyCode::Enter] {
@@ -16177,11 +16197,20 @@ async fn native_settings_pages_write_config_and_validate_edits() {
     shell.settings.focused = true;
     let mut backend = RecordingBackend::default();
     for key in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
-        shell.handle_settings_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend).await.unwrap();
+        shell
+            .handle_settings_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend)
+            .await
+            .unwrap();
     }
     complete_backend_actions(&mut shell, &backend).await;
     shell.settings.focus_action(SettingsAction::Animations);
-    shell.handle_settings_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut backend).await.unwrap();
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .unwrap();
     complete_backend_actions(&mut shell, &backend).await;
 
     let calls = backend.calls();

@@ -2,9 +2,9 @@ use super::ShellState;
 use super::backend::AppShellBackend;
 use super::backend_actions::ActionGroup;
 use super::backend_actions::BackendActionResult;
+use super::composer_toolbar::ComposerControl;
 use super::is_unmodified_action_key;
 use super::navigation::DashboardRoute;
-use super::composer_toolbar::ComposerControl;
 use crate::key_hint;
 use crate::legacy_core::config::Config;
 use color_eyre::Result;
@@ -307,7 +307,9 @@ impl ShellState {
                 self.interrupt_active_turn(app_server).await?;
             }
             CommandPaletteAction::SwitchModel => self.open_composer_picker(ComposerControl::Model),
-            CommandPaletteAction::ChangePermissions => self.open_composer_picker(ComposerControl::Permissions),
+            CommandPaletteAction::ChangePermissions => {
+                self.open_composer_picker(ComposerControl::Permissions)
+            }
             CommandPaletteAction::ResumeThread => {
                 self.dashboard_visible = true;
                 self.set_dashboard_route(DashboardRoute::Sessions);

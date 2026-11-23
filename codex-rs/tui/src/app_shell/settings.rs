@@ -74,7 +74,9 @@ enum SettingRow {
 const ROWS: &[SettingRow] = &[
     SettingRow::Heading("Permissions"),
     SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::OnRequest)),
-    SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::UnlessTrusted)),
+    SettingRow::Action(SettingsAction::ApprovalPolicy(
+        AskForApproval::UnlessTrusted,
+    )),
     SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::Never)),
     SettingRow::Spacer,
     SettingRow::Heading("Appearance"),
@@ -97,9 +99,17 @@ impl SettingsState {
         for row in ROWS {
             match *row {
                 SettingRow::Heading(title) => {
-                    let mut spans = vec!["◆ ".fg(palette::focus()), title.to_uppercase().fg(palette::muted()).bold()];
-                    if title == "Permissions" && matches!(shell.approval_policy, AskForApproval::Granular { .. }) {
-                        spans.push(format!("  {}", permission_caption(shell.approval_policy)).fg(palette::text()));
+                    let mut spans = vec![
+                        "◆ ".fg(palette::focus()),
+                        title.to_uppercase().fg(palette::muted()).bold(),
+                    ];
+                    if title == "Permissions"
+                        && matches!(shell.approval_policy, AskForApproval::Granular { .. })
+                    {
+                        spans.push(
+                            format!("  {}", permission_caption(shell.approval_policy))
+                                .fg(palette::text()),
+                        );
                     }
                     lines.push(spans.into());
                 }
@@ -111,12 +121,17 @@ impl SettingsState {
                         if let Some(edit) = &self.edit {
                             lines.push(Line::from(vec![
                                 "  Edit ".fg(palette::cyan()),
-                                edit.text_with_cursor_window(width.saturating_sub(7).max(1)).into(),
+                                edit.text_with_cursor_window(width.saturating_sub(7).max(1))
+                                    .into(),
                             ]));
                         }
                         match &self.feedback {
-                            Some(SettingsFeedback::Info(message)) => lines.push(Line::from(message.clone().fg(palette::success()))),
-                            Some(SettingsFeedback::Error(message)) => lines.push(Line::from(message.clone().fg(palette::error()))),
+                            Some(SettingsFeedback::Info(message)) => {
+                                lines.push(Line::from(message.clone().fg(palette::success())))
+                            }
+                            Some(SettingsFeedback::Error(message)) => {
+                                lines.push(Line::from(message.clone().fg(palette::error())))
+                            }
                             None => {}
                         }
                     }
@@ -127,13 +142,15 @@ impl SettingsState {
     }
 
     fn selected_line(&self) -> usize {
-        ROWS.iter().position(|row| matches!(row, SettingRow::Action(action) if *action == self.selected))
-            .expect("selected setting belongs to the dashboard")
+        ROWS.iter()
+            .position(|row| matches!(row, SettingRow::Action(action) if *action == self.selected))
+            .unwrap_or_default()
     }
 
     pub(super) fn selected_line_range(&self) -> std::ops::RangeInclusive<usize> {
         let selected = self.selected_line();
-        selected..=selected + usize::from(self.edit.is_some()) + usize::from(self.feedback.is_some())
+        selected
+            ..=selected + usize::from(self.edit.is_some()) + usize::from(self.feedback.is_some())
     }
 
     pub(super) fn action_at_line(&self, line: usize) -> Option<SettingsAction> {
@@ -152,22 +169,31 @@ impl SettingsState {
     }
 
     pub(super) fn move_up(&mut self) {
-        if let Some(action) = ROWS[..self.selected_line()].iter().rev().find_map(SettingRow::action) {
+        if let Some(action) = ROWS[..self.selected_line()]
+            .iter()
+            .rev()
+            .find_map(SettingRow::action)
+        {
             self.focus_action(action);
         }
     }
 
     pub(super) fn move_down(&mut self) {
-        if let Some(action) = ROWS[self.selected_line() + 1..].iter().find_map(SettingRow::action) {
+        if let Some(action) = ROWS[self.selected_line() + 1..]
+            .iter()
+            .find_map(SettingRow::action)
+        {
             self.focus_action(action);
         }
     }
 
     pub(super) fn step_section(&mut self, direction: DashboardRouteStep) {
         // Each heading precedes the first action in its section.
-        let starts: Vec<usize> = ROWS.iter().enumerate().filter_map(|(index, row)| {
-            matches!(row, SettingRow::Heading(_)).then_some(index + 1)
-        }).collect();
+        let starts: Vec<usize> = ROWS
+            .iter()
+            .enumerate()
+            .filter_map(|(index, row)| matches!(row, SettingRow::Heading(_)).then_some(index + 1))
+            .collect();
         let selected = self.selected_line();
         let section = starts.partition_point(|&start| start <= selected) - 1;
         let target = match direction {
@@ -261,17 +287,33 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
         format!("{mark} {label}")
     };
     let label = match action {
-        SettingsAction::ApprovalPolicy(policy) => choice(&permission_caption(policy), policy == shell.approval_policy),
+        SettingsAction::ApprovalPolicy(policy) => {
+            choice(&permission_caption(policy), policy == shell.approval_policy)
+        }
         SettingsAction::AppTheme(theme) => choice(app_theme_label(theme), theme == shell.app_theme),
-        SettingsAction::Theme => format!("Syntax theme: {}", shell.tui_theme.as_deref().unwrap_or("default")),
+        SettingsAction::Theme => format!(
+            "Syntax theme: {}",
+            shell.tui_theme.as_deref().unwrap_or("default")
+        ),
         SettingsAction::Animations => format!("Animations: {}", on_off(shell.animations)),
         SettingsAction::Tooltips => format!("Tooltips: {}", on_off(shell.show_tooltips)),
         SettingsAction::McpServers => format!("MCP servers: {}", shell.mcp_inventory.label()),
         SettingsAction::Plugins => format!("Plugins: {}", shell.plugin_inventory.label()),
     };
-    let color = if matches!(action, SettingsAction::ApprovalPolicy(AskForApproval::Never)) { palette::error() } else { palette::text() };
+    let color = if matches!(
+        action,
+        SettingsAction::ApprovalPolicy(AskForApproval::Never)
+    ) {
+        palette::error()
+    } else {
+        palette::text()
+    };
     let line = Line::from(vec![marker, label.fg(color)]);
-    if selected { line.set_style(selection_style()) } else { line }
+    if selected {
+        line.set_style(selection_style())
+    } else {
+        line
+    }
 }
 
 pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {

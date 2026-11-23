@@ -89,7 +89,11 @@ impl EffortSlider {
             .render(reset_area(panel), buf);
         Paragraph::new(selector.save_error.as_deref().unwrap_or(&self.model))
             .centered()
-            .fg(if selector.save_error.is_some() { palette::error() } else { palette::muted() })
+            .fg(if selector.save_error.is_some() {
+                palette::error()
+            } else {
+                palette::muted()
+            })
             .render(
                 Rect {
                     y: inner.y + 1,

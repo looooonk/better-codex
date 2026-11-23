@@ -126,7 +126,8 @@ impl ShellState {
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 if command == WorkspaceCommand::Theme {
-                    self.settings.focus_action(SettingsAction::AppTheme(self.app_theme));
+                    self.settings
+                        .focus_action(SettingsAction::AppTheme(self.app_theme));
                 }
                 self.settings.reveal_selection.set(true);
                 return Ok(());

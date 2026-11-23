@@ -107,7 +107,11 @@ impl<T> SelectorState<T> {
         };
         let heading = Rect::new(panel.x + 2, panel.y + 1, panel.width - 4, 1);
         Paragraph::new(self.save_error.as_deref().unwrap_or(title))
-            .fg(if self.save_error.is_some() { palette::error() } else { palette::muted() })
+            .fg(if self.save_error.is_some() {
+                palette::error()
+            } else {
+                palette::muted()
+            })
             .render(heading, buf);
 
         if self.options.is_empty() {
@@ -133,7 +137,9 @@ impl<T> SelectorState<T> {
                 Line::from(option.label.clone()),
                 usize::from(label.width),
             );
-            Paragraph::new(text).fg(option.label_color()).render(label, buf);
+            Paragraph::new(text)
+                .fg(option.label_color())
+                .render(label, buf);
             if option.current {
                 buf[(row.right() - 2, row.y)]
                     .set_symbol("✓")

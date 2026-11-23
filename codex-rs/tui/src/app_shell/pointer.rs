@@ -325,7 +325,8 @@ impl ShellState {
         if self.dashboard_route == DashboardRoute::Settings
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Settings")
         {
-            if self.settings.editing() && self.settings.selected_line_range().contains(&target.line) {
+            if self.settings.editing() && self.settings.selected_line_range().contains(&target.line)
+            {
                 self.settings.focused = true;
             } else if let Some(action) = self.settings.action_at_line(target.line) {
                 self.settings.focused = true;
@@ -568,7 +569,10 @@ impl ShellState {
                     self.agent_activity.move_selection_down();
                     false
                 }
-                (DashboardRoute::Sessions | DashboardRoute::Status | DashboardRoute::Settings, _) => false,
+                (
+                    DashboardRoute::Sessions | DashboardRoute::Status | DashboardRoute::Settings,
+                    _,
+                ) => false,
             };
         }
 

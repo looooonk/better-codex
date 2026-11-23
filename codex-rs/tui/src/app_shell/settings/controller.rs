@@ -172,9 +172,12 @@ impl ShellState {
         match action {
             SettingsAction::AppTheme(theme) => self.apply_app_theme(theme, app_server),
             SettingsAction::Theme => {
-                self.settings.start_theme_edit(self.tui_theme.clone().unwrap_or_default());
+                self.settings
+                    .start_theme_edit(self.tui_theme.clone().unwrap_or_default());
             }
-            SettingsAction::ApprovalPolicy(policy) => self.apply_approval_policy(policy, app_server)?,
+            SettingsAction::ApprovalPolicy(policy) => {
+                self.apply_approval_policy(policy, app_server)?
+            }
             SettingsAction::Animations => {
                 let animations = !self.animations;
                 self.schedule_settings_update(
@@ -219,7 +222,9 @@ impl ShellState {
 
     fn apply_theme_edit<S: AppShellBackend>(&mut self, draft: String, app_server: &S) {
         let theme = (!draft.is_empty()).then_some(draft);
-        if let Some(warning) = validate_theme_name(theme.as_deref(), Some(self.codex_home.as_path())) {
+        if let Some(warning) =
+            validate_theme_name(theme.as_deref(), Some(self.codex_home.as_path()))
+        {
             self.settings.set_error(warning);
             return;
         }
@@ -296,11 +301,8 @@ impl ShellState {
         );
     }
 
-    fn apply_app_theme<S>(
-        &mut self,
-        app_theme: crate::app_theme::TuiAppTheme,
-        app_server: &mut S,
-    ) where
+    fn apply_app_theme<S>(&mut self, app_theme: crate::app_theme::TuiAppTheme, app_server: &mut S)
+    where
         S: AppShellBackend,
     {
         let persist =

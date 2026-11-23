@@ -27,12 +27,8 @@ fn token_panel_renders_billions_and_trillions() {
         output_tokens: 1_100_000_000_000,
         ..TokenUsage::default()
     };
-    let panel = dashboard_panel(
-        &shell,
-        /*width*/ 100,
-        DashboardPanelKind::Tokens,
-    )
-    .expect("tokens panel");
+    let panel =
+        dashboard_panel(&shell, /*width*/ 100, DashboardPanelKind::Tokens).expect("tokens panel");
 
     insta::assert_snapshot!(
         panel
@@ -54,12 +50,8 @@ fn token_panel_includes_estimated_thread_usage() {
         estimated_usage_usd_micros: Some(1_824_000),
         groups: Vec::new(),
     });
-    let panel = dashboard_panel(
-        &shell,
-        /*width*/ 100,
-        DashboardPanelKind::Tokens,
-    )
-    .expect("tokens panel");
+    let panel =
+        dashboard_panel(&shell, /*width*/ 100, DashboardPanelKind::Tokens).expect("tokens panel");
 
     insta::assert_snapshot!(
         "token_panel_with_thread_usage",

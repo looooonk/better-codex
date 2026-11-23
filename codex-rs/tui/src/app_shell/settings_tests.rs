@@ -12,6 +12,11 @@ fn hit_testing_skips_the_editor_and_feedback_before_later_actions() {
         (start..=start + 3)
             .map(|line| settings.action_at_line(line))
             .collect::<Vec<_>>(),
-        vec![Some(SettingsAction::Theme), None, None, Some(SettingsAction::Animations)]
+        vec![
+            Some(SettingsAction::Theme),
+            None,
+            None,
+            Some(SettingsAction::Animations)
+        ]
     );
 }

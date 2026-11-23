@@ -100,12 +100,14 @@ impl ShellState {
         if let Err(err) = result {
             let picker = self.selector.as_mut().filter(|selector| {
                 update.selector.as_ref() == Some(*selector)
-                    || (matches!(update.change, SettingsChange::ReasoningEffort(_)) && selector.is_effort_slider())
+                    || (matches!(update.change, SettingsChange::ReasoningEffort(_))
+                        && selector.is_effort_slider())
             });
             if let Some(selector) = picker {
                 selector.save_error = Some(format!("Save failed: {err}"));
             } else {
-                self.settings.set_error(format!("failed to save settings: {err:#}"));
+                self.settings
+                    .set_error(format!("failed to save settings: {err:#}"));
             }
             self.report_action_error("failed to save settings", err);
             return;
