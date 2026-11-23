@@ -16,5 +16,5 @@ expression: "render_shell(&shell, area)"
 │  message line 06                                                           │
 │  message line 07                                                           │
 │  message line 08                                                           │
-│ Ask for approval ▾                   gpt-5-codex ▾   Default ▾   Default ▾ │
+│ ⓘ Ask for approval ▾               gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────╯

@@ -161,6 +161,7 @@ mod slash_commands;
 mod source_preview;
 mod startup;
 mod startup_availability_nux;
+mod start_logo;
 mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
@@ -552,7 +553,7 @@ struct ShellState {
     rate_limits: Vec<RateLimitSnapshot>,
     rate_limit_reset_credits: Option<i64>,
     status: String,
-    status_spinner_frame: usize,
+    chrome_animation_frame: usize,
     token_usage: TokenUsage,
     context_token_usage: TokenUsage,
     model_context_window: Option<i64>,
@@ -722,7 +723,7 @@ impl ShellState {
             rate_limits: Vec::new(),
             rate_limit_reset_credits: None,
             status: "ready".to_string(),
-            status_spinner_frame: 0,
+            chrome_animation_frame: 0,
             token_usage: TokenUsage::default(),
             context_token_usage: TokenUsage::default(),
             model_context_window: None,
@@ -2528,7 +2529,7 @@ impl ShellState {
             rate_limits: Vec::new(),
             rate_limit_reset_credits: None,
             status: "thinking".to_string(),
-            status_spinner_frame: 0,
+            chrome_animation_frame: 0,
             token_usage: TokenUsage {
                 input_tokens: 1200,
                 cached_input_tokens: 300,
@@ -2832,7 +2833,7 @@ pub mod bench_support {
             rate_limits: Vec::new(),
             rate_limit_reset_credits: None,
             status: "benchmarking".to_string(),
-            status_spinner_frame: 0,
+            chrome_animation_frame: 0,
             token_usage: TokenUsage {
                 input_tokens: 120_000,
                 cached_input_tokens: 30_000,

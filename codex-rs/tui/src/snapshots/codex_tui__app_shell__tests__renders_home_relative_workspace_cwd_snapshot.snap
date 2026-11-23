@@ -36,5 +36,5 @@ expression: rendered
 │> Summarize the new shell architecture          ││▎input 1k | output 240
 │                                                ││▎Context 100% left
 │                                                ││
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

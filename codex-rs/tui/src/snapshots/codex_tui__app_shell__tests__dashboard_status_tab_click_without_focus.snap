@@ -28,5 +28,5 @@ expression: "render_shell(&shell, area)"
 │> Summarize the new shell architecture          ││
 │                                                ││▎◆ WORKSPACE
 │                                                ││▎profile managed
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││▎cwd /workspace/better-codex
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││▎cwd /workspace/better-codex
 ╰────────────────────────────────────────────────╯│

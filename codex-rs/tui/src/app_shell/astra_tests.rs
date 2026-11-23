@@ -21,19 +21,37 @@ fn composer_buttons_reflect_the_active_policy_speed_and_model_effort() {
             AskForApproval::OnRequest,
             None,
             None,
-            ["Ask for approval", "low", "Default"],
+            ["ⓘ Ask for approval", "low", "◷ Default"],
         ),
         (
             AskForApproval::UnlessTrusted,
             Some("fast"),
             None,
-            ["Unless trusted", "low", "Fast"],
+            ["⛨ Unless trusted", "low", "↯ Fast"],
         ),
         (
             AskForApproval::Never,
             Some("priority"),
             Some(ReasoningEffort::High),
-            ["Full access", "high", "Fast"],
+            ["⚠ Full access", "high", "↯ Fast"],
+        ),
+        (
+            AskForApproval::OnRequest,
+            Some("flex"),
+            None,
+            ["ⓘ Ask for approval", "low", "≈ flex"],
+        ),
+        (
+            AskForApproval::OnRequest,
+            Some("ultrafast"),
+            None,
+            ["ⓘ Ask for approval", "low", "⇈ ultrafast"],
+        ),
+        (
+            AskForApproval::OnRequest,
+            Some("custom"),
+            None,
+            ["ⓘ Ask for approval", "low", "◆ custom"],
         ),
     ] {
         shell.approval_policy = policy;
@@ -253,6 +271,14 @@ async fn composer_permissions_button_opens_the_policy_picker() {
     assert_eq!(popup[(area.x, area.y)], buffer[(area.x, area.y)]);
     insta::assert_snapshot!("composer_permissions_menu", buffer_contents(&popup, panel));
     assert!(backend.calls().is_empty());
+
+    let full_access = text_color_for_row(&popup, panel, "Full access");
+    assert_eq!(full_access, Some(design::palette::error()));
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('3')).await;
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.approval_policy, AskForApproval::Never);
+    let buffer = render_shell_buffer(&shell, area);
+    assert_eq!(text_color_for_row(&buffer, input, "⚠ Full access"), full_access);
 }
 
 #[tokio::test]

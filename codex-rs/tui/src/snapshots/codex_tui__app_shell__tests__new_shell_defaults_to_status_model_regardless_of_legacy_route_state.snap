@@ -8,15 +8,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │
                                                   │▎◆ SETTINGS
                                                   │▎Model │ Permissions │ Appearance │Integrations
-                                                  │▎━━━━━━─────────────────────────────────────────
-                                                  │▎› Model: gpt-5-codex
-                                                  │▎  Reasoning: default
-                                                  │▎  Service tier: default
-                                                  │▎
-                                                  │
-                                                  │▎◆ PLAN
-                                                  │▎no active plan
-                                                  │
+                   ⢀⣠⣴⠶⠿⠛⠛⠿⠶⣦⣄⡀                   │▎━━━━━━─────────────────────────────────────────
+                 ⢀⣴⠟⠋        ⠙⠻⣦⡀                 │▎› Model: gpt-5-codex
+                ⢀⣾⠋            ⠙⣷⡀                │▎  Reasoning: default
+                ⣼⡇              ⢸⣧                │▎  Service tier: default
+                ⣿       >_       ⣿                │▎
+                ⢻⡇              ⢸⡟                │
+                ⠈⢿⣄            ⣠⡿⠁                │▎◆ PLAN
+                 ⠈⠻⣦⣄        ⣠⣴⠟⠁                 │▎no active plan
+                   ⠈⠙⠻⠶⣶⣤⣤⣶⠶⠟⠋⠁                   │
                                                   │▎◆ TOOLS
                                                   │▎idle
                                                   │
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 │> Type a message                                ││▎cwd /workspace/better-codex
 │                                                ││▎files restricted, net restricted
 │                                                ││
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

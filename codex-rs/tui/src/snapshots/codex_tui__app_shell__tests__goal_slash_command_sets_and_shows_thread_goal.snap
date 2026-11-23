@@ -28,5 +28,5 @@ expression: "render_shell(&shell, area)"
 │> Type a message                                ││▎◆ TOOLS
 │                                                ││▎in progress exec just test -p codex-tui
 │                                                ││
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

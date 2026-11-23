@@ -4,6 +4,6 @@ expression: "buffer_contents(&render_shell_buffer(&shell, wide), panel)"
 ---
 ╭──────────────────╮
 │ Speed            │
-│ Default        ✓ │
-│ Fast             │
+│ ◷ Default      ✓ │
+│ ↯ Fast           │
 ╰──────────────────╯

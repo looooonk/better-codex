@@ -30,5 +30,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

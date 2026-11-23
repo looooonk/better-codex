@@ -12,11 +12,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
          3. Render dashboard                      │▎loading sessions
                                                   │
  ▌ tool exec jus╭ Select approval policy ──────────────────────────────────────────╮
-                │   1 ● Ask for approval  current                                  │
+                │   1 ● ⓘ Ask for approval  current                                │
  ▌ edited 3 file│       Let Codex request approval when an action needs it.        │0000001
- ▎ ERROR  failed│   2 ○ Unless trusted                                             │ session list
+ ▎ ERROR  failed│   2 ○ ⛨ Unless trusted                                           │ session list
           settin│       Ask before commands that are not known to be safe.         │
-          change│ › 3 ○ Full access                                                │
+          change│ › 3 ○ ⚠ Full access                                              │
           reject│       Run without approval prompts within the active sandbox.    │
                 │  wheel / j k  Enter select  Esc cancel  3/3                      │
  ▎ CODEX  The ne╰──────────────────────────────────────────────────────────────────╯
@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

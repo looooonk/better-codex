@@ -1479,7 +1479,7 @@ fn renders_recovered_retry_status_snapshot() {
     shell.transcript.clear();
     shell.clear_streaming_transcript();
     shell.active_turn_id = Some("turn-active".to_string());
-    shell.status_spinner_frame = 2;
+    shell.chrome_animation_frame = 2;
     shell.handle_notification(retrying_error(&shell, "turn-active"));
     shell.handle_notification(ServerNotification::AgentMessageDelta(
         codex_app_server_protocol::AgentMessageDeltaNotification {

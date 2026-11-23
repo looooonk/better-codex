@@ -1,0 +1,17 @@
+---
+source: tui/src/app_shell/start_logo_tests.rs
+expression: visible_logo(&shell)
+---
+
+
+
+
+         ⢀⣠⣴⠶⠿⠛⠛⠿⠶⣦⣄⡀
+       ⢀⣴⠟⠋        ⠙⠻⣦⡀
+      ⢀⣾⠋            ⠙⣷⡀
+      ⣼⡇              ⢸⣧
+      ⣿       >_       ⣿
+      ⢻⡇              ⢸⡟
+      ⠈⢿⣄            ⣠⡿⠁
+       ⠈⠻⣦⣄        ⣠⣴⠟⠁
+         ⠈⠙⠻⠶⣶⣤⣤⣶⠶⠟⠋⠁

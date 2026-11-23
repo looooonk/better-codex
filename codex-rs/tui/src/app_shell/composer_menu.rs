@@ -1,5 +1,4 @@
-//! Compact menus attached to the composer toolbar. The dashboard keeps its
-//! detailed selectors. Both presentations share the same options and actions.
+//! Compact menus attached to the composer toolbar.
 
 use super::SelectorOption;
 use super::SelectorState;
@@ -134,7 +133,7 @@ impl<T> SelectorState<T> {
                 Line::from(option.label.clone()),
                 usize::from(label.width),
             );
-            Paragraph::new(text).fg(palette::text()).render(label, buf);
+            Paragraph::new(text).fg(option.label_color()).render(label, buf);
             if option.current {
                 buf[(row.right() - 2, row.y)]
                     .set_symbol("✓")

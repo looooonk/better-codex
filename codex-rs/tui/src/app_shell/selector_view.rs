@@ -112,11 +112,8 @@ impl<T> SelectorState<T> {
         } else {
             "○".fg(palette::muted())
         };
-        let label = if selected {
-            label.fg(palette::text()).bold()
-        } else {
-            label.fg(palette::text())
-        };
+        let label = label.fg(option.label_color());
+        let label = if selected { label.bold() } else { label };
         let current_label = if option.current {
             current_label.fg(palette::success())
         } else {

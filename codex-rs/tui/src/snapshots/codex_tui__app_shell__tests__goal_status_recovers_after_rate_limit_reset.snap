@@ -34,5 +34,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 34,))"
 │> Summarize the new shell architecture          ││▎◆ WORKSPACE
 │                                                ││▎profile managed
 │                                                ││▎cwd /workspace/better-codex
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││▎files restricted, net restricted
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││▎files restricted, net restricted
 ╰────────────────────────────────────────────────╯│

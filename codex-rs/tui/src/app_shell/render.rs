@@ -96,14 +96,18 @@ impl ShellView<'_> {
         if let Some(area) = layout.status {
             self.shell.render_status_surface(area, buf);
         }
-        render_transcript(
-            self.shell,
-            layout.transcript,
-            self.base_hover_position(),
-            buf,
-        );
-        if let Some(selection) = self.shell.transcript_text_selection() {
-            render_transcript_text_selection(self.shell, layout.transcript, selection, buf);
+        if self.shell.shows_start_logo() {
+            super::start_logo::render(self.shell, layout, buf);
+        } else {
+            render_transcript(
+                self.shell,
+                layout.transcript,
+                self.base_hover_position(),
+                buf,
+            );
+            if let Some(selection) = self.shell.transcript_text_selection() {
+                render_transcript_text_selection(self.shell, layout.transcript, selection, buf);
+            }
         }
         self.render_input(layout.input, buf);
         if let Some(dashboard) = layout.dashboard {

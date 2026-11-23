@@ -1,6 +1,8 @@
 use super::composer_toolbar::ComposerControl;
+use super::composer_toolbar::permission_caption;
+use super::composer_toolbar::service_tier_caption;
+use super::design::palette;
 use super::settings::app_theme_label;
-use super::settings::approval_policy_label;
 use super::settings::reasoning_effort_label;
 use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::AskForApproval;
@@ -14,6 +16,7 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 
 #[path = "composer_menu.rs"]
 mod composer_menu;
@@ -26,8 +29,6 @@ mod view;
 
 use view::selector_geometry;
 
-#[cfg(test)]
-use super::design::palette;
 #[cfg(test)]
 use ratatui::buffer::Buffer;
 #[cfg(test)]
@@ -67,6 +68,7 @@ pub(super) struct SelectorOption<T> {
     label: String,
     detail: String,
     current: bool,
+    danger: bool,
 }
 
 impl<T> SelectorOption<T> {
@@ -76,12 +78,21 @@ impl<T> SelectorOption<T> {
             label: label.into(),
             detail: detail.into(),
             current: false,
+            danger: false,
         }
     }
 
     pub(super) fn current(mut self, current: bool) -> Self {
         self.current = current;
         self
+    }
+
+    fn label_color(&self) -> Color {
+        if self.danger {
+            palette::error()
+        } else {
+            palette::text()
+        }
     }
 }
 
@@ -333,7 +344,7 @@ impl SelectorState<SelectorValue> {
         let mut options = vec![
             SelectorOption::new(
                 SelectorValue::ServiceTier(ServiceTierValue::Default),
-                "Default",
+                service_tier_caption(None, "Default"),
                 "Use the model's default service tier.",
             )
             .current(current == &ServiceTierValue::Default),
@@ -350,7 +361,7 @@ impl SelectorState<SelectorValue> {
             };
             SelectorOption::new(
                 SelectorValue::ServiceTier(ServiceTierValue::Explicit(tier.id.clone())),
-                tier.name.clone(),
+                service_tier_caption(Some(&tier.id), &tier.name),
                 tier.description.clone(),
             )
             .current(is_current)
@@ -382,12 +393,14 @@ impl SelectorState<SelectorValue> {
         let options = policies
             .into_iter()
             .map(|(policy, detail)| {
-                SelectorOption::new(
+                let mut option = SelectorOption::new(
                     SelectorValue::ApprovalPolicy(policy),
-                    approval_policy_label(policy),
+                    permission_caption(policy),
                     detail,
                 )
-                .current(policy == current)
+                .current(policy == current);
+                option.danger = policy == AskForApproval::Never;
+                option
             })
             .collect();
         Self::new("Select approval policy", options)

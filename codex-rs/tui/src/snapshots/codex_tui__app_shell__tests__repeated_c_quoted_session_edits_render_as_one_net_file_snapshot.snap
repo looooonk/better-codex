@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 │>│                       │                                  │                                   │
 │ │  ←/→ files  h/l pan  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  file 1/1  1-2/2        │
 │ ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
-│Ask for approval▾ gpt-5-codex▾ Default▾ Default▾││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

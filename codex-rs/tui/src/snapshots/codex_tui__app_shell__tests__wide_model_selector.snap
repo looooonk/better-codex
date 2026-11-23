@@ -30,5 +30,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 │> Summarize the│  wheel / j k  Enter select  Esc cancel  1/12 ↓                   │
 │               ╰──────────────────────────────────────────────────────────────────╯
 │                                                ││
-│Ask for approval▾      gpt-5-0▾ medium▾ Default▾││
+│ⓘ Ask for approval▾  gpt-5-0▾ medium▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

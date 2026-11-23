@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 │> Summarize the new shell architecture                    ││
 │                                                          ││▎◆ WORKSPACE
 │                                                          ││▎profile managed
-│ Ask for approval ▾   gpt-5-co… ▾   Default ▾   Default ▾ ││▎cwd /workspace/better-codex
+│ ⓘ Ask for approval ▾   gpt-… ▾   Default ▾   ◷ Default ▾ ││▎cwd /workspace/better-codex
 ╰──────────────────────────────────────────────────────────╯│

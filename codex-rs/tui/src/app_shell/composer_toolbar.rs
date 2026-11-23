@@ -34,6 +34,27 @@ pub(super) struct ComposerToolbar {
     buttons: [Button; 4],
 }
 
+pub(super) fn permission_caption(policy: AskForApproval) -> String {
+    let icon = match policy {
+        AskForApproval::OnRequest => "ⓘ",
+        AskForApproval::UnlessTrusted => "⛨",
+        AskForApproval::Never => "⚠",
+        AskForApproval::Granular { .. } => "⚙",
+    };
+    format!("{icon} {}", approval_policy_label(policy))
+}
+
+pub(super) fn service_tier_caption(id: Option<&str>, name: &str) -> String {
+    let icon = match id {
+        None | Some("" | SERVICE_TIER_DEFAULT_REQUEST_VALUE) => "◷",
+        Some("priority" | "fast") => "↯",
+        Some("ultrafast") => "⇈",
+        Some("flex") => "≈",
+        Some(_) => "◆",
+    };
+    format!("{icon} {name}")
+}
+
 pub(super) fn toolbar_rows(content: Rect) -> u16 {
     if content.width < 48 && content.height >= 3 {
         2
@@ -63,7 +84,8 @@ impl ComposerToolbar {
             .or_else(|| preset.map(|preset| &preset.default_reasoning_effort))
             .map(ToString::to_string)
             .unwrap_or_else(|| "Default".to_owned());
-        let speed = match shell.service_tier.as_deref() {
+        let service_tier = shell.service_tier.as_deref();
+        let speed = match service_tier {
             None | Some("" | SERVICE_TIER_DEFAULT_REQUEST_VALUE) => "Default",
             Some(id) if ServiceTier::from_request_value(id) == Some(ServiceTier::Fast) => "Fast",
             Some(id) => preset
@@ -72,6 +94,8 @@ impl ComposerToolbar {
                 .filter(|name| !name.is_empty())
                 .unwrap_or(id),
         };
+        let speed = service_tier_caption(service_tier, speed);
+        let permission = permission_caption(shell.approval_policy);
         let permissions_color = if shell.approval_policy == AskForApproval::Never {
             palette::error()
         } else {
@@ -80,28 +104,28 @@ impl ComposerToolbar {
         let mut buttons = [
             (
                 ComposerControl::Permissions,
-                approval_policy_label(shell.approval_policy),
-                16,
+                permission,
+                18,
                 permissions_color,
             ),
             (
                 ComposerControl::Model,
-                shell.model.as_str(),
+                shell.model.clone(),
                 20,
                 palette::text(),
             ),
             (
                 ComposerControl::ReasoningEffort,
-                effort.as_str(),
+                effort,
                 12,
                 palette::purple(),
             ),
-            (ComposerControl::ServiceTier, speed, 12, palette::purple()),
+            (ComposerControl::ServiceTier, speed, 14, palette::purple()),
         ]
         .map(|(control, value, limit, color)| Button {
             control,
             area: Rect::default(),
-            label: truncate_line_with_ellipsis_if_overflow(value.to_owned().into(), limit),
+            label: truncate_line_with_ellipsis_if_overflow(value.into(), limit),
             color,
         });
         // Keep every dropdown reachable. Give the model name the remaining space.

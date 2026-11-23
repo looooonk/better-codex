@@ -532,8 +532,8 @@ pub(crate) async fn run(
                             pending_resize = None;
                         }
                     }
-                    if shell.status_spinner_active() {
-                        shell.status_spinner_frame = shell.status_spinner_frame.wrapping_add(1);
+                    if shell.status_spinner_active() || (tui.is_focused() && shell.start_logo_animates()) {
+                        shell.chrome_animation_frame = shell.chrome_animation_frame.wrapping_add(1);
                         tui.frame_requester().schedule_frame();
                     }
                 }

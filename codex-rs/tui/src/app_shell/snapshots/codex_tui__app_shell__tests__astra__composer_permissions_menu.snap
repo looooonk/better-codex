@@ -4,13 +4,13 @@ expression: "buffer_contents(&popup, panel)"
 ---
 ╭────────────────────────────────────────────╮
 │ Permissions                                │
-│ Ask for approval                         ✓ │
+│ ⓘ Ask for approval                       ✓ │
 │ Let Codex request approval when an action  │
 │ needs it.                                  │
-│ Unless trusted                             │
+│ ⛨ Unless trusted                           │
 │ Ask before commands that are not known to  │
 │ be safe.                                   │
-│ Full access                                │
+│ ⚠ Full access                              │
 │ Run without approval prompts within the    │
 │ active sandbox.                            │
 ╰────────────────────────────────────────────╯

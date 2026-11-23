@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 │> Summarize the new │                                                                  │
 │                    │  up / down move  f18 select  f19 cancel  1/55 ↓                  │
 │                    ╰──────────────────────────────────────────────────────────────────╯
-│ Ask for approval ▾   gpt-5-co… ▾   Default ▾   Default ▾ ││
+│ ⓘ Ask for approval ▾   gpt-… ▾   Default ▾   ◷ Default ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

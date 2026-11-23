@@ -29,7 +29,7 @@ NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN1122222222KKKKKOOO222222222222
 NNNFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFN12222222222222222222222222222222222222222222222222
 NFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFN11778888888882222222222222222222222222222222222222
 NFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFN11JJJJJJJJ2222222222222222222222222222222222222222
-NPPPPPPPPPPPPPPPPPFDDDDDDDDDDDDFPPPPPPPPFPPPPPPPPN11JJJJ22222222222222222222222222222222222222222222
+NPPPPPPPPPPPPPPPPPPPFDDDDDDDDFPPPPPPPPFPPPPPPPPPPN11JJJJ22222222222222222222222222222222222222222222
 NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN12222222222222222222222222222222222222222222222222
 legend:
 0 (904 cells): Style::new().fg(Color::Rgb(192, 202, 245)).bg(Color::Rgb(26, 27, 38)).underline_color(Color::Reset)
@@ -45,7 +45,7 @@ legend:
 A (9 cells): Style::new().fg(Color::Rgb(122, 162, 247)).bg(Color::Rgb(26, 27, 38)).underline_color(Color::Reset)
 B (58 cells): Style::new().fg(Color::Rgb(158, 206, 106)).bg(Color::Rgb(26, 27, 38)).underline_color(Color::Reset)
 C (1 cells): Style::new().fg(Color::Rgb(122, 162, 247)).bg(Color::Rgb(41, 46, 66)).underline_color(Color::Reset).bold()
-D (39 cells): Style::new().fg(Color::Rgb(192, 202, 245)).bg(Color::Rgb(41, 46, 66)).underline_color(Color::Reset)
+D (35 cells): Style::new().fg(Color::Rgb(192, 202, 245)).bg(Color::Rgb(41, 46, 66)).underline_color(Color::Reset)
 E (1 cells): Style::new().fg(Color::Rgb(125, 207, 255)).bg(Color::Rgb(36, 40, 59)).underline_color(Color::Reset)
 F (219 cells): Style::new().fg(Color::Rgb(192, 202, 245)).bg(Color::Rgb(36, 40, 59)).underline_color(Color::Reset)
 G (12 cells): Style::new().fg(Color::Rgb(192, 202, 245)).bg(Color::Rgb(36, 40, 59)).underline_color(Color::Reset).bold()
@@ -57,4 +57,4 @@ L (1 cells): Style::new().fg(Color::Rgb(125, 207, 255)).bg(Color::Rgb(22, 22, 30
 M (11 cells): Style::new().fg(Color::Rgb(125, 207, 255)).bg(Color::Rgb(22, 22, 30)).underline_color(Color::Reset)
 N (110 cells): Style::new().fg(Color::Rgb(122, 162, 247)).bg(Color::Rgb(36, 40, 59)).underline_color(Color::Reset)
 O (3 cells): Style::new().fg(Color::Rgb(247, 118, 142)).bg(Color::Rgb(22, 22, 30)).underline_color(Color::Reset)
-P (33 cells): Style::new().fg(Color::Rgb(187, 154, 247)).bg(Color::Rgb(41, 46, 66)).underline_color(Color::Reset)
+P (37 cells): Style::new().fg(Color::Rgb(187, 154, 247)).bg(Color::Rgb(41, 46, 66)).underline_color(Color::Reset)

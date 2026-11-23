@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 │> Review changes                                          ││
 │                                                          ││
 │                                                          ││
-│ Ask for approval ▾   gpt-5-co… ▾   Default ▾   Default ▾ ││
+│ ⓘ Ask for approval ▾   gpt-… ▾   Default ▾   ◷ Default ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

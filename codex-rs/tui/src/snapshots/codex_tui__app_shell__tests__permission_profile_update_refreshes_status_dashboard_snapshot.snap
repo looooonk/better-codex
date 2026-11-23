@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 │> Summarize the new shell architecture          ││
 │                                                ││▎◆ WORKSPACE
 │                                                ││▎profile :full (full access)
-│Full access▾          gpt-5.4▾ Default▾ Default▾││▎cwd /workspace/locked
+│⚠ Full access▾      gpt-5.4▾ Default▾ ◷ Default▾││▎cwd /workspace/locked
 ╰────────────────────────────────────────────────╯│

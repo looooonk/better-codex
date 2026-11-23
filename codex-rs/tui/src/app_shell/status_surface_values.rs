@@ -225,7 +225,7 @@ impl ShellState {
                     Some(
                         if self.animations {
                             ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-                                [self.status_spinner_frame % 10]
+                                [self.chrome_animation_frame % 10]
                         } else {
                             "Working"
                         }

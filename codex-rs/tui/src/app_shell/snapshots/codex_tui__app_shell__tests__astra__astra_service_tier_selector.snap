@@ -14,9 +14,9 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
  ▌ tool exec just test -p codex-tui               │▎◆ THREAD
                                                   │▎stage-one
  ▌ edited 3 file╭ Select service tier ─────────────────────────────────────────────╮0000001
-                │ › 1 ● Default  current                                           │ session list
+                │ › 1 ● ◷ Default  current                                         │ session list
  ▎ CODEX  The ne│       Use the model's default service tier.                      │
-          surfac│   2 ○ Fast                                                       │
+          surfac│   2 ○ ↯ Fast                                                     │
                 │       2x speed, increased usage                                  │
                 │  wheel / j k  Enter select  Esc cancel  1/2                      │
                 ╰──────────────────────────────────────────────────────────────────╯
@@ -30,5 +30,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│Ask for approval▾ gpt-6.2-astra▾ ultra▾ Default▾││
+│ⓘ Ask for approval▾ gpt-6.2-…▾ ultra▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

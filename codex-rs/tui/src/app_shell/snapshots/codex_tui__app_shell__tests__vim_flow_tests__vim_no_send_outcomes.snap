@@ -16,7 +16,7 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
-│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
+│ ⓘ Ask for approval ▾                 gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ---
 
@@ -33,7 +33,7 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
-│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
+│ ⓘ Ask for approval ▾                 gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ---
 
@@ -50,5 +50,5 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
-│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
+│ ⓘ Ask for approval ▾                 gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯

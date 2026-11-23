@@ -30,5 +30,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 │> Summari│   •     •     •      •     •     ●   ││
 │         │ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀ ││
 │         ╰──────────────────────────────────────╯│
-│Ask for approval▾ gpt-6.2-astra▾ ultra▾ Default▾││
+│ⓘ Ask for approval▾ gpt-6.2-…▾ ultra▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

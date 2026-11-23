@@ -24,5 +24,5 @@ expression: "buffer_contents(&bottom, area)"
 │  R09xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx│
 │  R10xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx│
 │  R11TAIL▌                                                                    │
-│ Ask for approval ▾                     gpt-5-codex ▾   Default ▾   Default ▾ │
+│ ⓘ Ask for approval ▾                 gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
