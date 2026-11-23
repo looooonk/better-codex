@@ -97,7 +97,7 @@ impl ShellView<'_> {
             self.shell.render_status_surface(area, buf);
         }
         if self.shell.shows_start_logo() {
-            super::start_logo::render(self.shell, layout, buf);
+            super::start_logo::render(self.shell, layout, self.base_hover_position(), buf);
         } else {
             render_transcript(
                 self.shell,

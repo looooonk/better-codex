@@ -2,6 +2,7 @@ use super::*;
 use crate::app_shell::render::ShellView;
 use crate::app_shell::tests::render_shell;
 use pretty_assertions::assert_eq;
+use ratatui::style::Color;
 
 #[test]
 fn centered_logo_yields_to_the_first_message() {
@@ -67,6 +68,75 @@ fn compact_logo_shimmers_only_when_effects_are_enabled() {
 }
 
 #[test]
+fn cursor_glow_follows_the_pointer_across_the_logo_while_the_glint_passes() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.clear_visible_transcript();
+    shell.dashboard_visible = false;
+    shell.chrome_animation_frame = 9;
+    let screen = Rect::new(
+        /*x*/ 4, /*y*/ 2, /*width*/ 70, /*height*/ 24,
+    );
+    let frame = |shell: &ShellState| {
+        let mut buf = Buffer::empty(screen);
+        (ShellView { shell }).render(screen, &mut buf);
+        buf
+    };
+    let sweep = frame(&shell);
+    let rim: Vec<_> = screen
+        .positions()
+        .filter(|&pos| sweep[pos].symbol() == "⣿")
+        .collect();
+    let [left, right] = rim[..] else {
+        panic!("expected two sides of the ring")
+    };
+
+    // Approach from just outside the ring, opposite the moving glint.
+    shell.set_pointer_position(Position::new(right.x + 1, right.y));
+    let hovered = frame(&shell);
+    assert_eq!(hovered[left].fg, sweep[left].fg);
+    assert_ne!(hovered[right].fg, sweep[right].fg);
+    let mark = Rect::new(left.x, left.y - 4, right.x - left.x + 1, LOGO.len() as u16);
+    for pos in screen.positions() {
+        if !mark.contains(pos) || sweep[pos].symbol() == " " {
+            assert_eq!(&hovered[pos], &sweep[pos]);
+        }
+    }
+    let shades = mark
+        .rows()
+        .map(|row| {
+            row.columns()
+                .map(|cell| {
+                    let cell = &hovered[(cell.x, cell.y)];
+                    match (cell.symbol(), cell.fg) {
+                        (" ", _) => ' ',
+                        (_, Color::Rgb(144, _, _)) => '·',
+                        (_, Color::Rgb(145..=179, _, _)) => '░',
+                        (_, Color::Rgb(180..=214, _, _)) => '▒',
+                        (_, Color::Rgb(215..=239, _, _)) => '▓',
+                        (_, Color::Rgb(240..=255, _, _)) => '█',
+                        _ => panic!("unexpected logo color"),
+                    }
+                })
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!("cursor_and_sweep_highlights", shades);
+
+    shell.chrome_animation_frame = 0;
+    shell.set_pointer_position(left);
+    let moved = frame(&shell);
+    assert_eq!(moved[right].fg, sweep[right].fg);
+    assert_eq!(moved[left].fg, sweep[left].fg);
+    shell.shimmer_enabled = false;
+    let static_frame = frame(&shell);
+    shell.clear_pointer_position();
+    assert_eq!(frame(&shell), static_frame);
+}
+
+#[test]
 fn logo_fits_short_or_narrow_conversation_panes() {
     let shell = ShellState::snapshot_fixture();
     let mut rows = Vec::new();
@@ -79,7 +149,7 @@ fn logo_fits_short_or_narrow_conversation_panes() {
             dashboard: None,
         };
         let mut buf = Buffer::empty(area);
-        render(&shell, layout, &mut buf);
+        render(&shell, layout, /*hover_position*/ None, &mut buf);
         for row in area.rows() {
             let text: String = row
                 .columns()
