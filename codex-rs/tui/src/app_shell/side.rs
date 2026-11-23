@@ -108,7 +108,6 @@ impl ShellState {
         child.status_surfaces = self.status_surfaces.clone();
         child.automatic_recap.enabled = self.automatic_recap.enabled;
         child.workspace_command_runner = self.workspace_command_runner.clone();
-        child.dashboard_visible = false;
         child.composer.clear();
         child.transcript.clear();
         child.push_system("Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.");

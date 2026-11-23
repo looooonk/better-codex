@@ -23,10 +23,9 @@ leaving your terminal.
 
 ![Better Codex showing a live coding session, tool activity, settings, and workspace status](.github/assets/main-tui.png)
 
-Better Codex reshapes the Codex Rust backend into a dense app-like TUI. Instead
-of dropping directly into a single chat, it gives you a dashboard for starting,
-finding, and resuming work, plus a session view where the conversation, active
-tools, agent plan, file changes, and project status stay visible together.
+Better Codex is a terminal app built on the Codex Rust backend. It opens with
+a full-width conversation. Press `Ctrl+D` to open the dashboard and resume
+sessions, follow tool activity, or inspect file changes and project status.
 
 ## Install
 
@@ -37,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/
 ```
 
 On first launch, choose ChatGPT sign-in, an OpenAI API key, or Amazon Bedrock
-setup, then start a session from the dashboard.
+setup, then type your first message in the conversation.
 
 ### System requirements
 

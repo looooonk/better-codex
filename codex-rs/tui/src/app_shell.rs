@@ -670,7 +670,7 @@ impl ShellState {
             client_config_path,
             resume_cwd_runtime,
             dashboard_route: DashboardRoute::Status,
-            dashboard_visible: true,
+            dashboard_visible: false,
             dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),
             pointer_position: None,

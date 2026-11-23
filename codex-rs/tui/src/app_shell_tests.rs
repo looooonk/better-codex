@@ -5847,6 +5847,7 @@ fn new_shell_defaults_to_status_regardless_of_legacy_route_state() {
         },
     );
 
+    assert!(!shell.dashboard_visible);
     assert_eq!(
         (shell.dashboard_route, shell.settings.selected_action()),
         (DashboardRoute::Status, SettingsAction::default())
