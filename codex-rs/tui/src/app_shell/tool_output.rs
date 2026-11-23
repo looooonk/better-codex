@@ -291,6 +291,41 @@ impl ToolOutputState {
 }
 
 impl ShellState {
+    /// Progress can arrive after the item result or the turn boundary during reconnects.
+    pub(super) fn tool_progress_status(
+        &self,
+        item_id: &str,
+        turn_id: Option<&str>,
+    ) -> ToolBlockStatus {
+        let known_status = self
+            .transcript
+            .iter()
+            .rev()
+            .find_map(|line| {
+                (line.item_id.as_deref() == Some(item_id))
+                    .then_some(line.tool_status)
+                    .flatten()
+            })
+            .or_else(|| {
+                self.tool_output
+                    .as_ref()
+                    .filter(|output| output.target.item_id == item_id)
+                    .map(|output| output.target.status)
+            });
+        if let Some(status) = known_status.filter(|status| *status != ToolBlockStatus::Running) {
+            return status;
+        }
+        if let Some(turn_id) = turn_id
+            && self.active_turn_id.as_deref() != Some(turn_id)
+            && self.transcript.iter().rev().any(|line| {
+                line.kind == TranscriptKind::Separator && line.item_id.as_deref() == Some(turn_id)
+            })
+        {
+            return ToolBlockStatus::Unconfirmed;
+        }
+        ToolBlockStatus::Running
+    }
+
     pub(super) fn open_tool_output_at(&mut self, transcript_index: usize) -> bool {
         let Some(line) = self.transcript.get(transcript_index) else {
             return false;

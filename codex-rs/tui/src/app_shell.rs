@@ -2226,7 +2226,14 @@ impl ShellState {
             .find(|existing| {
                 existing.kind == TranscriptKind::Output
                     && existing.item_id.as_deref() == Some(&item_id)
-                    && existing.tool_status == Some(ToolBlockStatus::Running)
+                    && matches!(
+                        existing.tool_status,
+                        Some(
+                            ToolBlockStatus::Running
+                                | ToolBlockStatus::Interrupted
+                                | ToolBlockStatus::Unconfirmed
+                        )
+                    )
             })
             .map(|existing| {
                 existing
@@ -2238,10 +2245,9 @@ impl ShellState {
             .or_else(|| {
                 self.tool_output
                     .as_ref()
-                    .filter(|output| {
-                        output.target.item_id == item_id
-                            && output.target.status == ToolBlockStatus::Running
-                    })
+                    // The title notification may already have settled the viewer's status while
+                    // its buffer still holds the streamed capture of an evicted transcript row.
+                    .filter(|output| output.target.item_id == item_id)
                     .map(|output| output.output_buffer().clone())
             });
         let full_text = if status != ToolBlockStatus::Running {

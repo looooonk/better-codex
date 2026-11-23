@@ -499,3 +499,102 @@ fn render_output(output: &ToolOutputState, width: u16, height: u16) -> String {
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
+
+#[test]
+fn late_command_output_keeps_the_turn_outcome_until_the_definitive_result() {
+    use crate::app_shell::tool_groups::ToolAction;
+    use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
+    use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::TurnStatus;
+
+    for (turn, provisional) in [
+        (TurnStatus::Completed, ToolBlockStatus::Unconfirmed),
+        (TurnStatus::Interrupted, ToolBlockStatus::Interrupted),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.transcript.clear();
+        shell.push_tool_with_status_for_item(
+            "exec",
+            "pwd",
+            ToolBlockStatus::Running,
+            Some(ToolAction::Command),
+        );
+        shell.push_output_with_status_for_item("exec", "initial", ToolBlockStatus::Running);
+        assert!(shell.open_tool_output_at(/*transcript_index*/ 1));
+        shell.finish_pending_tool_calls(&turn);
+
+        let delta = ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: shell.thread_id.to_string(),
+                turn_id: "turn".into(),
+                item_id: "exec".into(),
+                delta: "\ntail".into(),
+            },
+        );
+        shell.handle_notification(delta);
+        let open = shell.tool_output.as_ref().unwrap();
+        assert_eq!(
+            (
+                open.target.status,
+                open.output(),
+                shell.transcript[1].tool_status
+            ),
+            (provisional, "initial\ntail", Some(provisional))
+        );
+
+        shell.push_tool_with_status_for_item(
+            "exec",
+            "pwd",
+            ToolBlockStatus::Success,
+            Some(ToolAction::Command),
+        );
+        shell.push_output_with_status_for_item("exec", "initial", ToolBlockStatus::Success);
+        let open = shell.tool_output.as_ref().unwrap();
+        assert_eq!(
+            (
+                open.target.status,
+                open.output(),
+                shell.transcript[1].full_text.as_deref()
+            ),
+            (
+                ToolBlockStatus::Success,
+                "initial\ntail",
+                Some("initial\ntail")
+            )
+        );
+    }
+}
+
+#[test]
+fn late_mcp_progress_preserves_the_result_title_and_status() {
+    use crate::app_shell::tool_groups::ToolAction;
+    use codex_app_server_protocol::McpToolCallProgressNotification;
+    use codex_app_server_protocol::ServerNotification;
+
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.tool_activity.clear();
+    shell.push_tool_with_status_for_item(
+        "mcp",
+        "mcp docs/find",
+        ToolBlockStatus::Fail,
+        Some(ToolAction::Call("docs/find".into())),
+    );
+    shell.handle_notification(ServerNotification::McpToolCallProgress(
+        McpToolCallProgressNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn".into(),
+            item_id: "mcp".into(),
+            message: "searching".into(),
+        },
+    ));
+    let call = &shell.transcript[0];
+    assert_eq!(
+        (
+            call.tool_status,
+            call.text.as_str(),
+            shell.tool_activity.len()
+        ),
+        (Some(ToolBlockStatus::Fail), "mcp docs/find", 0)
+    );
+}

@@ -414,6 +414,11 @@ impl ShellState {
             ServerNotification::ThreadQueueChanged(_) => {}
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
+                    if self.tool_progress_status(started.item.id(), Some(&started.turn_id))
+                        != super::ToolBlockStatus::Running
+                    {
+                        return;
+                    }
                     self.mark_thread_revert_hydration_stale();
                     self.mark_retry_recovered(&started.turn_id);
                     if let ThreadItemPayload::ContextCompaction { id } = &started.item.payload
@@ -536,11 +541,8 @@ impl ShellState {
             ServerNotification::CommandExecutionOutputDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.mark_thread_revert_hydration_stale();
-                    self.push_output_delta_with_status_for_item(
-                        delta.item_id,
-                        delta.delta,
-                        super::ToolBlockStatus::Running,
-                    );
+                    let status = self.tool_progress_status(&delta.item_id, Some(&delta.turn_id));
+                    self.push_output_delta_with_status_for_item(delta.item_id, delta.delta, status);
                 } else if self.prepare_active_agent_thread(&delta.thread_id) {
                     self.agent_activity.record_child_progress(
                         &delta.thread_id,
@@ -553,6 +555,11 @@ impl ShellState {
             }
             ServerNotification::FileChangePatchUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    if self.tool_progress_status(&updated.item_id, Some(&updated.turn_id))
+                        != super::ToolBlockStatus::Running
+                    {
+                        return;
+                    }
                     self.mark_thread_revert_hydration_stale();
                     self.record_file_changes(
                         &updated.turn_id,
@@ -574,6 +581,11 @@ impl ShellState {
             }
             ServerNotification::McpToolCallProgress(progress) => {
                 if progress.thread_id == self.thread_id.to_string() {
+                    if self.tool_progress_status(&progress.item_id, Some(&progress.turn_id))
+                        != super::ToolBlockStatus::Running
+                    {
+                        return;
+                    }
                     let title = format!("mcp progress: {}", progress.message);
                     let transcript = super::compact_multiline(title.clone());
                     self.upsert_tool_activity(
@@ -620,11 +632,8 @@ impl ShellState {
                     .ok()
                     .and_then(|bytes| String::from_utf8(bytes).ok())
                 {
-                    self.push_output_delta_with_status_for_item(
-                        item_id,
-                        output,
-                        super::ToolBlockStatus::Running,
-                    );
+                    let status = self.tool_progress_status(&item_id, /*turn_id*/ None);
+                    self.push_output_delta_with_status_for_item(item_id, output, status);
                 }
             }
             ServerNotification::Error(error) => {
