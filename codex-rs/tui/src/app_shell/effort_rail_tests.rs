@@ -2,35 +2,53 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn stops_and_hit_targets_share_the_centers_of_the_caps() {
+fn stage_ticks_match_the_hit_targets_and_the_end_of_the_fill() {
     let panel = Rect::new(
         /*x*/ 5, /*y*/ 3, /*width*/ 40, /*height*/ 7,
     );
     let rail = EffortRail::new(panel, /*stops*/ 5);
     let mut buf = Buffer::empty(panel);
-    rail.render(/*selected*/ 3, /*rainbow_frame*/ None, &mut buf);
-    let middle = rail.area.y + 1;
-    let markers: Vec<_> = (rail.area.x..rail.area.right())
-        .filter(|&x| matches!(buf[(x, middle)].symbol(), "•" | "●"))
-        .map(|x| (x, rail.nearest_stop(x)))
-        .collect();
-    assert_eq!(markers, [(9, 1), (17, 2), (25, 3), (32, 4), (40, 5)]);
-    assert_eq!(buf[(25, middle)].symbol(), "●");
+    let bar_y = rail.area.y + 1;
+    let stops = [7, 16, 25, 33, 42];
 
-    // The fill continues past the thumb and tapers into the unfilled track.
-    let thumb = markers[2].0;
-    let filled = buf[(thumb, middle)].bg;
-    let edge = buf[(thumb + 2, middle)].bg;
-    let empty = buf[(thumb + 3, middle)].bg;
-    assert_ne!(edge, filled);
-    assert_ne!(edge, empty);
-    assert_ne!(buf[(thumb + 2, rail.area.y)].fg, edge);
-    assert_eq!(
-        buf[(thumb + 2, rail.area.y)].fg,
-        buf[(thumb + 2, middle + 1)].fg
+    for (index, &selected_x) in stops.iter().enumerate() {
+        rail.render(index + 1, /*rainbow_frame*/ None, &mut buf);
+        for x in rail.area.x..rail.area.right() {
+            let color = if x <= selected_x {
+                palette::purple()
+            } else {
+                palette::border()
+            };
+            let cell = &buf[(x, bar_y)];
+            assert_eq!((cell.symbol(), cell.fg, cell.bg), ("█", color, color));
+            let tick = if x == selected_x {
+                "▴"
+            } else if stops.contains(&x) {
+                "╵"
+            } else {
+                " "
+            };
+            assert_eq!(buf[(x, bar_y + 1)].symbol(), tick);
+        }
+        assert_eq!(rail.nearest_stop(selected_x), index + 1);
+    }
+}
+
+#[test]
+fn a_single_supported_stage_fills_its_track_and_has_one_centered_tick() {
+    let panel = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 7,
     );
-
-    // At the lowest stop the thumb sits two columns from the left edge.
+    let rail = EffortRail::new(panel, /*stops*/ 1);
+    let mut buf = Buffer::empty(panel);
     rail.render(/*selected*/ 1, /*rainbow_frame*/ None, &mut buf);
-    assert_eq!(buf[(rail.area.x + 2, middle)].symbol(), "●");
+    let middle = rail.area.x + rail.area.width / 2;
+    for x in rail.area.x..rail.area.right() {
+        assert_eq!(buf[(x, rail.area.y + 1)].bg, palette::purple());
+        assert_eq!(
+            buf[(x, rail.area.y + 2)].symbol(),
+            if x == middle { "▴" } else { " " }
+        );
+        assert_eq!(rail.nearest_stop(x), 1);
+    }
 }
