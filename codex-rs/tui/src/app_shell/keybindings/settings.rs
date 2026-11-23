@@ -120,24 +120,4 @@ impl ShellState {
         });
         Ok(())
     }
-
-    pub(in crate::app_shell) fn keybinding_help_lines(&self) -> Vec<ratatui::text::Line<'static>> {
-        use ratatui::style::Stylize;
-        let mut lines = vec![
-            "CONFIGURED SHORTCUTS".bold().into(),
-            "Use /keymap to change a binding; unbind disables it."
-                .dim()
-                .into(),
-        ];
-        for id in keymap_action_ids().filter(|id| {
-            self.keybindings
-                .configured(id.context.config_name(), id.action)
-        }) {
-            let label = self
-                .keybindings
-                .hint(id.context.config_name(), id.action, "unbound");
-            lines.push(format!("{label}  {}.{}", id.context.config_name(), id.action).into());
-        }
-        lines
-    }
 }

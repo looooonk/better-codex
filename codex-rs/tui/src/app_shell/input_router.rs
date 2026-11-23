@@ -29,7 +29,7 @@ use super::keybindings::ResolvedKey;
 use crate::keymap::KeymapContext;
 use crate::keymap::KeymapContextSet;
 
-const HELP_PAGE_SCROLL_STEP: usize = 8;
+const DASHBOARD_PAGE_SCROLL_STEP: usize = 8;
 
 #[derive(Clone, Copy)]
 pub(super) enum ActiveInputRoute {
@@ -183,7 +183,7 @@ impl ShellState {
                 self.session_list.search_active() || self.session_list.renaming()
             }
             None if self.dashboard_visible
-                && self.dashboard_route == DashboardRoute::Status
+                && self.dashboard_route == DashboardRoute::Settings
                 && self.settings.focused =>
             {
                 self.settings.editing()
@@ -508,8 +508,11 @@ impl ShellState {
             self.dashboard_visible = true;
             self.set_dashboard_route(route);
             self.session_list.focused = route_already_visible && route == DashboardRoute::Sessions;
-            self.settings.focused = route_already_visible && route == DashboardRoute::Status;
+            self.settings.focused = route_already_visible && route == DashboardRoute::Settings;
             self.agents_focused = route_already_visible && route == DashboardRoute::Agents;
+            if self.settings.focused {
+                self.settings.reveal_selection.set(true);
+            }
             if self.dashboard_focused() {
                 self.dashboard_scroll.set(0);
             }
@@ -524,8 +527,8 @@ impl ShellState {
                     self.session_list.focused
                         && (self.session_list.search_active() || self.session_list.renaming())
                 }
-                DashboardRoute::Status => self.settings.focused && self.settings.editing(),
-                DashboardRoute::Agents | DashboardRoute::Help => false,
+                DashboardRoute::Settings => self.settings.focused && self.settings.editing(),
+                DashboardRoute::Agents | DashboardRoute::Status => false,
             };
         if self.composer.is_empty()
             && (self.dashboard_focused() && !dashboard_text_input_focused
@@ -599,7 +602,7 @@ impl ShellState {
             return Ok(false);
         }
         if self.dashboard_visible
-            && self.dashboard_route == DashboardRoute::Status
+            && self.dashboard_route == DashboardRoute::Settings
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
         {
@@ -615,6 +618,19 @@ impl ShellState {
             return Ok(false);
         }
         if self.handle_agent_activity_key(key) {
+            return Ok(false);
+        }
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Settings
+            && key.modifiers == KeyModifiers::NONE
+            && matches!(key.code, KeyCode::PageUp | KeyCode::PageDown)
+        {
+            let scroll = self.dashboard_scroll.get();
+            self.dashboard_scroll.set(if key.code == KeyCode::PageUp {
+                scroll.saturating_sub(DASHBOARD_PAGE_SCROLL_STEP)
+            } else {
+                scroll.saturating_add(DASHBOARD_PAGE_SCROLL_STEP)
+            });
             return Ok(false);
         }
         if self.dashboard_focused()
@@ -676,8 +692,11 @@ impl ShellState {
                     match self.dashboard_route {
                         DashboardRoute::Sessions => self.session_list.focused = true,
                         DashboardRoute::Agents => self.agents_focused = true,
-                        DashboardRoute::Status => self.settings.focused = true,
-                        DashboardRoute::Help => {}
+                        DashboardRoute::Settings => {
+                            self.settings.focused = true;
+                            self.settings.reveal_selection.set(true);
+                        }
+                        DashboardRoute::Status => {}
                     }
                     if self.dashboard_focused() {
                         self.dashboard_scroll.set(0);
@@ -714,30 +733,6 @@ impl ShellState {
             }
             KeyCode::Down => {
                 self.composer.move_down_or_recall_history();
-                Ok(false)
-            }
-            KeyCode::PageUp
-                if self.dashboard_visible
-                    && self.dashboard_route == DashboardRoute::Help
-                    && key.modifiers == KeyModifiers::NONE =>
-            {
-                self.dashboard_scroll.set(
-                    self.dashboard_scroll
-                        .get()
-                        .saturating_sub(HELP_PAGE_SCROLL_STEP),
-                );
-                Ok(false)
-            }
-            KeyCode::PageDown
-                if self.dashboard_visible
-                    && self.dashboard_route == DashboardRoute::Help
-                    && key.modifiers == KeyModifiers::NONE =>
-            {
-                self.dashboard_scroll.set(
-                    self.dashboard_scroll
-                        .get()
-                        .saturating_add(HELP_PAGE_SCROLL_STEP),
-                );
                 Ok(false)
             }
             KeyCode::PageUp => {

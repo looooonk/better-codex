@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                                                                          │
- ▎ YOU  Create a divergent standalone TUI.                                                               │   Status    │   Agents    │   Sessions   │   Help
-                                                                                                         │━━━━━━━━━━━━━────────────────────────────────────────
+ ▎ YOU  Create a divergent standalone TUI.                                                               │   Status   │   Agents   │  Sessions   │  Settings
+                                                                                                         │────────────────────────────────────────━━━━━━━━━━━━━
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                     │
- ▎ PLAN  1. Build shell                                                                                  │▎◆ SETTINGS
-         2. Wire transcript                                                                              │▎  Model  │ Permissions  │ Appearance │ Integrations
-         3. Render dashboard                                                                             │▎─────────────────────────━━━━━━━━━━━━───────────────
-                                                                                                         │▎  App theme: Tokyo Night
- ▌ tool exec just test -p codex-tui                                                                      │▎  Syntax theme: default
-                                                                                                         │▎  Animations: on
- ▌ edited 3 files +128 -24                                                                               │▎› Tooltips: on
+ ▎ PLAN  1. Build shell                                                                                  │◆ PERMISSIONS
+         2. Wire transcript                                                                              │  ● ⓘ Ask for approval
+         3. Render dashboard                                                                             │  ○ ⛨ Unless trusted
+                                                                                                         │  ○ ⚠ Full access
+ ▌ tool exec just test -p codex-tui                                                                      │
+                                                                                                         │◆ APPEARANCE
+ ▌ edited 3 files +128 -24                                                                               │  ● Tokyo Night
+                                                                                                         │  ○ Gruvbox Dark
+ ▎ CODEX  The new shell owns the fullscreen surface.                                                     │  ○ Catppuccin Mocha
+                                                                                                         │  ○ Monochrome
+                                                                                                         │  Syntax theme: default
+                                                                                                         │  Animations: on
+                                                                                                         │› Tooltips: on
                                                                                                          │
- ▎ CODEX  The new shell owns the fullscreen surface.                                                     │▎◆ PLAN
-                                                                                                         │▎Build the standalone shell in slices.
-                                                                                                         │▎x Shell frame
-                                                                                                         │▎> Transcript model
-                                                                                                         │▎- Approvals
+                                                                                                         │◆ INTEGRATIONS
+                                                                                                         │  MCP servers: not loaded
+                                                                                                         │  Plugins: not loaded
                                                                                                          │
-                                                                                                         │▎◆ TOOLS
-                                                                                                         │▎in progress exec just test -p codex-tui
-                                                                                                         │
-                                                                                                         │▎◆ EDITS
-╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮│▎3 files +128 -24
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                                                                 ││
-│                                                                                                       ││▎◆ WORKSPACE
-│                                                                                                       ││▎profile managed
-│ ⓘ Ask for approval ▾                                          gpt-5-codex ▾   Default ▾   ◷ Default ▾ ││▎cwd /workspace/better-codex
+│                                                                                                       ││
+│                                                                                                       ││
+│ ⓘ Ask for approval ▾                                          gpt-5-codex ▾   Default ▾   ◷ Default ▾ ││
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯│

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ SYSTEM  switched session                       │   Status   │  Agents   │  Sessions   │  Help
- ▎ SYSTEM  loaded 1 previous turns                │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ SYSTEM  switched session                       │  Status   │  Agents  │  Sessions  │  Settings
+ ▎ SYSTEM  loaded 1 previous turns                │───────────────────────━━━━━━━━━━━━─────────────
  ▎ YOU  Rewrite this prompt.                      │
                                                   │▎◆ SESSIONS
  ──────── Took 1.00s ──────────────────────────── │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

@@ -11,22 +11,22 @@ expression: rendered
          3. Render dashboard
 
  ▌ tool exec just test -p codex-tui
-                     ╭ Select approval policy ──────────────────────────────────────────╮
- ▌ edited 3 files +12│   1 ○ ⓘ Ask for approval                                         │
-                     │       Let Codex request approval when an action needs it.        │
- ▎ CODEX  The new she│ › 2 ● ⛨ Unless trusted  current                                  │
-                     │       Ask before commands that are not known to be safe.         │
-                     │   3 ○ ⚠ Full access                                              │
-                     │       Run without approval prompts within the active sandbox.    │
-                     │  wheel / j k  Enter select  Esc cancel  2/3                      │
-                     ╰──────────────────────────────────────────────────────────────────╯
 
+ ▌ edited 3 files +128 -24
 
+ ▎ CODEX  The new shell owns the fullscreen surface.
 
-
-╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│> Summarize the new shell architecture                                                                      │
-│                                                                                                            │
-│                                                                                                            │
+ ╭────────────────────────────────────────────╮
+ │ Permissions                                │
+ │ ⓘ Ask for approval                         │
+ │ Let Codex request approval when an action  │
+ │ needs it.                                  │
+ │ ⛨ Unless trusted                         ✓ │
+ │ Ask before commands that are not known to  │
+ │ be safe.                                   │
+╭│ ⚠ Full access                              │──────────────────────────────────────────────────────────────╮
+││ Run without approval prompts within the    │                                                              │
+││ active sandbox.                            │                                                              │
+│╰────────────────────────────────────────────╯                                                              │
 │ ⛨ Unless trusted ▾                                                 gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

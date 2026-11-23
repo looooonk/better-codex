@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ---
                             │
- ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
-                            │━━━━━━━━━━━━────────────────────────────────────
- ▎ CODEX  Started a fullscre│▎◆ SETTINGS
- ▎ PLAN  1. Build shell     │▎Model │ Permissions │ Appearance │Integrations
-         2. Wire transcript │▎━━━━━━─────────────────────────────────────────
-         3. Render dashboard│▎› Model: gpt-5-codex
-                            │▎  Reasoning: default
- ▌ tool exec just test -p co│▎  Service tier: default
-                            │▎
- ▌ edited 3 files +128 -24  │▎◆ PLAN
-                            │▎Build the standalone shell in slices.
- ▎ CODEX  The new shell owns│▎x Shell frame
-                            │▎> Transcript model
-                            │▎- Approvals
-                            │▎◆ TOOLS
-                            │▎in progress exec just test -p codex-tui
+ ▎ YOU  Create a divergent s│  Status   │  Agents  │  Sessions  │  Settings
+                            │────────────────────────────────────━━━━━━━━━━━━
+ ▎ CODEX  Started a fullscre│◆ PERMISSIONS
+ ▎ PLAN  1. Build shell     │› ● ⓘ Ask for approval
+         2. Wire transcript │  ○ ⛨ Unless trusted
+         3. Render dashboard│  ○ ⚠ Full access
+                            │
+ ▌ tool exec just test -p co│◆ APPEARANCE
+                            │  ● Tokyo Night
+ ▌ edited 3 files +128 -24  │  ○ Gruvbox Dark
+                            │  ○ Catppuccin Mocha
+ ▎ CODEX  The new shell owns│  ○ Monochrome
+                            │  Syntax theme: default
+                            │  Animations: on
+                            │  Tooltips: on
+                            │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │

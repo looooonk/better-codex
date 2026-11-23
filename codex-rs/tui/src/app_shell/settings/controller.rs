@@ -1,3 +1,4 @@
+use super::super::DashboardRouteStep;
 use super::super::ShellState;
 use super::super::backend::AppShellBackend;
 use super::super::is_unmodified_action_key;
@@ -6,7 +7,6 @@ use super::super::is_unmodified_key_press;
 use super::super::selector::ReasoningEffortValue;
 use super::EffortSave;
 use super::SettingsAction;
-use super::SettingsView;
 use super::background::SettingsChange;
 use crate::config_update::build_model_selection_edits;
 use crate::config_update::build_service_tier_selection_edits;
@@ -26,21 +26,6 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 
 impl ShellState {
-    pub(in crate::app_shell) fn settings_view(&self) -> SettingsView {
-        SettingsView {
-            model: self.model.clone(),
-            reasoning_effort: self.reasoning_effort.clone(),
-            service_tier: self.service_tier.clone(),
-            approval_policy: self.approval_policy,
-            app_theme: self.app_theme,
-            theme: self.tui_theme.clone(),
-            animations: self.animations,
-            show_tooltips: self.show_tooltips,
-            mcp_inventory: self.mcp_inventory.clone(),
-            plugin_inventory: self.plugin_inventory.clone(),
-        }
-    }
-
     pub(in crate::app_shell) async fn handle_settings_key<S>(
         &mut self,
         key: KeyEvent,
@@ -82,20 +67,12 @@ impl ShellState {
                 self.settings.move_down();
                 Ok(true)
             }
-            KeyCode::Tab | KeyCode::Right => {
-                self.settings.next_page();
+            KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+                self.settings.step_section(DashboardRouteStep::Next);
                 Ok(true)
             }
-            KeyCode::Char('l') => {
-                self.settings.next_page();
-                Ok(true)
-            }
-            KeyCode::BackTab | KeyCode::Left => {
-                self.settings.previous_page();
-                Ok(true)
-            }
-            KeyCode::Char('h') => {
-                self.settings.previous_page();
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h') => {
+                self.settings.step_section(DashboardRouteStep::Previous);
                 Ok(true)
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
@@ -146,8 +123,8 @@ impl ShellState {
                 self.settings.cancel_edit();
             }
             KeyCode::Enter => {
-                if let Some((action, draft)) = self.settings.edit_value() {
-                    self.apply_settings_edit(action, draft, app_server)?;
+                if let Some(draft) = self.settings.edit_value() {
+                    self.apply_theme_edit(draft, app_server);
                 }
             }
             KeyCode::Char(ch)
@@ -193,15 +170,11 @@ impl ShellState {
     {
         let action = self.settings.selected_action();
         match action {
-            SettingsAction::Model => self.open_model_selector(),
-            SettingsAction::ServiceTier => self.open_service_tier_selector(),
-            SettingsAction::AppTheme => self.open_app_theme_selector(),
+            SettingsAction::AppTheme(theme) => self.apply_app_theme(theme, app_server),
             SettingsAction::Theme => {
-                self.settings
-                    .start_edit(action, self.tui_theme.clone().unwrap_or_default());
+                self.settings.start_theme_edit(self.tui_theme.clone().unwrap_or_default());
             }
-            SettingsAction::ReasoningEffort => self.open_reasoning_selector(),
-            SettingsAction::ApprovalPolicy => self.open_approval_selector(),
+            SettingsAction::ApprovalPolicy(policy) => self.apply_approval_policy(policy, app_server)?,
             SettingsAction::Animations => {
                 let animations = !self.animations;
                 self.schedule_settings_update(
@@ -244,64 +217,17 @@ impl ShellState {
         Ok(())
     }
 
-    fn apply_settings_edit<S>(
-        &mut self,
-        action: SettingsAction,
-        draft: String,
-        app_server: &mut S,
-    ) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
-        match action {
-            SettingsAction::Model => {
-                if draft.is_empty() {
-                    self.settings.set_error("model cannot be empty");
-                    return Ok(());
-                }
-                if draft.chars().any(char::is_whitespace) {
-                    self.settings.set_error("model cannot contain whitespace");
-                    return Ok(());
-                }
-                self.apply_model(draft, app_server);
-            }
-            SettingsAction::ServiceTier => {
-                if draft.chars().any(char::is_whitespace) {
-                    self.settings
-                        .set_error("service tier cannot contain whitespace");
-                    return Ok(());
-                }
-                let service_tier = (!draft.is_empty()).then_some(draft);
-                self.apply_service_tier(service_tier, app_server);
-            }
-            SettingsAction::Theme => {
-                let theme = (!draft.is_empty()).then_some(draft);
-                if let Some(warning) =
-                    validate_theme_name(theme.as_deref(), Some(self.codex_home.as_path()))
-                {
-                    self.settings.set_error(warning);
-                    return Ok(());
-                }
-                let edit = match theme.as_deref() {
-                    Some(theme) => build_syntax_theme_edit(theme),
-                    None => clear_config_value("tui.theme"),
-                };
-                self.schedule_settings_update(
-                    app_server,
-                    SettingsChange::Theme(theme),
-                    vec![edit],
-                    None,
-                );
-            }
-            SettingsAction::ReasoningEffort
-            | SettingsAction::ApprovalPolicy
-            | SettingsAction::AppTheme
-            | SettingsAction::Animations
-            | SettingsAction::Tooltips
-            | SettingsAction::McpServers
-            | SettingsAction::Plugins => {}
+    fn apply_theme_edit<S: AppShellBackend>(&mut self, draft: String, app_server: &S) {
+        let theme = (!draft.is_empty()).then_some(draft);
+        if let Some(warning) = validate_theme_name(theme.as_deref(), Some(self.codex_home.as_path())) {
+            self.settings.set_error(warning);
+            return;
         }
-        Ok(())
+        let edit = match theme.as_deref() {
+            Some(theme) => build_syntax_theme_edit(theme),
+            None => clear_config_value("tui.theme"),
+        };
+        self.schedule_settings_update(app_server, SettingsChange::Theme(theme), vec![edit], None);
     }
 
     pub(in crate::app_shell) fn apply_model<S>(&mut self, model: String, app_server: &mut S)
@@ -370,7 +296,7 @@ impl ShellState {
         );
     }
 
-    pub(in crate::app_shell) fn apply_app_theme<S>(
+    fn apply_app_theme<S>(
         &mut self,
         app_theme: crate::app_theme::TuiAppTheme,
         app_server: &mut S,

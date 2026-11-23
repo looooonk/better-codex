@@ -183,7 +183,7 @@ async fn a_late_catalog_does_not_replace_a_newer_selector() {
     let mut shell = ShellState::snapshot_fixture();
     shell.codex_home = home.path().to_path_buf();
     shell.run_pets_command("");
-    shell.open_model_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Model);
     let selector = shell.selector.clone();
     finish(&mut shell).await;
     assert_eq!(shell.selector, selector);

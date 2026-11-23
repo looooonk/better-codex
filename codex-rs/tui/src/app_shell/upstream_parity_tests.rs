@@ -16,7 +16,7 @@ fn tier_selector_respects_independent_feature_gates() {
     shell
         .service_tier_features
         .disable(codex_features::Feature::FastMode);
-    shell.open_service_tier_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::ServiceTier);
     assert_eq!(
         shell.selector,
         Some(selector::SelectorState::service_tiers(
@@ -32,7 +32,7 @@ fn tier_selector_respects_independent_feature_gates() {
     shell
         .service_tier_features
         .disable(codex_features::Feature::UltrafastMode);
-    shell.open_service_tier_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::ServiceTier);
     assert_eq!(
         shell.selector,
         Some(selector::SelectorState::service_tiers(
@@ -174,7 +174,7 @@ fn sol_catalog_supports_current_model_and_reasoning_controls() {
         .into_iter()
         .map(Into::into)
         .collect();
-    shell.open_model_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Model);
     insta::assert_snapshot!(
         "sol_model_selector",
         render_shell(&shell, Rect::new(0, 0, 100, 30))
@@ -581,7 +581,7 @@ async fn config_command_focuses_native_settings() {
         .unwrap();
     assert_eq!(
         (shell.dashboard_route, shell.settings.focused),
-        (DashboardRoute::Status, true)
+        (DashboardRoute::Settings, true)
     );
     insta::assert_snapshot!(
         "config_command",

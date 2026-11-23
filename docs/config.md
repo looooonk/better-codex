@@ -1,7 +1,11 @@
 # Configuration
 
-Use Better Codex's settings views for options exposed by the TUI. Advanced and
-backend options live in the retained Codex configuration model, normally in
+Open the dashboard’s Settings tab with F4 or `/config` to change permissions,
+appearance, and integrations. Use `/theme` to jump directly to the current app
+theme. The message pane has controls for model, reasoning effort, service tier,
+and permissions.
+
+Advanced and backend options live in the retained Codex configuration model, normally in
 `$CODEX_HOME/config.toml` or `~/.codex/config.toml` when `CODEX_HOME` is not
 set.
 

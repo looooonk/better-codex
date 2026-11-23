@@ -29,7 +29,6 @@ async fn native_untrusted_policy_is_session_only_and_keeps_saved_defaults() -> R
     use codex_config::LoaderOverrides;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
-    use ratatui::widgets::Widget;
 
     let home = tempfile::tempdir()?;
     let path = home.path().join("config.toml");
@@ -82,7 +81,7 @@ async fn native_untrusted_policy_is_session_only_and_keeps_saved_defaults() -> R
         )
     );
     shell.dashboard_visible = false;
-    shell.open_approval_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Permissions);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 110, /*height*/ 28,
     );

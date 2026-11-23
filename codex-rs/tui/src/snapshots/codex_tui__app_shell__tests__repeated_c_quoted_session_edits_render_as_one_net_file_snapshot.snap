@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
   ╭ Session edits ───────────────────────────────────────────────────────────────────────────────╮─
  ▎│ CHANGED FILES         │OLD FILE                          │NEW FILE                           │
   │                       │src/tab\tname.rs                  │src/tab\tname.rs                   │

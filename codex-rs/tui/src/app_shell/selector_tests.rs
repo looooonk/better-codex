@@ -1,5 +1,4 @@
 use super::*;
-use crate::app_theme::TuiAppTheme;
 use pretty_assertions::assert_eq;
 
 fn option(index: usize) -> SelectorOption<usize> {
@@ -48,21 +47,6 @@ fn reasoning_default_is_an_explicit_typed_choice() {
         &state.options[1].value,
         &SelectorValue::ReasoningEffort(ReasoningEffortValue::Explicit(ReasoningEffort::High))
     );
-}
-
-#[test]
-fn app_theme_selector_renders_all_themes_and_marks_the_current_one() {
-    let state = SelectorState::app_themes(TuiAppTheme::CatppuccinMocha);
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 20,
-    );
-    let geometry = selector_geometry(area, &state.options, state.selected);
-    let mut buffer = Buffer::empty(area);
-
-    state.render(area, /*pointer*/ None, &mut buffer);
-
-    assert_eq!(state.selected, 2);
-    insta::assert_snapshot!(buffer_text(&buffer, geometry.modal));
 }
 
 #[test]
@@ -331,50 +315,4 @@ fn models_sort_by_numeric_generation_preserving_names_and_same_generation_order(
     });
     assert_eq!(state.options, expected);
     assert_eq!(state.selected, 0);
-}
-
-#[test]
-fn model_descriptions_wrap_and_remain_clickable_when_scrolling_and_resizing() {
-    let models = codex_models_manager::bundled_models_response()
-        .unwrap()
-        .models
-        .into_iter()
-        .map(Into::into)
-        .collect::<Vec<_>>();
-    let mut state = SelectorState::models("gpt-6.1-terra", &models);
-    for (width, height) in [(80, 26), (56, 26), (40, 26), (40, 11)] {
-        let area = Rect::new(/*x*/ 0, /*y*/ 0, width, height);
-        for index in 0..state.options.len() {
-            state.set_selected(index);
-            let geometry = selector_geometry(area, &state.options, state.selected);
-            let row = geometry.rows.iter().find(|(i, _)| *i == index).unwrap().1;
-            let mut buf = Buffer::empty(area);
-            state.render(area, /*pointer*/ None, &mut buf);
-            let detail = buffer_text(
-                &buf,
-                Rect {
-                    y: row.y + 1,
-                    height: row.height - 1,
-                    ..row
-                },
-            );
-            assert_eq!(
-                detail.split_whitespace().collect::<Vec<_>>().join(" "),
-                state.options[index].detail
-            );
-            for y in row.y..row.bottom() {
-                assert_eq!(state.option_at(area, Position::new(row.x, y)), Some(index));
-            }
-        }
-        for key_code in [KeyCode::Home, KeyCode::End] {
-            state.handle_key(key(key_code));
-            let mut buf = Buffer::empty(area);
-            state.render(area, /*pointer*/ None, &mut buf);
-            let geometry = selector_geometry(area, &state.options, state.selected);
-            insta::assert_snapshot!(
-                format!("wrapped_models_{width}_{height}_{key_code:?}"),
-                buffer_text(&buf, geometry.modal)
-            );
-        }
-    }
 }

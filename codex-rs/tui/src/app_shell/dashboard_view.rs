@@ -8,7 +8,6 @@ use super::design::palette;
 use super::design::pane_content_rect;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
-use super::settings::SettingsTabs;
 use super::shell_layout::DashboardPlacement;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
@@ -22,7 +21,6 @@ const SIDEBAR_PANEL_GAP: u16 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct DashboardPanelPosition {
     pub(super) line: usize,
-    pub(super) column: usize,
     pub(super) width: usize,
 }
 
@@ -52,23 +50,8 @@ struct DashboardView {
 impl DashboardView {
     fn new(shell: &ShellState, placement: DashboardPlacement) -> Self {
         let area = placement.area();
-        let mut content = pane_content_rect(area);
-        let panels = dashboard_panels(
-            shell,
-            usize::from(content.width),
-            usize::from(content.height),
-        );
-        if shell.dashboard_route == DashboardRoute::Help {
-            let help_height = panels
-                .iter()
-                .take(2)
-                .map(DashboardPanel::height)
-                .fold(0_u16, u16::saturating_add);
-            if content.height < help_height && help_height <= area.height {
-                content.y = area.y;
-                content.height = area.height;
-            }
-        }
+        let content = pane_content_rect(area);
+        let panels = dashboard_panels(shell, usize::from(content.width));
         let navigation_height = panels
             .first()
             .map(DashboardPanel::height)
@@ -100,7 +83,18 @@ impl DashboardView {
             }
         }
         let max_scroll = top.saturating_sub(usize::from(body.height));
-        let scroll = shell.dashboard_scroll.get().min(max_scroll);
+        let mut scroll = shell.dashboard_scroll.get().min(max_scroll);
+        if shell.dashboard_route == DashboardRoute::Settings
+            && shell.settings.focused
+            && shell.settings.reveal_selection.replace(false)
+            && let Some(settings) = body_panels.first()
+        {
+            let rows = shell.settings.selected_line_range();
+            let first = settings.top + rows.start();
+            let last = settings.top + rows.end();
+            let earliest = (last + 1).saturating_sub(usize::from(body.height));
+            scroll = scroll.max(earliest).min(first).min(max_scroll);
+        }
         shell.dashboard_scroll.set(scroll);
         Self {
             panels,
@@ -172,7 +166,6 @@ impl DashboardView {
         }
         Some(DashboardPanelPosition {
             line: panel_row.saturating_sub(title_height),
-            column: usize::from(position.x.saturating_sub(text_x)),
             width: usize::from(
                 self.body
                     .width
@@ -312,39 +305,15 @@ fn render_hover(
     if !text_area.contains(pointer) {
         return;
     }
-    if panel.title == "Settings" && matches!(panel_row, 1 | 2) {
-        let tabs = SettingsTabs::new(usize::from(text_area.width));
-        let column = usize::from(pointer.x.saturating_sub(text_area.x));
-        let Some(page) = tabs.page_at(column) else {
-            return;
-        };
-        let Some(columns) = tabs.column_range(page) else {
-            return;
-        };
-        let x = text_area
-            .x
-            .saturating_add(u16::try_from(columns.start).unwrap_or(u16::MAX));
-        let width = u16::try_from(columns.end.saturating_sub(columns.start)).unwrap_or(u16::MAX);
-        if let Some(y) = visible_row(slice, /*row*/ 1) {
-            buf.set_style(
-                Rect::new(x, y, width, 1),
-                Style::new().bg(palette::border()),
-            );
-        }
-        if let Some(y) = visible_row(slice, /*row*/ 2) {
-            buf.set_style(Rect::new(x, y, width, 1), Style::new().fg(palette::focus()));
-        }
-        return;
-    }
     let interactive = match (shell.dashboard_route, panel.title.as_str()) {
         (DashboardRoute::Sessions, "Sessions")
         | (DashboardRoute::Agents, "Agents")
-        | (DashboardRoute::Status, "Settings") => true,
+        | (DashboardRoute::Settings, "Settings") => true,
         (DashboardRoute::Status, "Edits") => shell.diff_store.has_session_edits(),
         (DashboardRoute::Sessions, _)
         | (DashboardRoute::Agents, _)
         | (DashboardRoute::Status, _)
-        | (DashboardRoute::Help, _) => false,
+        | (DashboardRoute::Settings, _) => false,
     };
     if panel.title == "Agents" && panel_row > 0 {
         let overview_height =
@@ -361,10 +330,7 @@ fn render_hover(
         }
     }
     let interactive_row = match panel.title.as_str() {
-        "Settings" => panel_row
-            .checked_sub(1)
-            .and_then(|line| shell.settings.action_index_at_line(line))
-            .is_some(),
+        "Settings" => shell.settings.action_at_line(panel_row).is_some(),
         _ => panel_row > 0,
     };
     if interactive && interactive_row {

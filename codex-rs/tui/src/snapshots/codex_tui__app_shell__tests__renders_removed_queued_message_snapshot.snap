@@ -3,29 +3,29 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │────────────────────────────────────━━━━━━━━━━━━
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │◆ PERMISSIONS
+ ▎ PLAN  1. Build shell                           │  ● ⓘ Ask for approval
+         2. Wire transcript                       │  ○ ⛨ Unless trusted
+         3. Render dashboard                      │  ○ ⚠ Full access
                                                   │
- ▎ CODEX  Started a fullscreen app shell backed   │◆ CONVERSATION         │ ◆ COMPOSER
-          by app-server turns.                    │ ↵ / c       Copy item │  ⌘← / →      Line ends
- ▎ PLAN  1. Build shell                           │ e           Branch    │  ⌘⌫          Delete st…
-         2. Wire transcript                       │ ^O/⌥1-9     Copy reply│  ⌥/^ + ←→    Move word
-         3. Render dashboard                      │                       │  S/A + ↵     Newline
-                                                  │◆ DASHBOARD            │  Alt+M       Model
- ▌ tool exec just test -p codex-tui               │ F1 … F4     Open tab  │  Alt+E       Effort
-                                                  │ Alt+← / →   Prev/next │  Alt+↑ / ↓   Edit queue
- ▌ edited 3 files +128 -24                        │ Pg↑ / Pg↓   Scroll he…│
-                                                  │ ⇧Alt+←/→    Resize    │ ◆ APP
- ▎ CODEX  The new shell owns the fullscreen       │                       │  ^P          Commands
-          surface.                                │◆ SESSIONS             │  ^D          Show/hide
-                                                  │ ↑↓ / jk     Select    │  ^C          Stop/canc…
-                                                  │ ↵ / r       Resume    │  Esc ×2      Exit app
-                                                  │ f           Fork      │  ^N          New chat
-                                                  │ a           Archive   │
-                                                  │ u           Unarchive │ ◆ AGENTS
-                                                  │ v           Switch vi…│  ↵           Focus/log
-                                                  │ n           Rename    │  ↑↓ / jk     Select
-                                                  │ /           Search    │  g / G       First/last
-                                                  │ d           Delete    │  r           Reload log
+ ▌ tool exec just test -p codex-tui               │◆ APPEARANCE
+                                                  │  ● Tokyo Night
+ ▌ edited 3 files +128 -24                        │  ○ Gruvbox Dark
+                                                  │  ○ Catppuccin Mocha
+ ▎ CODEX  The new shell owns the fullscreen       │  ○ Monochrome
+          surface.                                │  Syntax theme: default
+                                                  │  Animations: on
+                                                  │  Tooltips: on
+                                                  │
+                                                  │◆ INTEGRATIONS
+                                                  │  MCP servers: not loaded
+                                                  │  Plugins: not loaded
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

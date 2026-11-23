@@ -186,7 +186,7 @@ fn configured_hints_and_keymap_picker_snapshot() {
     shell.keybindings = configured(
         "[composer]\nsubmit = 'f18'\nqueue = []\n[editor]\ninsert_newline = 'f19'\n[list]\naccept = 'f20'",
     );
-    shell.dashboard_route = crate::app_shell::navigation::DashboardRoute::Help;
+    shell.dashboard_route = crate::app_shell::navigation::DashboardRoute::Settings;
     shell.composer.clear();
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 110, /*height*/ 28,

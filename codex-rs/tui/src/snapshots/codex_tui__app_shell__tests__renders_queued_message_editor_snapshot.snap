@@ -3,31 +3,31 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │────────────────────────────────────━━━━━━━━━━━━
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │◆ PERMISSIONS
+ ▎ PLAN  1. Build shell                           │  ● ⓘ Ask for approval
+         2. Wire transcript                       │  ○ ⛨ Unless trusted
+         3. Render dashboard                      │  ○ ⚠ Full access
                                                   │
- ▎ CODEX  Started a fullscreen app shell backed   │◆ CONVERSATION         │ ◆ COMPOSER
-          by app-server turns.                    │ ↵ / c       Copy item │  ⌘← / →      Line ends
- ▎ PLAN  1. Build shell                           │ e           Branch    │  ⌘⌫          Delete st…
-         2. Wire transcript                       │ ^O/⌥1-9     Copy reply│  ⌥/^ + ←→    Move word
-         3. Render dashboard                      │                       │  S/A + ↵     Newline
-                                                  │◆ DASHBOARD            │  Alt+M       Model
- ▌ tool exec just test -p codex-tui               │ F1 … F4     Open tab  │  Alt+E       Effort
-                                                  │ Alt+← / →   Prev/next │  ↵ / Tab     Save edit
- ▌ edited 3 files +128 -24                        │ Pg↑ / Pg↓   Scroll he…│  Alt+↑ / ↓   Edit queue
-                                                  │ ⇧Alt+←/→    Resize    │  ⇧Alt+↑/↓    Reorder
- ▎ CODEX  The new shell owns the fullscreen       │                       │
-          surface.                                │◆ SESSIONS             │ ◆ APP
-                                                  │ ↑↓ / jk     Select    │  ^P          Commands
-                                                  │ ↵ / r       Resume    │  ^D          Show/hide
-                                                  │ f           Fork      │  ^C          Stop/canc…
-                                                  │ a           Archive   │  Esc ×2      Exit app
-                                                  │ u           Unarchive │  ^N          New chat
-                                                  │ v           Switch vi…│
-                                                  │ n           Rename    │ ◆ AGENTS
-                                                  │ /           Search    │  ↵           Focus/log
-                                                  │ d           Delete    │  ↑↓ / jk     Select
-                                                  │                       │  g / G       First/last
-                                                  │                       │  r           Reload log
+ ▌ tool exec just test -p codex-tui               │◆ APPEARANCE
+                                                  │  ● Tokyo Night
+ ▌ edited 3 files +128 -24                        │  ○ Gruvbox Dark
+                                                  │  ○ Catppuccin Mocha
+ ▎ CODEX  The new shell owns the fullscreen       │  ○ Monochrome
+          surface.                                │  Syntax theme: default
+                                                  │  Animations: on
+                                                  │  Tooltips: on
+                                                  │
+                                                  │◆ INTEGRATIONS
+                                                  │  MCP servers: not loaded
+                                                  │  Plugins: not loaded
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

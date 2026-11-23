@@ -119,9 +119,9 @@ fn hiding_the_dashboard_reclaims_the_full_width_layout() {
 }
 
 #[test]
-fn compact_help_preserves_the_overlay_height() {
+fn compact_settings_preserves_the_overlay_height() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Help;
+    shell.dashboard_route = DashboardRoute::Settings;
 
     assert_eq!(
         calculate(

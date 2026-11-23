@@ -2,9 +2,7 @@ use super::composer_toolbar::ComposerControl;
 use super::composer_toolbar::permission_caption;
 use super::composer_toolbar::service_tier_caption;
 use super::design::palette;
-use super::settings::app_theme_label;
 use super::settings::reasoning_effort_label;
-use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::AskForApproval;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ModelPreset;
@@ -59,7 +57,6 @@ pub(super) enum SelectorValue {
     ReasoningEffort(ReasoningEffortValue),
     ServiceTier(ServiceTierValue),
     ApprovalPolicy(AskForApproval),
-    AppTheme(TuiAppTheme),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +113,7 @@ pub(super) struct SelectorState<T> {
     options: Vec<SelectorOption<T>>,
     selected: usize,
     key_hints: Option<String>,
+    pub(super) save_error: Option<String>,
     presentation: Presentation,
 }
 
@@ -130,11 +128,12 @@ impl<T> SelectorState<T> {
             options,
             selected,
             key_hints: None,
+            save_error: None,
             presentation: Presentation::Modal,
         }
     }
 
-    pub(super) fn anchored_menu(mut self, control: ComposerControl) -> Self {
+    fn anchored_menu(mut self, control: ComposerControl) -> Self {
         self.presentation = Presentation::Menu(control);
         self
     }
@@ -313,7 +312,7 @@ impl SelectorState<SelectorValue> {
                 .current(true),
             );
         }
-        Self::new("Select model", options)
+        Self::new("Select model", options).anchored_menu(ComposerControl::Model)
     }
 
     pub(super) fn reasoning_efforts(current: &ReasoningEffortValue, model: &ModelPreset) -> Self {
@@ -366,7 +365,7 @@ impl SelectorState<SelectorValue> {
             )
             .current(is_current)
         }));
-        Self::new("Select service tier", options)
+        Self::new("Select service tier", options).anchored_menu(ComposerControl::ServiceTier)
     }
 
     pub(super) fn approval_policies(current: AskForApproval) -> Self {
@@ -403,41 +402,9 @@ impl SelectorState<SelectorValue> {
                 option
             })
             .collect();
-        Self::new("Select approval policy", options)
+        Self::new("Select approval policy", options).anchored_menu(ComposerControl::Permissions)
     }
 
-    pub(super) fn app_themes(current: TuiAppTheme) -> Self {
-        let themes = [
-            (
-                TuiAppTheme::TokyoNight,
-                "Better Codex's default cool blue and purple palette.",
-            ),
-            (
-                TuiAppTheme::GruvboxDark,
-                "A warm, retro palette with earthy contrast.",
-            ),
-            (
-                TuiAppTheme::CatppuccinMocha,
-                "A soft pastel palette on a dark base.",
-            ),
-            (
-                TuiAppTheme::Monochrome,
-                "A high-contrast grayscale palette with no color.",
-            ),
-        ];
-        let options = themes
-            .into_iter()
-            .map(|(theme, detail)| {
-                SelectorOption::new(
-                    SelectorValue::AppTheme(theme),
-                    app_theme_label(theme),
-                    detail,
-                )
-                .current(theme == current)
-            })
-            .collect();
-        Self::new("Select app theme", options)
-    }
 }
 
 #[cfg(test)]

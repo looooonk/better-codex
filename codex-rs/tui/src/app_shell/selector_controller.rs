@@ -27,11 +27,6 @@ impl ShellState {
                 selector
             }
         };
-        self.open_selector(selector.anchored_menu(control));
-    }
-
-    pub(super) fn open_model_selector(&mut self) {
-        let selector = SelectorState::models(&self.model, &self.available_models);
         self.open_selector(selector);
     }
 
@@ -41,8 +36,7 @@ impl ShellState {
             .iter()
             .find(|preset| preset.model == self.model)
         else {
-            self.settings
-                .set_error(format!("model metadata unavailable for `{}`", self.model));
+            self.push_error(format!("model metadata unavailable for `{}`", self.model));
             return;
         };
         let current = self.reasoning_effort.clone().map_or(
@@ -53,20 +47,13 @@ impl ShellState {
         self.open_selector(selector);
     }
 
-    pub(super) fn open_service_tier_selector(&mut self) {
-        if let Some(selector) = self.service_tier_selector() {
-            self.open_selector(selector);
-        }
-    }
-
     fn service_tier_selector(&mut self) -> Option<SelectorState<SelectorValue>> {
         let Some(preset) = self
             .available_models
             .iter()
             .find(|preset| preset.model == self.model)
         else {
-            self.settings
-                .set_error(format!("model metadata unavailable for `{}`", self.model));
+            self.push_error(format!("model metadata unavailable for `{}`", self.model));
             return None;
         };
         let current = match self.service_tier.as_deref() {
@@ -80,14 +67,6 @@ impl ShellState {
             .cloned()
             .collect::<Vec<_>>();
         Some(SelectorState::service_tiers(&current, &tiers))
-    }
-
-    pub(super) fn open_approval_selector(&mut self) {
-        self.open_selector(SelectorState::approval_policies(self.approval_policy));
-    }
-
-    pub(super) fn open_app_theme_selector(&mut self) {
-        self.open_selector(SelectorState::app_themes(self.app_theme));
     }
 
     pub(super) async fn handle_selector_key<S>(
@@ -231,9 +210,6 @@ impl ShellState {
                 self.selector = None;
                 self.composer.set_text(format!("/keymap {action} "));
                 self.push_status("Enter a key, two-key chord, JSON array, unbind, or default");
-            }
-            SelectorValue::AppTheme(app_theme) => {
-                self.apply_app_theme(app_theme, app_server);
             }
         }
         Ok(())

@@ -3,8 +3,8 @@ source: tui/src/app_shell/pets_tests.rs
 expression: rendered
 ---
                                        │
- ▎ YOU  Create a divergent standalone T│   Status   │  Agents   │  Sessions   │  Help
-                                       │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone T│  Status   │  Agents  │  Sessions  │  Settings
+                                       │───────────────────────━━━━━━━━━━━━─────────────
  ▎ CODEX  Started a fullscreen app shel│▎◆ SESSIONS
  ▎ PLAN  1. Build shell                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
          2. Wire transcript            │▎+ New session  Ctrl+N

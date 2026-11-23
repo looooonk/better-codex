@@ -25,7 +25,6 @@ use std::collections::VecDeque;
 pub(super) struct DashboardPanel {
     pub(super) title: String,
     pub(super) lines: Vec<Line<'static>>,
-    title_hint: Option<String>,
     pub(super) show_title: bool,
 }
 
@@ -45,7 +44,6 @@ enum DashboardPanelKind {
     Tools,
     Agents,
     Workspace,
-    Keys,
 }
 
 impl DashboardPanel {
@@ -53,21 +51,17 @@ impl DashboardPanel {
         Self {
             title: title.into(),
             lines,
-            title_hint: None,
             show_title: true,
         }
     }
 
     pub(super) fn title_line(&self) -> Line<'static> {
-        let mut spans = vec![
+        let spans = vec![
             "◆ ".set_style(ratatui::style::Style::new().fg(palette::focus())),
             self.title
                 .to_uppercase()
                 .set_style(ratatui::style::Style::new().fg(palette::muted()).bold()),
         ];
-        if let Some(hint) = &self.title_hint {
-            spans.extend(["  ".into(), hint.clone().dim()]);
-        }
         Line::from(spans)
     }
 
@@ -93,11 +87,10 @@ impl DashboardPanel {
 pub(super) fn dashboard_panels(
     shell: &ShellState,
     width: usize,
-    height: usize,
 ) -> Vec<DashboardPanel> {
     dashboard_panel_kinds(shell.dashboard_route)
         .iter()
-        .filter_map(|kind| dashboard_panel(shell, width, height, *kind))
+        .filter_map(|kind| dashboard_panel(shell, width, *kind))
         .collect()
 }
 
@@ -139,7 +132,6 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
         ],
         DashboardRoute::Status => &[
             DashboardPanelKind::Navigation,
-            DashboardPanelKind::Settings,
             DashboardPanelKind::Goal,
             DashboardPanelKind::Plan,
             DashboardPanelKind::Tools,
@@ -147,41 +139,29 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
             DashboardPanelKind::Workspace,
             DashboardPanelKind::Tokens,
             DashboardPanelKind::RateLimits,
-        ],
-        DashboardRoute::Help => &[
-            DashboardPanelKind::Navigation,
-            DashboardPanelKind::Keys,
-            DashboardPanelKind::Approvals,
             DashboardPanelKind::Background,
         ],
+        DashboardRoute::Settings => &[DashboardPanelKind::Navigation, DashboardPanelKind::Settings],
     }
 }
 
 fn dashboard_panel(
     shell: &ShellState,
     width: usize,
-    height: usize,
     kind: DashboardPanelKind,
 ) -> Option<DashboardPanel> {
     let content_width = width.saturating_sub(1);
     match kind {
-        DashboardPanelKind::Navigation => {
-            let mut panel = dashboard_navigation_panel(shell.dashboard_route, width);
-            if shell.dashboard_route == DashboardRoute::Help
-                && super::dashboard_help::uses_dense_layout(width)
-            {
-                panel.lines.truncate(1);
-            }
-            Some(panel)
-        }
+        DashboardPanelKind::Navigation => Some(dashboard_navigation_panel(shell.dashboard_route, width)),
         DashboardPanelKind::Sessions => Some(DashboardPanel::new(
             "Sessions",
             shell.session_list.lines(content_width),
         )),
-        DashboardPanelKind::Settings => Some(DashboardPanel::new(
-            "Settings",
-            shell.settings.lines(&shell.settings_view(), content_width),
-        )),
+        DashboardPanelKind::Settings => {
+            let mut panel = DashboardPanel::new("Settings", shell.settings.lines(shell, width));
+            panel.show_title = false;
+            Some(panel)
+        }
         DashboardPanelKind::Thread => {
             let thread_label = shell.thread_name.as_deref().unwrap_or("untitled thread");
             Some(DashboardPanel::new(
@@ -362,17 +342,6 @@ fn dashboard_panel(
             "Workspace",
             workspace_lines(shell, content_width),
         )),
-        DashboardPanelKind::Keys => {
-            let dense = super::dashboard_help::uses_dense_layout(width);
-            let mut panel = DashboardPanel::new(
-                "Keys",
-                super::dashboard_help::key_hint_lines(shell, width, height),
-            );
-            if dense {
-                panel.show_title = false;
-            }
-            Some(panel)
-        }
     }
 }
 
@@ -381,7 +350,6 @@ fn dashboard_navigation_panel(active_route: DashboardRoute, width: usize) -> Das
     DashboardPanel {
         title: "Navigation".to_string(),
         lines: DashboardTabs::new(width).lines(active_route).into(),
-        title_hint: None,
         show_title: false,
     }
 }

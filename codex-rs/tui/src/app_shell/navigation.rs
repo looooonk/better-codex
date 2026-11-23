@@ -14,18 +14,18 @@ pub(super) enum DashboardRoute {
     Status,
     Agents,
     Sessions,
-    Help,
+    Settings,
 }
 
 impl DashboardRoute {
-    pub(super) const ALL: [Self; 4] = [Self::Status, Self::Agents, Self::Sessions, Self::Help];
+    pub(super) const ALL: [Self; 4] = [Self::Status, Self::Agents, Self::Sessions, Self::Settings];
 
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Sessions => "Sessions",
             Self::Agents => "Agents",
             Self::Status => "Status",
-            Self::Help => "Help",
+            Self::Settings => "Settings",
         }
     }
 
@@ -34,7 +34,7 @@ impl DashboardRoute {
             Self::Sessions => "Threads",
             Self::Agents => "Agents",
             Self::Status => "Status",
-            Self::Help => "Help",
+            Self::Settings => "Settings",
         }
     }
 
@@ -173,7 +173,7 @@ impl DashboardTabs {
 
 impl DashboardTabCell {
     fn separator_width(self) -> u16 {
-        u16::from(self.route != DashboardRoute::Help && self.width > 1)
+        u16::from(self.route != DashboardRoute::Settings && self.width > 1)
     }
 
     fn content_width(self) -> u16 {
@@ -217,7 +217,7 @@ mod tests {
             (None, 1),
             (Some(DashboardRoute::Sessions), 7),
             (None, 1),
-            (Some(DashboardRoute::Help), 8),
+            (Some(DashboardRoute::Settings), 8),
         ]
         .into_iter()
         .flat_map(|(route, width)| std::iter::repeat_n(route, width))
@@ -236,7 +236,7 @@ mod tests {
 
         assert_eq!(
             DashboardRoute::ALL.map(|route| tabs.column_range(route)),
-            [Some(0..9), Some(10..18), Some(19..29), Some(30..36)]
+            [Some(0..8), Some(9..16), Some(17..26), Some(27..36)]
         );
     }
 
@@ -256,6 +256,6 @@ mod tests {
             .map(|span| span.content.into_owned())
             .collect::<String>();
 
-        assert_eq!(line, "  Status   │  Agents   │  Sessions   │  Help  ");
+        assert_eq!(line, "  Status  │  Agents  │  Sessions  │ Settings  ");
     }
 }

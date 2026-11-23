@@ -83,7 +83,6 @@ mod composer_render;
 mod composer_toolbar;
 mod daemon;
 mod dashboard;
-mod dashboard_help;
 mod dashboard_rate_limits;
 mod dashboard_resize;
 mod dashboard_view;
@@ -236,6 +235,7 @@ use selector::SelectorValue;
 use session_delete::PendingSessionDelete;
 use session_hydration::SessionHydrationState;
 use sessions::SessionListState;
+#[cfg(test)]
 use settings::SettingsAction;
 use settings::SettingsState;
 use shell_command::PendingShellCommand;
@@ -3129,7 +3129,7 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
         return Some(DashboardRoute::Sessions);
     }
     if key_hint::plain(KeyCode::F(4)).is_press(key) {
-        return Some(DashboardRoute::Help);
+        return Some(DashboardRoute::Settings);
     }
 
     None

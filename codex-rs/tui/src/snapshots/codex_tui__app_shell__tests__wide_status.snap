@@ -3,32 +3,32 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
 ---
                                                               │
- ▎ YOU  Create a divergent standalone TUI.                    │   Status   │  Agents   │  Sessions   │  Help
-                                                              │━━━━━━━━━━━━────────────────────────────────────
+ ▎ YOU  Create a divergent standalone TUI.                    │  Status   │  Agents  │  Sessions  │  Settings
+                                                              │────────────────────────────────────━━━━━━━━━━━━
  ▎ CODEX  Started a fullscreen app shell backed by app-server │
-          turns.                                              │▎◆ SETTINGS
- ▎ PLAN  1. Build shell                                       │▎Model │ Permissions │ Appearance │Integrations
-         2. Wire transcript                                   │▎━━━━━━─────────────────────────────────────────
-         3. Render dashboard                                  │▎› Model: gpt-5-codex
-                                                              │▎  Reasoning: default
- ▌ tool exec just test -p codex-tui                           │▎  Service tier: default
-                                                              │▎
- ▌ edited 3 files +128 -24                                    │
-                                                              │▎◆ PLAN
- ▎ CODEX  The new shell owns the fullscreen surface.          │▎Build the standalone shell in slices.
-                                                              │▎x Shell frame
-                                                              │▎> Transcript model
-                                                              │▎- Approvals
+          turns.                                              │◆ PERMISSIONS
+ ▎ PLAN  1. Build shell                                       │› ● ⓘ Ask for approval
+         2. Wire transcript                                   │  ○ ⛨ Unless trusted
+         3. Render dashboard                                  │  ○ ⚠ Full access
                                                               │
-                                                              │▎◆ TOOLS
-                                                              │▎in progress exec just test -p codex-tui
+ ▌ tool exec just test -p codex-tui                           │◆ APPEARANCE
+                                                              │  ● Tokyo Night
+ ▌ edited 3 files +128 -24                                    │  ○ Gruvbox Dark
+                                                              │  ○ Catppuccin Mocha
+ ▎ CODEX  The new shell owns the fullscreen surface.          │  ○ Monochrome
+                                                              │  Syntax theme: default
+                                                              │  Animations: on
+                                                              │  Tooltips: on
                                                               │
-                                                              │▎◆ EDITS
-                                                              │▎3 files +128 -24
+                                                              │◆ INTEGRATIONS
+                                                              │  MCP servers: not loaded
+                                                              │  Plugins: not loaded
                                                               │
-╭────────────────────────────────────────────────────────────╮│▎◆ WORKSPACE
-│> Summarize the new shell architecture                      ││▎profile managed
-│                                                            ││▎cwd /workspace/better-codex
-│                                                            ││▎files restricted, net restricted
-│ ⓘ Ask for approval ▾   gpt-5-… ▾   Default ▾   ◷ Default ▾ ││▎roots none selected
+                                                              │
+                                                              │
+╭────────────────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture                      ││
+│                                                            ││
+│                                                            ││
+│ ⓘ Ask for approval ▾   gpt-5-… ▾   Default ▾   ◷ Default ▾ ││
 ╰────────────────────────────────────────────────────────────╯│

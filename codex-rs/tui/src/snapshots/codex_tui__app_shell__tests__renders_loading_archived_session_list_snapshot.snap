@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                             │
- ▎ YOU  Create a divergent s│   Status   │  Agents   │  Sessions   │  Help
-                            │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent s│  Status   │  Agents  │  Sessions  │  Settings
+                            │───────────────────────━━━━━━━━━━━━─────────────
  ▎ CODEX  Started a fullscre│▎◆ SESSIONS
  ▎ PLAN  1. Build shell     │▎● FOCUSED  ARCHIVED  0 sessions
          2. Wire transcript │▎loading sessions

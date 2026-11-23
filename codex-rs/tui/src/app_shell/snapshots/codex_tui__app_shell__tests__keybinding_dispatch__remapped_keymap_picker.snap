@@ -3,8 +3,8 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
- ▎ YOU  Create a divergent standalone TUI.                  │   Status   │  Agents   │  Sessions   │  Help
-                     ╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.                  │  Status   │  Agents  │  Sessions  │  Settings
+                     ╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━─────────────
  ▎ CODEX  Started a f│ › 1 ○ global.open_agents                                         │
           server turn│       f2 / ⌃space - select to change                             │
  ▎ PLAN  1. Build she│   2 ○ global.open_transcript                                     │ sessions

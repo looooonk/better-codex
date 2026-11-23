@@ -3,8 +3,8 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
- ▎ YOU  Create a divergent standalone TUI.                  │   Status   │  Agents   │  Sessions   │  Help
-                                                            │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │───────────────────────━━━━━━━━━━━━─────────────
  ▎ CODEX  Started a fullscreen app shell backed by app-     │
           server turns.                                     │▎◆ SESSIONS
  ▎ PLAN  1. Build shell                                     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

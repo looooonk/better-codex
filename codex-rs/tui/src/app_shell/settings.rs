@@ -1,8 +1,8 @@
-use super::dashboard::dashboard_value;
+use super::DashboardRouteStep;
+use super::ShellState;
+use super::composer_toolbar::permission_caption;
 use super::design::palette;
 use super::design::selection_style;
-use super::integrations::McpInventorySummary;
-use super::integrations::PluginInventorySummary;
 use super::selector::ReasoningEffortValue;
 use crate::app_theme::TuiAppTheme;
 use crate::text_input::EditableText;
@@ -12,25 +12,22 @@ use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use std::cell::Cell;
 
 mod background;
 mod controller;
 mod persistence;
-mod tabs;
 
 pub(super) use background::SettingsUpdate;
 pub(super) use persistence::persist_settings_update;
-pub(super) use tabs::SettingsTabs;
-
-const SETTINGS_PAGE_LINE_COUNT: usize = 6;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SettingsState {
-    page: SettingsPage,
-    selected: usize,
+    selected: SettingsAction,
     pub(super) focused: bool,
-    edit: Option<SettingsEdit>,
+    edit: Option<EditableText>,
     feedback: Option<SettingsFeedback>,
+    pub(super) reveal_selection: Cell<bool>,
     pub(super) effort_save: EffortSave,
 }
 
@@ -43,22 +40,10 @@ pub(super) enum EffortSave {
     Queued(ReasoningEffortValue),
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) enum SettingsPage {
-    #[default]
-    Model,
-    Permissions,
-    Appearance,
-    Integrations,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsAction {
-    Model,
-    ReasoningEffort,
-    ServiceTier,
-    ApprovalPolicy,
-    AppTheme,
+    ApprovalPolicy(AskForApproval),
+    AppTheme(TuiAppTheme),
     Theme,
     Animations,
     Tooltips,
@@ -66,159 +51,148 @@ pub(super) enum SettingsAction {
     Plugins,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SettingsView {
-    pub(super) model: String,
-    pub(super) reasoning_effort: Option<ReasoningEffort>,
-    pub(super) service_tier: Option<String>,
-    pub(super) approval_policy: AskForApproval,
-    pub(super) app_theme: TuiAppTheme,
-    pub(super) theme: Option<String>,
-    pub(super) animations: bool,
-    pub(super) show_tooltips: bool,
-    pub(super) mcp_inventory: McpInventorySummary,
-    pub(super) plugin_inventory: PluginInventorySummary,
+impl Default for SettingsAction {
+    fn default() -> Self {
+        Self::ApprovalPolicy(AskForApproval::OnRequest)
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct SettingsEdit {
-    action: SettingsAction,
-    draft: EditableText,
+#[derive(Debug, Clone)]
+enum SettingsFeedback {
+    Info(String),
+    Error(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum SettingsFeedbackTone {
-    Info,
-    Error,
+#[derive(Clone, Copy)]
+enum SettingRow {
+    Heading(&'static str),
+    Action(SettingsAction),
+    Spacer,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SettingsFeedback {
-    tone: SettingsFeedbackTone,
-    message: String,
-}
+// Navigation, rendering, and hit testing use the same ordered rows.
+const ROWS: &[SettingRow] = &[
+    SettingRow::Heading("Permissions"),
+    SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::OnRequest)),
+    SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::UnlessTrusted)),
+    SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::Never)),
+    SettingRow::Spacer,
+    SettingRow::Heading("Appearance"),
+    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::TokyoNight)),
+    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::GruvboxDark)),
+    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::CatppuccinMocha)),
+    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::Monochrome)),
+    SettingRow::Action(SettingsAction::Theme),
+    SettingRow::Action(SettingsAction::Animations),
+    SettingRow::Action(SettingsAction::Tooltips),
+    SettingRow::Spacer,
+    SettingRow::Heading("Integrations"),
+    SettingRow::Action(SettingsAction::McpServers),
+    SettingRow::Action(SettingsAction::Plugins),
+];
 
 impl SettingsState {
-    pub(super) fn lines(&self, view: &SettingsView, width: usize) -> Vec<Line<'static>> {
-        let mut lines = SettingsTabs::new(width).lines(self.page).to_vec();
-
-        if let Some(edit) = &self.edit {
-            let label = format!("edit {}", edit.action.label());
-            let prefix_width = label.len() + 1;
-            let draft = edit
-                .draft
-                .text_with_cursor_window(width.saturating_sub(prefix_width).max(1));
-            lines.push(Line::from(vec![
-                label.fg(palette::cyan()),
-                " ".dim(),
-                dashboard_value(&draft, width, prefix_width).into(),
-            ]));
-        }
-        if let Some(feedback) = &self.feedback {
-            let line = dashboard_value(&feedback.message, width, /*prefix_width*/ 0);
-            let span = match feedback.tone {
-                SettingsFeedbackTone::Info => line.fg(palette::success()),
-                SettingsFeedbackTone::Error => line.fg(palette::error()),
-            };
-            lines.push(Line::from(span));
-        }
-
-        let remaining = 8usize.saturating_sub(lines.len());
-        for (index, action) in self.actions().iter().take(remaining).enumerate() {
-            lines.push(setting_row(*action, index == self.selected, view, width));
-        }
-        if lines.len() < SETTINGS_PAGE_LINE_COUNT {
-            lines.resize_with(SETTINGS_PAGE_LINE_COUNT, Line::default);
+    pub(super) fn lines(&self, shell: &ShellState, width: usize) -> Vec<Line<'static>> {
+        let mut lines = Vec::with_capacity(ROWS.len() + 2);
+        for row in ROWS {
+            match *row {
+                SettingRow::Heading(title) => {
+                    let mut spans = vec!["◆ ".fg(palette::focus()), title.to_uppercase().fg(palette::muted()).bold()];
+                    if title == "Permissions" && matches!(shell.approval_policy, AskForApproval::Granular { .. }) {
+                        spans.push(format!("  {}", permission_caption(shell.approval_policy)).fg(palette::text()));
+                    }
+                    lines.push(spans.into());
+                }
+                SettingRow::Spacer => lines.push(Line::default()),
+                SettingRow::Action(action) => {
+                    let selected = self.focused && self.selected == action;
+                    lines.push(setting_row(action, selected, shell));
+                    if self.selected == action {
+                        if let Some(edit) = &self.edit {
+                            lines.push(Line::from(vec![
+                                "  Edit ".fg(palette::cyan()),
+                                edit.text_with_cursor_window(width.saturating_sub(7).max(1)).into(),
+                            ]));
+                        }
+                        match &self.feedback {
+                            Some(SettingsFeedback::Info(message)) => lines.push(Line::from(message.clone().fg(palette::success()))),
+                            Some(SettingsFeedback::Error(message)) => lines.push(Line::from(message.clone().fg(palette::error()))),
+                            None => {}
+                        }
+                    }
+                }
+            }
         }
         lines
     }
 
+    fn selected_line(&self) -> usize {
+        ROWS.iter().position(|row| matches!(row, SettingRow::Action(action) if *action == self.selected))
+            .expect("selected setting belongs to the dashboard")
+    }
+
+    pub(super) fn selected_line_range(&self) -> std::ops::RangeInclusive<usize> {
+        let selected = self.selected_line();
+        selected..=selected + usize::from(self.edit.is_some()) + usize::from(self.feedback.is_some())
+    }
+
+    pub(super) fn action_at_line(&self, line: usize) -> Option<SettingsAction> {
+        let range = self.selected_line_range();
+        let index = if line > *range.end() {
+            line - (range.end() - range.start())
+        } else if line > *range.start() {
+            return None;
+        } else {
+            line
+        };
+        match ROWS.get(index)? {
+            SettingRow::Action(action) => Some(*action),
+            SettingRow::Heading(_) | SettingRow::Spacer => None,
+        }
+    }
+
     pub(super) fn move_up(&mut self) {
-        self.selected = self.selected.saturating_sub(1);
+        if let Some(action) = ROWS[..self.selected_line()].iter().rev().find_map(SettingRow::action) {
+            self.focus_action(action);
+        }
     }
 
     pub(super) fn move_down(&mut self) {
-        self.selected = self
-            .selected
-            .saturating_add(1)
-            .min(self.actions().len().saturating_sub(1));
+        if let Some(action) = ROWS[self.selected_line() + 1..].iter().find_map(SettingRow::action) {
+            self.focus_action(action);
+        }
     }
 
-    pub(super) fn next_page(&mut self) {
-        self.page = match self.page {
-            SettingsPage::Model => SettingsPage::Permissions,
-            SettingsPage::Permissions => SettingsPage::Appearance,
-            SettingsPage::Appearance => SettingsPage::Integrations,
-            SettingsPage::Integrations => SettingsPage::Model,
+    pub(super) fn step_section(&mut self, direction: DashboardRouteStep) {
+        // Each heading precedes the first action in its section.
+        let starts: Vec<usize> = ROWS.iter().enumerate().filter_map(|(index, row)| {
+            matches!(row, SettingRow::Heading(_)).then_some(index + 1)
+        }).collect();
+        let selected = self.selected_line();
+        let section = starts.partition_point(|&start| start <= selected) - 1;
+        let target = match direction {
+            DashboardRouteStep::Next => (section + 1) % starts.len(),
+            DashboardRouteStep::Previous => (section + starts.len() - 1) % starts.len(),
         };
-        self.selected = 0;
-        self.edit = None;
-    }
-
-    pub(super) fn previous_page(&mut self) {
-        self.page = match self.page {
-            SettingsPage::Model => SettingsPage::Integrations,
-            SettingsPage::Permissions => SettingsPage::Model,
-            SettingsPage::Appearance => SettingsPage::Permissions,
-            SettingsPage::Integrations => SettingsPage::Appearance,
-        };
-        self.selected = 0;
-        self.edit = None;
+        if let Some(action) = ROWS[starts[target]].action() {
+            self.focus_action(action);
+        }
     }
 
     pub(super) fn selected_action(&self) -> SettingsAction {
-        self.actions()[self.selected.min(self.actions().len().saturating_sub(1))]
+        self.selected
     }
 
-    pub(super) fn select_at(&mut self, line: usize, column: usize, width: usize) -> bool {
-        self.focused = true;
-        let page = matches!(line, 0 | 1)
-            .then(|| SettingsTabs::new(width).page_at(column))
-            .flatten();
-        if let Some(page) = page {
-            self.set_page(page);
-            return false;
-        }
-        if matches!(line, 0 | 1) {
-            return false;
-        }
-        let Some(action_line) = self.action_index_at_line(line) else {
-            return false;
-        };
-        self.selected = action_line;
-        self.edit = None;
-        self.feedback = None;
-        true
-    }
-
-    pub(super) fn start_edit(&mut self, action: SettingsAction, current_value: String) {
-        self.focus_action(action);
-        self.edit = Some(SettingsEdit {
-            action,
-            draft: EditableText::new(current_value),
-        });
-        self.feedback = None;
+    pub(super) fn start_theme_edit(&mut self, current_value: String) {
+        self.focus_action(SettingsAction::Theme);
+        self.edit = Some(EditableText::new(current_value));
     }
 
     pub(super) fn focus_action(&mut self, action: SettingsAction) {
-        self.page = match action {
-            SettingsAction::Model
-            | SettingsAction::ReasoningEffort
-            | SettingsAction::ServiceTier => SettingsPage::Model,
-            SettingsAction::ApprovalPolicy => SettingsPage::Permissions,
-            SettingsAction::AppTheme
-            | SettingsAction::Theme
-            | SettingsAction::Animations
-            | SettingsAction::Tooltips => SettingsPage::Appearance,
-            SettingsAction::McpServers | SettingsAction::Plugins => SettingsPage::Integrations,
-        };
-        self.selected = self
-            .actions()
-            .iter()
-            .position(|candidate| *candidate == action)
-            .unwrap_or(0);
+        self.selected = action;
         self.edit = None;
         self.feedback = None;
+        self.reveal_selection.set(true);
     }
 
     pub(super) fn editing(&self) -> bool {
@@ -227,19 +201,19 @@ impl SettingsState {
 
     pub(super) fn push_edit_char(&mut self, ch: char) {
         if let Some(edit) = &mut self.edit {
-            edit.draft.insert_char(ch);
+            edit.insert_char(ch);
         }
     }
 
     pub(super) fn insert_edit_text(&mut self, text: &str) {
         if let Some(edit) = &mut self.edit {
-            edit.draft.insert_str(text);
+            edit.insert_str(text);
         }
     }
 
     pub(super) fn edit_text(&mut self, action: TextInputAction) {
         if let Some(edit) = &mut self.edit {
-            edit.draft.apply(action);
+            edit.apply(action);
         }
     }
 
@@ -247,159 +221,57 @@ impl SettingsState {
         self.edit = None;
     }
 
-    pub(super) fn take_edit(&mut self) -> Option<(SettingsAction, String)> {
-        self.edit
-            .take()
-            .map(|edit| (edit.action, edit.draft.into_text().trim().to_string()))
+    pub(super) fn edit_value(&self) -> Option<String> {
+        self.edit.as_ref().map(|edit| edit.text().trim().to_owned())
     }
 
-    pub(super) fn edit_value(&self) -> Option<(SettingsAction, String)> {
-        self.edit
-            .as_ref()
-            .map(|edit| (edit.action, edit.draft.text().trim().to_string()))
-    }
-
-    pub(super) fn finish_edit(&mut self, action: SettingsAction, draft: &str) {
-        if self.edit_value().as_ref() == Some(&(action, draft.to_string())) {
+    pub(super) fn finish_edit(&mut self, draft: &str) {
+        if self.edit_value().as_deref() == Some(draft) {
             self.edit = None;
         }
     }
 
     pub(super) fn set_info(&mut self, message: impl Into<String>) {
-        self.feedback = Some(SettingsFeedback {
-            tone: SettingsFeedbackTone::Info,
-            message: message.into(),
-        });
+        self.feedback = Some(SettingsFeedback::Info(message.into()));
     }
 
     pub(super) fn set_error(&mut self, message: impl Into<String>) {
-        self.feedback = Some(SettingsFeedback {
-            tone: SettingsFeedbackTone::Error,
-            message: message.into(),
-        });
-    }
-
-    fn actions(&self) -> &'static [SettingsAction] {
-        match self.page {
-            SettingsPage::Model => &[
-                SettingsAction::Model,
-                SettingsAction::ReasoningEffort,
-                SettingsAction::ServiceTier,
-            ],
-            SettingsPage::Permissions => &[SettingsAction::ApprovalPolicy],
-            SettingsPage::Appearance => &[
-                SettingsAction::AppTheme,
-                SettingsAction::Theme,
-                SettingsAction::Animations,
-                SettingsAction::Tooltips,
-            ],
-            SettingsPage::Integrations => &[SettingsAction::McpServers, SettingsAction::Plugins],
-        }
-    }
-
-    fn action_line_start(&self) -> usize {
-        2usize
-            .saturating_add(usize::from(self.edit.is_some()))
-            .saturating_add(usize::from(self.feedback.is_some()))
-    }
-
-    pub(super) fn action_index_at_line(&self, line: usize) -> Option<usize> {
-        let action_line = line.checked_sub(self.action_line_start())?;
-        (action_line < self.actions().len()).then_some(action_line)
-    }
-
-    fn set_page(&mut self, page: SettingsPage) {
-        if self.page != page {
-            self.page = page;
-            self.selected = 0;
-            self.edit = None;
-            self.feedback = None;
-        }
+        self.feedback = Some(SettingsFeedback::Error(message.into()));
+        self.reveal_selection.set(true);
     }
 }
 
-impl SettingsPage {
-    const ALL: [Self; 4] = [
-        Self::Model,
-        Self::Permissions,
-        Self::Appearance,
-        Self::Integrations,
-    ];
-
-    fn label(self) -> &'static str {
+impl SettingRow {
+    fn action(&self) -> Option<SettingsAction> {
         match self {
-            Self::Model => "Model",
-            Self::Permissions => "Permissions",
-            Self::Appearance => "Appearance",
-            Self::Integrations => "Integrations",
+            Self::Action(action) => Some(*action),
+            Self::Heading(_) | Self::Spacer => None,
         }
     }
 }
 
-impl SettingsAction {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Model => "Model",
-            Self::ReasoningEffort => "Reasoning",
-            Self::ServiceTier => "Service tier",
-            Self::ApprovalPolicy => "Approval",
-            Self::AppTheme => "App theme",
-            Self::Theme => "Syntax theme",
-            Self::Animations => "Animations",
-            Self::Tooltips => "Tooltips",
-            Self::McpServers => "MCP servers",
-            Self::Plugins => "Plugins",
-        }
-    }
-}
-
-fn setting_row(
-    action: SettingsAction,
-    selected: bool,
-    view: &SettingsView,
-    width: usize,
-) -> Line<'static> {
+fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Line<'static> {
     let marker = if selected {
-        "›".fg(palette::focus()).bold()
+        "› ".fg(palette::focus()).bold()
     } else {
-        " ".into()
+        "  ".into()
     };
-    let label = action.label();
-    let value = match action {
-        SettingsAction::Model => view.model.clone(),
-        SettingsAction::ReasoningEffort => view
-            .reasoning_effort
-            .as_ref()
-            .map(reasoning_effort_label)
-            .unwrap_or_else(|| "default".to_string()),
-        SettingsAction::ServiceTier => view
-            .service_tier
-            .clone()
-            .filter(|tier| !tier.trim().is_empty())
-            .unwrap_or_else(|| "default".to_string()),
-        SettingsAction::ApprovalPolicy => approval_policy_label(view.approval_policy).to_string(),
-        SettingsAction::AppTheme => app_theme_label(view.app_theme).to_string(),
-        SettingsAction::Theme => view.theme.clone().unwrap_or_else(|| "default".to_string()),
-        SettingsAction::Animations => on_off(view.animations).to_string(),
-        SettingsAction::Tooltips => on_off(view.show_tooltips).to_string(),
-        SettingsAction::McpServers => view.mcp_inventory.label(),
-        SettingsAction::Plugins => view.plugin_inventory.label(),
+    let choice = |label: &str, checked: bool| {
+        let mark = if checked { "●" } else { "○" };
+        format!("{mark} {label}")
     };
-    let text = format!("{label}: {value}");
-    let line = Line::from(vec![
-        marker,
-        " ".into(),
-        dashboard_value(&text, width, /*prefix_width*/ 2).fg(if selected {
-            palette::text()
-        } else {
-            palette::muted()
-        }),
-    ]);
-    if selected {
-        line.set_style(selection_style())
-    } else {
-        line
-    }
+    let label = match action {
+        SettingsAction::ApprovalPolicy(policy) => choice(&permission_caption(policy), policy == shell.approval_policy),
+        SettingsAction::AppTheme(theme) => choice(app_theme_label(theme), theme == shell.app_theme),
+        SettingsAction::Theme => format!("Syntax theme: {}", shell.tui_theme.as_deref().unwrap_or("default")),
+        SettingsAction::Animations => format!("Animations: {}", on_off(shell.animations)),
+        SettingsAction::Tooltips => format!("Tooltips: {}", on_off(shell.show_tooltips)),
+        SettingsAction::McpServers => format!("MCP servers: {}", shell.mcp_inventory.label()),
+        SettingsAction::Plugins => format!("Plugins: {}", shell.plugin_inventory.label()),
+    };
+    let color = if matches!(action, SettingsAction::ApprovalPolicy(AskForApproval::Never)) { palette::error() } else { palette::text() };
+    let line = Line::from(vec![marker, label.fg(color)]);
+    if selected { line.set_style(selection_style()) } else { line }
 }
 
 pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {
@@ -411,7 +283,7 @@ pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {
     }
 }
 
-pub(super) fn app_theme_label(theme: TuiAppTheme) -> &'static str {
+fn app_theme_label(theme: TuiAppTheme) -> &'static str {
     match theme {
         TuiAppTheme::TokyoNight => "Tokyo Night",
         TuiAppTheme::GruvboxDark => "Gruvbox Dark",

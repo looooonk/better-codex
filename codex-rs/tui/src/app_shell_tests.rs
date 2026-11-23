@@ -1045,7 +1045,7 @@ async fn plain_navigation_and_forward_delete_edit_composer_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    shell.dashboard_route = DashboardRoute::Help;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.composer.clear();
     shell.composer.set_text("alphaX beta");
 
@@ -1783,7 +1783,7 @@ fn renders_status_route_snapshot() {
 fn dashboard_routes_keep_session_and_status_panels_separate() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Sessions;
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
 
     assert_eq!(
         panels
@@ -1799,7 +1799,7 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
         ThreadGoalStatus::Active,
         "Keep route ownership explicit",
     ));
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
 
     assert_eq!(
         panels
@@ -1808,7 +1808,6 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
             .collect::<Vec<_>>(),
         vec![
             "Navigation",
-            "Settings",
             "Goal",
             "Plan",
             "Tools",
@@ -1818,22 +1817,22 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
         ]
     );
 
-    shell.dashboard_route = DashboardRoute::Help;
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
+    shell.dashboard_route = DashboardRoute::Settings;
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
 
     assert_eq!(
         panels
             .iter()
             .map(|panel| panel.title.as_str())
             .collect::<Vec<_>>(),
-        vec!["Navigation", "Keys"]
+        vec!["Navigation", "Settings"]
     );
 }
 
 #[test]
 fn renders_model_runtime_details_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.model = "gpt-5.6-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Max);
@@ -1867,11 +1866,11 @@ fn renders_model_availability_nux_snapshot() {
 #[test]
 fn renders_settings_pages_validation_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell
         .settings
-        .start_edit(SettingsAction::Theme, "missing-theme".to_string());
+        .start_theme_edit("missing-theme".to_string());
     shell
         .settings
         .set_error("unknown syntax theme `missing-theme`");
@@ -2070,26 +2069,9 @@ fn narrow_dashboard_truncates_long_plan_lines_without_clipping_steps_snapshot() 
 }
 
 #[test]
-fn renders_active_turn_key_hints_snapshot() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.active_turn_id = Some("turn-active-1234567890".to_string());
-    shell.dashboard_route = DashboardRoute::Help;
-    shell.composer.clear();
-    queue_messages(
-        &mut shell.composer,
-        &["first queued follow-up", "second queued follow-up"],
-    );
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 44,
-    );
-
-    insta::assert_snapshot!(render_shell(&shell, area));
-}
-
-#[test]
 fn renders_queued_message_editor_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Help;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.composer.clear();
     queue_messages(
         &mut shell.composer,
@@ -2107,7 +2089,7 @@ fn renders_queued_message_editor_snapshot() {
 #[test]
 fn renders_removed_queued_message_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Help;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.composer.clear();
     queue_messages(
         &mut shell.composer,
@@ -2124,187 +2106,6 @@ fn renders_removed_queued_message_snapshot() {
     assert_eq!(shell.composer.queued_count(), 1);
     assert_eq!(shell.composer.text(), "ordinary draft");
     insta::assert_snapshot!(render_shell(&shell, area));
-}
-
-#[test]
-fn dashboard_shortcut_guides_only_appear_on_help_route() {
-    let mut shell = ShellState::snapshot_fixture();
-    let shortcut_guides = [
-        "ctrl+1 focus",
-        "r resume",
-        "f fork",
-        "u unarchive",
-        "a archive",
-        "d delete",
-        "n rename",
-        "/ search",
-        "v archived",
-        "esc composer",
-        "ctrl+3 focus",
-        "Enter edit/cycle",
-        "Tab page",
-    ];
-    let centralized_guides = [
-        "Branch from prompt",
-        "Command palette",
-        "Previous / next tab",
-        "Fork session",
-        "Reload open log",
-        "Insert newline",
-        "Interrupt / cancel",
-        "Toggle dashboard",
-        "Search sessions",
-        "Select effort",
-        "Scroll this guide",
-    ];
-    let mut leaked_guides = Vec::new();
-
-    let visibility = DashboardRoute::ALL.map(|route| {
-        shell.dashboard_route = route;
-        let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
-        let has_keys = panels.iter().any(|panel| panel.title == "Keys");
-        let has_route_shortcut = panels
-            .iter()
-            .find(|panel| panel.title == "Keys")
-            .into_iter()
-            .flat_map(|panel| &panel.lines)
-            .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("Cmd+Left / Right"));
-        if route != DashboardRoute::Help {
-            let text = panels
-                .iter()
-                .flat_map(|panel| &panel.lines)
-                .flat_map(|line| &line.spans)
-                .map(|span| span.content.as_ref())
-                .collect::<String>();
-            leaked_guides.extend(
-                shortcut_guides
-                    .iter()
-                    .filter(|guide| text.contains(**guide))
-                    .map(|guide| (route, *guide)),
-            );
-        }
-        (route, has_keys, has_route_shortcut)
-    });
-
-    assert_eq!(leaked_guides, Vec::new());
-    assert_eq!(
-        visibility,
-        [
-            (DashboardRoute::Status, false, false),
-            (DashboardRoute::Agents, false, false),
-            (DashboardRoute::Sessions, false, false),
-            (DashboardRoute::Help, true, true),
-        ]
-    );
-    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40)
-        .into_iter()
-        .flat_map(|panel| panel.lines)
-        .flat_map(|line| line.spans)
-        .map(|span| span.content.into_owned())
-        .collect::<String>();
-    assert_eq!(
-        centralized_guides.map(|guide| help_text.contains(guide)),
-        [true; 11]
-    );
-    assert!(!help_text.contains("Send"));
-    assert!(
-        ["Alt+M/E", "a/u/v/d", "^C/Esc×2/^D"]
-            .iter()
-            .all(|grouped| !help_text.contains(grouped))
-    );
-    let active_session_lines = shell
-        .session_list
-        .lines(/*width*/ 40)
-        .iter()
-        .map(line_text)
-        .collect::<Vec<_>>();
-    shell.session_list.toggle_archived();
-    let archived_session_lines = shell
-        .session_list
-        .lines(/*width*/ 40)
-        .iter()
-        .map(line_text)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        (active_session_lines, archived_session_lines),
-        (
-            vec![
-                "○ CLICK TO FOCUS  ACTIVE  0 sessions".to_string(),
-                "+ New session  Ctrl+N".to_string(),
-                "loading sessions".to_string(),
-            ],
-            vec![
-                "○ CLICK TO FOCUS  ARCHIVED  0 sessions".to_string(),
-                "loading sessions".to_string(),
-            ],
-        )
-    );
-    assert_eq!(
-        shell
-            .settings
-            .lines(&shell.settings_view(), /*width*/ 40)
-            .first()
-            .map(line_text),
-        Some("  Model  │Permis...│Appear...│Integra...".to_string())
-    );
-}
-
-#[test]
-fn dashboard_shortcut_guides_fit_layout_boundaries() {
-    let shell = ShellState::snapshot_fixture();
-    let mut selecting = ShellState::snapshot_fixture();
-    selecting.select_latest_transcript_item();
-
-    for shell in [&shell, &selecting] {
-        for width in [38, 40, 48, 54, 55, 58, 71, 72, 80] {
-            for line in
-                super::dashboard_help::key_hint_lines(shell, width, /*panel_height*/ 40)
-            {
-                assert!(
-                    line.width() <= width,
-                    "shortcut help exceeds width {width}: {line}"
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn dashboard_shortcut_label_variants_snapshot() {
-    let shell = ShellState::snapshot_fixture();
-    let rendered = |panel_width| {
-        super::dashboard_help::key_hint_lines(&shell, panel_width, /*panel_height*/ 40)
-            .into_iter()
-            .map(|line| line.to_string())
-            .join("\n")
-    };
-
-    insta::assert_snapshot!(
-        "compact_dashboard_shortcut_labels",
-        rendered(/*panel_width*/ 60)
-    );
-    insta::assert_snapshot!(
-        "wide_dashboard_shortcut_labels",
-        rendered(/*panel_width*/ 80)
-    );
-    let styled = super::dashboard_help::key_hint_lines(
-        &shell, /*panel_width*/ 80, /*panel_height*/ 40,
-    );
-    insta::assert_debug_snapshot!("dashboard_shortcut_styling", &styled[..2]);
-}
-
-#[test]
-fn dashboard_shortcut_groups_gain_spacing_when_height_allows() {
-    let shell = ShellState::snapshot_fixture();
-    let compact = super::dashboard_help::key_hint_lines(
-        &shell, /*panel_width*/ 60, /*panel_height*/ 20,
-    );
-    let spacious = super::dashboard_help::key_hint_lines(
-        &shell, /*panel_width*/ 60, /*panel_height*/ 40,
-    );
-
-    assert!(spacious.len() > compact.len());
 }
 
 #[test]
@@ -3274,7 +3075,7 @@ async fn replacing_session_discards_pending_agent_log_result() {
 #[test]
 fn renders_status_dashboard_at_wide_and_compact_sizes() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
 
     insta::assert_snapshot!(
@@ -3312,7 +3113,7 @@ fn renders_model_selector_at_wide_and_compact_sizes() {
         })
         .collect();
     shell.model = "gpt-5-0".to_string();
-    shell.open_model_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Model);
 
     insta::assert_snapshot!(
         "wide_model_selector",
@@ -3442,41 +3243,20 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
 
-    shell.dashboard_scroll.set(8);
-    shell.open_command_palette();
-    select_command_palette_action(&mut shell, CommandPaletteAction::SwitchModel);
-    shell
-        .execute_selected_command_palette_action(&config, &mut backend)
-        .await
-        .expect("model action should open settings");
-
-    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
-    assert_eq!(shell.dashboard_scroll.get(), 0);
-    assert!(shell.settings.focused);
-    assert!(shell.selector.is_some());
-
-    shell.dashboard_scroll.set(8);
-    shell.open_command_palette();
-    select_command_palette_action(&mut shell, CommandPaletteAction::ChangePermissions);
-    shell
-        .execute_selected_command_palette_action(&config, &mut backend)
-        .await
-        .expect("permissions action should open settings");
-
-    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
-    assert_eq!(shell.dashboard_scroll.get(), 0);
-    assert!(shell.settings.focused);
-    assert!(shell.selector.is_some());
-    let rendered = render_shell(
-        &shell,
-        Rect::new(
-            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
-        ),
-    );
-    assert!(
-        rendered.contains("Select approval policy"),
-        "permissions action should open approval policy selector, got:\n{rendered}"
-    );
+    let route = shell.dashboard_route;
+    for (action, control) in [
+        (CommandPaletteAction::SwitchModel, composer_toolbar::ComposerControl::Model),
+        (CommandPaletteAction::ChangePermissions, composer_toolbar::ComposerControl::Permissions),
+    ] {
+        shell.open_command_palette();
+        select_command_palette_action(&mut shell, action);
+        shell
+            .execute_selected_command_palette_action(&config, &mut backend)
+            .await
+            .unwrap();
+        assert_eq!(shell.dashboard_route, route);
+        assert_eq!(shell.selector.as_ref().and_then(SelectorState::composer_control), Some(control));
+    }
 }
 
 #[tokio::test]
@@ -4439,19 +4219,7 @@ async fn shell_operator_remains_interactive_while_command_is_running() {
     assert!(shell.has_pending_shell_command());
     assert_eq!(shell.status, "running shell command");
     assert_eq!(shell.transcript.len(), transcript_len);
-    for panel_width in [50, 60, 80] {
-        let help =
-            super::dashboard_help::key_hint_lines(&shell, panel_width, /*panel_height*/ 40)
-                .into_iter()
-                .map(|line| line.to_string())
-                .collect::<Vec<_>>()
-                .join("\n");
-        assert!(
-            help.contains("Stop/cancel") || help.contains("Interrupt / cancel"),
-            "running-command help should explain cancellation at width {panel_width}:\n{help}"
-        );
-    }
-    shell.dashboard_route = DashboardRoute::Help;
+    shell.dashboard_route = DashboardRoute::Status;
     insta::assert_snapshot!(
         "running_shell_command",
         render_shell(
@@ -4901,7 +4669,7 @@ fn dashboard_route_key_mapping_uses_terminal_safe_shortcuts() {
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)),
-        Some(DashboardRoute::Help)
+        Some(DashboardRoute::Settings)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
@@ -5222,18 +4990,18 @@ async fn printable_character_repeat_reaches_text_entry_overlays() {
 
     let mut settings = ShellState::snapshot_fixture();
     settings.composer.clear();
-    settings.dashboard_route = DashboardRoute::Status;
+    settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
     settings
         .settings
-        .start_edit(SettingsAction::Theme, String::new());
+        .start_theme_edit(String::new());
     settings
         .handle_key(repeat, &config, &mut backend)
         .await
         .expect("settings repeat should insert text");
     assert_eq!(
-        (settings.settings.take_edit(), settings.composer.text(),),
-        (Some((SettingsAction::Theme, "x".to_string())), "")
+        (settings.settings.edit_value(), settings.composer.text(),),
+        (Some("x".to_string()), "")
     );
 
     let mut mcp = ShellState::snapshot_fixture();
@@ -5303,15 +5071,15 @@ async fn paste_reaches_text_entry_overlays() {
 
     let mut settings = ShellState::snapshot_fixture();
     settings.composer.clear();
-    settings.dashboard_route = DashboardRoute::Status;
+    settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
     settings
         .settings
-        .start_edit(SettingsAction::Theme, String::new());
+        .start_theme_edit(String::new());
     settings.insert_pasted_text("solarized");
     assert_eq!(
-        (settings.settings.take_edit(), settings.composer.text()),
-        (Some((SettingsAction::Theme, "solarized".to_string())), "")
+        (settings.settings.edit_value(), settings.composer.text()),
+        (Some("solarized".to_string()), "")
     );
 
     let mut mcp = ShellState::snapshot_fixture();
@@ -5426,11 +5194,11 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     );
 
     let mut settings = ShellState::snapshot_fixture();
-    settings.dashboard_route = DashboardRoute::Status;
+    settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
     settings
         .settings
-        .start_edit(SettingsAction::Theme, "alpha beta".to_string());
+        .start_theme_edit("alpha beta".to_string());
     settings
         .handle_key(
             KeyEvent::new(KeyCode::Left, KeyModifiers::SUPER),
@@ -5443,17 +5211,16 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
         .handle_key(key_char('X'), &config, &mut backend)
         .await
         .expect("settings text should insert at the cursor");
-    let settings_view = settings.settings_view();
     assert!(
         settings
             .settings
-            .lines(&settings_view, /*width*/ 80)
+            .lines(&settings, /*width*/ 80)
             .iter()
             .any(|line| line_text(line).contains("X▏alpha beta"))
     );
     assert_eq!(
-        settings.settings.take_edit(),
-        Some((SettingsAction::Theme, "Xalpha beta".to_string()))
+        settings.settings.edit_value(),
+        Some("Xalpha beta".to_string())
     );
 
     let mut mcp = ShellState::snapshot_fixture();
@@ -5614,7 +5381,7 @@ async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions
     );
 
     let mut settings = ShellState::snapshot_fixture();
-    settings.dashboard_route = DashboardRoute::Status;
+    settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
     settings.settings.focus_action(SettingsAction::Animations);
     let initial_animations = settings.animations;
@@ -5647,7 +5414,7 @@ async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions
     ));
 
     let mut back_tab = ShellState::snapshot_fixture();
-    back_tab.dashboard_route = DashboardRoute::Status;
+    back_tab.dashboard_route = DashboardRoute::Settings;
     back_tab.settings.focused = true;
     let mut back_tab_backend = RecordingBackend::default();
     back_tab
@@ -5657,7 +5424,7 @@ async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions
             &mut back_tab_backend,
         )
         .await
-        .expect("terminal-encoded Shift+BackTab should change settings pages");
+        .expect("terminal-encoded Shift+BackTab should move to Integrations");
     assert_eq!(
         back_tab.settings.selected_action(),
         SettingsAction::McpServers
@@ -5891,11 +5658,11 @@ async fn modified_enter_does_not_commit_editors_or_command_palette_actions() {
     );
 
     let mut settings = ShellState::snapshot_fixture();
-    settings.dashboard_route = DashboardRoute::Status;
+    settings.dashboard_route = DashboardRoute::Settings;
     settings.settings.focused = true;
     settings
         .settings
-        .start_edit(SettingsAction::Theme, "theme-draft".to_string());
+        .start_theme_edit("theme-draft".to_string());
     let mut settings_backend = RecordingBackend::default();
     for modifier in modifiers {
         settings
@@ -6040,7 +5807,7 @@ fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
 }
 
 #[test]
-fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
+fn new_shell_defaults_to_status_regardless_of_legacy_route_state() {
     let codex_home = tempfile::tempdir().expect("create temp codex home");
     std::fs::write(
         codex_home.path().join("app-shell-state.json"),
@@ -6078,7 +5845,7 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
 
     assert_eq!(
         (shell.dashboard_route, shell.settings.selected_action()),
-        (DashboardRoute::Status, SettingsAction::Model)
+        (DashboardRoute::Status, SettingsAction::default())
     );
     insta::assert_snapshot!(render_shell(
         &shell,
@@ -7021,16 +6788,16 @@ async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    let f1_status = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+    let f4_settings = KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE);
     let f3_sessions = KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
     shell
-        .handle_key(f1_status, &config, &mut backend)
+        .handle_key(f4_settings, &config, &mut backend)
         .await
-        .expect("F1 should select status");
+        .expect("F4 should select settings");
 
     assert_eq!(
         (
@@ -7038,15 +6805,15 @@ async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
             shell.session_list.focused,
             shell.settings.focused,
         ),
-        (DashboardRoute::Status, false, false)
+        (DashboardRoute::Settings, false, false)
     );
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
     insta::assert_snapshot!(render_shell(&shell, area));
 
     shell
-        .handle_key(f1_status, &config, &mut backend)
+        .handle_key(f4_settings, &config, &mut backend)
         .await
-        .expect("F1 should focus selected status settings");
+        .expect("F4 should focus selected settings");
 
     assert_eq!(
         (
@@ -7054,7 +6821,7 @@ async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
             shell.session_list.focused,
             shell.settings.focused,
         ),
-        (DashboardRoute::Status, false, true)
+        (DashboardRoute::Settings, false, true)
     );
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
@@ -7153,6 +6920,7 @@ async fn empty_enter_focuses_the_active_interactive_dashboard() {
         DashboardRoute::Sessions,
         DashboardRoute::Agents,
         DashboardRoute::Status,
+        DashboardRoute::Settings,
     ] {
         shell.dashboard_route = route;
         shell.session_list.focused = false;
@@ -7173,7 +6941,7 @@ async fn empty_enter_focuses_the_active_interactive_dashboard() {
             route == DashboardRoute::Sessions
         );
         assert_eq!(shell.agents_focused, route == DashboardRoute::Agents);
-        assert_eq!(shell.settings.focused, route == DashboardRoute::Status);
+        assert_eq!(shell.settings.focused, route == DashboardRoute::Settings);
     }
     assert_eq!(backend.calls(), Vec::new());
 }
@@ -7207,7 +6975,7 @@ async fn dashboard_tab_clicks_select_routes_without_focusing_panels() {
             (DashboardRoute::Status, "Status"),
             (DashboardRoute::Agents, "Agents"),
             (DashboardRoute::Sessions, "Sessions"),
-            (DashboardRoute::Help, "Help"),
+            (DashboardRoute::Settings, "Settings"),
         ] {
             shell.session_list.focused = true;
             shell.settings.focused = true;
@@ -7546,116 +7314,6 @@ fn permissions_button_hover_uses_its_hit_geometry_in_both_layouts() {
 }
 
 #[test]
-fn settings_tab_hover_uses_content_only_geometry() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
-    );
-    let baseline = render_shell_buffer(&shell, area);
-    let label_y =
-        row_containing(&baseline, area, "Permissions").expect("settings tabs should be visible");
-    let pointer = Position::new(
-        row_needle_x(&baseline, area, label_y, "Permissions")
-            .expect("permissions tab should be visible"),
-        label_y,
-    );
-    let panel_position = ShellView { shell: &shell }
-        .dashboard_panel_position_at(area, pointer, "Settings")
-        .expect("pointer should be inside the settings panel");
-    let strip_x = pointer
-        .x
-        .saturating_sub(u16::try_from(panel_position.column).unwrap_or(u16::MAX));
-    let columns = settings::SettingsTabs::new(panel_position.width)
-        .column_range(settings::SettingsPage::Permissions)
-        .expect("permissions tab should have a content range");
-
-    shell.pointer_position = Some(pointer);
-    let hovered = render_shell_buffer(&shell, area);
-    let actual_backgrounds = (0..panel_position.width)
-        .map(|column| {
-            hovered[(
-                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
-                label_y,
-            )]
-                .style()
-                .bg
-        })
-        .collect::<Vec<_>>();
-    let mut expected_backgrounds = (0..panel_position.width)
-        .map(|column| {
-            baseline[(
-                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
-                label_y,
-            )]
-                .style()
-                .bg
-        })
-        .collect::<Vec<_>>();
-    expected_backgrounds[columns.clone()].fill(Some(design::palette::border()));
-    assert_eq!(actual_backgrounds, expected_backgrounds);
-
-    let underline_y = label_y.saturating_add(1);
-    let actual_foregrounds = (0..panel_position.width)
-        .map(|column| {
-            hovered[(
-                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
-                underline_y,
-            )]
-                .style()
-                .fg
-        })
-        .collect::<Vec<_>>();
-    let mut expected_foregrounds = (0..panel_position.width)
-        .map(|column| {
-            baseline[(
-                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
-                underline_y,
-            )]
-                .style()
-                .fg
-        })
-        .collect::<Vec<_>>();
-    expected_foregrounds[columns].fill(Some(design::palette::focus()));
-    assert_eq!(actual_foregrounds, expected_foregrounds);
-}
-
-#[test]
-fn settings_empty_rows_ignore_pointer_hover_snapshot() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
-    );
-
-    for (action, last_row_label, empty_row_count) in [
-        (SettingsAction::ServiceTier, "Service tier", 1),
-        (SettingsAction::ApprovalPolicy, "Approval", 3),
-    ] {
-        shell.settings.focus_action(action);
-        shell.pointer_position = None;
-        let baseline = render_shell_buffer(&shell, area);
-        let last_action_y =
-            row_containing(&baseline, area, last_row_label).expect("last action should be visible");
-        let pointer_x = row_needle_x(&baseline, area, last_action_y, last_row_label)
-            .expect("last action should have an x position");
-
-        for offset in 1..=empty_row_count {
-            let pointer = Position::new(
-                pointer_x,
-                last_action_y.saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
-            );
-            shell.pointer_position = Some(pointer);
-            let hovered = render_shell_buffer(&shell, area);
-
-            assert_eq!(hovered[pointer].style().bg, baseline[pointer].style().bg);
-        }
-    }
-
-    insta::assert_snapshot!(buffer_style_grid(&render_shell_buffer(&shell, area)));
-}
-
-#[test]
 fn mouse_wheel_routes_to_the_pane_under_the_pointer_in_both_layouts() {
     for area in [
         Rect::new(
@@ -7857,70 +7515,6 @@ fn dashboard_overlay_takes_pointer_precedence_over_transcript_cards() {
         ),
         (Some(render::PointerPane::Dashboard), None)
     );
-}
-
-#[test]
-fn mouse_wheel_uses_scrolled_dashboard_panel_geometry() {
-    for area in [
-        Rect::new(
-            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
-        ),
-        Rect::new(
-            /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 16,
-        ),
-    ] {
-        let mut shell = ShellState::snapshot_fixture();
-        shell.dashboard_route = DashboardRoute::Status;
-        render_shell(&shell, area);
-        let tab = position_in(area, |position| {
-            ShellView { shell: &shell }.dashboard_route_at(area, position)
-                == Some(DashboardRoute::Status)
-        });
-        shell.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Down);
-        let outer_scroll = shell.dashboard_scroll.get();
-        assert!(outer_scroll > 0);
-        render_shell(&shell, area);
-        let settings = position_in(area, |position| {
-            ShellView { shell: &shell }
-                .dashboard_panel_position_at(area, position, "Settings")
-                .is_some()
-        });
-
-        shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Down);
-
-        assert_eq!(
-            (
-                shell.settings.selected_action(),
-                shell.dashboard_scroll.get(),
-            ),
-            (SettingsAction::ReasoningEffort, outer_scroll)
-        );
-        for _ in 0..20 {
-            shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Down);
-        }
-        let last_action = shell.settings.selected_action();
-        shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Down);
-        assert_eq!(
-            (
-                shell.settings.selected_action(),
-                shell.dashboard_scroll.get()
-            ),
-            (last_action, outer_scroll)
-        );
-        shell.settings.start_edit(last_action, "draft".to_string());
-        shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Up);
-        assert_eq!(
-            (
-                shell.settings.selected_action(),
-                shell.dashboard_scroll.get(),
-                shell.settings.editing(),
-            ),
-            (last_action, outer_scroll, true)
-        );
-        assert!(!shell.settings.focused);
-        shell.set_dashboard_route(DashboardRoute::Help);
-        assert_eq!(shell.dashboard_scroll.get(), 0);
-    }
 }
 
 #[test]
@@ -8982,7 +8576,7 @@ fn tool_transcript_block_background_spans_conversation_width() {
 #[test]
 fn renders_activity_dashboard_panels_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Help;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
         .expect("approval request should be valid");
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
@@ -9030,64 +8624,12 @@ fn narrow_dashboard_keeps_the_active_route_interactive() {
     assert!(rendered.contains("Run command: cargo test"));
 }
 
-#[test]
-fn help_dashboard_shows_every_shortcut_at_78_by_24_snapshot() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Help;
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
-    );
-
-    let rendered = render_shell(&shell, area);
-
-    assert!(
-        rendered.contains("Branch"),
-        "the first shortcut groups should remain visible:\n{rendered}"
-    );
-    insta::assert_snapshot!(rendered);
-
-    shell.dashboard_scroll.set(usize::MAX);
-    let scrolled = render_shell(&shell, area);
-    assert!(
-        scrolled.contains("Delete") && scrolled.contains("Reload"),
-        "the shortcut tail should be reachable:\n{scrolled}"
-    );
-    insta::assert_snapshot!("help_dashboard_78_by_24_scrolled", scrolled);
-}
-
-#[test]
-fn help_dashboard_shows_every_shortcut_at_48_by_16_snapshot() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Help;
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16,
-    );
-
-    let rendered = render_shell(&shell, area);
-
-    assert!(
-        rendered.contains("Branch"),
-        "the first shortcut groups should remain visible:\n{rendered}"
-    );
-    assert!(rendered.contains("> Summarize the new shell architecture"));
-    assert!(!rendered.contains("Esc composer"));
-    insta::assert_snapshot!(rendered);
-
-    shell.dashboard_scroll.set(usize::MAX);
-    let scrolled = render_shell(&shell, area);
-    assert!(
-        scrolled.contains("Delete") && scrolled.contains("Reload"),
-        "the shortcut tail should be reachable:\n{scrolled}"
-    );
-    insta::assert_snapshot!("help_dashboard_48_by_16_scrolled", scrolled);
-}
-
 #[tokio::test]
-async fn page_keys_scroll_the_help_guide_instead_of_the_conversation() {
+async fn page_keys_scroll_settings_while_the_dashboard_is_visible() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    shell.dashboard_route = DashboardRoute::Help;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.transcript_scroll = 3;
 
     shell
@@ -9097,7 +8639,7 @@ async fn page_keys_scroll_the_help_guide_instead_of_the_conversation() {
             &mut backend,
         )
         .await
-        .expect("Page Down should scroll the help guide");
+        .expect("Page Down should scroll settings");
     let after_page_down = (shell.dashboard_scroll.get(), shell.transcript_scroll);
     shell
         .handle_key(
@@ -9106,7 +8648,7 @@ async fn page_keys_scroll_the_help_guide_instead_of_the_conversation() {
             &mut backend,
         )
         .await
-        .expect("Page Up should scroll the help guide");
+        .expect("Page Up should scroll settings");
 
     assert_eq!(
         (
@@ -11063,7 +10605,6 @@ fn tool_transcript_items_render_with_single_blank_row_gaps() {
 #[test]
 fn dashboard_uses_available_width_for_long_values() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.model = "gpt-5-codex-dashboard-detail".to_string();
     shell.cwd = "/workspace/better-codex/codex-rs/tui".to_string();
     shell.workspace_git_status = Some(WorkspaceGitStatus {
         git_root: None,
@@ -11082,7 +10623,6 @@ fn dashboard_uses_available_width_for_long_values() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("gpt-5-codex-dashboard-detail"));
     assert!(rendered.contains("/workspace/better-codex/codex-rs/tui"));
     assert!(rendered.contains("feature/dashboard-width-budget"));
     assert!(rendered.contains("exec just test -p codex-tui app_shell_tests"));
@@ -12614,7 +12154,7 @@ async fn pending_turn_start_keeps_input_responsive() {
 #[tokio::test]
 async fn settings_update_keeps_status_chrome_quiet_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::Tooltips);
     shell.status = "ready".to_string();
@@ -12726,7 +12266,7 @@ async fn failed_settings_write_keeps_selector_and_previous_value() {
     let mut shell = ShellState::snapshot_fixture();
     let previous_policy = shell.approval_policy;
     let backend = RecordingBackend::default();
-    shell.open_approval_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Permissions);
     backend.fail_next_action("config write rejected");
 
     shell
@@ -12748,24 +12288,22 @@ async fn app_theme_selection_applies_only_after_local_persistence_succeeds() {
     let mut shell = ShellState::snapshot_fixture();
     let client_config_path = shell.client_config_path.clone();
     let backend = RecordingBackend::default();
-    shell.open_app_theme_selector();
+    shell.run_workspace_command(
+        workspace_commands::WorkspaceCommand::Theme,
+        "",
+        &test_config().await,
+        &mut backend.clone(),
+    ).await.unwrap();
+    assert_eq!((shell.dashboard_route, shell.settings.selected_action()),
+        (DashboardRoute::Settings, SettingsAction::AppTheme(shell.app_theme)));
 
     for key in [KeyCode::Down, KeyCode::Enter] {
         shell
-            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .handle_settings_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
             .await
             .expect("app theme update should start");
     }
     assert_eq!(shell.app_theme, TuiAppTheme::TokyoNight);
-    let pending_selector = shell.selector.clone();
-    for key in [KeyCode::Down, KeyCode::Esc] {
-        shell
-            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
-            .await
-            .expect("pending app theme selector should ignore navigation");
-        assert_eq!(shell.selector, pending_selector);
-    }
-
     complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.app_theme, TuiAppTheme::GruvboxDark);
@@ -12780,17 +12318,24 @@ async fn app_theme_selection_applies_only_after_local_persistence_succeeds() {
 }
 
 #[tokio::test]
-async fn failed_app_theme_write_keeps_selector_and_previous_theme() {
+async fn failed_app_theme_write_keeps_the_previous_theme_and_shows_the_error() {
     let mut shell = ShellState::snapshot_fixture();
     let previous_theme = shell.app_theme;
     let client_config_path = shell.client_config_path.clone();
     let backend = RecordingBackend::default();
-    shell.open_app_theme_selector();
+    shell.run_workspace_command(
+        workspace_commands::WorkspaceCommand::Theme,
+        "",
+        &test_config().await,
+        &mut backend.clone(),
+    ).await.unwrap();
+    assert_eq!((shell.dashboard_route, shell.settings.selected_action()),
+        (DashboardRoute::Settings, SettingsAction::AppTheme(shell.app_theme)));
     backend.fail_next_action("config write rejected");
 
     for key in [KeyCode::Down, KeyCode::Enter] {
         shell
-            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .handle_settings_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
             .await
             .expect("app theme update should start");
     }
@@ -12798,7 +12343,9 @@ async fn failed_app_theme_write_keeps_selector_and_previous_theme() {
 
     complete_backend_actions(&mut shell, &backend).await;
 
-    assert!(shell.selector.is_some());
+    let settings = render_shell(&shell, Rect::new(0, 0, 110, 32));
+    assert!(settings.contains("config write rejected"), "{settings}");
+    assert!(shell.settings.focused);
     assert_eq!(shell.app_theme, previous_theme);
     assert_eq!(
         backend.calls(),
@@ -12822,7 +12369,7 @@ async fn failed_thread_settings_update_restores_config_and_previous_value() {
             "approval_policy".to_string(),
             serde_json::to_value(previous_policy).expect("approval policy should serialize"),
         );
-    shell.open_approval_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Permissions);
     backend.fail_next_thread_settings_update("thread update rejected");
 
     for key in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
@@ -16275,7 +15822,7 @@ async fn replacing_session_clears_session_bound_surfaces() {
 #[tokio::test]
 async fn native_settings_integrations_refresh_mcp_and_plugins() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -16343,7 +15890,7 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
 #[tokio::test]
 async fn mcp_management_catalog_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -16376,7 +15923,7 @@ async fn mcp_management_catalog_snapshot() {
 async fn mcp_management_actions_login_disable_remove_add_and_edit() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -16511,7 +16058,7 @@ async fn mcp_management_actions_login_disable_remove_add_and_edit() {
 #[tokio::test]
 async fn plugin_management_catalog_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::Plugins);
     let mut backend =
@@ -16542,7 +16089,7 @@ async fn plugin_management_catalog_snapshot() {
 async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::Plugins);
     let mut backend =
@@ -16626,118 +16173,18 @@ async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
 #[tokio::test]
 async fn native_settings_pages_write_config_and_validate_edits() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
-    shell.available_models = vec![model_preset_fixture(
-        "gpt-5-codex",
-        /*show_in_picker*/ true,
-        ReasoningEffort::Low,
-        &[
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-            ReasoningEffort::XHigh,
-            ReasoningEffort::Max,
-            ReasoningEffort::Ultra,
-        ],
-        &[],
-    )];
     let mut backend = RecordingBackend::default();
-
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("reasoning row should be selected");
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("reasoning selector should open");
-    shell
-        .handle_selector_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("low reasoning should be selected");
-    shell
-        .handle_selector_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("low reasoning should persist");
-    complete_backend_actions(&mut shell, &backend).await;
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("permissions page should open");
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("approval selector should open");
-    for code in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
-        shell
-            .handle_selector_key(KeyEvent::new(code, KeyModifiers::NONE), &mut backend)
-            .await
-            .expect("never approval policy should persist");
+    for key in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
+        shell.handle_settings_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend).await.unwrap();
     }
     complete_backend_actions(&mut shell, &backend).await;
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("appearance page should open");
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("theme row should be selected");
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("animations row should be selected");
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("animations toggle should persist");
+    shell.settings.focus_action(SettingsAction::Animations);
+    shell.handle_settings_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &mut backend).await.unwrap();
     complete_backend_actions(&mut shell, &backend).await;
 
     let calls = backend.calls();
-    assert!(calls.contains(&RecordedBackendCall::ConfigWrite(vec![
-        ("model".to_string(), serde_json::json!("gpt-5-codex"),),
-        (
-            "model_reasoning_effort".to_string(),
-            serde_json::json!("low"),
-        ),
-    ])));
-    assert!(calls.contains(&RecordedBackendCall::ThreadSettingsUpdate {
-        model: None,
-        effort: Some(ReasoningEffort::Low),
-        service_tier: None,
-        approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
-    }));
     assert!(calls.contains(&RecordedBackendCall::ConfigWrite(vec![(
         "approval_policy".to_string(),
         serde_json::json!("never"),
@@ -16752,7 +16199,6 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         "tui.animations".to_string(),
         serde_json::json!(false),
     )])));
-    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Low));
     assert_eq!(
         shell.approval_policy,
         codex_app_server_protocol::AskForApproval::Never
@@ -16798,10 +16244,8 @@ async fn native_settings_pages_write_config_and_validate_edits() {
 }
 
 #[tokio::test]
-async fn native_settings_select_models_and_service_tiers() {
+async fn composer_select_models_and_service_tiers() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
-    shell.settings.focused = true;
     shell.available_models = vec![
         model_preset_fixture(
             "gpt-5-codex",
@@ -16827,13 +16271,7 @@ async fn native_settings_select_models_and_service_tiers() {
     ];
     let mut backend = RecordingBackend::default();
 
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("model selector should open");
+    shell.open_composer_picker(composer_toolbar::ComposerControl::Model);
     shell
         .handle_selector_key(
             KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
@@ -16849,27 +16287,7 @@ async fn native_settings_select_models_and_service_tiers() {
         .await
         .expect("visible model should be selected");
     complete_backend_actions(&mut shell, &backend).await;
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("reasoning row should be selected");
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("service tier row should be selected");
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("service tier selector should open");
+    shell.open_composer_picker(composer_toolbar::ComposerControl::ServiceTier);
     shell
         .handle_selector_key(
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
@@ -16885,13 +16303,7 @@ async fn native_settings_select_models_and_service_tiers() {
         .await
         .expect("fast tier should be selected");
     complete_backend_actions(&mut shell, &backend).await;
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("service tier selector should reopen");
+    shell.open_composer_picker(composer_toolbar::ComposerControl::ServiceTier);
     shell
         .handle_selector_key(
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
@@ -16907,13 +16319,7 @@ async fn native_settings_select_models_and_service_tiers() {
         .await
         .expect("batch tier should be selected");
     complete_backend_actions(&mut shell, &backend).await;
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("service tier selector should reopen");
+    shell.open_composer_picker(composer_toolbar::ComposerControl::ServiceTier);
     shell
         .handle_selector_key(
             KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
@@ -16984,10 +16390,8 @@ async fn native_settings_select_models_and_service_tiers() {
 }
 
 #[tokio::test]
-async fn native_settings_reasoning_selector_resets_active_thread_to_model_default() {
+async fn composer_reasoning_selector_resets_active_thread_to_model_default() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.settings.focused = true;
-    shell.settings.focus_action(SettingsAction::ReasoningEffort);
     shell.model = "gpt-5.6-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Ultra);
     shell.collaboration_mode = Some(collaboration_mode_fixture(
@@ -17010,13 +16414,7 @@ async fn native_settings_reasoning_selector_resets_active_thread_to_model_defaul
     )];
     let mut backend = RecordingBackend::default();
 
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("reasoning selector should open");
+    shell.open_composer_picker(composer_toolbar::ComposerControl::ReasoningEffort);
     shell
         .handle_selector_key(
             KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
@@ -17062,10 +16460,8 @@ async fn native_settings_reasoning_selector_resets_active_thread_to_model_defaul
 }
 
 #[tokio::test]
-async fn native_settings_model_switch_resets_unsupported_runtime_options() {
+async fn composer_model_switch_resets_unsupported_runtime_options() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
-    shell.settings.focused = true;
     shell.model = "gpt-5.6-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Ultra);
     shell.service_tier = Some("priority".to_string());
@@ -17104,13 +16500,7 @@ async fn native_settings_model_switch_resets_unsupported_runtime_options() {
     ];
     let mut backend = RecordingBackend::default();
 
-    shell
-        .handle_settings_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .expect("model selector should open");
+    shell.open_composer_picker(composer_toolbar::ComposerControl::Model);
     shell
         .handle_selector_key(
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),

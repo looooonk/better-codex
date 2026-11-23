@@ -3,26 +3,26 @@ source: tui/src/app_shell/keybindings_tests.rs
 expression: rendered
 ---
                                                             │
- ▎ YOU  Create a divergent standalone TUI.                  │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent standalone TUI.                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │────────────────────────────────────━━━━━━━━━━━━
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │
+          server turns.                                     │◆ PERMISSIONS
+ ▎ PLAN  1. Build shell                                     │  ● ⓘ Ask for approval
+         2. Wire transcript                                 │  ○ ⛨ Unless trusted
+         3. Render dashboard                                │  ○ ⚠ Full access
                                                             │
- ▎ CODEX  Started a fullscreen app shell backed by app-     │CONFIGURED SHORTCUTS
-          server turns.                                     │Use /keymap to change a binding; unbind disables
- ▎ PLAN  1. Build shell                                     │it.
-         2. Wire transcript                                 │f18  composer.submit
-         3. Render dashboard                                │unbound  composer.queue
-                                                            │f19  editor.insert_newline
- ▌ tool exec just test -p codex-tui                         │f20  list.accept
+ ▌ tool exec just test -p codex-tui                         │◆ APPEARANCE
+                                                            │  ● Tokyo Night
+ ▌ edited 3 files +128 -24                                  │  ○ Gruvbox Dark
+                                                            │  ○ Catppuccin Mocha
+ ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Monochrome
+                                                            │  Syntax theme: default
+                                                            │  Animations: on
+                                                            │  Tooltips: on
                                                             │
- ▌ edited 3 files +128 -24                                  │
-                                                            │
- ▎ CODEX  The new shell owns the fullscreen surface.        │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
+                                                            │◆ INTEGRATIONS
+                                                            │  MCP servers: not loaded
+                                                            │  Plugins: not loaded
                                                             │
 ╭──────────────────────────────────────────────────────────╮│
 │> Type a message                                          ││

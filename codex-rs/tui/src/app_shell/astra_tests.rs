@@ -104,7 +104,7 @@ fn astra_catalog_drives_model_reasoning_and_fast_selectors() {
         .into_iter()
         .map(Into::into)
         .collect();
-    shell.open_model_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Model);
     insta::assert_snapshot!(
         "astra_model_selector",
         render_shell(&shell, Rect::new(0, 0, 100, 30))
@@ -114,7 +114,7 @@ fn astra_catalog_drives_model_reasoning_and_fast_selectors() {
         "astra_reasoning_selector",
         render_shell(&shell, Rect::new(0, 0, 100, 30))
     );
-    shell.open_service_tier_selector();
+    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::ServiceTier);
     insta::assert_snapshot!(
         "astra_service_tier_selector",
         render_shell(&shell, Rect::new(0, 0, 100, 30))

@@ -30,7 +30,6 @@ fn token_panel_renders_billions_and_trillions() {
     let panel = dashboard_panel(
         &shell,
         /*width*/ 100,
-        /*height*/ 100,
         DashboardPanelKind::Tokens,
     )
     .expect("tokens panel");
@@ -58,7 +57,6 @@ fn token_panel_includes_estimated_thread_usage() {
     let panel = dashboard_panel(
         &shell,
         /*width*/ 100,
-        /*height*/ 100,
         DashboardPanelKind::Tokens,
     )
     .expect("tokens panel");

@@ -3,8 +3,8 @@ source: tui/src/app_shell/astra_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
-                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │───────────────────────━━━━━━━━━━━━─────────────
  ▎ CODEX  Started a fullscreen app shell backed   │
           by app-server turns.                    │▎◆ SESSIONS
  ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
@@ -13,22 +13,22 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
                                                   │
  ▌ tool exec just test -p codex-tui               │▎◆ THREAD
                                                   │▎stage-one
- ▌ edited 3 file╭ Select service tier ─────────────────────────────────────────────╮0000001
-                │ › 1 ● ◷ Default  current                                         │ session list
- ▎ CODEX  The ne│       Use the model's default service tier.                      │
-          surfac│   2 ○ ↯ Fast                                                     │
-                │       2x speed, increased usage                                  │
-                │  wheel / j k  Enter select  Esc cancel  1/2                      │
-                ╰──────────────────────────────────────────────────────────────────╯
+ ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
                                                   │
                                                   │
                                                   │
                                                   │
                                                   │
                                                   │
-╭────────────────────────────────────────────────╮│
-│> Summarize the new shell architecture          ││
-│                                                ││
-│                                                ││
+                                                  │
+                                                  │
+                             ╭──────────────────╮ │
+╭────────────────────────────│ Speed            │╮│
+│> Summarize the new shell ar│ ◷ Default      ✓ │││
+│                            │ ↯ Fast           │││
+│                            ╰──────────────────╯││
 │ⓘ Ask for approval▾ gpt-6.2-…▾ ultra▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

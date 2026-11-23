@@ -1,0 +1,36 @@
+---
+source: tui/src/app_shell/dashboard_focus_tests.rs
+expression: "render_shell(&shell, wide)"
+---
+                                                            │
+ ▎ YOU  Create a divergent standalone TUI.                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │────────────────────────────────────━━━━━━━━━━━━
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │
+          server turns.                                     │◆ PERMISSIONS
+ ▎ PLAN  1. Build shell                                     │  ● ⓘ Ask for approval
+         2. Wire transcript                                 │  ○ ⛨ Unless trusted
+         3. Render dashboard                                │  ○ ⚠ Full access
+                                                            │
+ ▌ tool exec just test -p codex-tui                         │◆ APPEARANCE
+                                                            │  ○ Tokyo Night
+ ▌ edited 3 files +128 -24                                  │› ● Gruvbox Dark
+                                                            │  ○ Catppuccin Mocha
+ ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Monochrome
+                                                            │  Syntax theme: default
+                                                            │  Animations: on
+                                                            │  Tooltips: on
+                                                            │
+                                                            │◆ INTEGRATIONS
+                                                            │  MCP servers: not loaded
+                                                            │  Plugins: not loaded
+                                                            │
+                                                            │
+                                                            │
+                                                            │
+                                                            │
+╭──────────────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture                    ││
+│                                                          ││
+│                                                          ││
+│ ⓘ Ask for approval ▾   gpt-… ▾   Default ▾   ◷ Default ▾ ││
+╰──────────────────────────────────────────────────────────╯│

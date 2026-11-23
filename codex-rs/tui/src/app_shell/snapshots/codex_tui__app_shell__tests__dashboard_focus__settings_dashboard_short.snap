@@ -1,16 +1,16 @@
 ---
-source: tui/src/app_shell_tests.rs
-expression: scrolled
+source: tui/src/app_shell/dashboard_focus_tests.rs
+expression: rendered
 ---
 │
-│  Status   │  Agents   │  Sessions   │  Help
-│ f           Fork     │ ◆ AGENTS
-│ a           Archive  │  ↵           Focus/log
-│ u           Unarchive│  ↑↓ / jk     Select
-│ v           Switch v…│  g / G       First/la…
-│ n           Rename   │  r           Reload l…
-│ /           Search   │
-│ d           Delete   │
+│  Status  │  Agents  │  Sessions  │ Settings
+│───────────────────────────────────━━━━━━━━━━━
+│  Animations: on
+│  Tooltips: on
+│
+│◆ INTEGRATIONS
+│  MCP servers: not loaded
+│› Plugins: not loaded
 │
 ╭──────────────────────────────────────────────╮
 │> Summarize the new shell architecture        │

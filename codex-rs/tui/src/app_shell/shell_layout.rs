@@ -22,7 +22,7 @@ const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
 const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
 const INPUT_REQUEST_PANEL_MIN_HEIGHT: u16 = 8;
 const INPUT_REQUEST_PANEL_MAX_HEIGHT: u16 = 24;
-const HELP_OVERLAY_MIN_HEIGHT: u16 = 10;
+const SETTINGS_OVERLAY_MIN_HEIGHT: u16 = 10;
 const PANE_CHROME_HEIGHT: u16 = 3;
 const TRANSCRIPT_MIN_HEIGHT: u16 = 5;
 
@@ -75,11 +75,11 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
     let available_height = area.height.saturating_sub(status_height);
     if !shell.dashboard_visible || area.width < DASHBOARD_SIDE_BY_SIDE_MIN_WIDTH {
         let mut input_height = input_panel_height(shell, available_height, area.width);
-        if shell.dashboard_visible && shell.dashboard_route == DashboardRoute::Help {
+        if shell.dashboard_visible && shell.dashboard_route == DashboardRoute::Settings {
             let toolbar_rows = super::composer_toolbar::toolbar_rows(pane_content_rect(area));
             let compact_input_min_height = 3 + toolbar_rows;
             let max_input_height = available_height
-                .saturating_sub(HELP_OVERLAY_MIN_HEIGHT)
+                .saturating_sub(SETTINGS_OVERLAY_MIN_HEIGHT)
                 .max(available_height.min(compact_input_min_height));
             input_height = input_height.min(max_input_height);
         }

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&permissions_shell, area)"
 ---
                                                   │
-         2. Wire transcript                     │ │   Status   │  Agents   │  Sessions   │  Help
-         3. Render dashboard                    │ │─────────────────────────━━━━━━━━━━━━━──────────
+         2. Wire transcript                     │ │  Status   │  Agents  │  Sessions  │  Settings
+         3. Render dashboard                    │ │───────────────────────━━━━━━━━━━━━─────────────
                                                 │ │
  ▌ tool exec just test -p codex-tui             ┃ │▎◆ SESSIONS
                                                 ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

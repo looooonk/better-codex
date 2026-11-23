@@ -3,8 +3,8 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- ▎ ERROR  Daybreak support for model gpt-5-       │   Status   │  Agents   │  Sessions   │  Help
-          codex could not be confirmed by the     │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ ERROR  Daybreak support for model gpt-5-       │  Status   │  Agents  │  Sessions  │  Settings
+          codex could not be confirmed by the     │───────────────────────━━━━━━━━━━━━─────────────
           connected server. Use /daybreak to turn │
           it off, or choose a compatible model    │▎◆ SESSIONS
           and server.                             │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

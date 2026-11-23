@@ -4,6 +4,7 @@ use super::backend_actions::ActionGroup;
 use super::backend_actions::BackendActionResult;
 use super::command_palette::CommandPaletteAction;
 use super::navigation::DashboardRoute;
+use super::settings::SettingsAction;
 use super::workspace_requests::WorkspaceRequest;
 use super::workspace_requests::WorkspaceResponse;
 use crate::legacy_core::config::Config;
@@ -118,12 +119,16 @@ impl ShellState {
             }
             WorkspaceCommand::Voice => return self.run_voice_command(args, app_server),
             WorkspaceCommand::New => Some(CommandPaletteAction::NewSession),
-            WorkspaceCommand::Config => {
+            WorkspaceCommand::Config | WorkspaceCommand::Theme => {
                 self.dashboard_visible = true;
-                self.set_dashboard_route(DashboardRoute::Status);
+                self.set_dashboard_route(DashboardRoute::Settings);
                 self.dashboard_scroll.set(0);
                 self.session_list.focused = false;
                 self.settings.focused = true;
+                if command == WorkspaceCommand::Theme {
+                    self.settings.focus_action(SettingsAction::AppTheme(self.app_theme));
+                }
+                self.settings.reveal_selection.set(true);
                 return Ok(());
             }
             WorkspaceCommand::Archive | WorkspaceCommand::Delete => {
@@ -156,10 +161,6 @@ impl ShellState {
                 if !self.open_session_diff_view() {
                     self.push_status("no session changes to review");
                 }
-                return Ok(());
-            }
-            WorkspaceCommand::Theme => {
-                self.open_app_theme_selector();
                 return Ok(());
             }
             WorkspaceCommand::Status => {

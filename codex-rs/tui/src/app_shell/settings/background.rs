@@ -5,7 +5,6 @@ use super::super::backend_actions::BackendActionResult;
 use super::super::selector::SelectorState;
 use super::super::selector::SelectorValue;
 use super::EffortSave;
-use super::SettingsAction;
 use crate::app_theme::TuiAppTheme;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ConfigEdit;
@@ -17,7 +16,7 @@ use std::future::Future;
 #[derive(Debug)]
 pub(in crate::app_shell) struct SettingsUpdate {
     change: SettingsChange,
-    edit: Option<(SettingsAction, String)>,
+    edit: Option<String>,
     selector: Option<SelectorState<SelectorValue>>,
 }
 
@@ -67,6 +66,9 @@ impl ShellState {
             return;
         }
         let saving_effort = matches!(change, SettingsChange::ReasoningEffort(_));
+        if let Some(selector) = self.selector.as_mut() {
+            selector.save_error = None;
+        }
         let selector = if saving_effort {
             None
         } else {
@@ -96,8 +98,15 @@ impl ShellState {
         result: Result<()>,
     ) {
         if let Err(err) = result {
-            self.settings
-                .set_error(format!("failed to save settings: {err:#}"));
+            let picker = self.selector.as_mut().filter(|selector| {
+                update.selector.as_ref() == Some(*selector)
+                    || (matches!(update.change, SettingsChange::ReasoningEffort(_)) && selector.is_effort_slider())
+            });
+            if let Some(selector) = picker {
+                selector.save_error = Some(format!("Save failed: {err}"));
+            } else {
+                self.settings.set_error(format!("failed to save settings: {err:#}"));
+            }
             self.report_action_error("failed to save settings", err);
             return;
         }
@@ -135,8 +144,8 @@ impl ShellState {
             SettingsChange::Animations(animations) => self.animations = animations,
             SettingsChange::Tooltips(show_tooltips) => self.show_tooltips = show_tooltips,
         }
-        if let Some((action, draft)) = update.edit {
-            self.settings.finish_edit(action, &draft);
+        if let Some(draft) = update.edit {
+            self.settings.finish_edit(&draft);
         }
         if update.selector.is_some() && self.selector == update.selector {
             self.selector = None;

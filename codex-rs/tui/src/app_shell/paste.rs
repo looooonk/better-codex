@@ -59,7 +59,7 @@ impl ShellState {
             return;
         }
         if self.dashboard_visible
-            && self.dashboard_route == DashboardRoute::Status
+            && self.dashboard_route == DashboardRoute::Settings
             && self.settings.focused
         {
             if self.settings.editing() {

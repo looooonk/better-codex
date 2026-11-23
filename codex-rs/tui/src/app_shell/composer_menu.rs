@@ -106,8 +106,8 @@ impl<T> SelectorState<T> {
             _ => &self.title,
         };
         let heading = Rect::new(panel.x + 2, panel.y + 1, panel.width - 4, 1);
-        Paragraph::new(title)
-            .fg(palette::muted())
+        Paragraph::new(self.save_error.as_deref().unwrap_or(title))
+            .fg(if self.save_error.is_some() { palette::error() } else { palette::muted() })
             .render(heading, buf);
 
         if self.options.is_empty() {

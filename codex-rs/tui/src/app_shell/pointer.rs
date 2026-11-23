@@ -322,13 +322,14 @@ impl ShellState {
         }
 
         let view = ShellView { shell: self };
-        if self.dashboard_route == DashboardRoute::Status
+        if self.dashboard_route == DashboardRoute::Settings
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Settings")
         {
-            if self
-                .settings
-                .select_at(target.line, target.column, target.width)
-            {
+            if self.settings.editing() && self.settings.selected_line_range().contains(&target.line) {
+                self.settings.focused = true;
+            } else if let Some(action) = self.settings.action_at_line(target.line) {
+                self.settings.focused = true;
+                self.settings.focus_action(action);
                 self.activate_selected_setting(app_server).await?;
             }
             return Ok(());
@@ -539,8 +540,7 @@ impl ShellState {
         let nested_panel = match self.dashboard_route {
             DashboardRoute::Sessions => Some("Sessions"),
             DashboardRoute::Agents => Some("Agents"),
-            DashboardRoute::Status => Some("Settings"),
-            DashboardRoute::Help => None,
+            DashboardRoute::Status | DashboardRoute::Settings => None,
         };
         let over_nested_panel = nested_panel.is_some_and(|title| {
             (ShellView { shell: self })
@@ -568,18 +568,7 @@ impl ShellState {
                     self.agent_activity.move_selection_down();
                     false
                 }
-                (DashboardRoute::Status, MouseScrollDirection::Up) if !self.settings.editing() => {
-                    self.settings.move_up();
-                    false
-                }
-                (DashboardRoute::Status, MouseScrollDirection::Down)
-                    if !self.settings.editing() =>
-                {
-                    self.settings.move_down();
-                    false
-                }
-                (DashboardRoute::Sessions | DashboardRoute::Status, _)
-                | (DashboardRoute::Help, _) => false,
+                (DashboardRoute::Sessions | DashboardRoute::Status | DashboardRoute::Settings, _) => false,
             };
         }
 

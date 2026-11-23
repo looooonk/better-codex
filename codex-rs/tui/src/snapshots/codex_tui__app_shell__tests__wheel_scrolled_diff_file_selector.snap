@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
     │
-    │   Status   │  Agents   │  Sessions   │  Help
+    │  Status   │  Agents  │  Sessions  │  Settings
   ╭ Session edits ─────────────────────────────────╮─
  ▌│ CHANGED FILES│OLD FILE       │NEW FILE         │
   │              │               │src/file_29.rs   │

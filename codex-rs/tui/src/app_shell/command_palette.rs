@@ -4,7 +4,7 @@ use super::backend_actions::ActionGroup;
 use super::backend_actions::BackendActionResult;
 use super::is_unmodified_action_key;
 use super::navigation::DashboardRoute;
-use super::settings::SettingsAction;
+use super::composer_toolbar::ComposerControl;
 use crate::key_hint;
 use crate::legacy_core::config::Config;
 use color_eyre::Result;
@@ -135,13 +135,13 @@ pub(super) fn command_palette_entries(context: CommandPaletteContext) -> Vec<Com
         CommandPaletteEntry {
             action: CommandPaletteAction::SwitchModel,
             title: "Switch model",
-            detail: "Open model settings",
+            detail: "Choose a model for this thread",
             enabled: true,
         },
         CommandPaletteEntry {
             action: CommandPaletteAction::ChangePermissions,
             title: "Change permissions",
-            detail: "Open approval policy settings",
+            detail: "Choose when Codex asks for approval",
             enabled: true,
         },
         CommandPaletteEntry {
@@ -306,22 +306,8 @@ impl ShellState {
             CommandPaletteAction::InterruptTurn => {
                 self.interrupt_active_turn(app_server).await?;
             }
-            CommandPaletteAction::SwitchModel => {
-                self.set_dashboard_route(DashboardRoute::Status);
-                self.dashboard_scroll.set(0);
-                self.session_list.focused = false;
-                self.settings.focused = self.dashboard_visible;
-                self.settings.focus_action(SettingsAction::Model);
-                self.open_model_selector();
-            }
-            CommandPaletteAction::ChangePermissions => {
-                self.set_dashboard_route(DashboardRoute::Status);
-                self.dashboard_scroll.set(0);
-                self.session_list.focused = false;
-                self.settings.focused = self.dashboard_visible;
-                self.settings.focus_action(SettingsAction::ApprovalPolicy);
-                self.open_approval_selector();
-            }
+            CommandPaletteAction::SwitchModel => self.open_composer_picker(ComposerControl::Model),
+            CommandPaletteAction::ChangePermissions => self.open_composer_picker(ComposerControl::Permissions),
             CommandPaletteAction::ResumeThread => {
                 self.dashboard_visible = true;
                 self.set_dashboard_route(DashboardRoute::Sessions);

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                             │
-   ▌ output ... 118 earlier │   Status   │  Agents   │  Sessions   │  Help
-   ▌        cargo build outp│─────────────────────────━━━━━━━━━━━━━──────────
+   ▌ output ... 118 earlier │  Status   │  Agents  │  Sessions  │  Settings
+   ▌        cargo build outp│───────────────────────━━━━━━━━━━━━─────────────
    ▌        cargo build outp│▎◆ SESSIONS
    ▌        cargo build outp│▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                             │▎+ New session  Ctrl+N

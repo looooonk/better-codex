@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
-                                                ┃ │   Status   │  Agents   │  Sessions   │  Help
- ▎ CODEX  Started a fullscreen app shell backed ┃ │─────────────────────────━━━━━━━━━━━━━──────────
+                                                ┃ │  Status   │  Agents  │  Sessions  │  Settings
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │───────────────────────━━━━━━━━━━━━─────────────
           by app-server turns.                  ┃ │
  ▎ PLAN  1. Build shell                         ┃ │▎◆ SESSIONS
          2. Wire transcript                     ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                               │
- ▎ CODEX  # Result                                            │   Status   │  Agents   │  Sessions   │  Help
-                                                              │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  # Result                                            │  Status   │  Agents  │  Sessions  │  Settings
+                                                              │───────────────────────━━━━━━━━━━━━─────────────
           • Render assistant text as markdown.                │
           • Preserve local links like render.rs (codex-rs/    │▎◆ SESSIONS
             tui/src/app_shell/render.rs:1).                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

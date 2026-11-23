@@ -7,7 +7,8 @@ description.
 | Command             | Action                                                            |
 | ------------------- | ----------------------------------------------------------------- |
 | `/new`, `/resume`, `/fork` | Start, resume, or fork sessions |
-| `/model`, `/permissions` | Select model, reasoning effort, or approval permissions |
+| `/model`, `/permissions` | Open the model or permission menu in the message pane |
+| `/config`, `/theme` | Open the Settings tab or jump to the current app theme |
 | `/status`, `/agent` | Inspect session state or agents |
 | `/review [instructions]` | Review changes; also accepts `--base BRANCH` or `--commit SHA` |
 | `/plan [on\|off]` | Inspect or switch planning mode |
@@ -17,7 +18,7 @@ description.
 | `/compact` | Compact the current context |
 | `/ps`, `/clean` | List or stop background terminals |
 | `/pwd`, `/cd PATH`, `/rename NAME` | Inspect or change session location and name |
-| `/diff`, `/theme`, `/import` | Review changes, choose appearance, or import Claude Code setup |
+| `/diff`, `/import` | Review changes or import Claude Code setup |
 | `/voice [on\|off\|mute\|unmute\|settings]` | Control realtime voice |
 | `/ide [on\|off\|status]` | Include the connected IDE selection and open tabs in new messages |
 | `/approve [review-id]` | Inspect denied actions or authorize one retry of a selected action |

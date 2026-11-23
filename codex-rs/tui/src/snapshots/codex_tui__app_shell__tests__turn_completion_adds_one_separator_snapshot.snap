@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
 ---
                                                   │
- ▎ CODEX  Turn complete.                          │   Status   │  Agents   │  Sessions   │  Help
-                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ▎ CODEX  Turn complete.                          │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │───────────────────────━━━━━━━━━━━━─────────────
  ──────── Took 1.00s · 84.0 tok/s ─────────────── │
                                                   │▎◆ SESSIONS
  ▎ YOU  Next turn.                                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

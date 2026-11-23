@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- SELECT 1/5                                       │   Status   │  Agents   │  Sessions   │  Help
- ▶ YOU  Create a divergent standalone TUI.        │─────────────────────────━━━━━━━━━━━━━──────────
+ SELECT 1/5                                       │  Status   │  Agents  │  Sessions  │  Settings
+ ▶ YOU  Create a divergent standalone TUI.        │───────────────────────━━━━━━━━━━━━─────────────
                                                   │
  ▎ CODEX  Started a fullscreen app shell backed   │▎◆ SESSIONS
           by app-server turns.                    │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

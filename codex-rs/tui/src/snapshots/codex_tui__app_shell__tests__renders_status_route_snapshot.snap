@@ -3,28 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
-                                                  │━━━━━━━━━━━━────────────────────────────────────
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │━━━━━━━━━━━─────────────────────────────────────
  ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SETTINGS
- ▎ PLAN  1. Build shell                           │▎Model │ Permissions │ Appearance │Integrations
-         2. Wire transcript                       │▎━━━━━━─────────────────────────────────────────
-         3. Render dashboard                      │▎› Model: gpt-5-codex
-                                                  │▎  Reasoning: default
- ▌ tool exec just test -p codex-tui               │▎  Service tier: default
-                                                  │▎
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ GOAL
- ▎ CODEX  The new shell owns the fullscreen       │▎status active
-          surface.                                │▎Complete the dashboard consolidation
-                                                  │▎1m | 12,345/50,000 tokens
+          by app-server turns.                    │▎◆ GOAL
+ ▎ PLAN  1. Build shell                           │▎status active
+         2. Wire transcript                       │▎Complete the dashboard consolidation
+         3. Render dashboard                      │▎1m | 12,345/50,000 tokens
                                                   │
-                                                  │▎◆ PLAN
+ ▌ tool exec just test -p codex-tui               │▎◆ PLAN
                                                   │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
+ ▌ edited 3 files +128 -24                        │▎x Shell frame
                                                   │▎> Transcript model
-                                                  │▎- Approvals
-                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎- Approvals
+          surface.                                │
                                                   │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
                                                   │
@@ -46,6 +38,14 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ TOKENS
                                                   │▎input 1k | output 240
                                                   │▎Context 100% left
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

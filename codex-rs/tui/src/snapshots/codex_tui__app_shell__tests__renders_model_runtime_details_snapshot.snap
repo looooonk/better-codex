@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
-                                                  │━━━━━━━━━━━━────────────────────────────────────
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │────────────────────────────────────━━━━━━━━━━━━
  ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SETTINGS
- ▎ PLAN  1. Build shell                           │▎Model │ Permissions │ Appearance │Integrations
-         2. Wire transcript                       │▎━━━━━━─────────────────────────────────────────
-         3. Render dashboard                      │▎› Model: gpt-5.6-sol
-                                                  │▎  Reasoning: Max
- ▌ tool exec just test -p codex-tui               │▎  Service tier: priority
-                                                  │▎
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ PLAN
- ▎ CODEX  The new shell owns the fullscreen       │▎Build the standalone shell in slices.
-          surface.                                │▎x Shell frame
-                                                  │▎> Transcript model
-                                                  │▎- Approvals
+          by app-server turns.                    │◆ PERMISSIONS
+ ▎ PLAN  1. Build shell                           │› ● ⓘ Ask for approval
+         2. Wire transcript                       │  ○ ⛨ Unless trusted
+         3. Render dashboard                      │  ○ ⚠ Full access
                                                   │
-                                                  │▎◆ TOOLS
-                                                  │▎in progress exec just test -p codex-tui
+ ▌ tool exec just test -p codex-tui               │◆ APPEARANCE
+                                                  │  ● Tokyo Night
+ ▌ edited 3 files +128 -24                        │  ○ Gruvbox Dark
+                                                  │  ○ Catppuccin Mocha
+ ▎ CODEX  The new shell owns the fullscreen       │  ○ Monochrome
+          surface.                                │  Syntax theme: dracula
+                                                  │  Animations: on
+                                                  │  Tooltips: on
                                                   │
-                                                  │▎◆ EDITS
-╭────────────────────────────────────────────────╮│▎3 files +128 -24
+                                                  │◆ INTEGRATIONS
+                                                  │  MCP servers: not loaded
+                                                  │  Plugins: not loaded
+                                                  │
+╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
-│                                                ││▎◆ WORKSPACE
-│                                                ││▎profile managed
-│ⓘ Ask for approval▾    gpt-5.6-sol▾ max▾ ↯ Fast▾││▎cwd /workspace/better-codex
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾    gpt-5.6-sol▾ max▾ ↯ Fast▾││
 ╰────────────────────────────────────────────────╯│

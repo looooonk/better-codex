@@ -3,37 +3,37 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                                       │
- ▎ YOU  Create a divergent standalone TUI.                            │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent standalone TUI.                            │  Status   │  Agents  │  Sessions  │  Settings
+                                                                      │━━━━━━━━━━━─────────────────────────────────────
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │
+ ▎ PLAN  1. Build shell                                               │▎◆ PLAN
+         2. Wire transcript                                           │▎Build the standalone shell in slices.
+         3. Render dashboard                                          │▎x Shell frame
+                                                                      │▎> Transcript model
+ ▌ tool exec just test -p codex-tui                                   │▎- Approvals
                                                                       │
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │◆ CONVERSATION         │ ◆ COMPOSER
- ▎ PLAN  1. Build shell                                               │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
-         2. Wire transcript                                           │ ↵ / c       Copy item │  ⌘⌫          Delete st…
-         3. Render dashboard                                          │ e           Branch    │  ⌥/^ + ←→    Move word
-                                                                      │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
- ▌ tool exec just test -p codex-tui                                   │                       │  Alt+M       Model
-                                                                      │◆ DASHBOARD            │  Alt+E       Effort
- ▌ edited 3 files +128 -24                                            │ F1 … F4     Open tab  │  ↵           Steer turn
- ▎ PLAN  1. Route activity into dashboard panels                      │ Alt+← / →   Prev/next │  Tab         Queue next
-                                                                      │ Pg↑ / Pg↓   Scroll he…│
- ▎ CODEX  The new shell owns the fullscreen surface.                  │ ⇧Alt+←/→    Resize    │ ◆ APP
-                                                                      │                       │  ^P          Commands
-          Thinking... · 0 tok/s                                       │◆ SESSIONS             │  ^D          Show/hide
-                                                                      │ ↑↓ / jk     Select    │  ^C          Stop/canc…
-                                                                      │ ↵ / r       Resume    │  Esc ×2      Exit app
-                                                                      │ f           Fork      │  ^N          New chat
-                                                                      │ a           Archive   │
-                                                                      │ u           Unarchive │ ◆ AGENTS
-                                                                      │ v           Switch vi…│  ↵           Focus/log
-                                                                      │ n           Rename    │  ↑↓ / jk     Select
-                                                                      │ /           Search    │  g / G       First/last
-                                                                      │ d           Delete    │  r           Reload log
+ ▌ edited 3 files +128 -24                                            │▎◆ TOOLS
+ ▎ PLAN  1. Route activity into dashboard panels                      │▎in progress exec just test -p codex-tui
                                                                       │
-                                                                      │▎◆ APPROVALS
-                                                                      │▎approval Run command: cargo test -p codex-tui
-                                                                      │▎input Tool input: tool-input-1
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │▎◆ EDITS
+                                                                      │▎3 files +128 -24
+          Thinking... · 0 tok/s                                       │
+                                                                      │▎◆ WORKSPACE
+                                                                      │▎profile managed
+                                                                      │▎cwd /workspace/better-codex
+                                                                      │▎files restricted, net restricted
+                                                                      │▎roots none selected
+                                                                      │
+                                                                      │▎◆ TOKENS
+                                                                      │▎input 1k | output 240
+                                                                      │▎Context 100% left
                                                                       │
                                                                       │▎◆ BACKGROUND
                                                                       │▎workspace refresh queued
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
                                                                       │
                                                                       │
                                                                       │

@@ -3,32 +3,32 @@ source: tui/src/app_shell/astra_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
-                                                  │─────────────────────────━━━━━━━━━━━━━──────────
- ▎ CODEX  Starte╭ Select model ────────────────────────────────────────────────────╮
-          by app│   1 ○ GPT-6.2-Sol                                                │
- ▎ PLAN  1. Buil│       Fast, go-to model for coding and everyday work.            │ions
-         2. Wire│ › 2 ● GPT-6.2-Astra  current                                     │
-         3. Rend│       Our most capable model for complex coding and professional │
-                │       work.                                                      │
- ▌ tool exec jus│   3 ○ GPT-6.1-Sol                                                │
-                │       Previous generation model for coding and everyday work.    │
- ▌ edited 3 file│   4 ○ GPT-6.1 Terra                                              │0000001
-                │       Efficient model that excels at visual understanding and    │ session list
- ▎ CODEX  The ne│       computer use.                                              │
-          surfac│   5 ○ GPT-6-Astra                                                │
-                │       Previous generation model for complex coding and           │
-                │       professional work.                                         │
-                │   6 ○ GPT-6-Sol                                                  │
-                │       Legacy model for coding and everyday work.                 │
-                │   7 ○ GPT-6-Luna                                                 │
-                │       Fast and affordable model for easier tasks.                │
-                │   8 ○ GPT-5.6-Sol                                                │
-                │       Legacy model for coding and everyday work.                 │
-                │   9 ○ GPT-5.6-Terra                                              │
-╭───────────────│       Legacy balanced model for agentic coding.                  │
-│> Summarize the│  wheel / j k  Enter select  Esc cancel  2/11 ↓                   │
-│               ╰──────────────────────────────────────────────────────────────────╯
-│                                                ││
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │───────────────────────━━━━━━━━━━━━─────────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                       │▎+ New session  Ctrl+N
+         3. Render dashboard                      │▎loading sessions
+                                                  │
+ ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+                                                  │▎stage-one
+ ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+ ▎ CODEX  The new shell owns the fullscreen       │
+          sur╭────────────────────────╮           │
+             │ Select model           │           │
+             │ GPT-6.2-Sol            │           │
+             │ GPT-6.2-Astra        ✓ │           │
+             │ GPT-6.1-Sol            │           │
+             │ GPT-6.1 Terra          │           │
+             │ GPT-6-Astra            │           │
+             │ GPT-6-Sol              │           │
+             │ GPT-6-Luna             │           │
+             │ GPT-5.6-Sol            │           │
+╭────────────│ GPT-5.6-Terra          │──────────╮│
+│> Summarize │ GPT-5.6-Luna           │          ││
+│            │ GPT-5.5                │          ││
+│            ╰────────────────────────╯          ││
 │ⓘ Ask for approval▾ gpt-6.2-…▾ ultra▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │━━━━━━━━━━━─────────────────────────────────────
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ PLAN
+ ▎ PLAN  1. Build shell                           │▎Build the standalone shell in slices.
+         2. Wire transcript                       │▎x Shell frame
+         3. Render dashboard                      │▎> Transcript model
+                                                  │▎- Approvals
+ ▌ tool exec just test -p codex-tui               │
+                                                  │▎◆ TOOLS
+ ▌ edited 3 files +128 -24                        │▎in progress exec just test -p codex-tui
                                                   │
- ▎ CODEX  Started a fullscreen app shell backed   │◆ CONVERSATION         │ ◆ COMPOSER
-          by app-server turns.                    │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
- ▎ PLAN  1. Build shell                           │ ↵ / c       Copy item │  ⌘⌫          Delete st…
-         2. Wire transcript                       │ e           Branch    │  ⌥/^ + ←→    Move word
-         3. Render dashboard                      │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
-                                                  │◆ DASHBOARD            │  Alt+M       Model
- ▌ tool exec just test -p codex-tui               │ F1 … F4     Open tab  │  Alt+E       Effort
-                                                  │ Alt+← / →   Prev/next │ ◆ APP
- ▌ edited 3 files +128 -24                        │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
-                                                  │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
- ▎ CODEX  The new shell owns the fullscreen       │◆ SESSIONS             │  ^C          Stop/canc…
-          surface.                                │ ↑↓ / jk     Select    │  Esc ×2      Exit app
-                                                  │ ↵ / r       Resume    │  ^N          New chat
-                                                  │ f           Fork      │ ◆ AGENTS
-                                                  │ a           Archive   │  ↵           Focus/log
-                                                  │ u           Unarchive │  ↑↓ / jk     Select
-                                                  │ v           Switch vi…│  g / G       First/last
-                                                  │ n           Rename    │  r           Reload log
-                                                  │ /           Search    │
-╭────────────────────────────────────────────────╮│ d           Delete    │
-│> Type a message                                ││
-│                                                ││
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ EDITS
+          surface.                                │▎3 files +128 -24
+                                                  │
+                                                  │▎◆ WORKSPACE
+                                                  │▎profile managed
+                                                  │▎cwd /workspace/better-codex
+                                                  │▎files restricted, net restricted
+                                                  │▎roots none selected
+                                                  │
+╭────────────────────────────────────────────────╮│▎◆ TOKENS
+│> Type a message                                ││▎input 1k | output 240
+│                                                ││▎Context 100% left
 │                                                ││
 │ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│
