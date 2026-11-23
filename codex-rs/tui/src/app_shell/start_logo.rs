@@ -10,10 +10,10 @@ use ratatui::layout::Rect;
 const LOGO: [&str; 9] = [
     "   ⢀⣠⣴⠶⠿⠛⠛⠿⠶⣦⣄⡀",
     " ⢀⣴⠟⠋        ⠙⠻⣦⡀",
-    "⢀⣾⠋            ⠙⣷⡀",
-    "⣼⡇              ⢸⣧",
-    "⣿       >_       ⣿",
-    "⢻⡇              ⢸⡟",
+    "⢀⣾⠋ ⣠⡀         ⠙⣷⡀",
+    "⣼⡇  ⠈⠛⢶⣄        ⢸⣧",
+    "⣿     ⣠⡿⠃        ⣿",
+    "⢻⡇  ⢠⠾⠋  ⣤⣤⣤⣤⡄  ⢸⡟",
     "⠈⢿⣄            ⣠⡿⠁",
     " ⠈⠻⣦⣄        ⣠⣴⠟⠁",
     "   ⠈⠙⠻⠶⣶⣤⣤⣶⠶⠟⠋⠁",
@@ -21,11 +21,13 @@ const LOGO: [&str; 9] = [
 
 const COMPACT_LOGO: [&str; 5] = [
     " ⣠⡴⠞⠛⠛⠳⢦⣄",
-    "⣰⠏      ⠹⣆",
-    "⣿   >_   ⣿",
-    "⠹⣆      ⣰⠏",
+    "⣰⠏⢠⡀    ⠹⣆",
+    "⣿  ⣹⠆    ⣿",
+    "⠹⣆⠘⠁ ⠒⠒⠂⣰⠏",
     " ⠙⠳⢦⣤⣤⡴⠞⠋",
 ];
+
+const SMALL_LOGO: [&str; 3] = ["⢠⢖⠋⠙⠲⡄", "⣏⢈⡷⢀⡀⣹", "⠘⠮⣄⣠⠴⠃"];
 
 impl ShellState {
     pub(super) fn shows_start_logo(&self) -> bool {
@@ -49,8 +51,10 @@ pub(super) fn render(shell: &ShellState, layout: ShellLayout, buf: &mut Buffer) 
         (&LOGO, 18)
     } else if area.width >= 10 && area.height >= 5 {
         (&COMPACT_LOGO, 10)
+    } else if area.width >= 6 && area.height >= 3 {
+        (&SMALL_LOGO, 6)
     } else if area.width >= 4 && area.height > 0 {
-        (&["(>_)"], 4)
+        (&["⟮⠕⠤⟯"], 4)
     } else {
         return;
     };

@@ -31,7 +31,7 @@ fn centered_logo_yields_to_the_first_message() {
     shell.push_user("Hello!");
     let content = visible_logo(&shell);
     assert!(content.contains("Hello!"));
-    assert!(!content.contains(">_"));
+    assert!(!content.contains('⣿'));
 }
 
 #[test]
@@ -64,4 +64,30 @@ fn compact_logo_shimmers_only_when_effects_are_enabled() {
     shell.shimmer_enabled = true;
     shell.animations = false;
     assert_eq!(logo_cells(&shell), static_colors);
+}
+
+#[test]
+fn logo_fits_short_or_narrow_conversation_panes() {
+    let shell = ShellState::snapshot_fixture();
+    let mut rows = Vec::new();
+    for (width, height) in [(10, 5), (6, 3), (4, 1)] {
+        let area = Rect::new(/*x*/ 0, /*y*/ 0, width, height);
+        let layout = ShellLayout {
+            status: None,
+            transcript: area,
+            input: Rect::default(),
+            dashboard: None,
+        };
+        let mut buf = Buffer::empty(area);
+        render(&shell, layout, &mut buf);
+        for row in area.rows() {
+            let text: String = row
+                .columns()
+                .map(|cell| buf[(cell.x, cell.y)].symbol())
+                .collect();
+            rows.push(text.trim_end().to_string());
+        }
+        rows.push(String::new());
+    }
+    insta::assert_snapshot!("small_conversation_logos", rows.join("\n"));
 }
