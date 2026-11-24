@@ -19,6 +19,44 @@ use unicode_width::UnicodeWidthStr;
 
 const SESSION_LIST_LIMIT: u32 = 20;
 
+/// Some servers return short pages even when they have a continuation. Assemble a complete
+/// window before publishing it so the visible list changes in a single frame.
+pub(super) async fn load_page<F, Fut>(
+    mut params: ThreadListParams,
+    mut fetch: F,
+) -> color_eyre::Result<codex_app_server_protocol::ThreadListResponse>
+where
+    F: FnMut(ThreadListParams) -> Fut,
+    Fut: std::future::Future<
+            Output = color_eyre::Result<codex_app_server_protocol::ThreadListResponse>,
+        >,
+{
+    let limit = params.limit.unwrap_or(SESSION_LIST_LIMIT) as usize;
+    let mut cursors: HashSet<String> = params.cursor.iter().cloned().collect();
+    let mut page = fetch(params.clone()).await?;
+    let mut ids: HashSet<_> = page.data.iter().map(|t| t.id.clone()).collect();
+    while page.data.len() < limit {
+        let Some(cursor) = page.next_cursor.take() else {
+            break;
+        };
+        if !cursors.insert(cursor.clone()) {
+            break;
+        }
+        params.cursor = Some(cursor);
+        params.limit = Some((limit - page.data.len()) as u32);
+        let next = fetch(params.clone()).await?;
+        page.data
+            .extend(next.data.into_iter().filter(|t| ids.insert(t.id.clone())));
+        page.next_cursor = next.next_cursor;
+        if let Some(states) = next.read_states {
+            page.read_states
+                .get_or_insert_with(Default::default)
+                .extend(states);
+        }
+    }
+    Ok(page)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SessionSearchOutcome {
     LocalFilterOnly,
@@ -55,6 +93,7 @@ pub(super) struct SessionRow {
     preview: String,
     cwd: PathBuf,
     project_id: Option<String>,
+    external_writer: bool,
 }
 
 impl SessionListState {
@@ -173,6 +212,17 @@ impl SessionListState {
             .find(|row| row.thread_id == thread)?
             .project_id
             .as_deref()
+    }
+
+    pub(super) fn mark_external_writer(&mut self, id: ThreadId) {
+        for row in self
+            .all_rows
+            .iter_mut()
+            .chain(&mut self.rows)
+            .filter(|row| row.thread_id == id)
+        {
+            row.external_writer = true;
+        }
     }
 
     pub(super) fn cwd_for_thread(&self, thread_id: ThreadId) -> Option<&PathBuf> {
@@ -456,6 +506,7 @@ impl SessionListState {
         width: usize,
         visible: usize,
         focused: bool,
+        failed_resumes: &HashSet<ThreadId>,
     ) -> Vec<Line<'static>> {
         self.visible_rows.set(visible);
         let top = self.normalized_scroll_top(visible);
@@ -473,6 +524,7 @@ impl SessionListState {
                     focused && index == self.selected,
                     !self.show_archived,
                     width,
+                    row.external_writer || failed_resumes.contains(&row.thread_id),
                 )
             })
             .collect()
@@ -582,6 +634,7 @@ impl SessionRow {
             preview,
             cwd: thread.cwd.to_path_buf(),
             project_id: thread.project_id,
+            external_writer: thread.extra.is_some_and(|extra| extra.external_writer),
         })
     }
 
@@ -590,14 +643,24 @@ impl SessionRow {
     }
 }
 
-fn row_line(row: &SessionRow, selected: bool, movable: bool, width: usize) -> Line<'static> {
+fn row_line(
+    row: &SessionRow,
+    selected: bool,
+    movable: bool,
+    width: usize,
+    unavailable: bool,
+) -> Line<'static> {
     let marker = if selected { "› " } else { "  " };
     let suffix = if movable { MORE_BUTTON } else { "" };
     let title = dashboard_value(&row.title, width, marker.width() + suffix.width());
     let pad = width.saturating_sub(marker.width() + title.width() + suffix.width());
     let line = Line::from(vec![
         marker.fg(palette::focus()),
-        title.into(),
+        if unavailable {
+            title.fg(palette::warning())
+        } else {
+            title.into()
+        },
         " ".repeat(pad).into(),
         suffix.fg(palette::muted()),
     ]);

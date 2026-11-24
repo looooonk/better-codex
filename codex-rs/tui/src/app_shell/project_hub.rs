@@ -55,12 +55,14 @@ pub(super) struct Chat {
     pub id: ThreadId,
     pub title: String,
     pub cwd: std::path::PathBuf,
+    pub external_writer: bool,
 }
 
 impl Chat {
     pub(super) fn from_thread(thread: Thread) -> Option<Self> {
         Some(Self {
             id: ThreadId::from_string(&thread.id).ok()?,
+            external_writer: thread.extra.is_some_and(|extra| extra.external_writer),
             title: thread
                 .name
                 .filter(|s| !s.trim().is_empty())
@@ -75,6 +77,7 @@ impl Chat {
 pub(super) struct ProjectHub {
     pub groups: Vec<Group>,
     pub expanded: HashSet<String>,
+    pub failed_resumes: HashSet<ThreadId>,
     pub view: HubView,
     pub selected: Option<usize>,
     pub reveal: Cell<bool>,
@@ -201,7 +204,11 @@ impl ProjectHub {
                     for chat in &group.chats {
                         add(
                             format!("    {}", chat.title),
-                            normal,
+                            if chat.external_writer || self.failed_resumes.contains(&chat.id) {
+                                normal.fg(palette::warning())
+                            } else {
+                                normal
+                            },
                             Some(Action::Open(p.id.clone(), chat.id)),
                             Some(Action::Move(chat.id)),
                         );

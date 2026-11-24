@@ -1,0 +1,34 @@
+---
+source: tui/src/app_shell/project_hub_tests.rs
+expression: loading
+---
+                                                                  │
+                                                                  │  Sessions   │  Status  │  Agents  │  Settings
+                                                                  │━━━━━━━━━━━━━───────────────────────────────────
+                                                                  │
+                                                                  │ Projects
+                                                                  │ ⌄ Research                                   …
+                                                                  │     Earlier experiment                       …
+                                                                  │     ↓ Older chats
+                                                                  │     + New chat
+                                                                  │
+                                                                  │ Recents
+                       ⠋ Loading session...                       │ + New session  Ctrl+N
+                                                                  │   Earlier experiment                         …
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+╭────────────────────────────────────────────────────────────────╮│
+│> Type a message                                                ││
+│                                                                ││
+│                                                                ││
+│ ⓘ Ask for approval ▾   gpt-5-codex ▾   Default ▾   ◷ Default ▾ ││
+╰────────────────────────────────────────────────────────────────╯│

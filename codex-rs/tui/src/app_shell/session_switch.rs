@@ -10,12 +10,12 @@ use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::Project;
 use codex_app_server_protocol::ProjectReadParams;
 use codex_app_server_protocol::ProjectReadResponse;
-use codex_app_server_protocol::ThreadStartSource;
 use codex_config::types::ResumeCwdMode;
 use codex_protocol::ThreadId;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
+use color_eyre::eyre::eyre;
 use std::path::PathBuf;
 
 impl ShellState {
@@ -56,22 +56,18 @@ impl ShellState {
         }
 
         self.finish_subscription_cleanup().await;
-        let started = app_server
-            .start_thread_with_session_start_source(
-                &session_config,
-                Some(ThreadStartSource::Clear),
-                self.next_model_provider
-                    .as_deref()
-                    .or(Some(self.model_provider_id.as_str())),
-                project,
-            )
-            .await?;
-        self.next_model_provider = None;
-        self.next_provider_model = None;
-        self.complete_session_switch(started, app_server).await;
-        self.session_list.focused = false;
-        self.settings.focused = false;
-        self.agents_focused = false;
+        let request = app_server.start_new_thread_in_background(
+            &session_config,
+            self.next_model_provider
+                .as_deref()
+                .or(Some(self.model_provider_id.as_str())),
+            project,
+        );
+        self.start_backend_action(ActionGroup::SessionSwitch, "starting session", async move {
+            BackendActionResult::SessionStart {
+                result: request.await,
+            }
+        });
         Ok(())
     }
 
@@ -108,6 +104,10 @@ impl ShellState {
         self.cancel_agent_history().await;
         let provider_changed = self.model_provider_id != started.session.model_provider_id;
         let previous_thread_ids = self.tracked_thread_ids();
+        self.projects.error = None;
+        self.projects
+            .failed_resumes
+            .remove(&started.session.thread_id);
         self.replace_started_session(started);
         self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
         self.start_replaced_session_hydration(app_server);
@@ -153,7 +153,10 @@ impl ShellState {
             } else {
                 // Recents may finish loading before the project catalog.
                 let Some(handle) = app_server.app_server_request_handle() else {
-                    self.push_error("Could not load the selected chat’s project");
+                    self.report_resume_error(
+                        thread_id,
+                        &eyre!("Could not load the selected chat’s project"),
+                    );
                     return;
                 };
                 let request = ClientRequest::ProjectRead {
@@ -162,13 +165,27 @@ impl ShellState {
                         project_id: id.to_owned(),
                     },
                 };
-                match handle.request_typed::<ProjectReadResponse>(request).await {
-                    Ok(response) => Some(response.project),
-                    Err(err) => {
-                        self.project_action_error(&err.into());
-                        return;
-                    }
+                if self.block_session_switch_if_busy() {
+                    return;
                 }
+                let config = Box::new(config.clone());
+                self.start_backend_action(
+                    ActionGroup::SessionSwitch,
+                    "loading session project",
+                    async move {
+                        BackendActionResult::SessionProject {
+                            thread_id,
+                            cwd,
+                            config,
+                            result: handle
+                                .request_typed::<ProjectReadResponse>(request)
+                                .await
+                                .map(|r| r.project)
+                                .map_err(Into::into),
+                        }
+                    },
+                );
+                return;
             }
         } else {
             None
@@ -188,7 +205,7 @@ impl ShellState {
             return;
         }
         if thread_id == self.thread_id && self.session_unavailable_reason.is_none() {
-            self.push_status("session is already open");
+            self.projects.error = None;
             return;
         }
         let session_config = if let Some(project) = &project
@@ -201,27 +218,34 @@ impl ShellState {
                 .unwrap_or_else(|| root.path.clone());
             session_config.workspace_roots = project.roots.iter().map(|r| r.path.clone()).collect();
             session_config
-        } else if let Some(config) =
-            self.session_switch_config(config, cwd.as_deref(), app_server.uses_remote_workspace())
-        {
-            config
         } else {
-            return;
+            match self.session_switch_config(
+                config,
+                cwd.as_deref(),
+                app_server.uses_remote_workspace(),
+            ) {
+                Ok(config) => config,
+                Err(err) => {
+                    self.report_resume_error(thread_id, &err);
+                    return;
+                }
+            }
         };
         let request = app_server.resume_thread_in_background(session_config, thread_id, project);
         self.start_backend_action(ActionGroup::SessionSwitch, "resuming session", async move {
             BackendActionResult::SessionResume {
+                thread_id,
                 result: request.await,
             }
         });
     }
 
     pub(super) fn session_switch_config(
-        &mut self,
+        &self,
         config: &Config,
         session_cwd: Option<&std::path::Path>,
         uses_remote_workspace: bool,
-    ) -> Option<Config> {
+    ) -> Result<Config> {
         let mode = effective_resume_cwd_mode(
             config.tui_resume_cwd,
             self.resume_cwd_runtime.explicit_cwd.as_deref(),
@@ -230,52 +254,37 @@ impl ShellState {
             && self.resume_cwd_runtime.explicit_cwd.is_none()
             && matches!(mode, Some(ResumeCwdMode::Current))
         {
-            self.push_error(
-                "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace",
-            );
-            return None;
+            return Err(eyre!(
+                "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace"
+            ));
         }
         if uses_remote_workspace || mode.is_none() {
-            return Some(config.clone());
+            return Ok(config.clone());
         }
 
         let cwd = match mode {
             Some(ResumeCwdMode::Current)
                 if self.resume_cwd_runtime.uses_remote_workspace_or_environment =>
             {
-                let Some(explicit_cwd) = self.resume_cwd_runtime.explicit_cwd.as_deref() else {
-                    self.push_error(
-                        "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace",
-                    );
-                    return None;
-                };
-                explicit_cwd
+                self.resume_cwd_runtime
+                    .explicit_cwd
+                    .as_deref()
+                    .expect("remote current mode validated above")
             }
             Some(ResumeCwdMode::Current) => self.resume_cwd_runtime.launch_cwd.as_path(),
-            Some(ResumeCwdMode::Session) => {
-                let Some(session_cwd) = session_cwd else {
-                    self.push_error(
-                        "failed to determine the working directory recorded for the selected session",
-                    );
-                    return None;
-                };
-                session_cwd
-            }
+            Some(ResumeCwdMode::Session) => session_cwd.ok_or_else(|| {
+                eyre!("failed to determine the working directory recorded for the selected session")
+            })?,
             None => unreachable!("unset modes return before choosing a working directory"),
         };
-        let cwd = match AbsolutePathBuf::from_absolute_path(cwd) {
-            Ok(cwd) => cwd,
-            Err(err) => {
-                self.push_error(format!("selected working directory is not absolute: {err}"));
-                return None;
-            }
-        };
+        let cwd = AbsolutePathBuf::from_absolute_path(cwd)
+            .wrap_err("selected working directory is not absolute")?;
 
         let mut session_config = config.clone();
         session_config.cwd = cwd.clone();
         if !session_config.workspace_roots_explicit {
             session_config.workspace_roots = vec![cwd];
         }
-        Some(session_config)
+        Ok(session_config)
     }
 }

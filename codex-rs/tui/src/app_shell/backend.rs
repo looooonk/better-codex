@@ -99,6 +99,13 @@ pub(super) trait AppShellBackend {
         project: Option<&codex_app_server_protocol::Project>,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
 
+    fn start_new_thread_in_background(
+        &mut self,
+        config: &Config,
+        provider: Option<&str>,
+        project: Option<&codex_app_server_protocol::Project>,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static;
+
     fn resume_thread(
         &mut self,
         config: Config,
@@ -495,6 +502,21 @@ impl AppShellBackend for AppServerSession {
         .await
     }
 
+    fn start_new_thread_in_background(
+        &mut self,
+        config: &Config,
+        provider: Option<&str>,
+        project: Option<&codex_app_server_protocol::Project>,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        self.start_prepared_thread(
+            config,
+            config.clone(),
+            Some(ThreadStartSource::Clear),
+            provider,
+            project,
+        )
+    }
+
     async fn resume_thread(
         &mut self,
         config: Config,
@@ -570,15 +592,17 @@ impl AppShellBackend for AppServerSession {
         params: ThreadListParams,
     ) -> impl std::future::Future<Output = Result<ThreadListResponse>> + Send + 'static {
         let request_handle = AppServerSession::request_handle(self);
-        async move {
-            request_handle
-                .request_typed(ClientRequest::ThreadList {
-                    request_id: app_shell_request_id("app-shell-session-list"),
-                    params,
-                })
-                .await
-                .map_err(Into::into)
-        }
+        super::sessions::load_page(params, move |params| {
+            let handle = request_handle.clone();
+            async move {
+                Ok(handle
+                    .request_typed(ClientRequest::ThreadList {
+                        request_id: app_shell_request_id("app-shell-session-list"),
+                        params,
+                    })
+                    .await?)
+            }
+        })
     }
 
     fn thread_read_full_in_background(

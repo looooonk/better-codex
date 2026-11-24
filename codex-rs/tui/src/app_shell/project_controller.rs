@@ -204,6 +204,30 @@ impl ShellState {
         }
     }
 
+    pub(super) fn report_resume_error(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+        err: &color_eyre::Report,
+    ) {
+        if format!("{err:#}").contains("active writer") {
+            // A catalog refresh will recheck this hint. A click always retries the actual resume.
+            self.session_list.mark_external_writer(thread_id);
+            for chat in self
+                .projects
+                .groups
+                .iter_mut()
+                .flat_map(|group| &mut group.chats)
+                .filter(|chat| chat.id == thread_id)
+            {
+                chat.external_writer = true;
+            }
+        } else {
+            self.projects.failed_resumes.insert(thread_id);
+        }
+        self.status = "ready".into();
+        self.project_action_error(err);
+    }
+
     pub(super) fn project_action_error(&mut self, err: &color_eyre::Report) {
         let detail = format!("{err:#}");
         let message = if detail.contains("active writer") {
@@ -211,9 +235,10 @@ impl ShellState {
         } else {
             detail
         };
-        self.projects.error = Some(message.clone());
-        self.dashboard_scroll.set(0);
-        self.push_error(message);
+        if self.dashboard_visible && self.dashboard_route == DashboardRoute::Sessions {
+            self.projects.error = Some(message);
+            self.dashboard_scroll.set(0);
+        }
     }
 
     pub(super) async fn handle_project_key<S: AppShellBackend>(

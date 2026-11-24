@@ -930,6 +930,7 @@ impl ShellState {
         self.session_list.focused = false;
         self.settings.focused = false;
         self.agents_focused = false;
+        self.projects.error = None;
         self.dashboard_route = route;
         self.dashboard_scroll.set(0);
     }
@@ -937,6 +938,7 @@ impl ShellState {
     fn toggle_dashboard(&mut self) {
         self.dashboard_visible = !self.dashboard_visible;
         if !self.dashboard_visible {
+            self.projects.error = None;
             self.cancel_dashboard_resize();
             self.session_list.focused = false;
             self.settings.focused = false;

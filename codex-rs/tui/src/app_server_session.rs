@@ -495,6 +495,30 @@ impl AppServerSession {
         model_provider_override: Option<&str>,
         project: Option<&codex_app_server_protocol::Project>,
     ) -> Result<AppServerStartedThread> {
+        let mut session_config = config.clone();
+        if session_start_source == Some(ThreadStartSource::Startup)
+            && self.thread_params_mode != ThreadParamsMode::Cloud
+        {
+            new_thread_defaults::apply_server_startup_settings(self, &mut session_config).await?;
+        }
+        self.start_prepared_thread(
+            config,
+            session_config,
+            session_start_source,
+            model_provider_override,
+            project,
+        )
+        .await
+    }
+
+    pub(crate) fn start_prepared_thread(
+        &mut self,
+        config: &Config,
+        mut session_config: Config,
+        session_start_source: Option<ThreadStartSource>,
+        model_provider_override: Option<&str>,
+        project: Option<&codex_app_server_protocol::Project>,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
         let request_id = self.next_request_id();
         let provider_override = model_provider_override
             .or(self.launch_overrides.model_provider.as_deref())
@@ -504,12 +528,6 @@ impl AppServerSession {
                     .required_model_provider()
                     .unwrap_or(provider)
             });
-        let mut session_config = config.clone();
-        if session_start_source == Some(ThreadStartSource::Startup)
-            && self.thread_params_mode != ThreadParamsMode::Cloud
-        {
-            new_thread_defaults::apply_server_startup_settings(self, &mut session_config).await?;
-        }
         new_thread_defaults::apply_managed_new_thread_defaults(
             &mut session_config,
             self.managed_new_thread_defaults(),
@@ -536,14 +554,16 @@ impl AppServerSession {
                     Some(project.roots.iter().map(|r| r.path.clone()).collect());
             }
         }
-        let response: ThreadStartResponse = self
-            .client
-            .request_typed(ClientRequest::ThreadStart { request_id, params })
-            .await
-            .map_err(|err| {
-                bootstrap_request_error("thread/start failed during TUI bootstrap", err)
-            })?;
-        started_thread_from_start_response(response, config, self.thread_params_mode()).await
+        let handle = self.request_handle();
+        let mode = self.thread_params_mode();
+        let config = config.clone();
+        async move {
+            let response: ThreadStartResponse = handle
+                .request_typed(ClientRequest::ThreadStart { request_id, params })
+                .await
+                .map_err(|err| bootstrap_request_error("thread/start failed in TUI", err))?;
+            started_thread_from_start_response(response, &config, mode).await
+        }
     }
 
     pub(crate) async fn resume_thread(

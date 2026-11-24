@@ -103,6 +103,7 @@ async fn selecting_new_project_chat_uses_both_roots_and_selecting_old_chat_resum
         .handle_mouse_click(area, Position::new(x, y), &config, &mut backend)
         .await
         .unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
     {
         let configs = backend.start_configs.lock().unwrap();
         assert_eq!(configs[0].cwd, test_absolute_path("research"));
@@ -177,6 +178,7 @@ fn wheel_over_project_chats_scrolls_the_dashboard_without_requesting_a_page() {
         let group = &mut shell.projects.groups[0];
         for index in 2..=5 {
             group.chats.push(Chat {
+                external_writer: false,
                 id: ThreadId::default(),
                 title: format!("Experiment {index}"),
                 cwd: group.project.roots[0].path.to_path_buf(),
@@ -362,4 +364,123 @@ async fn down_at_the_page_boundary_uses_an_in_flight_viewport_fill() {
     finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.session_list.selected_title(), Some("Chat 21"));
     assert_eq!(backend.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn blocked_chat_is_yellow_in_both_lists_and_reports_only_in_the_dashboard() {
+    let (mut shell, thread) = project_shell();
+    let config = test_config().await;
+    let backend = RecordingBackend::default();
+    let mut record = thread_fixture(thread, Some("Earlier experiment"), "Desktop");
+    record.extra = Some(codex_app_server_protocol::ThreadExtra {
+        external_writer: true,
+    });
+    shell.projects.groups[0].chats = vec![Chat::from_thread(record.clone()).unwrap()];
+    shell.session_list.replace_threads(vec![record]);
+    shell.projects.expanded.insert("research".into());
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 116, /*height*/ 30,
+    );
+    let buf = render_shell_buffer(&shell, area);
+    let colors: Vec<_> = (0..area.height)
+        .filter_map(|y| row_needle_x(&buf, area, y, "Earlier experiment").map(|x| buf[(x, y)].fg))
+        .collect();
+    assert_eq!(colors, vec![design::palette::warning(); 2]);
+    let before = shell.transcript.clone();
+    backend.fail_next_action("thread already has an active writer");
+    shell.resume_session(&config, &backend, thread).await;
+    let loading = render_shell(&shell, area);
+    assert!(loading.contains("Loading session..."));
+    insta::assert_snapshot!("loading_selected_session", loading);
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.transcript, before);
+    assert!(
+        shell
+            .projects
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("another Codex session")
+    );
+    shell.toggle_dashboard();
+    assert_eq!(shell.projects.error, None);
+    shell.toggle_dashboard();
+    shell.report_resume_error(thread, &color_eyre::eyre::eyre!("active writer"));
+    shell.set_dashboard_route(DashboardRoute::Agents);
+    assert_eq!(shell.projects.error, None);
+    shell.set_dashboard_route(DashboardRoute::Sessions);
+    shell.report_resume_error(thread, &color_eyre::eyre::eyre!("active writer"));
+    shell.resume_session(&config, &backend, thread).await;
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!((shell.thread_id, shell.projects.error), (thread, None));
+}
+
+#[tokio::test]
+async fn short_backend_pages_are_combined_before_recents_is_published() {
+    let (shell, _) = project_shell();
+    let params = shell.session_list.list_params_with_cursor(None);
+    let page = super::super::sessions::load_page(params, |params| async move {
+        let first: usize = params.cursor.as_deref().unwrap_or("0").parse()?;
+        let end = first + usize::min(params.limit.unwrap() as usize, 6);
+        Ok(ThreadListResponse {
+            data: (first..end)
+                .map(|i| {
+                    thread_fixture(
+                        test_thread_id(&format!("01900000-0000-7000-8001-{i:012x}")),
+                        Some(&format!("Chat {i}")),
+                        "Desktop",
+                    )
+                })
+                .collect(),
+            next_cursor: Some(end.to_string()),
+            read_states: None,
+            backwards_cursor: None,
+        })
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        (page.data.len(), page.next_cursor.as_deref()),
+        (20, Some("20"))
+    );
+}
+
+#[test]
+fn importing_desktop_reasoning_keeps_the_user_prompt_and_answer() {
+    let (mut shell, _) = project_shell();
+    shell.clear_visible_transcript();
+    let mut turn = test_turn("desktop", TurnStatus::Completed);
+    turn.items = vec![
+        ThreadItem::untimed(ThreadItemPayload::UserMessage {
+            id: "question".into(),
+            client_id: None,
+            content: vec![UserInput::Text {
+                text: "What changed?\r\n".into(),
+                text_elements: Vec::new(),
+            }],
+        }),
+        ThreadItem::untimed(ThreadItemPayload::Reasoning {
+            id: "reasoning".into(),
+            summary: vec!["**Unifying selected-line rendering**".into()],
+            content: vec![],
+        }),
+        ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+            id: "answer".into(),
+            text: "The rows now align.".into(),
+            phase: None,
+            memory_citation: None,
+            questions: None,
+            delivery: None,
+        }),
+    ];
+    shell.ingest_turn_history(vec![turn]);
+    let kinds: Vec<_> = shell.transcript.iter().map(|l| l.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            TranscriptKind::User,
+            TranscriptKind::Assistant,
+            TranscriptKind::Separator
+        ]
+    );
 }

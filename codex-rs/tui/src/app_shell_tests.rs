@@ -829,12 +829,12 @@ async fn remembered_current_cwd_rejects_remote_switch_without_explicit_override(
         /*uses_remote_workspace*/ true,
     );
 
-    assert!(session_config.is_none());
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Error
-            && line.text
-                == "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace"
-    }));
+    assert_eq!(
+        session_config
+            .expect_err("remote switch requires a cwd")
+            .to_string(),
+        "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace"
+    );
 }
 
 #[tokio::test]
@@ -2544,9 +2544,12 @@ fn session_rows_use_display_width_for_wide_characters() {
         ),
     ]);
     let width = 46;
-    let lines = shell
-        .session_list
-        .chat_lines(width, /*visible*/ 10, /*focused*/ true);
+    let lines = shell.session_list.chat_lines(
+        width,
+        /*visible*/ 10,
+        /*focused*/ true,
+        &shell.projects.failed_resumes,
+    );
 
     assert_eq!(
         lines
@@ -3116,6 +3119,7 @@ async fn command_palette_starts_a_new_session() {
         .execute_selected_command_palette_action(&config, &mut backend)
         .await
         .expect("new session action should start a session");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(
         backend.calls().first(),
@@ -6722,7 +6726,11 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
             .expect("Ctrl+D should restore the dashboard")
     );
     assert!(shell.dashboard_visible);
-    assert_eq!(backend.calls(), Vec::new());
+    finish_session_hydration(&mut shell, &backend).await;
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [RecordedBackendCall::ThreadList { .. }]
+    ));
 }
 
 #[tokio::test]
@@ -7201,6 +7209,7 @@ async fn clicking_new_session_starts_a_clear_session_and_focuses_the_composer() 
         .handle_mouse_click(area, Position::new(x, row), &config, &mut backend)
         .await
         .expect("new session click should succeed");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(
         backend.calls().first(),
@@ -14223,6 +14232,7 @@ async fn ctrl_n_starts_a_clear_session_with_current_settings() {
         )
         .await
         .expect("new session should start");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert!(!should_exit);
     assert_eq!(
@@ -17105,12 +17115,39 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(started)
     }
 
+    fn start_new_thread_in_background(
+        &mut self,
+        config: &Config,
+        provider: Option<&str>,
+        project: Option<&codex_app_server_protocol::Project>,
+    ) -> impl std::future::Future<Output = Result<crate::app_server_session::AppServerStartedThread>>
+    + Send
+    + 'static {
+        let mut backend = self.clone();
+        let config = config.clone();
+        let provider = provider.map(str::to_owned);
+        let project = project.cloned();
+        async move {
+            backend
+                .start_thread_with_session_start_source(
+                    &config,
+                    Some(ThreadStartSource::Clear),
+                    provider.as_deref(),
+                    project.as_ref(),
+                )
+                .await
+        }
+    }
+
     async fn resume_thread(
         &mut self,
         _config: Config,
         thread_id: codex_protocol::ThreadId,
     ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
         self.push(RecordedBackendCall::Resume(thread_id));
+        if let Some(err) = self.take_action_error() {
+            color_eyre::eyre::bail!(err);
+        }
         Ok(started_thread(
             "resumed", thread_id, /*forked_from_id*/ None,
         ))

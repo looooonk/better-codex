@@ -53,6 +53,10 @@ pub(super) fn render(
     if let Some(DashboardPlacement::Overlay(overlay)) = layout.dashboard {
         area.width = overlay.x.saturating_sub(area.x);
     }
+    if shell.has_pending_backend_action(super::backend_actions::ActionGroup::SessionSwitch) {
+        render_loading(area, shell.chrome_animation_frame, buf);
+        return;
+    }
     let (rows, width): (&[&str], u16) = if area.width >= 18 && area.height >= 9 {
         (&LOGO, 18)
     } else if area.width >= 10 && area.height >= 5 {
@@ -100,6 +104,24 @@ pub(super) fn render(
                 .set_fg(rgb_color((gray, gray, gray)));
         }
     }
+}
+
+pub(super) fn render_loading(area: Rect, frame: usize, buf: &mut Buffer) {
+    use ratatui::widgets::Paragraph;
+    use ratatui::widgets::Widget;
+    const DOTS: [char; 8] = ['⠋', '⠙', '⠸', '⢰', '⣠', '⣄', '⡆', '⠇'];
+    let spinner = DOTS[frame % DOTS.len()];
+    Paragraph::new(format!("{spinner} Loading session..."))
+        .centered()
+        .render(
+            Rect::new(
+                area.x,
+                area.y + area.height.saturating_sub(1) / 2,
+                area.width,
+                area.height.min(1),
+            ),
+            buf,
+        );
 }
 
 #[cfg(test)]

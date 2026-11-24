@@ -106,7 +106,24 @@ pub(crate) async fn run(
         session_selection,
         SessionSelection::Resume(_) | SessionSelection::Fork(_)
     );
-    let started = start_selected_session(&mut app_server, &config, session_selection).await?;
+    let started = {
+        let start = start_selected_session(&mut app_server, &config, session_selection);
+        tokio::pin!(start);
+        let mut tick = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut frame = 0usize;
+        loop {
+            tokio::select! {
+                biased;
+                result = &mut start => break result?,
+                _ = tick.tick() => {
+                    let height = tui.terminal.size()?.height;
+                    tui.draw(height, |f| super::start_logo::render_loading(f.area(), frame, f.buffer))?;
+                    if config.animations { frame = frame.wrapping_add(1); }
+                }
+            }
+        }
+    };
     if let Some(worktree) = &worktree_runtime.startup {
         worktree.bind(started.session.thread_id)?;
     }

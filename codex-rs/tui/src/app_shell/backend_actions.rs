@@ -128,7 +128,17 @@ pub(super) enum BackendActionResult {
         name: String,
         result: Result<()>,
     },
+    SessionStart {
+        result: Result<AppServerStartedThread>,
+    },
+    SessionProject {
+        thread_id: ThreadId,
+        cwd: Option<std::path::PathBuf>,
+        config: Box<crate::legacy_core::config::Config>,
+        result: Result<codex_app_server_protocol::Project>,
+    },
     SessionResume {
+        thread_id: ThreadId,
         result: Result<AppServerStartedThread>,
     },
     Settings {
@@ -365,13 +375,40 @@ impl ShellState {
                 submission,
                 result,
             } => self.complete_turn_start(app_server, params, prompt, submission, result),
-            BackendActionResult::SessionResume { result } => match result {
+            BackendActionResult::SessionStart { result } => match result {
+                Ok(started) => {
+                    self.next_model_provider = None;
+                    self.next_provider_model = None;
+                    self.complete_session_switch(started, app_server).await;
+                    self.session_list.focused = false;
+                    self.settings.focused = false;
+                    self.agents_focused = false;
+                }
+                Err(err) => self.report_action_error("could not start session", err),
+            },
+            BackendActionResult::SessionProject {
+                thread_id,
+                cwd,
+                config,
+                result,
+            } => match result {
+                Ok(project) => self.resume_workspace_session(
+                    &config,
+                    app_server,
+                    thread_id,
+                    cwd,
+                    Some(project),
+                ),
+                Err(err) => {
+                    self.report_resume_error(thread_id, &err);
+                }
+            },
+            BackendActionResult::SessionResume { thread_id, result } => match result {
                 Ok(started) => {
                     self.complete_session_switch(started, app_server).await;
                 }
                 Err(err) => {
-                    self.status = "failed to resume session".to_owned();
-                    self.project_action_error(&err);
+                    self.report_resume_error(thread_id, &err);
                 }
             },
             BackendActionResult::DescendantCount {

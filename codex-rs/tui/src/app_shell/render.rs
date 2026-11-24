@@ -96,7 +96,11 @@ impl ShellView<'_> {
         if let Some(area) = layout.status {
             self.shell.render_status_surface(area, buf);
         }
-        if self.shell.shows_start_logo() {
+        if self.shell.shows_start_logo()
+            || self
+                .shell
+                .has_pending_backend_action(super::backend_actions::ActionGroup::SessionSwitch)
+        {
             super::start_logo::render(self.shell, layout, self.base_hover_position(), buf);
         } else {
             render_transcript(

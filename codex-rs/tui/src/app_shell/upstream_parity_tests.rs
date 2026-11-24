@@ -113,6 +113,14 @@ async fn new_session_applies_pending_provider_and_refreshes_its_catalog() {
         .start_new_session(&test_config().await, &mut backend)
         .await
         .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while shell.has_pending_backend_action(ActionGroup::SessionSwitch) {
+            tokio::task::yield_now().await;
+            shell.poll_backend_actions(&backend).await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(
         *backend.start_provider_overrides.lock().unwrap(),
         vec![Some("gateway".into())]

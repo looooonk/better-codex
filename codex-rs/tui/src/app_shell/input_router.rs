@@ -490,7 +490,7 @@ impl ShellState {
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('d')) {
             self.toggle_dashboard();
             if self.dashboard_visible && self.dashboard_route == DashboardRoute::Sessions {
-                self.refresh_projects(app_server);
+                self.start_session_list_refresh(app_server);
             }
             return Ok(false);
         }

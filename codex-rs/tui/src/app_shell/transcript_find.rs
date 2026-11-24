@@ -141,6 +141,7 @@ impl ShellState {
         }
         self.transcript_selection = Some(index);
         self.transcript_selection_needs_reveal.set(true);
+        self.projects.error = None;
         self.dashboard_visible = false;
         self.push_status("Search result selected; Esc returns to your draft");
     }

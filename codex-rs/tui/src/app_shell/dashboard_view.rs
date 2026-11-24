@@ -149,6 +149,7 @@ impl DashboardView {
                 usize::from(body.width.saturating_sub(1)),
                 capacity,
                 shell.session_list.focused && shell.projects.selected.is_none(),
+                &shell.projects.failed_resumes,
             ));
         }
         shell.dashboard_scroll.set(scroll);
