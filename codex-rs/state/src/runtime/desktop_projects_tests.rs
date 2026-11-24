@@ -42,14 +42,12 @@ async fn legacy_chats_page_move_clear_and_respect_migration_checkpoints() -> any
         runtime.upsert_thread(&metadata).await?;
         threads.push(id);
     }
-    let mut conn = SqliteConnection::connect_with(
-        &SqliteConnectOptions::new()
-            .filename(home.join(DATABASE))
-            .create_if_missing(true),
-    )
-    .await?;
+    let desktop = runtime
+        .sqlite
+        .open_read_write_pool(&home.join(DATABASE))
+        .await?;
     sqlx::query("CREATE TABLE settings(scope TEXT, key TEXT, value TEXT, PRIMARY KEY(scope,key))")
-        .execute(&mut conn)
+        .execute(&desktop)
         .await?;
     let assignments = json!({
         threads[0].to_string(): {"projectKind":"local","projectId":"a"},
@@ -67,7 +65,7 @@ async fn legacy_chats_page_move_clear_and_respect_migration_checkpoints() -> any
         sqlx::query("INSERT INTO settings VALUES ('global',?,?)")
             .bind(key)
             .bind(value.to_string())
-            .execute(&mut conn)
+            .execute(&desktop)
             .await?;
     }
     let filter = |project_id| ThreadFilterOptions {
@@ -122,12 +120,12 @@ async fn legacy_chats_page_move_clear_and_respect_migration_checkpoints() -> any
     let read =
         |key| sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key=?").bind(key);
     let remaining: serde_json::Value =
-        serde_json::from_str(&read(ASSIGNMENTS).fetch_one(&mut conn).await?)?;
+        serde_json::from_str(&read(ASSIGNMENTS).fetch_one(&desktop).await?)?;
     let mut expected = assignments;
     expected.as_object_mut().unwrap().remove(&id);
     assert_eq!(remaining, expected);
     assert_eq!(
-        serde_json::from_str::<Vec<String>>(&read(PROJECTLESS).fetch_one(&mut conn).await?)?,
+        serde_json::from_str::<Vec<String>>(&read(PROJECTLESS).fetch_one(&desktop).await?)?,
         vec![id]
     );
     let checkpoint = json!({format!("local:{}",home.display()): {
@@ -135,7 +133,7 @@ async fn legacy_chats_page_move_clear_and_respect_migration_checkpoints() -> any
         "pendingThreadAssignmentIds":[]
     }});
     sqlx::query("INSERT INTO settings VALUES ('global','electron-owner-value:app-server-projects-migration-by-host:test',?)")
-        .bind(checkpoint.to_string()).execute(&mut conn).await?;
+        .bind(checkpoint.to_string()).execute(&desktop).await?;
     assert_eq!(runtime.desktop_thread_project(threads[1]).await?, None);
     Ok(())
 }

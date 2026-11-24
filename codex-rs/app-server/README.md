@@ -141,6 +141,21 @@ The field is null for older history and tools that declare widgets only in
 result metadata; clients retain catalog discovery for those calls. Existing
 resource URI fields remain available for older clients.
 
+# Local projects and chat history
+
+Use `project/list` for the saved project order, roots, and appearance metadata.
+Use `thread/list` with a `projectId` to page through its chats. Omitting the
+filter includes both assigned and unassigned chats. With local SQLite storage,
+`thread/list` and `thread/read` also resolve older Desktop assignments that
+still await migration.
+
+Pass `projectId` to `thread/start` to create a project chat. Use
+`thread/metadata/update` to move an existing chat, or pass an empty
+`projectId` to remove it. A second app-server can browse a chat owned by another
+writer. Before resuming it or changing its project, wait for that writer to
+release the chat. Clients can set the execution directory with `cwd` and pass
+the project's `runtimeWorkspaceRoots` when starting or resuming a thread.
+
 # Initial Daybreak choice (experimental)
 
 Persistent threads accept `daybreakEnabled` on `thread/start` with the

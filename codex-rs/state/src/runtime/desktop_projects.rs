@@ -4,10 +4,8 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use sqlx::Connection;
 use sqlx::Row;
 use sqlx::SqliteConnection;
-use sqlx::sqlite::SqliteConnectOptions;
 
 use super::StateRuntime;
 
@@ -33,8 +31,10 @@ impl StateRuntime {
         if !tokio::fs::try_exists(&path).await? {
             return Ok(HashMap::new());
         }
-        let options = SqliteConnectOptions::new().filename(path).read_only(true);
-        let mut connection = SqliteConnection::connect_with(&options).await?;
+        let pool = self
+            .sqlite
+            .open_read_only_pool(&path, /*busy_timeout*/ None)
+            .await?;
         let host = format!("local:{}", self.desktop_home.display());
         let rows = sqlx::query(
             "SELECT key,value FROM settings WHERE scope='global'
@@ -42,7 +42,7 @@ impl StateRuntime {
         )
         .bind(ASSIGNMENTS)
         .bind(PROJECT_MAP)
-        .fetch_all(&mut connection)
+        .fetch_all(&pool)
         .await?;
         let mut records = serde_json::Value::Null;
         let mut ids = serde_json::Value::Null;
