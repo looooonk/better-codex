@@ -20,7 +20,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
    > Explain t│  Learn more                                                          │
               │                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
-            Wa│close when the response is ready.                                     │
+        Waitin│close when the response is ready.                                     │
               │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

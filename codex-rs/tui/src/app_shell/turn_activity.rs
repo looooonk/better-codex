@@ -1,7 +1,7 @@
 //! Animated status at the live end of the conversation.
 
 use super::ShellState;
-use super::transcript_view::ACTIVITY_INDENT;
+use super::transcript_render::tool_label_indent;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::terminal_palette::rgb_color;
 use ratatui::buffer::Buffer;
@@ -29,10 +29,11 @@ impl ShellState {
         else {
             return;
         };
+        let indent = tool_label_indent(row.width);
         let area = Rect::new(
-            row.x.saturating_add(ACTIVITY_INDENT),
+            row.x.saturating_add(indent),
             row.y,
-            row.width.saturating_sub(ACTIVITY_INDENT),
+            row.width.saturating_sub(indent),
             row.height,
         );
         let elapsed = self

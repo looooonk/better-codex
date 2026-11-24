@@ -928,7 +928,7 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
 #[test]
 fn turn_separator_keeps_its_indent_and_fills_the_available_width() {
     let label = "Took 12.50s · 8.4 tok/s";
-    let indent = usize::from(ACTIVITY_INDENT);
+    let indent = TURN_SEPARATOR_INDENT;
     let mut lines = Vec::new();
     for width in [60, 35, 18, 5, 0] {
         let line = turn_separator_line(label, width).to_string();

@@ -61,7 +61,9 @@ fn activity_follows_tool_cards_and_wrapped_output_and_scrolls_with_them() {
         .position(|row| row.contains("Editing files"))
         .unwrap();
     assert!(rows[tool + 1].is_empty());
-    assert!(rows[tool + 2].contains("Thinking..."));
+    let tool_column = rows[tool].split_once("Editing files").unwrap().0.width();
+    let activity_column = rows[tool + 2].split_once("Thinking...").unwrap().0.width();
+    assert_eq!(activity_column, tool_column);
 
     shell.push_streaming_assistant_delta("message", &"output ".repeat(80));
     shell.push_streaming_assistant_delta("message", "\n\nfinal line");
@@ -76,8 +78,7 @@ fn activity_follows_tool_cards_and_wrapped_output_and_scrolls_with_them() {
         "{rendered}"
     );
     let (indent, _) = rows[last + 2].split_once("Thinking...").unwrap();
-    let output_indent = rows[last].width() - rows[last].trim_start().width();
-    assert_eq!(indent.width(), output_indent + usize::from(ACTIVITY_INDENT));
+    assert_eq!(indent.width(), tool_column);
     shell.scroll_transcript_to_top();
     assert!(render_shell(&shell, area).contains("Editing files"));
     assert!(!render_shell(&shell, area).contains("Thinking..."));

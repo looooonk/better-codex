@@ -14,10 +14,19 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub(super) const TOOL_DETAIL_INDENT: u16 = 5;
-
 const MAX_RENDER_VARIANTS_PER_ITEM: usize = 4;
 const MAX_LAYOUT_VARIANTS: usize = 4;
+pub(super) const TOOL_DETAIL_INDENT: u16 = 5;
+const TOOL_MARKER_WIDTH: u16 = 2; // "▸ " or "⌄ "
+
+fn tool_detail_indent(width: u16) -> u16 {
+    // Leave room for the card label and value on very narrow terminals.
+    TOOL_DETAIL_INDENT.min(width.saturating_sub(12))
+}
+
+pub(super) fn tool_label_indent(width: u16) -> u16 {
+    tool_detail_indent(width).max(TOOL_MARKER_WIDTH)
+}
 
 /// Width-aware rendered transcript state retained across terminal frames.
 ///
@@ -80,8 +89,8 @@ impl TranscriptRenderCache {
             visualization_context,
         };
 
-        // Leave room for the card label and value on very narrow terminals.
-        let detail_indent = TOOL_DETAIL_INDENT.min(width.saturating_sub(12));
+        let detail_indent = tool_detail_indent(width);
+        let header_indent = tool_label_indent(width) - TOOL_MARKER_WIDTH;
         let mut groups = shell.tool_groups().peekable();
         for (index, item) in shell.transcript.iter().enumerate() {
             if groups.peek().is_some_and(|group| group.rows.end <= index) {
@@ -101,19 +110,20 @@ impl TranscriptRenderCache {
                 if index == group.rows.start {
                     let _theme = crate::app_theme::activate(shell.app_theme);
                     // The disclosure marker sits in the gutter beside the activity text.
-                    let indent = detail_indent.saturating_sub(2);
-                    let header =
-                        group.header(width - indent, shell.transcript_selection == Some(index));
+                    let header = group.header(
+                        width - header_indent,
+                        shell.transcript_selection == Some(index),
+                    );
                     chunks.push(TranscriptChunk {
                         target: Some(TranscriptTarget::ToolGroup(index)),
-                        indent,
+                        indent: header_indent,
                         revision: item.render_revision,
                         anchor_source: anchor_source(),
                         separator_before: should_separate_transcript_item(
                             previous_kind,
                             TranscriptKind::Tool,
                         ),
-                        lines: indent_lines(vec![header], indent),
+                        lines: indent_lines(vec![header], header_indent),
                     });
                     previous_kind = Some(TranscriptKind::Tool);
                 }

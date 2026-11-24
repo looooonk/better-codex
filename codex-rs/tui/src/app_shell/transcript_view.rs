@@ -42,7 +42,7 @@ use std::sync::Arc;
 use unicode_width::UnicodeWidthStr;
 
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
-pub(super) const ACTIVITY_INDENT: u16 = 9;
+const TURN_SEPARATOR_INDENT: usize = 9;
 const OUTPUT_BLOCK_INDENT: usize = 2;
 const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 
@@ -670,7 +670,7 @@ pub(super) fn render_transcript_line_with_visualizations(
 }
 
 fn turn_separator_line(label: &str, width: usize) -> Line<'static> {
-    let indent = usize::from(ACTIVITY_INDENT);
+    let indent = TURN_SEPARATOR_INDENT;
     let border = palette::border();
     if label.is_empty() || width <= indent {
         return Line::from("─".repeat(width).fg(border));
