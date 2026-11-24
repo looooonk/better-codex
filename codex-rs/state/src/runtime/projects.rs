@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use sqlx::Connection;
 use sqlx::QueryBuilder;
 use sqlx::Row;
 use sqlx::Sqlite;
@@ -28,7 +29,12 @@ impl StateRuntime {
         thread_id: &str,
         project_id: Option<&str>,
     ) -> anyhow::Result<Option<Option<String>>> {
-        let mut tx = self.pool.begin_immediate().await?;
+        let mut desktop = self.project_write_connection().await?;
+        let mirror = desktop.is_some();
+        let mut tx = match desktop.as_mut() {
+            Some(conn) => conn.begin_with("BEGIN IMMEDIATE").await?,
+            None => self.pool.begin_immediate().await?,
+        };
         if let Some(project_id) = project_id {
             let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM projects WHERE id = ?")
                 .bind(project_id)
@@ -48,6 +54,10 @@ impl StateRuntime {
             tx.rollback().await?;
             return Ok(None);
         };
+        if mirror {
+            self.mirror_desktop_membership(&mut tx, thread_id, project_id)
+                .await?;
+        }
         if previous.as_deref() != project_id {
             sqlx::query("UPDATE threads SET project_id = ? WHERE id = ?")
                 .bind(project_id)

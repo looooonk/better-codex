@@ -539,13 +539,28 @@ ON CONFLICT(child_thread_id) DO NOTHING
         let limit = page_size.saturating_add(1);
 
         let mut builder = QueryBuilder::<Sqlite>::new("");
-        push_list_threads_query(&mut builder, filters, relation_filter, limit);
+        let desktop = self.desktop_memberships().await.unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read Desktop project memberships");
+            Default::default()
+        });
+        let legacy_ids = filters.project_id.and_then(|project| {
+            let ids: Vec<_> = desktop
+                .iter()
+                .filter(|(_, id)| project.is_none_or(|p| p == *id))
+                .map(|(thread, _)| thread)
+                .collect();
+            (!ids.is_empty()).then(|| serde_json::json!(ids).to_string())
+        });
+        push_list_threads_query(&mut builder, filters, relation_filter, limit, legacy_ids);
 
         let rows = builder.build().fetch_all(self.pool.as_ref()).await?;
         let mut items = Vec::with_capacity(rows.len());
         let mut parent_thread_ids = std::collections::HashMap::new();
         for row in rows {
-            let item = ThreadRow::try_from_row(&row).and_then(ThreadMetadata::try_from)?;
+            let mut item = ThreadRow::try_from_row(&row).and_then(ThreadMetadata::try_from)?;
+            if item.project_id.is_none() {
+                item.project_id = desktop.get(&item.id.to_string()).cloned();
+            }
             if relation_filter.is_some()
                 && let Some(parent_thread_id) =
                     row.try_get::<Option<String>, _>("parent_thread_id")?
@@ -1267,6 +1282,7 @@ fn push_list_threads_query(
     filters: ThreadFilterOptions<'_>,
     relation_filter: Option<crate::ThreadRelationFilter>,
     limit: usize,
+    legacy_ids: Option<String>,
 ) {
     if let Some(crate::ThreadRelationFilter::DescendantsOf(ancestor_thread_id)) = relation_filter {
         builder.push(
@@ -1333,6 +1349,11 @@ WITH RECURSIVE subtree(child_thread_id, parent_thread_id) AS (
         builder,
         ThreadFilterOptions {
             allowed_sources,
+            project_id: if legacy_ids.is_some() {
+                None
+            } else {
+                filters.project_id
+            },
             ..filters
         },
         /*include_thread_id_tiebreaker*/ true,
@@ -1366,6 +1387,16 @@ WITH RECURSIVE subtree(child_thread_id, parent_thread_id) AS (
             builder.push_bind(parent.to_string());
         }
         None => {}
+    }
+    if let Some(ids) = legacy_ids {
+        if let Some(Some(project)) = filters.project_id {
+            builder.push(" AND (threads.project_id = ").push_bind(project)
+                .push(" OR (threads.project_id IS NULL AND threads.id IN (SELECT value FROM json_each(")
+                .push_bind(ids).push("))))");
+        } else {
+            builder.push(" AND threads.project_id IS NULL AND threads.id NOT IN (SELECT value FROM json_each(")
+                .push_bind(ids).push("))");
+        }
     }
     let order_by_index = match (relation_filter, filters.cwd_filters) {
         // Relationship listings are expected to be much smaller than the global thread table.
@@ -2031,6 +2062,7 @@ mod tests {
             filters(None, Some(Some(crate::PINNED_THREAD_SECTION_ID))),
             /*relation_filter*/ None,
             /*limit*/ 2,
+            /*legacy_ids*/ None,
         );
         let plan_details = builder
             .build()
@@ -2135,6 +2167,7 @@ mod tests {
             filters(/*anchor*/ None),
             /*relation_filter*/ None,
             /*limit*/ 2,
+            /*legacy_ids*/ None,
         );
         let plan_details = builder
             .build()
@@ -2609,6 +2642,7 @@ mod tests {
                     },
                     /*relation_filter*/ None,
                     /*limit*/ 201,
+                    /*legacy_ids*/ None,
                 );
                 let plan_details = builder
                     .build()
@@ -2697,6 +2731,7 @@ mod tests {
             },
             /*relation_filter*/ None,
             /*limit*/ 56,
+            /*legacy_ids*/ None,
         );
         let plan = builder
             .build()
@@ -2750,6 +2785,7 @@ mod tests {
                         },
                         /*relation_filter*/ None,
                         /*limit*/ 2,
+                        /*legacy_ids*/ None,
                     );
                     let details = builder
                         .build()
@@ -2847,6 +2883,7 @@ mod tests {
             },
             Some(crate::ThreadRelationFilter::DescendantsOf(parent_id)),
             /*limit*/ 10,
+            /*legacy_ids*/ None,
         );
         let plan_details = builder
             .build()

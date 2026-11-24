@@ -104,9 +104,10 @@ pub(super) async fn update_thread_metadata(
     }
     let needs_rollout_compat = requires_rollout_compat || patch.name.is_some();
     // Reject competing writers before committing any part of a legacy rollout patch to SQLite.
-    let writer_lock = if !paginated
-        && needs_rollout_compat
-        && (patch.memory_mode.is_some() || patch.git_info.is_some())
+    let writer_lock = if patch.project_id.is_some()
+        || (!paginated
+            && needs_rollout_compat
+            && (patch.memory_mode.is_some() || patch.git_info.is_some()))
     {
         let live = store
             .live_recorders
@@ -538,8 +539,8 @@ async fn apply_metadata_update(
                     message: format!("failed to update thread metadata for {thread_id}: {err}"),
                 })?;
             }
-            if existing.is_some()
-                && let Some(project_id) = project_id.as_ref()
+            if let Some(project_id) = project_id.as_ref()
+                && (existing.is_some() || metadata.project_id.is_some())
             {
                 state_db
                     .set_thread_project(&thread_id.to_string(), project_id.as_deref())
