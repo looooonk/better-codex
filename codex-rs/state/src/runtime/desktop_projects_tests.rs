@@ -11,7 +11,7 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 #[tokio::test]
-async fn legacy_chats_page_move_clear_and_survive_reopen() -> anyhow::Result<()> {
+async fn legacy_chats_page_move_clear_and_respect_migration_checkpoints() -> anyhow::Result<()> {
     let home = unique_temp_dir();
     let runtime = StateRuntime::init(
         crate::SqliteConfig::new_for_testing(home.as_path().abs()),
@@ -130,5 +130,12 @@ async fn legacy_chats_page_move_clear_and_survive_reopen() -> anyhow::Result<()>
         serde_json::from_str::<Vec<String>>(&read(PROJECTLESS).fetch_one(&mut conn).await?)?,
         vec![id]
     );
+    let checkpoint = json!({format!("local:{}",home.display()): {
+        "threadAssignmentsReadMigrated":true,"threadAssignmentsMigrated":true,
+        "pendingThreadAssignmentIds":[]
+    }});
+    sqlx::query("INSERT INTO settings VALUES ('global','electron-owner-value:app-server-projects-migration-by-host:test',?)")
+        .bind(checkpoint.to_string()).execute(&mut conn).await?;
+    assert_eq!(runtime.desktop_thread_project(threads[1]).await?, None);
     Ok(())
 }

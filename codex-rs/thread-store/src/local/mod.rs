@@ -644,7 +644,21 @@ impl ThreadStore for LocalThreadStore {
     }
 
     fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreFuture<'_, StoredThread> {
-        Box::pin(async move { read_thread::read_thread(self, params).await })
+        Box::pin(async move {
+            let mut thread = read_thread::read_thread(self, params).await?;
+            if thread.project_id.is_none()
+                && let Some(db) = self.state_db().await
+            {
+                thread.project_id = db
+                    .desktop_thread_project(thread.thread_id)
+                    .await
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(%err, "could not read Desktop project placement");
+                        None
+                    });
+            }
+            Ok(thread)
+        })
     }
 
     fn read_thread_by_rollout_path(

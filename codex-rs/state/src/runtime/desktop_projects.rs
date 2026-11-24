@@ -2,6 +2,7 @@
 //! Browse through a read-only connection. Explicit changes mirror only the selected chat,
 //! inside the same SQLite transaction as the native assignment.
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use sqlx::Connection;
 use sqlx::Row;
@@ -16,17 +17,28 @@ const PROJECT_MAP: &str = "app-server-project-id-by-legacy-project-id-by-host";
 const PROJECTLESS: &str = "projectless-thread-ids";
 
 impl StateRuntime {
+    /// Resolve an old Desktop-only placement for a public thread read.
+    pub async fn desktop_thread_project(
+        &self,
+        thread: codex_protocol::ThreadId,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .desktop_memberships()
+            .await?
+            .remove(&thread.to_string()))
+    }
+
     pub(super) async fn desktop_memberships(&self) -> anyhow::Result<HashMap<String, String>> {
-        let path = self.sqlite.home().join(DATABASE);
+        let path = self.desktop_home.join(DATABASE);
         if !tokio::fs::try_exists(&path).await? {
             return Ok(HashMap::new());
         }
         let options = SqliteConnectOptions::new().filename(path).read_only(true);
         let mut connection = SqliteConnection::connect_with(&options).await?;
-        let host = format!("local:{}", self.sqlite.home().display());
+        let host = format!("local:{}", self.desktop_home.display());
         let rows = sqlx::query(
             "SELECT key,value FROM settings WHERE scope='global'
-             AND key IN (?,?)",
+             AND (key IN (?,?) OR key LIKE 'electron-owner-value:app-server-projects-migration-by-host:%')",
         )
         .bind(ASSIGNMENTS)
         .bind(PROJECT_MAP)
@@ -34,6 +46,7 @@ impl StateRuntime {
         .await?;
         let mut records = serde_json::Value::Null;
         let mut ids = serde_json::Value::Null;
+        let mut checkpoints = Vec::new();
         for row in rows {
             let key: String = row.try_get("key")?;
             let mut value: serde_json::Value = serde_json::from_str(row.try_get("value")?)?;
@@ -45,12 +58,31 @@ impl StateRuntime {
                         .map(serde_json::Value::take)
                         .unwrap_or_default()
                 }
-                _ => {}
+                _ => {
+                    if let Some(state) = value.get_mut(&host) {
+                        checkpoints.push(state.take());
+                    }
+                }
             }
         }
         let Some(records) = records.as_object() else {
             return Ok(HashMap::new());
         };
+        // Desktop records a host checkpoint per owner. Once every known owner has read
+        // native assignments, only explicitly pending chats can still need a fallback.
+        let pending = (!checkpoints.is_empty()
+            && checkpoints
+                .iter()
+                .all(|state| state["threadAssignmentsReadMigrated"] == true))
+        .then(|| {
+            checkpoints
+                .iter()
+                .filter(|s| s["threadAssignmentsMigrated"] != true)
+                .filter_map(|s| s["pendingThreadAssignmentIds"].as_array())
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<HashSet<_>>()
+        });
         let projects: std::collections::HashSet<String> =
             sqlx::query_scalar("SELECT id FROM projects")
                 .fetch_all(self.pool.as_ref())
@@ -59,7 +91,10 @@ impl StateRuntime {
                 .collect();
         let mut assignments = HashMap::new();
         for (thread, assignment) in records {
-            if assignment["projectKind"] == "local"
+            if pending
+                .as_ref()
+                .is_none_or(|ids| ids.contains(thread.as_str()))
+                && assignment["projectKind"] == "local"
                 && assignment["hostId"].as_str().is_none_or(|id| id == "local")
                 && let Some(old) = assignment["projectId"].as_str()
                 && let Some(id) = ids.get(old).and_then(serde_json::Value::as_str)
@@ -75,7 +110,7 @@ impl StateRuntime {
     pub(super) async fn project_write_connection(
         &self,
     ) -> anyhow::Result<Option<SqliteConnection>> {
-        let path = self.sqlite.home().join(DATABASE);
+        let path = self.desktop_home.join(DATABASE);
         if !tokio::fs::try_exists(&path).await? {
             return Ok(None);
         }
@@ -93,15 +128,11 @@ impl StateRuntime {
         thread: &str,
         project: Option<&str>,
     ) -> anyhow::Result<()> {
-        let host = format!("local:{}", self.sqlite.home().display());
+        let host = format!("local:{}", self.desktop_home.display());
         let legacy: Option<String> = sqlx::query_scalar(
             "SELECT ids.key FROM desktop.settings, json_each(desktop.settings.value) AS h, json_each(h.value) AS ids
              WHERE desktop.settings.scope='global' AND desktop.settings.key=? AND h.key=? AND ids.value=?",
         ).bind(PROJECT_MAP).bind(host).bind(project).fetch_optional(&mut *conn).await?;
-        // Server-only projects have no corresponding Desktop identity yet.
-        if project.is_some() && legacy.is_none() {
-            return Ok(());
-        }
         let path = format!("$.\"{thread}\"");
         let current: Option<String> = sqlx::query_scalar(
             "SELECT json_extract(value,?) FROM desktop.settings WHERE scope='global' AND key=?",

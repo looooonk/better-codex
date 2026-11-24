@@ -100,6 +100,7 @@ const LOG_PARTITION_ROW_LIMIT: i64 = 1_000;
 
 #[derive(Clone)]
 pub struct StateRuntime {
+    desktop_home: PathBuf,
     sqlite: SqliteConfig,
     default_provider: String,
     pool: Arc<sqlx::SqlitePool>,
@@ -121,7 +122,23 @@ impl StateRuntime {
     /// Logs and paginated thread history live in dedicated files to reduce
     /// lock contention with the rest of the state store.
     pub async fn init(sqlite: SqliteConfig, default_provider: String) -> anyhow::Result<Arc<Self>> {
-        Self::init_inner(sqlite, default_provider, /*telemetry_override*/ None).await
+        let home = sqlite.home().to_owned();
+        Self::init_for_codex_home(sqlite, default_provider, home).await
+    }
+
+    /// Open history at its configured SQLite location and resolve Desktop settings on the same host.
+    pub async fn init_for_codex_home(
+        sqlite: SqliteConfig,
+        default_provider: String,
+        desktop_home: PathBuf,
+    ) -> anyhow::Result<Arc<Self>> {
+        Self::init_inner(
+            sqlite,
+            default_provider,
+            desktop_home,
+            /*telemetry_override*/ None,
+        )
+        .await
     }
 
     #[cfg(test)]
@@ -130,12 +147,20 @@ impl StateRuntime {
         default_provider: String,
         telemetry_override: &dyn DbTelemetry,
     ) -> anyhow::Result<Arc<Self>> {
-        Self::init_inner(sqlite, default_provider, Some(telemetry_override)).await
+        let desktop_home = sqlite.home().to_owned();
+        Self::init_inner(
+            sqlite,
+            default_provider,
+            desktop_home,
+            Some(telemetry_override),
+        )
+        .await
     }
 
     async fn init_inner(
         sqlite: SqliteConfig,
         default_provider: String,
+        desktop_home: PathBuf,
         telemetry_override: Option<&dyn DbTelemetry>,
     ) -> anyhow::Result<Arc<Self>> {
         tokio::fs::create_dir_all(sqlite.home()).await?;
@@ -270,6 +295,7 @@ impl StateRuntime {
         let thread_updated_at_millis = thread_updated_at_millis.unwrap_or(0);
         let thread_recency_at_millis = thread_recency_at_millis.unwrap_or(0);
         let runtime = Arc::new(Self {
+            desktop_home,
             reclamation: reclamation::SqliteReclamationWorker::spawn(sqlite.clone()),
             thread_goals: GoalStore::new(Arc::clone(&goals_pool)),
             memories: MemoryStore::new(Arc::clone(&memories_pool), Arc::clone(&pool)),
