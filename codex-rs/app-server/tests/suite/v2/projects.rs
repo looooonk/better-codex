@@ -294,6 +294,38 @@ async fn projects_persist_and_assign_threads() -> Result<()> {
         })
         .await?;
 
+    // A second client using the same home can browse this chat while the first owns its writer.
+    let mut other = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized()
+        .await?;
+    let update = other
+        .send_thread_metadata_update_request(ThreadMetadataUpdateParams {
+            thread_id: started.thread.id.clone(),
+            project_id: Some(String::new()),
+            daybreak_enabled: None,
+            git_info: None,
+        })
+        .await?;
+    let conflict = other
+        .read_stream_until_error_message(RequestId::Integer(update))
+        .await?;
+    assert!(conflict.error.message.contains("active writer"));
+    let still_assigned: ThreadReadResponse = other
+        .request(|request_id| ClientRequest::ThreadRead {
+            request_id,
+            params: ThreadReadParams {
+                thread_id: started.thread.id.clone(),
+                include_turns: false,
+            },
+        })
+        .await?;
+    assert_eq!(
+        still_assigned.thread.project_id,
+        Some(created.project.id.clone())
+    );
+    other.shutdown_gracefully().await?;
+
     drop(server);
     let mut server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
