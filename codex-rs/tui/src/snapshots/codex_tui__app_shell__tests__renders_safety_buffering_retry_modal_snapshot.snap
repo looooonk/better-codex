@@ -5,23 +5,23 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a f╭──────────────────────────────────────────────────────────────────────╮ns
-   server turn│◆ SAFETY REVIEW                                                       │
-   ▎ PLAN  1. │Our systems are thinking a bit more about this request before         │
-           2. │responding.                                                           │
-           3. │                                                                      │
-              │Hang tight or retry with a faster model for a quicker response, though│
-          ▸ Ed│it may be less capable of handling complex requests.                  │00001
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+              ╭──────────────────────────────────────────────────────────────────────╮ns
+              │◆ SAFETY REVIEW                                                       │
+   Started a f│Our systems are thinking a bit more about this request before         │
+   server turn│responding.                                                           │
+   ▎ PLAN  1. │                                                                      │
+           2. │Hang tight or retry with a faster model for a quicker response, though│
+           3. │it may be less capable of handling complex requests.                  │00001
               │                                                                      │ession list
-   > Explain t│> Retry with a faster model                                           │
+      ▸ Edited│> Retry with a faster model                                           │
               │  Dismiss and keep waiting                                            │
-            Wa│  Learn more                                                          │
-              │                                                                      │
+              │  Learn more                                                          │
+   > Explain t│                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
               │close when the response is ready.                                     │
-              │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
+            Wa│↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
 ╭────────────────────────────────────────────────╮│

@@ -5,15 +5,15 @@ expression: "lines.join(\"\\n\")"
 
 
 
+
    > Voice: Please fix the bug.
+
 
    The fix is ready.
 
    Voice: Ready to review.
 
    The new shell owns the fullscreen surface.
-
-
 
 
 

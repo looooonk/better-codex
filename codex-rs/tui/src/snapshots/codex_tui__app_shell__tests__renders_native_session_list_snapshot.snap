@@ -5,19 +5,19 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎● FOCUSED  ACTIVE  2 sessions
-   server turns.                                  │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                         │▎› 1/2 Refactor dashboard navigation [main]
-           2. Wire transcript                     │▎  2/2 Investigate approval rendering regressio…
-           3. Render dashboard                    │
-                                                  │▎◆ THREAD
-          ▸ Edited files                          │▎stage-one
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎● FOCUSED  ACTIVE  2 sessions
+                                                  │▎+ New session  Ctrl+N
+   Started a fullscreen app shell backed by app-  │▎› 1/2 Refactor dashboard navigation [main]
+   server turns.                                  │▎  2/2 Investigate approval rendering regressio…
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ THREAD
+           3. Render dashboard                    │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
-   The new shell owns the fullscreen surface.     │▎resume, fork, archive, delete in session list
+      ▸ Edited files                              │▎resume, fork, archive, delete in session list
                                                   │
-                                                  │
+   The new shell owns the fullscreen surface.     │
                                                   │
                                                   │
                                                   │

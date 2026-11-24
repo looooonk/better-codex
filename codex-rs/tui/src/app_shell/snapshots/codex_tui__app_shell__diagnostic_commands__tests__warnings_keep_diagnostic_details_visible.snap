@@ -4,14 +4,14 @@ expression: text
 ---
 
 
-   > Create a divergent standalone TUI.                                                           ┃
-                                                                                                  ┃
+                                                                                                  │
+                                                                                                  │
    Started a fullscreen app shell backed by app-server turns.                                     ┃
    ▎ PLAN  1. Build shell                                                                         ┃
            2. Wire transcript                                                                     ┃
            3. Render dashboard                                                                    ┃
                                                                                                   ┃
-          ▸ Edited files                                                                          ┃
+      ▸ Edited files                                                                              ┃
    ▎ STATUS  Project configuration ignored                                                        ┃
    ▎ SYSTEM  Project configuration ignored                                                        ┃
              /workspace/.codex/config.toml                                                        ┃

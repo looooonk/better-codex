@@ -1,5 +1,6 @@
 use super::*;
 use crate::app_shell::TranscriptLine;
+use crate::app_shell::transcript_render::TOOL_DETAIL_INDENT;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -8,9 +9,10 @@ fn user_prompt_shades_wrapped_text_and_both_margins() {
     shell.clear_visible_transcript();
     shell.clear_active_turn();
     shell.push_user("A prompt long enough to wrap.\n\nNext paragraph.");
+    shell.push_user("One more thing.");
     shell.push_assistant("An answer.");
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 26, /*height*/ 13,
+        /*x*/ 0, /*y*/ 0, /*width*/ 26, /*height*/ 18,
     );
     let mut buf = Buffer::empty(area);
     render_transcript(&shell, area, /*hover_position*/ None, &mut buf);
@@ -366,7 +368,7 @@ fn diff_hit_testing_tracks_the_scrolled_card_and_excludes_its_gutter() {
     );
 
     assert!(viewport.scrollbar.is_some());
-    let card_left = viewport.text_body.x + ACTIVITY_INDENT;
+    let card_left = viewport.text_body.x + TOOL_DETAIL_INDENT;
     assert_eq!(
         transcript_card_at(&shell, area, Position::new(card_left - 1, y)),
         None
@@ -404,7 +406,7 @@ fn card_hover_uses_each_card_indent() {
     );
     let viewport = transcript_viewport(&shell, area);
 
-    let detail_indent = usize::from(ACTIVITY_INDENT);
+    let detail_indent = usize::from(TOOL_DETAIL_INDENT);
     for (transcript_index, indent) in [(0, detail_indent), (1, OUTPUT_BLOCK_INDENT)] {
         let rows = viewport
             .layout
@@ -659,30 +661,30 @@ fn selected_text_normalizes_reverse_drag_and_preserves_blank_rows() {
     let user_text = rendered_line_text(
         viewport
             .layout
-            .row_at(1)
+            .row_at(2)
             .and_then(TranscriptLayoutRow::line)
             .expect("user row should be rendered"),
     );
     let assistant_text = rendered_line_text(
         viewport
             .layout
-            .row_at(3)
+            .row_at(5)
             .and_then(TranscriptLayoutRow::line)
             .expect("assistant row should be rendered"),
     );
     let user_column = user_text[..user_text.find('界').expect("wide grapheme")].width();
     let assistant_byte = assistant_text.find("e\u{301}").expect("combined grapheme");
     let assistant_column = assistant_text[..assistant_byte].width();
-    let user_hit = grapheme_hit_at(&user_text, /*row*/ 1, user_column).expect("user hit");
+    let user_hit = grapheme_hit_at(&user_text, /*row*/ 2, user_column).expect("user hit");
     let assistant_hit =
-        grapheme_hit_at(&assistant_text, /*row*/ 3, assistant_column).expect("assistant hit");
+        grapheme_hit_at(&assistant_text, /*row*/ 5, assistant_column).expect("assistant hit");
     let forward = NormalizedVisualRange::from_hits(user_hit, assistant_hit);
     let reverse = NormalizedVisualRange::from_hits(assistant_hit, user_hit);
 
     assert_eq!(forward, reverse);
     assert_eq!(
         transcript_selected_text(&shell, area, forward),
-        Some("界 omega\n\nbeta e\u{301}".to_string())
+        Some("界 omega\n\n\nbeta e\u{301}".to_string())
     );
 }
 
@@ -857,14 +859,16 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
         /*x*/ 3, /*y*/ 2, /*width*/ 60, /*height*/ 12,
     );
     let viewport = transcript_viewport(&shell, area);
+    let prompt_rows = viewport.layout.transcript_row_range(0).unwrap();
+    let first_row = prompt_rows.start + 1;
+    let last_row = prompt_rows.end - 2;
     let first = rendered_line_text(
         viewport
             .layout
-            .row_at(1)
+            .row_at(first_row)
             .and_then(TranscriptLayoutRow::line)
             .expect("first prompt row"),
     );
-    let last_row = viewport.layout.total_lines - 2;
     let last = rendered_line_text(
         viewport
             .layout
@@ -872,7 +876,7 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
             .and_then(TranscriptLayoutRow::line)
             .expect("last prompt row"),
     );
-    let anchor = grapheme_hit_at(&first, /*row*/ 1, /*column*/ 2).expect("first text hit");
+    let anchor = grapheme_hit_at(&first, first_row, /*column*/ 2).expect("first text hit");
     let focus =
         grapheme_hit_at(&last, last_row, last.width().saturating_sub(1)).expect("last prompt hit");
     let selection = NormalizedVisualRange::from_hits(anchor, focus);
@@ -881,7 +885,7 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
     render_transcript(&shell, area, /*hover_position*/ None, &mut buf);
     render_transcript_text_selection(&shell, area, selection, &mut buf);
 
-    let rendered_rows = (0..viewport.layout.total_lines)
+    let rendered_rows = prompt_rows
         .map(|row| {
             let line = viewport
                 .layout

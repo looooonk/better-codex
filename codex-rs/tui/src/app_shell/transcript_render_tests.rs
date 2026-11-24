@@ -38,7 +38,7 @@ fn grouped_cards_keep_their_indent_even_when_output_arrives_first() {
                 .expect("label should be visible")
         };
         assert_eq!(rows[0].line.to_string(), "Reply");
-        let detail_indent = usize::from(ACTIVITY_INDENT);
+        let detail_indent = usize::from(TOOL_DETAIL_INDENT);
         assert_eq!(rail("⌄ ") + 2, detail_indent);
         assert_eq!(rail("▌ tool"), detail_indent);
         assert_eq!(rail("▌ output"), detail_indent + 2);

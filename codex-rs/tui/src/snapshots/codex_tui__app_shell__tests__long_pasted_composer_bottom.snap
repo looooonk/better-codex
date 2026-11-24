@@ -5,12 +5,12 @@ expression: "buffer_contents(&bottom, area)"
 
 
                                                                               │
-   Started a fullscreen app shell backed by app-server turns.                 ┃
+   Started a fullscreen app shell backed by app-server turns.                 │
    ▎ PLAN  1. Build shell                                                     ┃
            2. Wire transcript                                                 ┃
            3. Render dashboard                                                ┃
                                                                               ┃
-          ▸ Edited files                                                      ┃
+      ▸ Edited files                                                          ┃
                                                                               ┃
    The new shell owns the fullscreen surface.                                 ┃
 

@@ -5,22 +5,22 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ GOAL
-   Started a fullscreen app shell backed by app-  │▎status active
-   server turns.                                  │▎Ship the standalone shell
-   ▎ PLAN  1. Build shell                         │▎1m | 12,345 tokens
-           2. Wire transcript                     │
-           3. Render dashboard                    │▎◆ TOOLS
-                                                  │▎completed exec just test -p codex-tui
-          ▸ Edited files                          │
-   ▎ STATUS  goal set: Ship the standalone shell  │▎◆ EDITS
-   ▎ STATUS  goal active. Objective: Ship the     │▎3 files +128 -24
-             standalone shell Time: 1m.           │
-                                                  │▎◆ WORKSPACE
-   The new shell owns the fullscreen surface.     │▎profile managed
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ GOAL
+                                                  │▎status active
+                                                  │▎Ship the standalone shell
+   Started a fullscreen app shell backed by app-  │▎1m | 12,345 tokens
+   server turns.                                  │
+   ▎ PLAN  1. Build shell                         │▎◆ TOOLS
+           2. Wire transcript                     │▎completed exec just test -p codex-tui
+           3. Render dashboard                    │
+                                                  │▎◆ EDITS
+      ▸ Edited files                              │▎3 files +128 -24
+   ▎ STATUS  goal set: Ship the standalone shell  │
+   ▎ STATUS  goal active. Objective: Ship the     │▎◆ WORKSPACE
+             standalone shell Time: 1m.           │▎profile managed
                                                   │▎cwd /workspace/better-codex
-                                                  │▎files restricted, net restricted
+   The new shell owns the fullscreen surface.     │▎files restricted, net restricted
                                                   │▎roots none selected
                                                   │
                                                   │▎◆ TOKENS

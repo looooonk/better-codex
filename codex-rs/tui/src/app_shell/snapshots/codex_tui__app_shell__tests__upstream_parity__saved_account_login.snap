@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   server turns.                                  │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                         │▎loading sessions
-           2. Wire transcript                     │
-           3. ╭──────────────────────────────────────────────────────────────────────╮
-              │◆ ACCOUNT LOGIN                                                       │
-          ▸ Ed│Finish signing in with ChatGPT in your browser.                       │00001
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+   Started a fullscreen app shell backed by app-  │▎loading sessions
+   server turns.                                  │
+   ▎ PLAN  1. ╭──────────────────────────────────────────────────────────────────────╮
+           2. │◆ ACCOUNT LOGIN                                                       │
+           3. │Finish signing in with ChatGPT in your browser.                       │00001
               │                                                                      │ession list
-   The new she│https://auth.example.test/workspace                                   │
+      ▸ Edited│https://auth.example.test/workspace                                   │
               │                                                                      │
-              │Enter open link   Esc cancel                                          │
+   The new she│Enter open link   Esc cancel                                          │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
                                                   │

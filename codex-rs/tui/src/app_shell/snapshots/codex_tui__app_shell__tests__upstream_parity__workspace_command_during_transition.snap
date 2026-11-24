@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
 
 
 
+
    > Create a divergent standalone TUI.
+
 
    Started a fullscreen app shell backed by app-server turns.
    ▎ PLAN  1. Build shell
            2. Wire transcript
            3. Render dashboard
 
-          ▸ Edited files
+      ▸ Edited files
    ▎ STATUS  wait for settings or the session transition before running workspace commands
 
    The new shell owns the fullscreen surface.
-
-
 
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮

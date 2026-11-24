@@ -6,7 +6,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 48, 18))"
 
    Started a fullscreen app shell backed by   │
    app-server turns.                          │
-   ▎ PLAN  1. Build shell                     ┃
+   ▎ PLAN  1. Build shell                     │
            2. Wire transcript                 ┃
 ╭──────────────────────────────────────────────╮
 │◆ COMMANDS                                    │

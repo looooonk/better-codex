@@ -5,11 +5,11 @@ expression: "render_shell(&shell, area)"
 
 
 
+
    > Run just test -p codex-tui.
 
+
    ▎ SYSTEM  skipped 42 best-effort backend events
-
-
 
 
 

@@ -5,20 +5,20 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   server turns.                                  │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                         │▎loading sessions
-           2. Wire transcript                     │
-           3. ╭──────────────────────────────────────────────────────────────────────╮
-              │◆ MCP SERVERS                                                         │
-          ▸ Ed│Add MCP server                                                        │00001
-   ▎ STATUS  m│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+   Started a fullscreen app shell backed by app-  │▎loading sessions
+   server turns.                                  │
+   ▎ PLAN  1. ╭──────────────────────────────────────────────────────────────────────╮
+           2. │◆ MCP SERVERS                                                         │
+           3. │Add MCP server                                                        │00001
+              │Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
+      ▸ Edited│                                                                      │
+   ▎ STATUS  m│…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
               │                                                                      │
-   The new she│…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
-              │                                                                      │
-              │Enter save  Esc cancel                                                │
+   The new she│Enter save  Esc cancel                                                │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
                                                   │

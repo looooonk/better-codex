@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎● FOCUSED  ACTIVE  1 sessions
-   server turns.                                  │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                         │▎› 1/1 Delete this investigation [main]
-           2. ╭──────────────────────────────────────────────────────────────────────╮
-           3. │◆ DELETE SESSION                                                      │
-              │Delete session: Delete this investigation                             │
-          ▸ Ed│Session ID: 01900000-0000-7000-8000-000000000511                      │00001
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎● FOCUSED  ACTIVE  1 sessions
+                                                  │▎+ New session  Ctrl+N
+   Started a fullscreen app shell backed by app-  │▎› 1/1 Delete this investigation [main]
+   server turn╭──────────────────────────────────────────────────────────────────────╮
+   ▎ PLAN  1. │◆ DELETE SESSION                                                      │
+           2. │Delete session: Delete this investigation                             │
+           3. │Session ID: 01900000-0000-7000-8000-000000000511                      │00001
               │2 spawned descendants will also be deleted.                           │ession list
-   The new she│This permanently deletes all persisted history in that subtree.       │
+      ▸ Edited│This permanently deletes all persisted history in that subtree.       │
               │                                                                      │
-              │> Delete permanently Enter/y                                          │
+   The new she│> Delete permanently Enter/y                                          │
               │  Cancel Esc/n                                                        │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

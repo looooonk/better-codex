@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │
                                                             │  Status   │  Agents  │  Sessions  │  Settings
                      ╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━─────────────
-   > Create a diverge│ › 1 ○ global.open_agents                                         │
-                     │       f2 / ⌃space - select to change                             │
-   Started a fullscre│   2 ○ global.open_transcript                                     │ sessions
-   turns.            │       unbound - select to change                                 │
-   ▎ PLAN  1. Build s│   3 ○ global.find_transcript                                     │
-           2. Wire tr│       unbound - select to change                                 │
-           3. Render │   4 ○ global.focus_activity                                      │
+                     │ › 1 ○ global.open_agents                                         │
+   > Create a diverge│       f2 / ⌃space - select to change                             │
+                     │   2 ○ global.open_transcript                                     │ sessions
                      │       unbound - select to change                                 │
-          ▸ Edited fi│   5 ○ global.open_external_editor                                │000000000001
+   Started a fullscre│   3 ○ global.find_transcript                                     │
+   turns.            │       unbound - select to change                                 │
+   ▎ PLAN  1. Build s│   4 ○ global.focus_activity                                      │
+           2. Wire tr│       unbound - select to change                                 │
+           3. Render │   5 ○ global.open_external_editor                                │000000000001
                      │       unbound - select to change                                 │te in session list
-   The new shell owns│   6 ○ global.copy                                                │
+      ▸ Edited files │   6 ○ global.copy                                                │
                      │       ⌃o - select to change                                      │
-                     │   7 ○ global.clear_terminal                                      │
+   The new shell owns│   7 ○ global.clear_terminal                                      │
                      │       unbound - select to change                                 │
                      │   8 ○ global.toggle_fast_mode                                    │
                      │       unbound - select to change                                 │

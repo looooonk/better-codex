@@ -4,13 +4,13 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
-          ⌄ Edited files                          │───────────────────────━━━━━━━━━━━━─────────────
+      ⌄ Edited files                              │───────────────────────━━━━━━━━━━━━─────────────
                                                   │
-            ▌ edited 4 files +4 -3                │▎◆ SESSIONS
-            ▌          M src/app.rs               │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-            ▌          A src/new.rs               │▎+ New session  Ctrl+N
-            ▌          D src/old.rs               │▎loading sessions
-            ▌          R src/from.rs -> src/to.rs │
+        ▌ edited 4 files +4 -3                    │▎◆ SESSIONS
+        ▌          M src/app.rs                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+        ▌          A src/new.rs                   │▎+ New session  Ctrl+N
+        ▌          D src/old.rs                   │▎loading sessions
+        ▌          R src/from.rs -> src/to.rs     │
                                                   │▎◆ THREAD
                                                   │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001

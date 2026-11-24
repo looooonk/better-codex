@@ -5,19 +5,19 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │────────────────────────────────────━━━━━━━━━━━━
-   > Create a divergent standalone TUI.           │
-                                                  │◆ PERMISSIONS
-   Started a fullscreen app shell backed by app-  │› ● ⓘ Ask for approval
-   server turns.                                  │  ○ ⛨ Unless trusted
-   ▎ PLAN  1. Build shell                         │  ○ ⚠ Full access
-           2. Wire transcript                     │
-           3. Render dashboard                    │◆ APPEARANCE
-                                                  │  ● Tokyo Night
-          ▸ Edited files                          │  ○ Gruvbox Dark
+                                                  │
+   > Create a divergent standalone TUI.           │◆ PERMISSIONS
+                                                  │› ● ⓘ Ask for approval
+                                                  │  ○ ⛨ Unless trusted
+   Started a fullscreen app shell backed by app-  │  ○ ⚠ Full access
+   server turns.                                  │
+   ▎ PLAN  1. Build shell                         │◆ APPEARANCE
+           2. Wire transcript                     │  ● Tokyo Night
+           3. Render dashboard                    │  ○ Gruvbox Dark
                                                   │  ○ Catppuccin Mocha
-   The new shell owns the fullscreen surface.     │  ○ Monochrome
+      ▸ Edited files                              │  ○ Monochrome
                                                   │  Syntax theme: dracula
-                                                  │  Animations: on
+   The new shell owns the fullscreen surface.     │  Animations: on
                                                   │  Tooltips: on
                                                   │
                                                   │◆ INTEGRATIONS

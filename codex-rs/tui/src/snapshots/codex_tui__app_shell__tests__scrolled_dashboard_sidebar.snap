@@ -6,9 +6,9 @@ expression: after
                                                   │  Status   │  Agents  │  Sessions  │  Settings
    ▎ PLAN  1. Build shell                       │ │━━━━━━━━━━━─────────────────────────────────────
            2. Wire transcript                   │ │▎◆ EDITS
-           3. Render dashboard                  ┃ │▎3 files +128 -24
+           3. Render dashboard                  │ │▎3 files +128 -24
                                                 ┃ │
-          ▸ Edited files                        ┃ │▎◆ WORKSPACE
+      ▸ Edited files                            ┃ │▎◆ WORKSPACE
                                                 ┃ │▎profile managed
    The new shell owns the fullscreen surface.   ┃ │▎cwd /workspace/better-codex
                                                   │▎files restricted, net restricted

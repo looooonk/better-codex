@@ -5,19 +5,19 @@ expression: rendered
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ TOOLS
-   Started a fullscreen app shell backed by app-  │▎completed exec just test -p codex-tui
-   server turns.                                  │
-   ▎ PLAN  1. Build shell                         │▎◆ EDITS
-           2. Wire transcript                     │▎3 files +128 -24
-           3. Render dashboard                    │
-                                                  │▎◆ WORKSPACE
-          ▸ Edited files                          │▎profile managed
-                                                  │▎cwd ~/Projects/better-codex
-   The new shell owns the fullscreen surface.     │▎files restricted, net restricted
-                                                  │▎roots none selected
                                                   │
+   > Create a divergent standalone TUI.           │▎◆ TOOLS
+                                                  │▎completed exec just test -p codex-tui
+                                                  │
+   Started a fullscreen app shell backed by app-  │▎◆ EDITS
+   server turns.                                  │▎3 files +128 -24
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ WORKSPACE
+           3. Render dashboard                    │▎profile managed
+                                                  │▎cwd ~/Projects/better-codex
+      ▸ Edited files                              │▎files restricted, net restricted
+                                                  │▎roots none selected
+   The new shell owns the fullscreen surface.     │
                                                   │▎◆ TOKENS
                                                   │▎input 1k | output 240
                                                   │▎Context 100% left

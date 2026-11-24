@@ -5,22 +5,22 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   server turns.                                  │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                         │▎loading sessions
-           2. Wire transcript                     │
-           3. Render dashboard                    │▎◆ THREAD
-              ╭──────────────────────────────────────────────────────────────────────╮
-          ▸ Ed│◆ CLAUDE CODE IMPORT                                                  │00001
-   ▎ STATUS  c│Review Claude Code setup  Settings 1, Skills 1                        │ession list
-   ▎ STATUS  r│                                                                      │
-             i│> [x] Settings (settings.json -> config.toml) - home                  │
-              │      Import settings from Claude Code                                │
-   The new she│  [x] Skills - better-codex                                           │
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+   Started a fullscreen app shell backed by app-  │▎loading sessions
+   server turns.                                  │
+   ▎ PLAN  1. Build shell                         │▎◆ THREAD
+           2. ╭──────────────────────────────────────────────────────────────────────╮
+           3. │◆ CLAUDE CODE IMPORT                                                  │00001
+              │Review Claude Code setup  Settings 1, Skills 1                        │ession list
+      ▸ Edited│                                                                      │
+   ▎ STATUS  c│> [x] Settings (settings.json -> config.toml) - home                  │
+   ▎ STATUS  r│      Import settings from Claude Code                                │
+             i│  [x] Skills - better-codex                                           │
               │      1 skill: review                                                 │
-              │                                                                      │
+   The new she│                                                                      │
               │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

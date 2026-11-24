@@ -4,8 +4,8 @@ expression: live.0
 ---
 I’ll check both sources.
 
-       ▸ Searched web
+   ▸ Searched web
 
 The build passed.
 
-       ▸ Called docs/lookup
+   ▸ Called docs/lookup

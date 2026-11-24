@@ -5,18 +5,18 @@ expression: "render_shell(&shell, area)"
                                                               ┃
                                                               ┃   Status    │   Agents   │   Sessions   │   Settings
                                                               ┃───────────────────────────━━━━━━━━━━━━━━───────────────
-   > Create a divergent standalone TUI.                       ┃
-                                                              ┃▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-server turns. ┃▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   ▎ PLAN  1. Build shell                                     ┃▎+ New session  Ctrl+N
-           2. Wire transcript                                 ┃▎loading sessions
-           3. Render dashboard                                ┃
-                                                              ┃▎◆ THREAD
-          ▸ Edited files                                      ┃▎stage-one
+                                                              ┃
+   > Create a divergent standalone TUI.                       ┃▎◆ SESSIONS
+                                                              ┃▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                              ┃▎+ New session  Ctrl+N
+   Started a fullscreen app shell backed by app-server turns. ┃▎loading sessions
+   ▎ PLAN  1. Build shell                                     ┃
+           2. Wire transcript                                 ┃▎◆ THREAD
+           3. Render dashboard                                ┃▎stage-one
                                                               ┃▎id 01900000-0000-7000-8000-000000000001
-   The new shell owns the fullscreen surface.                 ┃▎resume, fork, archive, delete in session list
+      ▸ Edited files                                          ┃▎resume, fork, archive, delete in session list
                                                               ┃
-                                                              ┃
+   The new shell owns the fullscreen surface.                 ┃
                                                               ┃
                                                               ┃
                                                               ┃

@@ -5,19 +5,19 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   server turn╭──────────────────────────────────────────────────────────────────────╮
-   ▎ PLAN  1. │◆ ACTIONS  Ctrl+P                                                     │
-           2. │                                                                      │
-           3. │▌ New session  Start an empty session in the c...                     │
-              │  Copy transcript item                                                │
-          ▸ Ed│  Clear visible transcript                                            │00001
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+              ╭──────────────────────────────────────────────────────────────────────╮
+   Started a f│◆ ACTIONS  Ctrl+P                                                     │
+   server turn│                                                                      │
+   ▎ PLAN  1. │▌ New session  Start an empty session in the c...                     │
+           2. │  Copy transcript item                                                │
+           3. │  Clear visible transcript                                            │00001
               │  Select latest transcript item                                       │ession list
-   The new she│  Jump transcript to top                                              │
+      ▸ Edited│  Jump transcript to top                                              │
               │  Jump transcript to bottom                                           │
-              │  Interrupt active turn                                               │
+   The new she│  Interrupt active turn                                               │
               │  Switch model                                                        │
               │  Change permissions                                                  │
               │  Resume thread                                                       │

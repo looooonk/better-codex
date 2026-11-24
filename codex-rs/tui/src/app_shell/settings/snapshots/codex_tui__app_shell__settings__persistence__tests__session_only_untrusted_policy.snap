@@ -5,16 +5,16 @@ expression: rendered
 
 
 
+
    > Create a divergent standalone TUI.
+
 
    Started a fullscreen app shell backed by app-server turns.
    ▎ PLAN  1. Build shell
            2. Wire transcript
            3. Render dashboard
 
-          ▸ Edited files
-
-   The new shell owns the fullscreen surface.
+      ▸ Edited files
 
  ╭────────────────────────────────────────────╮
  │ Permissions                                │

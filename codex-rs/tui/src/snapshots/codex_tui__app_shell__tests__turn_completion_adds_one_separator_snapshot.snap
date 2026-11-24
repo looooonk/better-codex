@@ -8,8 +8,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
                                                   │
    ──────── Took 1.00s · 84.0 tok/s ───────────── │▎◆ SESSIONS
                                                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   > Next turn.                                   │▎+ New session  Ctrl+N
-                                                  │▎loading sessions
+                                                  │▎+ New session  Ctrl+N
+   > Next turn.                                   │▎loading sessions
                                                   │
                                                   │▎◆ THREAD
                                                   │▎stage-one

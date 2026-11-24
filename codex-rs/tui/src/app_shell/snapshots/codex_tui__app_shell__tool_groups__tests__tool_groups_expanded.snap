@@ -4,16 +4,16 @@ expression: live.1
 ---
 I’ll check both sources.
 
-       ⌄ Searched web
+   ⌄ Searched web
 
-         ▌ tool functions/exec_command
+     ▌ tool functions/exec_command
 
-           ▌ output build passed
+       ▌ output build passed
 
-         ▌ tool agent ListAgents: 0 targets
+     ▌ tool agent ListAgents: 0 targets
 
-         ▌ tool web search: build documentation
+     ▌ tool web search: build documentation
 
 The build passed.
 
-       ▸ Called docs/lookup
+   ▸ Called docs/lookup

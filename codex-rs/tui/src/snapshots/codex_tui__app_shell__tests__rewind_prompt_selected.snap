@@ -5,18 +5,18 @@ expression: "render_shell(&shell, area)"
 
 
    SELECT 5/6  e BRANCH EDIT
-   ▎ SYSTEM  switched session
-   ▎ SYSTEM  loaded 2 previous turns
-
-   > Plan the first implementation.
-
-   ──────── Took 1.00s ────────────────────────────────────────────────────────────────────────────
-
-   > Replace the inherited chat UI.
-
-   ──────── Took 1.00s ────────────────────────────────────────────────────────────────────────────
-
-
+                                                                                                  │
+   > Plan the first implementation.                                                               │
+                                                                                                  ┃
+                                                                                                  ┃
+   ──────── Took 1.00s ────────────────────────────────────────────────────────────────────────── ┃
+                                                                                                  ┃
+                                                                                                  ┃
+   > Replace the inherited chat UI.                                                               ┃
+                                                                                                  ┃
+                                                                                                  ┃
+   ──────── Took 1.00s ────────────────────────────────────────────────────────────────────────── ┃
+                                                                                                  ┃
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Type a message                                                                                  │

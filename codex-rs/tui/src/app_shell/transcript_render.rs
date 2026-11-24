@@ -3,7 +3,6 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
-use super::transcript_view::ACTIVITY_INDENT;
 use super::transcript_view::render_transcript_line_with_visualizations;
 use crate::app_theme::TuiAppTheme;
 use crate::inline_visualization::InlineVisualizationContext;
@@ -14,6 +13,8 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+pub(super) const TOOL_DETAIL_INDENT: u16 = 5;
 
 const MAX_RENDER_VARIANTS_PER_ITEM: usize = 4;
 const MAX_LAYOUT_VARIANTS: usize = 4;
@@ -80,7 +81,7 @@ impl TranscriptRenderCache {
         };
 
         // Leave room for the card label and value on very narrow terminals.
-        let detail_indent = ACTIVITY_INDENT.min(width.saturating_sub(12));
+        let detail_indent = TOOL_DETAIL_INDENT.min(width.saturating_sub(12));
         let mut groups = shell.tool_groups().peekable();
         for (index, item) in shell.transcript.iter().enumerate() {
             if groups.peek().is_some_and(|group| group.rows.end <= index) {
@@ -289,13 +290,14 @@ fn should_separate_transcript_item(
     previous_kind: Option<TranscriptKind>,
     current_kind: TranscriptKind,
 ) -> bool {
-    // User blocks carry their own top and bottom rows. Leave a visible break
-    // between consecutive prompts, which would otherwise share a background.
-    if current_kind == TranscriptKind::User || previous_kind == Some(TranscriptKind::User) {
-        return current_kind == TranscriptKind::User && previous_kind == Some(TranscriptKind::User);
-    }
-    if current_kind == TranscriptKind::Separator || previous_kind == Some(TranscriptKind::Separator)
-    {
+    // Prompts and turn dividers share a single blank row with each neighbor.
+    if matches!(
+        current_kind,
+        TranscriptKind::User | TranscriptKind::Separator
+    ) || matches!(
+        previous_kind,
+        Some(TranscriptKind::User | TranscriptKind::Separator)
+    ) {
         return true;
     }
     let Some(previous_kind) = previous_kind else {
@@ -455,9 +457,11 @@ impl<'a> TranscriptLayoutRow<'a> {
 
 impl TranscriptLayout {
     fn new(chunks: Vec<TranscriptChunk>, last_kind: Option<TranscriptKind>) -> Self {
-        // Between items the following chunk owns the gap. At the end of the
-        // transcript the divider still needs a blank row beneath it.
-        let trailing_rows = usize::from(last_kind == Some(TranscriptKind::Separator));
+        // The next chunk normally owns the gap. Reserve it here when there is no next chunk.
+        let trailing_rows = usize::from(matches!(
+            last_kind,
+            Some(TranscriptKind::User | TranscriptKind::Separator)
+        ));
         let output_rows: usize = chunks
             .iter()
             .map(|chunk| chunk.lines.len() + usize::from(chunk.separator_before))
@@ -465,8 +469,7 @@ impl TranscriptLayout {
         Self {
             chunks,
             total_lines: output_rows + trailing_rows,
-            activity_row: output_rows
-                + usize::from(output_rows > 0 && last_kind != Some(TranscriptKind::User)),
+            activity_row: output_rows + usize::from(output_rows > 0),
         }
     }
 

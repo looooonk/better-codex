@@ -4,18 +4,18 @@ expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
-                                                  │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   server turns.                                  │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                         │▎loading sessions
-           2. Wire transcript                     │
-           3. Render dashboard                    │▎◆ THREAD
-                                                  │▎stage-one
-          ▸ Edited files                          │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
-   The new shell owns the fullscreen surface.     │
+   > Create a divergent standalone TUI.         │ │───────────────────────━━━━━━━━━━━━─────────────
+                                                ┃ │
+                                                ┃ │▎◆ SESSIONS
+   Started a fullscreen app shell backed by     ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   app-server turns.                            ┃ │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                       ┃ │▎loading sessions
+           2. Wire transcript                   ┃ │
+           3. Render dashboard                  ┃ │▎◆ THREAD
+                                                ┃ │▎stage-one
+      ▸ Edited files                            ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
+   The new shell owns the fullscreen surface.   ┃ │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │◆ APPROVAL                                      ││

@@ -5,19 +5,19 @@ expression: "render_shell(&rename, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-   Started a fullscreen app shell backed by app-  │▎● FOCUSED  ACTIVE  1 sessions
-   server turns.                                  │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                         │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
-           2. Wire transcript                     │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
-           3. Render dashboard                    │
-                                                  │▎◆ THREAD
-          ▸ Edited files                          │▎stage-one
+                                                  │
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎● FOCUSED  ACTIVE  1 sessions
+                                                  │▎+ New session  Ctrl+N
+   Started a fullscreen app shell backed by app-  │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
+   server turns.                                  │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ THREAD
+           3. Render dashboard                    │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
-   The new shell owns the fullscreen surface.     │▎resume, fork, archive, delete in session list
+      ▸ Edited files                              │▎resume, fork, archive, delete in session list
                                                   │
-                                                  │
+   The new shell owns the fullscreen surface.     │
                                                   │
                                                   │
                                                   │
