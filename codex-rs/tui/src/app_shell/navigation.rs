@@ -10,8 +10,8 @@ const COMPACT_TAB_WIDTH: u16 = 36;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum DashboardRoute {
-    Sessions,
     #[default]
+    Sessions,
     Status,
     Agents,
     Settings,

@@ -49,6 +49,7 @@ pub(super) struct SessionHydrationState {
     goal_task: LookupTask<Option<ThreadGoal>>,
     workspace_task: LookupTask<WorkspaceGitStatusProbe>,
     session_list_params: Option<ThreadListParams>,
+    advance_on_append_from: Option<ThreadId>,
     session_list_task: Option<JoinHandle<SessionLookup<SessionListPage>>>,
     rate_limits_task: LookupTask<GetAccountRateLimitsResponse>,
     thread_usage_task: LookupTask<Option<ThreadUsage>>,
@@ -169,6 +170,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        self.session_hydration.advance_on_append_from = None;
         self.refresh_projects(app_server);
         let params = self.session_list.first_page_params();
         self.start_session_list_lookup(app_server, params, SessionListLoad::Replace);
@@ -181,7 +183,19 @@ impl ShellState {
         let Some(params) = self.session_list.next_page_params() else {
             return;
         };
+        self.session_hydration.advance_on_append_from = self.session_list.selected_thread_id();
         self.start_session_list_lookup(app_server, params, SessionListLoad::Append);
+    }
+
+    pub(super) fn fill_session_viewport<S: AppShellBackend>(&mut self, app_server: &S) {
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Sessions
+            && self.session_hydration.session_list_task.is_none()
+            && self.session_list.needs_viewport_fill()
+            && let Some(params) = self.session_list.next_page_params()
+        {
+            self.start_session_list_lookup(app_server, params, SessionListLoad::Append);
+        }
     }
 
     fn start_session_list_lookup<S>(
@@ -192,11 +206,7 @@ impl ShellState {
     ) where
         S: AppShellBackend,
     {
-        if self
-            .session_hydration
-            .session_list_task
-            .as_ref()
-            .is_some_and(|task| !task.is_finished())
+        if self.session_hydration.session_list_task.is_some()
             && self.session_hydration.session_list_params.as_ref() == Some(&params)
         {
             return;
@@ -607,6 +617,7 @@ impl ShellState {
             task.abort();
         }
         self.session_hydration.session_list_params = None;
+        self.session_hydration.advance_on_append_from = None;
         if let Some(task) = self.session_hydration.rate_limits_task.take() {
             task.abort();
         }
@@ -624,6 +635,7 @@ impl ShellState {
             task.abort();
         }
         self.session_hydration.session_list_params = None;
+        self.session_hydration.advance_on_append_from = None;
         self.session_hydration.session_list_revision =
             self.session_hydration.session_list_revision.wrapping_add(1);
     }
@@ -685,14 +697,21 @@ impl ShellState {
         if revision != self.session_hydration.session_list_revision {
             return false;
         }
+        let advance_from = self.session_hydration.advance_on_append_from.take();
         match result {
             Ok(response) => match load {
                 SessionListLoad::Replace => self
                     .session_list
                     .replace_thread_page(response.data, response.next_cursor),
-                SessionListLoad::Append => self
-                    .session_list
-                    .append_thread_page(response.data, response.next_cursor),
+                SessionListLoad::Append => {
+                    self.session_list
+                        .append_thread_page(response.data, response.next_cursor);
+                    if advance_from.is_some()
+                        && advance_from == self.session_list.selected_thread_id()
+                    {
+                        self.session_list.move_selection_down();
+                    }
+                }
             },
             Err(err) => self.session_list.set_error(err),
         }

@@ -11,6 +11,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use unicode_width::UnicodeWidthStr;
 
+use super::dashboard::MORE_BUTTON;
 use super::dashboard::dashboard_value;
 use super::design::palette;
 use crate::terminal_palette::best_color;
@@ -73,7 +74,7 @@ impl Chat {
 #[derive(Default)]
 pub(super) struct ProjectHub {
     pub groups: Vec<Group>,
-    pub collapsed: HashSet<String>,
+    pub expanded: HashSet<String>,
     pub view: HubView,
     pub selected: Option<usize>,
     pub reveal: Cell<bool>,
@@ -152,7 +153,7 @@ impl ProjectHub {
         let mut rows = Vec::new();
         let mut add =
             |title: String, style: Style, action: Option<Action>, more: Option<Action>| {
-                let right = if more.is_some() { "  … " } else { "" };
+                let right = if more.is_some() { MORE_BUTTON } else { "" };
                 let title = dashboard_value(&title, width.saturating_sub(right.width()), 0);
                 let space = if more.is_some() {
                     width.saturating_sub(title.width() + right.width())
@@ -186,15 +187,15 @@ impl ProjectHub {
                 add("Projects".into(), muted.bold(), None, None);
                 for group in &self.groups {
                     let p = &group.project;
-                    let collapsed = self.collapsed.contains(&p.id);
-                    let arrow = if collapsed { "›" } else { "⌄" };
+                    let expanded = self.expanded.contains(&p.id);
+                    let arrow = if expanded { "⌄" } else { "›" };
                     add(
                         format!("{arrow} {}", p.name),
                         Style::new().fg(color(p)).bold(),
                         Some(Action::Toggle(p.id.clone())),
                         Some(Action::Details(p.id.clone())),
                     );
-                    if collapsed {
+                    if !expanded {
                         continue;
                     }
                     for chat in &group.chats {

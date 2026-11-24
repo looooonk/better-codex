@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
         ▌ edited 4 files +4 -3                    │ Projects
         ▌          M src/app.rs                   │ No projects
         ▌          A src/new.rs                   │
-        ▌          D src/old.rs                   │ Recents  0 sessions
+        ▌          D src/old.rs                   │ Recents
         ▌          R src/from.rs -> src/to.rs     │ + New session  Ctrl+N
                                                   │ loading sessions
                                                   │

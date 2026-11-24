@@ -9,7 +9,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,))"
                                                   │ Projects
                                                   │ No projects
                                                   │
-                                                  │ Recents  0 sessions
+                                                  │ Recents
                                                   │ + New session  Ctrl+N
                                                   │ loading sessions
                                                   │

@@ -674,7 +674,7 @@ impl ShellState {
             codex_home,
             client_config_path,
             resume_cwd_runtime,
-            dashboard_route: DashboardRoute::Status,
+            dashboard_route: DashboardRoute::default(),
             dashboard_visible: false,
             dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),

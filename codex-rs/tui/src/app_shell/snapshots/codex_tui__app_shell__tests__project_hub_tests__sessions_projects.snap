@@ -12,7 +12,7 @@ expression: "render_shell(&shell, area)"
    ▎ PLAN  1. Build shell                                         │     ↓ Older chats
            2. Wire transcript                                     │     + New chat
            3. Render dashboard                                    │
-                                                                  │ Recents  2 sessions
+                                                                  │ Recents
       ▸ Edited files                                              │ + New session  Ctrl+N
                                                                   │   Earlier experiment                         …
    The new shell owns the fullscreen surface.                     │   Loose notes                                …

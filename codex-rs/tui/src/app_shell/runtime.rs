@@ -437,9 +437,11 @@ pub(crate) async fn run(
                             shell.clear_text_selections();
                             shell.clear_pointer_position();
                             draw_shell(tui, &shell)?;
+                            shell.fill_session_viewport(&app_server);
                         }
                         TuiEvent::Draw => {
                             draw_shell(tui, &shell)?;
+                            shell.fill_session_viewport(&app_server);
                         }
                     }
                 }

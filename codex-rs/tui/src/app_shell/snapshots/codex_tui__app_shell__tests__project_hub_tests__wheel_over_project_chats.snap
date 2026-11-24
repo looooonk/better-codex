@@ -13,6 +13,6 @@ expression: "render_shell(&shell, area)"
 ╭────────────────────────────────────────────────────────────────╮│     ↓ Older chats
 │> Type a message                                                ││     + New chat
 │                                                                ││
-│                                                                ││ Recents  2 sessions
+│                                                                ││ Recents
 │ ⓘ Ask for approval ▾   gpt-5-codex ▾   Default ▾   ◷ Default ▾ ││ + New session  Ctrl+N
 ╰────────────────────────────────────────────────────────────────╯│

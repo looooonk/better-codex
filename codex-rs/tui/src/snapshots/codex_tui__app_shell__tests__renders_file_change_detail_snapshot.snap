@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
    ▎ PLAN  1. Build shell                       │ │ Projects
            2. Wire transcript                   ┃ │ No projects
            3. Render dashboard                  ┃ │
-                                                ┃ │ Recents  0 sessions
+                                                ┃ │ Recents
       ⌄ Edited files                            ┃ │ + New session  Ctrl+N
                                                 ┃ │ loading sessions
         ▌ tool exec just test -p codex-tui      ┃ │

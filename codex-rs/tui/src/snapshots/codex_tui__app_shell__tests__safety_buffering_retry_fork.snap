@@ -9,7 +9,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
    ▎ SYSTEM  2 queued follow-ups remain on      │ │ Projects
              the previous session 01900000-     │ │ No projects
              0000-7000-8000-000000000001. Open  ┃ │
-             Sessions to return to it.          ┃ │ Recents  0 sessions
+             Sessions to return to it.          ┃ │ Recents
                                                 ┃ │ + New session  Ctrl+N
                                                 ┃ │ loading sessions
    > Explain the request                        ┃ │

@@ -9,7 +9,7 @@ expression: "buffer_contents(&buf, area)"
                                                   │ Projects
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents  0 sessions
+   server turns.                                  │ Recents
    ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
            2. Wire transcript                     │ loading sessions
            3. Render dashboard                    │

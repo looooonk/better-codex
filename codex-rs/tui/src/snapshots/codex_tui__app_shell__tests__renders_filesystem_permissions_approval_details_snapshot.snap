@@ -9,7 +9,7 @@ expression: "render_shell(&permissions_shell, area)"
            2. Wire transcript                   │ │ Projects
            3. Render dashboard                  ┃ │ No projects
                                                 ┃ │
-      ▸ Edited files                            ┃ │ Recents  0 sessions
+      ▸ Edited files                            ┃ │ Recents
                                                 ┃ │ + New session  Ctrl+N
    The new shell owns the fullscreen surface.   ┃ │ loading sessions
                                                   │

@@ -4,33 +4,16 @@ expression: rendered
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-                                                  │━━━━━━━━━━━━━───────────────────────────────────
-   > Create a divergent standalone TUI.           │
-                                                  │ Projects
-                                                  │ No projects
-   Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents  10 sessions
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. Wire transcript                     │   Session 04                                 …
-           3. Render dashboard                    │   Session 05                                 …
-                                                  │   Session 06                                 …
-      ▸ Edited files                              │   Session 07                                 …
-                                                  │ › Session 08                                 …
-   The new shell owns the fullscreen surface.     │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-╭────────────────────────────────────────────────╮│
-│> Summarize the new shell architecture          ││
-│                                                ││
-│                                                ││
-│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
+           2. Wire transcript                   │ │━━━━━━━━━━━━━───────────────────────────────────
+           3. Render dashboard                  │ │
+                                                │ │ Projects
+      ▸ Edited files                            ┃ │ No projects
+                                                ┃ │
+   The new shell owns the fullscreen surface.   ┃ │ Recents
+                                                  │ + New session  Ctrl+N
+╭────────────────────────────────────────────────╮│   Session 04                                 …
+│> Summarize the new shell architecture          ││   Session 05                                 …
+│                                                ││   Session 06                                 …
+│                                                ││   Session 07                                 …
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││ › Session 08                                 …
 ╰────────────────────────────────────────────────╯│

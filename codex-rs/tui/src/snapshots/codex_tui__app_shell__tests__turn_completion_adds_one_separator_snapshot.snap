@@ -9,7 +9,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
    ──────── Took 1.00s · 84.0 tok/s ───────────── │ Projects
                                                   │ No projects
                                                   │
-   > Next turn.                                   │ Recents  0 sessions
+   > Next turn.                                   │ Recents
                                                   │ + New session  Ctrl+N
                                                   │ loading sessions
                                                   │

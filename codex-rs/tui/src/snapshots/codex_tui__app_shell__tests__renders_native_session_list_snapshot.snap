@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
                                                   │ Projects
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents  2 sessions
+   server turns.                                  │ Recents
    ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
            2. Wire transcript                     │ › Refactor dashboard navigation              …
            3. Render dashboard                    │   Investigate approval rendering regression  …

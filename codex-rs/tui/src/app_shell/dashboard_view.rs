@@ -2,6 +2,7 @@ use super::ShellState;
 use super::agent_activity_render::agent_activity_overview_lines;
 use super::agent_activity_render::agent_activity_thread_at_line;
 use super::dashboard::DashboardPanel;
+use super::dashboard::MORE_BUTTON;
 use super::dashboard::dashboard_panels;
 use super::design::fill_rect;
 use super::design::palette;
@@ -15,6 +16,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
+use unicode_width::UnicodeWidthStr;
 
 const SIDEBAR_PANEL_GAP: u16 = 1;
 
@@ -23,6 +25,16 @@ pub(super) struct DashboardPanelPosition {
     pub(super) column: usize,
     pub(super) line: usize,
     pub(super) width: usize,
+}
+
+impl DashboardPanelPosition {
+    pub(super) fn on_more_button(&self) -> bool {
+        self.column >= more_button_start(self.width)
+    }
+}
+
+fn more_button_start(width: usize) -> usize {
+    width.saturating_sub(MORE_BUTTON.width())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -52,7 +64,7 @@ impl DashboardView {
     fn new(shell: &ShellState, placement: DashboardPlacement) -> Self {
         let area = placement.area();
         let content = pane_content_rect(area);
-        let panels = dashboard_panels(shell, usize::from(content.width));
+        let mut panels = dashboard_panels(shell, usize::from(content.width));
         let navigation_height = panels
             .first()
             .map(DashboardPanel::height)
@@ -75,8 +87,17 @@ impl DashboardView {
         } else {
             0
         };
+        let mut recents = None;
         for (index, panel) in panels.iter().enumerate().skip(1) {
-            let height = usize::from(panel.height());
+            let mut height = usize::from(panel.height());
+            if panel.title == "Sessions" {
+                // Recents can fill the body once the projects above it scroll out of view.
+                recents = Some((index, top + height));
+                height += shell
+                    .session_list
+                    .row_count()
+                    .min(usize::from(body.height).saturating_sub(height));
+            }
             body_panels.push(PanelLayout { index, top, height });
             top = top.saturating_add(height);
             if index + 1 < panels.len() {
@@ -101,7 +122,11 @@ impl DashboardView {
             let (panel, row) = if let Some(row) = shell.projects.selected {
                 ("Projects", row)
             } else {
-                ("Sessions", shell.session_list.selected_line())
+                let first_chat = recents.map(|(_, first)| first).unwrap_or_default();
+                let capacity = (scroll + usize::from(body.height))
+                    .saturating_sub(first_chat)
+                    .max(1);
+                ("Sessions", shell.session_list.selected_line(capacity))
             };
             if let Some(layout) = body_panels
                 .iter()
@@ -113,6 +138,14 @@ impl DashboardView {
                     .min(line)
                     .min(max_scroll);
             }
+        }
+        if let Some((index, first_chat)) = recents {
+            let capacity = (scroll + usize::from(body.height)).saturating_sub(first_chat);
+            panels[index].lines.extend(shell.session_list.chat_lines(
+                usize::from(body.width.saturating_sub(1)),
+                capacity,
+                shell.session_list.focused && shell.projects.selected.is_none(),
+            ));
         }
         shell.dashboard_scroll.set(scroll);
         Self {
@@ -326,10 +359,48 @@ fn render_hover(
     if !text_area.contains(pointer) {
         return;
     }
+    if matches!(panel.title.as_str(), "Projects" | "Sessions") {
+        let width = usize::from(text_area.width);
+        let (interactive, more) = if panel.title == "Projects" {
+            let rows = shell.projects.rows(width);
+            let Some(row) = rows.get(panel_row) else {
+                return;
+            };
+            (row.action.is_some(), row.more.is_some())
+        } else {
+            let thread = shell.session_list.thread_index_at_line(panel_row).is_some();
+            (
+                thread || shell.session_list.is_new_session_line(panel_row),
+                thread && !shell.session_list.show_archived(),
+            )
+        };
+        if !interactive {
+            return;
+        }
+        let mut area = Rect::new(text_area.x, pointer.y, text_area.width, 1);
+        let row_hover = Style::new().bg(palette::border());
+        if more {
+            let start = text_area.x + more_button_start(width) as u16;
+            if pointer.x >= start {
+                area.x = start;
+                area.width = text_area.right() - start;
+                buf.set_style(
+                    area,
+                    Style::new()
+                        .fg(palette::focus())
+                        .bg(palette::dark())
+                        .reversed()
+                        .bold(),
+                );
+                return;
+            }
+            area.width = start - text_area.x;
+        }
+        buf.set_style(area, row_hover);
+        return;
+    }
     let interactive = match (shell.dashboard_route, panel.title.as_str()) {
-        (DashboardRoute::Sessions, "Sessions" | "Projects")
-        | (DashboardRoute::Agents, "Agents")
-        | (DashboardRoute::Settings, "Settings") => true,
+        (DashboardRoute::Agents, "Agents") | (DashboardRoute::Settings, "Settings") => true,
         (DashboardRoute::Status, "Edits") => shell.diff_store.has_session_edits(),
         (DashboardRoute::Sessions, _)
         | (DashboardRoute::Agents, _)

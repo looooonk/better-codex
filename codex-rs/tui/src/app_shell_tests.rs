@@ -1271,7 +1271,7 @@ fn renders_scrolled_session_list_snapshot() {
         shell.session_list.move_selection_down();
     }
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 15,
     );
 
     let rendered = render_shell(&shell, area);
@@ -2544,7 +2544,9 @@ fn session_rows_use_display_width_for_wide_characters() {
         ),
     ]);
     let width = 46;
-    let lines = shell.session_list.lines(width, /*focused*/ true);
+    let lines = shell
+        .session_list
+        .chat_lines(width, /*visible*/ 10, /*focused*/ true);
 
     assert_eq!(
         lines
@@ -5084,7 +5086,7 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     assert!(
         search
             .session_list
-            .lines(/*width*/ 80, /*focused*/ true)
+            .header_lines(/*width*/ 80)
             .iter()
             .any(|line| line_text(line).contains("alpha X▏beta"))
     );
@@ -5116,7 +5118,7 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     assert!(
         rename
             .session_list
-            .lines(/*width*/ 80, /*focused*/ true)
+            .header_lines(/*width*/ 80)
             .iter()
             .any(|line| line_text(line).contains("…") && line_text(line).contains('▏'))
     );
@@ -5746,11 +5748,11 @@ fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
 }
 
 #[test]
-fn new_shell_defaults_to_status_regardless_of_legacy_route_state() {
+fn new_shell_starts_with_sessions_hidden_regardless_of_legacy_route_state() {
     let codex_home = tempfile::tempdir().expect("create temp codex home");
     std::fs::write(
         codex_home.path().join("app-shell-state.json"),
-        b"{\"route\":\"sessions\"}",
+        b"{\"route\":\"status\"}",
     )
     .expect("write legacy route state");
     let started = started_thread(
@@ -5785,7 +5787,7 @@ fn new_shell_defaults_to_status_regardless_of_legacy_route_state() {
     assert!(!shell.dashboard_visible);
     assert_eq!(
         (shell.dashboard_route, shell.settings.selected_action()),
-        (DashboardRoute::Status, SettingsAction::default())
+        (DashboardRoute::Sessions, SettingsAction::default())
     );
     insta::assert_snapshot!(render_shell(
         &shell,
@@ -14419,11 +14421,11 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     let mut backend = RecordingBackend::with_threads(threads);
 
     refresh_session_list(&mut shell, &backend).await;
-    assert!(
-        shell.session_list.lines(/*width*/ 80, /*focused*/ true)[0]
-            .to_string()
-            .contains("20+ sessions")
+    assert_eq!(
+        shell.session_list.header_lines(/*width*/ 80)[0].to_string(),
+        "Recents"
     );
+    assert!(shell.session_list.has_more());
     shell
         .handle_session_list_key(key_char('/'), &config, &mut backend)
         .await
@@ -14444,7 +14446,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     }
     assert_eq!(shell.session_list.selected_thread_id(), None);
     assert!(
-        shell.session_list.lines(/*width*/ 80, /*focused*/ true)[2]
+        shell.session_list.header_lines(/*width*/ 80)[2]
             .to_string()
             .contains("filter* needle▏  · Enter search all")
     );
@@ -14478,7 +14480,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.session_list.selected_thread_id(), Some(target_id));
     assert!(
-        shell.session_list.lines(/*width*/ 80, /*focused*/ true)[2]
+        shell.session_list.header_lines(/*width*/ 80)[2]
             .to_string()
             .contains("search needle  · server results")
     );

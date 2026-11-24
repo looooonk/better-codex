@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
            3. Render dashboard                  ┃ │ Projects
                                                 ┃ │ No projects
       ▸ Edited files                            ┃ │
-   ▎ STATUS  first checkpoint                   │ │ Recents  0 sessions
+   ▎ STATUS  first checkpoint                   │ │ Recents
    ▎ STATUS  second checkpoint                  │ │ + New session  Ctrl+N
                                                   │ loading sessions
 ╭────────────────────────────────────────────────╮│

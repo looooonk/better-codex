@@ -118,14 +118,14 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::PageUp => {
-                for _ in 0..5 {
+                for _ in 0..self.session_list.visible_rows().max(1) {
                     self.session_list.move_selection_up();
                 }
                 Ok(true)
             }
             KeyCode::PageDown => {
                 let mut reached_end = false;
-                for _ in 0..5 {
+                for _ in 0..self.session_list.visible_rows().max(1) {
                     reached_end |= !self.session_list.move_selection_down();
                 }
                 if reached_end && self.session_list.has_more() {

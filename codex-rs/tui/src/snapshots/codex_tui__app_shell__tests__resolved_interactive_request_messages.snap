@@ -9,7 +9,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
              URL request                          │ Projects
    ▎ STATUS  request resolved                     │ No projects
                                                   │
-   The new shell owns the fullscreen surface.     │ Recents  0 sessions
+   The new shell owns the fullscreen surface.     │ Recents
                                                   │ + New session  Ctrl+N
                                                   │ loading sessions
                                                   │

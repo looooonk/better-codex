@@ -7,7 +7,7 @@ expression: rendered
                                        │━━━━━━━━━━━━━───────────────────────────────────
    > Create a divergent standalone TUI.│ Projects
                                        │ No projects
-                                       │ Recents  0 sessions
+                                       │ Recents
    Started a fullscreen app shell backe│ + New session  Ctrl+N
    ▎ PLAN  1. Build shell              │ loading sessions
            2. Wire transcript          │

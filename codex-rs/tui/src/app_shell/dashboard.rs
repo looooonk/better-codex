@@ -21,6 +21,8 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use std::collections::VecDeque;
 
+pub(super) const MORE_BUTTON: &str = "  … ";
+
 pub(super) struct DashboardPanel {
     pub(super) title: String,
     pub(super) lines: Vec<Line<'static>>,
@@ -150,13 +152,8 @@ fn dashboard_panel(
             Some(dashboard_navigation_panel(shell.dashboard_route, width))
         }
         DashboardPanelKind::Sessions => {
-            let mut panel = DashboardPanel::new(
-                "Sessions",
-                shell.session_list.lines(
-                    content_width,
-                    shell.session_list.focused && shell.projects.selected.is_none(),
-                ),
-            );
+            let mut panel =
+                DashboardPanel::new("Sessions", shell.session_list.header_lines(content_width));
             panel.show_title = false;
             Some(panel)
         }

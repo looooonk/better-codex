@@ -17,7 +17,7 @@ use crossterm::event::KeyEvent;
 
 impl ShellState {
     pub(super) fn refresh_projects<S: AppShellBackend>(&mut self, backend: &S) {
-        if self.dashboard_route != DashboardRoute::Sessions {
+        if !self.dashboard_visible || self.dashboard_route != DashboardRoute::Sessions {
             return;
         }
         let Some(handle) = backend.app_server_request_handle() else {
@@ -108,8 +108,8 @@ impl ShellState {
                 Action::Details(id) => self.project_menu(HubView::Details(id)),
                 Action::Move(thread) => self.project_menu(HubView::Move(thread)),
                 Action::Toggle(id) => {
-                    if !self.projects.collapsed.remove(&id) {
-                        self.projects.collapsed.insert(id);
+                    if !self.projects.expanded.remove(&id) {
+                        self.projects.expanded.insert(id);
                     }
                 }
                 Action::Page(id, forward) => {

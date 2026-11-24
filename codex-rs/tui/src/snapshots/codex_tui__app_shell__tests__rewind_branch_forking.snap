@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
                                                   │ Projects
                                                   │ No projects
    > Rewrite this prompt.                         │
-                                                  │ Recents  0 sessions
+                                                  │ Recents
                                                   │ + New session  Ctrl+N
    ──────── Took 1.00s ────────────────────────── │ loading sessions
                                                   │

@@ -7,7 +7,7 @@ expression: "render_shell(&shell, area)"
      ▌ output ... 118 earlie│━━━━━━━━━━━━━───────────────────────────────────
      ▌        cargo build ou│ Projects
      ▌        cargo build ou│ No projects
-     ▌        cargo build ou│ Recents  0 sessions
+     ▌        cargo build ou│ Recents
                             │ + New session  Ctrl+N
                             │ loading sessions
                             │

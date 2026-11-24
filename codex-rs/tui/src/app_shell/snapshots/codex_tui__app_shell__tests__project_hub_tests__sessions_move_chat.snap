@@ -11,7 +11,7 @@ expression: "render_shell(&shell, area)"
    Started a fullscreen app shell backed by app-server turns.     │ No project
    ▎ PLAN  1. Build shell                                         │ Research
            2. Wire transcript                                     │
-           3. Render dashboard                                    │ Recents  2 sessions
+           3. Render dashboard                                    │ Recents
                                                                   │ + New session  Ctrl+N
       ▸ Edited files                                              │   Earlier experiment                         …
                                                                   │   Loose notes                                …

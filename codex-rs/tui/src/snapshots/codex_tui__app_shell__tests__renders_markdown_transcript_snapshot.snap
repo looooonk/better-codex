@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
    • Render assistant text as markdown.                       │ Projects
    • Preserve local links like render.rs (codex-rs/tui/src/   │ No projects
      app_shell/render.rs:1).                                  │
-                                                              │ Recents  0 sessions
+                                                              │ Recents
    fn transcript() -> &'static str {                          │ + New session  Ctrl+N
    "markdown"                                                 │ loading sessions
    }                                                          │

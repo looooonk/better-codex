@@ -352,7 +352,7 @@ impl ShellState {
         {
             let rows = self.projects.rows(target.width);
             if let Some(row) = rows.get(target.line) {
-                let action = if target.column + 4 >= target.width {
+                let action = if target.on_more_button() {
                     row.more.as_ref().or(row.action.as_ref())
                 } else {
                     row.action.as_ref()
@@ -374,7 +374,7 @@ impl ShellState {
                     self.start_new_session(config, app_server).await?;
                 }
                 Some(SessionListHit::Thread(thread_id)) => {
-                    if target.column + 4 >= target.width && !self.session_list.show_archived() {
+                    if target.on_more_button() && !self.session_list.show_archived() {
                         self.project_menu(super::project_hub::HubView::Move(thread_id));
                     } else {
                         self.resume_session(config, app_server, thread_id).await;
@@ -575,18 +575,24 @@ impl ShellState {
                 .dashboard_panel_position_at(area, position, title)
                 .is_some()
         });
-        if over_nested_panel {
+        let scroll_back_to_projects = self.dashboard_route == DashboardRoute::Sessions
+            && !self.session_list.renaming()
+            && (self.session_list.visible_rows() == 0
+                || (direction == MouseScrollDirection::Up
+                    && self.session_list.at_top()
+                    && self.dashboard_scroll.get() > 0));
+        if over_nested_panel && !scroll_back_to_projects {
             return match (self.dashboard_route, direction) {
                 (DashboardRoute::Sessions, MouseScrollDirection::Up)
                     if !self.session_list.renaming() =>
                 {
-                    self.session_list.move_selection_up();
+                    self.session_list.scroll_up();
                     false
                 }
                 (DashboardRoute::Sessions, MouseScrollDirection::Down)
                     if !self.session_list.renaming() =>
                 {
-                    !self.session_list.move_selection_down() && self.session_list.has_more()
+                    self.session_list.scroll_down()
                 }
                 (DashboardRoute::Agents, MouseScrollDirection::Up) => {
                     self.agent_activity.move_selection_up();
