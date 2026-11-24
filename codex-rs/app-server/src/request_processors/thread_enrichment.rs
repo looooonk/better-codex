@@ -11,6 +11,39 @@ use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::SubAgentSource;
 use std::collections::HashMap;
 
+pub(super) async fn mark_external_writers(
+    home: &std::path::Path,
+    manager: &ThreadManager,
+    threads: &mut [Thread],
+) {
+    let owned = manager
+        .list_thread_ids()
+        .await
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    let candidates: Vec<_> = threads
+        .iter()
+        .filter_map(|t| ThreadId::from_string(&t.id).ok())
+        .filter(|id| !owned.contains(id))
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let locks = codex_rollout::WriterLockCoordinator::new(home);
+    // Availability is advisory. Listing must still work if another process is changing locks.
+    if let Ok(Ok(active)) =
+        tokio::task::spawn_blocking(move || locks.active_writers(&candidates)).await
+    {
+        let ids: std::collections::HashSet<_> =
+            active.into_iter().map(|id| id.to_string()).collect();
+        for thread in threads.iter_mut().filter(|t| ids.contains(&t.id)) {
+            thread.extra = Some(codex_app_server_protocol::ThreadExtra {
+                external_writer: true,
+            });
+        }
+    }
+}
+
 pub(super) async fn enrich_loaded_threads<T>(
     thread_manager: &ThreadManager,
     thread_watch_manager: &ThreadWatchManager,

@@ -144,6 +144,10 @@ resource URI fields remain available for older clients.
 # Local projects and chat history
 
 Use `project/list` for the saved project order, roots, and appearance metadata.
+When another app-server holds a local thread's writer lock, `thread/list` can
+report `thread.extra.externalWriter` to experimental clients. This is a snapshot.
+The resume request checks ownership again.
+
 Use `thread/list` with a `projectId` to page through its chats. Omitting the
 filter includes both assigned and unassigned chats. With local SQLite storage,
 `thread/list` and `thread/read` also resolve older Desktop assignments that

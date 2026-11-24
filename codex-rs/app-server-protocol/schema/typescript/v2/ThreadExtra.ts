@@ -5,4 +5,8 @@
 /**
  * Extra app-server data for a thread.
  */
-export type ThreadExtra = Record<string, never>;
+export type ThreadExtra = {
+/**
+ * Another app-server currently owns the local writer for this thread.
+ */
+externalWriter: boolean, };

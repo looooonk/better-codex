@@ -87,6 +87,32 @@ impl WriterLockCoordinator {
         })
     }
 
+    /// Snapshots currently held locks for a page of threads without claiming or creating a writer.
+    pub fn active_writers(&self, threads: &[ThreadId]) -> io::Result<Vec<ThreadId>> {
+        let coordination = match File::open(self.directory.join(COORDINATION_LOCK_FILE)) {
+            Ok(file) => file,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(err) => return Err(err),
+        };
+        // A writer must take exclusive coordination before opening its thread lock.
+        // Holding shared coordination keeps a probe from racing its acquisition or cleanup.
+        coordination.try_lock_shared()?;
+        let mut active = Vec::new();
+        for thread in threads {
+            let file = match File::open(self.directory.join(format!("{thread}.lock"))) {
+                Ok(file) => file,
+                Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+                Err(err) => return Err(err),
+            };
+            match file.try_lock_shared() {
+                Ok(()) => {}
+                Err(fs::TryLockError::WouldBlock) => active.push(*thread),
+                Err(fs::TryLockError::Error(err)) => return Err(err),
+            }
+        }
+        Ok(active)
+    }
+
     /// Holds coordination through publication after probing that the thread is idle.
     /// Every writer takes coordination before opening its thread lock, so the probe
     /// itself can be released. Encoding and verification must finish before this call.

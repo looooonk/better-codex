@@ -2899,6 +2899,14 @@ impl ThreadRequestProcessor {
             |thread| thread,
         )
         .await;
+        if self.thread_store.as_any().is::<LocalThreadStore>() {
+            super::thread_enrichment::mark_external_writers(
+                &self.config.codex_home,
+                &self.thread_manager,
+                &mut data,
+            )
+            .await;
+        }
         let read_states = super::thread_read_state::snapshots(self.state_db.as_ref(), &data).await;
         Ok(ThreadListResponse {
             data,

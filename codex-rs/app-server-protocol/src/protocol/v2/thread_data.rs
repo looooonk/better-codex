@@ -165,7 +165,11 @@ impl From<ThreadSource> for CoreThreadSource {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase", export_to = "v2/")]
-pub struct ThreadExtra {}
+pub struct ThreadExtra {
+    /// Another app-server currently owns the local writer for this thread.
+    #[serde(default)]
+    pub external_writer: bool,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

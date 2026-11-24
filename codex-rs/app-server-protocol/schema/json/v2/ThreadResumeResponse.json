@@ -1655,6 +1655,13 @@
     },
     "ThreadExtra": {
       "description": "Extra app-server data for a thread.",
+      "properties": {
+        "externalWriter": {
+          "default": false,
+          "description": "Another app-server currently owns the local writer for this thread.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "ThreadHistoryMode": {

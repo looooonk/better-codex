@@ -299,6 +299,44 @@ async fn projects_persist_and_assign_threads() -> Result<()> {
         .with_codex_home(codex_home.path())
         .build_initialized()
         .await?;
+    for (client, external) in [(&mut server, false), (&mut other, true)] {
+        let list: ThreadListResponse = client
+            .request(|request_id| ClientRequest::ThreadList {
+                request_id,
+                params: ThreadListParams {
+                    current_account_only: false,
+                    excluded_thread_ids: None,
+                    attached_to_thread_id: None,
+                    originators: None,
+                    cursor: None,
+                    limit: Some(10),
+                    sort_key: None,
+                    sort_direction: None,
+                    model_providers: None,
+                    source_kinds: None,
+                    archived: None,
+                    section_id: None,
+                    project_id: Some(Some(created.project.id.clone())),
+                    cwd: None,
+                    use_state_db_only: true,
+                    search_term: None,
+                    parent_thread_id: None,
+                    ancestor_thread_id: None,
+                },
+            })
+            .await?;
+        let row = list
+            .data
+            .iter()
+            .find(|row| row.id == started.thread.id)
+            .expect("persisted project chat");
+        assert_eq!(
+            row.extra
+                .as_ref()
+                .is_some_and(|extra| extra.external_writer),
+            external
+        );
+    }
     let update = other
         .send_thread_metadata_update_request(ThreadMetadataUpdateParams {
             thread_id: started.thread.id.clone(),

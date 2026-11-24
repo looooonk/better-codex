@@ -5520,6 +5520,13 @@ class ThreadExtra(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
     )
+    external_writer: Annotated[
+        bool | None,
+        Field(
+            alias="externalWriter",
+            description="Another app-server currently owns the local writer for this thread.",
+        ),
+    ] = False
 
 
 class ThreadGoalClearResponse(BaseModel):
