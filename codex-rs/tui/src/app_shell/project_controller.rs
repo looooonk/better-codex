@@ -227,7 +227,9 @@ impl ShellState {
         }
         if self.projects.selected.is_none() {
             match key.code {
-                KeyCode::Up if self.session_list.at_top() && !self.projects.groups.is_empty() => {
+                KeyCode::Up | KeyCode::Char('k')
+                    if self.session_list.at_top() && !self.projects.groups.is_empty() =>
+                {
                     self.projects.step(Direction::Previous);
                     return true;
                 }

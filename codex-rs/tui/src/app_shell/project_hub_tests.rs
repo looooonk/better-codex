@@ -54,7 +54,12 @@ async fn project_details_and_move_menu_share_pointer_and_keyboard_rows() {
     let buf = render_shell_buffer(&shell, area);
     let y = row_containing(&buf, area, "⌄ Research").unwrap();
     let name = row_needle_x(&buf, area, y, "Research").unwrap();
-    assert_eq!(buf[(name, y)].fg, ratatui::style::Color::Rgb(180, 142, 240));
+    let purple = crate::terminal_palette::best_color((180, 142, 240));
+    let expected = match purple {
+        ratatui::style::Color::Reset => ratatui::style::Color::Magenta,
+        color => color,
+    };
+    assert_eq!(buf[(name, y)].fg, expected);
     let x = row_needle_x(&buf, area, y, "…").unwrap();
     shell
         .handle_mouse_click(area, Position::new(x, y), &config, &mut backend)
@@ -114,11 +119,47 @@ async fn selecting_new_project_chat_uses_both_roots_and_selecting_old_chat_resum
         )
         .await;
     for _ in 0..100 {
-        shell.poll_backend_actions(&mut backend).await;
+        shell.poll_backend_actions(&backend).await;
         if shell.thread_id == thread {
             break;
         }
         tokio::task::yield_now().await;
     }
     assert_eq!(shell.thread_id, thread);
+}
+
+#[tokio::test]
+async fn keyboard_navigation_keeps_recent_chats_visible_below_expanded_projects() {
+    let (mut shell, _) = project_shell();
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(0, 0, 116, 24);
+    let template = shell.projects.groups[0].project.clone();
+    for index in 1..12 {
+        let mut project = template.clone();
+        project.id = format!("project-{index}");
+        project.name = format!("Project {index}");
+        shell.projects.groups.push(Group {
+            project,
+            chats: Vec::new(),
+            next: None,
+            pages: vec![None],
+        });
+    }
+    shell.project_menu(HubView::Browse);
+    for code in [KeyCode::Char('p'), KeyCode::Down] {
+        shell
+            .handle_session_list_key(
+                KeyEvent::new(code, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .unwrap();
+        let _ = render_shell_buffer(&shell, area);
+    }
+    assert_eq!(shell.session_list.selected_title(), Some("Loose notes"));
+    let rendered = render_shell(&shell, area);
+    assert!(rendered.contains("› Loose notes"));
+    insta::assert_snapshot!("sessions_recents_below_projects", rendered);
 }

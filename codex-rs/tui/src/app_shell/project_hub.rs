@@ -13,6 +13,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::dashboard::dashboard_value;
 use super::design::palette;
+use crate::terminal_palette::best_color;
 
 pub(super) const PAGE_SIZE: u32 = 5;
 
@@ -90,6 +91,13 @@ pub(super) struct HubRow {
     pub more: Option<Action>,
 }
 
+fn project_rgb(rgb: (u8, u8, u8), ansi: Color) -> Color {
+    match best_color(rgb) {
+        Color::Reset => ansi,
+        color => color,
+    }
+}
+
 fn color(project: &Project) -> Color {
     match project
         .metadata
@@ -98,15 +106,19 @@ fn color(project: &Project) -> Color {
         .map(String::as_str)
     {
         Some("red") => Color::LightRed,
-        Some("orange") => Color::Rgb(245, 153, 78),
+        Some("orange") => project_rgb((245, 153, 78), Color::LightRed),
         Some("yellow") => Color::Yellow,
         Some("green") => Color::Green,
         Some("teal" | "cyan") => Color::Cyan,
         Some("blue") => Color::LightBlue,
-        Some("purple" | "violet") => Color::Rgb(180, 142, 240),
-        Some("pink") => Color::Rgb(234, 144, 192),
+        Some("purple" | "violet") => project_rgb((180, 142, 240), Color::Magenta),
+        Some("pink") => project_rgb((234, 144, 192), Color::LightMagenta),
         Some("gray" | "grey") => Color::Gray,
-        Some(value) => value.parse().unwrap_or_else(|_| palette::text()),
+        Some(value) => match value.parse() {
+            Ok(color @ Color::Rgb(r, g, b)) => project_rgb((r, g, b), color),
+            Ok(color) => color,
+            Err(_) => palette::text(),
+        },
         None => palette::text(),
     }
 }

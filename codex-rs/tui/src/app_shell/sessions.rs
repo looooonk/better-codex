@@ -188,6 +188,18 @@ impl SessionListState {
             .map(|row| &row.cwd)
     }
 
+    pub(super) fn selected_line(&self) -> usize {
+        let leading = self.leading_line_count();
+        if self.rows.is_empty() {
+            return leading.saturating_sub(1);
+        }
+        let visible_rows = SESSION_LIST_LINE_BUDGET.saturating_sub(leading);
+        leading
+            + self
+                .selected
+                .saturating_sub(self.normalized_scroll_top(visible_rows))
+    }
+
     pub(super) fn hit_at_line(&mut self, line: usize) -> Option<SessionListHit> {
         self.focused = true;
         if !self.show_archived && line == 1 {

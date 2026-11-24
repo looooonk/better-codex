@@ -55,6 +55,16 @@ impl ShellState {
                     | KeyCode::PageDown
             ));
         }
+        if matches!(
+            key.code,
+            KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Char('j' | 'k')
+        ) {
+            self.projects.reveal.set(true);
+        }
         match key.code {
             KeyCode::Esc => {
                 self.session_list.focused = false;

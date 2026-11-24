@@ -101,7 +101,7 @@ impl DashboardView {
             let (panel, row) = if let Some(row) = shell.projects.selected {
                 ("Projects", row)
             } else {
-                ("Sessions", 0)
+                ("Sessions", shell.session_list.selected_line())
             };
             if let Some(layout) = body_panels
                 .iter()
