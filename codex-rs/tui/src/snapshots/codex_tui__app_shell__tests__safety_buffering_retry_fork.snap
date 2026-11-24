@@ -7,7 +7,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
    ──────── Took 1.00s ──────────────────────── │ │━━━━━━━━━━━━━───────────────────────────────────
                                                 │ │
    ▎ SYSTEM  2 queued follow-ups remain on      │ │ Projects
-             the previous session 01900000-     │ │ No projects
+             the previous session 01900000-     ┃ │ No projects
              0000-7000-8000-000000000001. Open  ┃ │
              Sessions to return to it.          ┃ │ Recents
                                                 ┃ │ + New session  Ctrl+N

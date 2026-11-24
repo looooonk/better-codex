@@ -643,6 +643,12 @@ pub(super) fn render_transcript_line_with_visualizations(
             crate::wrapping::RtOptions::new(body_width),
         )
     } else {
+        // Imported prompts may end with a newline. The prompt block supplies its own margin.
+        let text = if kind == TranscriptKind::User {
+            text.trim_end()
+        } else {
+            text
+        };
         textwrap::wrap(text, textwrap::Options::new(body_width))
             .into_iter()
             .map(|wrapped| HyperlinkLine::from(wrapped.into_owned()))

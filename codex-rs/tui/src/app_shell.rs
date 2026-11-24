@@ -752,7 +752,6 @@ impl ShellState {
             return;
         }
 
-        self.push_system(format!("loaded {} previous turns", turns.len()));
         for turn in turns {
             let terminal_turn_has_in_progress_file_change = turn.status != TurnStatus::InProgress
                 && turn.items.iter().any(|item| {
@@ -1836,6 +1835,8 @@ impl ShellState {
                     }
                 }
             }
+            ThreadItemPayload::Reasoning { .. } | ThreadItemPayload::HookPrompt { .. }
+                if origin != CompletedItemOrigin::Live => {}
             ThreadItemPayload::HookPrompt { fragments, .. } => {
                 let text = fragments
                     .into_iter()

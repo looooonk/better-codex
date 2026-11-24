@@ -4,14 +4,14 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   ▎ SYSTEM  switched session                     │━━━━━━━━━━━━━───────────────────────────────────
-   ▎ SYSTEM  loaded 1 previous turns              │
+                                                  │━━━━━━━━━━━━━───────────────────────────────────
+   > Rewrite this prompt.                         │
                                                   │ Projects
                                                   │ No projects
-   > Rewrite this prompt.                         │
+   ──────── Took 1.00s ────────────────────────── │
                                                   │ Recents
                                                   │ + New session  Ctrl+N
-   ──────── Took 1.00s ────────────────────────── │ loading sessions
+                                                  │ loading sessions
                                                   │
                                                   │
                                                   │

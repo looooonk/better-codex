@@ -435,6 +435,14 @@ impl SessionListState {
         lines
     }
 
+    pub(super) fn max_viewport_rows(&self) -> usize {
+        if self.show_archived {
+            usize::MAX
+        } else {
+            SESSION_LIST_LIMIT as usize
+        }
+    }
+
     pub(super) fn visible_rows(&self) -> usize {
         self.visible_rows.get()
     }

@@ -21,7 +21,7 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use std::collections::VecDeque;
 
-pub(super) const MORE_BUTTON: &str = "  … ";
+pub(super) const MORE_BUTTON: &str = " … ";
 
 pub(super) struct DashboardPanel {
     pub(super) title: String,

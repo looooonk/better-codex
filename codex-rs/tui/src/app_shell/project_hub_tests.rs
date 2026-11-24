@@ -230,13 +230,18 @@ async fn project_and_chat_buttons_have_hover_targets_separate_from_the_row() {
             shell.set_pointer_position(Position::new(dots, y));
             let buf = render_shell_buffer(&shell, area);
             assert_eq!(
-                (buf[(name, y)].bg, buf[(dots, y)].fg),
-                (original.0, design::palette::focus())
-            );
-            assert!(
-                buf[(dots, y)]
-                    .modifier
-                    .contains(ratatui::style::Modifier::REVERSED)
+                (
+                    buf[(name, y)].bg,
+                    buf[(dots - 2, y)].bg,
+                    buf[(dots - 1, y)].bg,
+                    buf[(dots + 1, y)].bg
+                ),
+                (
+                    original.0,
+                    original.0,
+                    design::palette::border(),
+                    design::palette::border()
+                )
             );
             if title == "› Research" && width == 116 {
                 let mut strip = Buffer::empty(Rect::new(name, y, dots + 2 - name, 1));
@@ -313,7 +318,7 @@ async fn recents_fills_the_resized_dashboard_across_pages_and_keeps_selection() 
         .lines()
         .filter(|l| l.contains("Recent "))
         .count();
-    assert_eq!(tall_count - count, usize::from(tall.height - short.height));
+    assert_eq!(tall_count, 20);
     let buf = render_shell_buffer(&shell, short);
     let y = row_containing(&buf, short, "Recent 01").unwrap();
     let x = row_needle_x(&buf, short, y, "Recent 01").unwrap();

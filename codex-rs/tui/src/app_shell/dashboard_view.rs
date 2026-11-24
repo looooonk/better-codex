@@ -88,6 +88,7 @@ impl DashboardView {
             0
         };
         let mut recents = None;
+        let max_chat_rows = shell.session_list.max_viewport_rows();
         for (index, panel) in panels.iter().enumerate().skip(1) {
             let mut height = usize::from(panel.height());
             if panel.title == "Sessions" {
@@ -96,7 +97,8 @@ impl DashboardView {
                 height += shell
                     .session_list
                     .row_count()
-                    .min(usize::from(body.height).saturating_sub(height));
+                    .min(usize::from(body.height).saturating_sub(height))
+                    .min(max_chat_rows);
             }
             body_panels.push(PanelLayout { index, top, height });
             top = top.saturating_add(height);
@@ -125,7 +127,7 @@ impl DashboardView {
                 let first_chat = recents.map(|(_, first)| first).unwrap_or_default();
                 let capacity = (scroll + usize::from(body.height))
                     .saturating_sub(first_chat)
-                    .max(1);
+                    .clamp(1, max_chat_rows);
                 ("Sessions", shell.session_list.selected_line(capacity))
             };
             if let Some(layout) = body_panels
@@ -140,7 +142,9 @@ impl DashboardView {
             }
         }
         if let Some((index, first_chat)) = recents {
-            let capacity = (scroll + usize::from(body.height)).saturating_sub(first_chat);
+            let capacity = (scroll + usize::from(body.height))
+                .saturating_sub(first_chat)
+                .min(max_chat_rows);
             panels[index].lines.extend(shell.session_list.chat_lines(
                 usize::from(body.width.saturating_sub(1)),
                 capacity,
@@ -384,14 +388,7 @@ fn render_hover(
             if pointer.x >= start {
                 area.x = start;
                 area.width = text_area.right() - start;
-                buf.set_style(
-                    area,
-                    Style::new()
-                        .fg(palette::focus())
-                        .bg(palette::dark())
-                        .reversed()
-                        .bold(),
-                );
+                buf.set_style(area, row_hover);
                 return;
             }
             area.width = start - text_area.x;

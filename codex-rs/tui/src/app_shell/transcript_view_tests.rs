@@ -8,7 +8,7 @@ fn user_prompt_shades_wrapped_text_and_both_margins() {
     let mut shell = ShellState::snapshot_fixture();
     shell.clear_visible_transcript();
     shell.clear_active_turn();
-    shell.push_user("A prompt long enough to wrap.\n\nNext paragraph.");
+    shell.push_user("A prompt long enough to wrap.\n\nNext paragraph.\r\n   \n");
     shell.push_user("One more thing.");
     shell.push_system("Session updated.");
     shell.push_user("Last detail.");
