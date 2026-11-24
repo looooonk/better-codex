@@ -11,16 +11,10 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                       │▎Complete the dashboard consolidation
          3. Render dashboard                      │▎1m | 12,345/50,000 tokens
                                                   │
-        > Edited files                            │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
- ▎ CODEX  The new shell owns the fullscreen       │▎x Shell frame
-          surface.                                │▎> Transcript model
-                                                  │▎- Approvals
-                                                  │
-                                                  │▎◆ TOOLS
+        > Edited files                            │▎◆ TOOLS
                                                   │▎completed exec just test -p codex-tui
-                                                  │
-                                                  │▎◆ EDITS
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │▎◆ EDITS
                                                   │▎3 files +128 -24
                                                   │
                                                   │▎◆ WORKSPACE
@@ -38,6 +32,12 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ TOKENS
                                                   │▎input 1k | output 240
                                                   │▎Context 100% left
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

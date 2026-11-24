@@ -15,7 +15,6 @@ use super::thread_usage::thread_usage_line;
 use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
-use codex_app_server_protocol::TurnPlanStepStatus;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -40,7 +39,6 @@ enum DashboardPanelKind {
     RateLimits,
     Edits,
     Goal,
-    Plan,
     Tools,
     Agents,
     Workspace,
@@ -130,7 +128,6 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
         DashboardRoute::Status => &[
             DashboardPanelKind::Navigation,
             DashboardPanelKind::Goal,
-            DashboardPanelKind::Plan,
             DashboardPanelKind::Tools,
             DashboardPanelKind::Edits,
             DashboardPanelKind::Workspace,
@@ -298,20 +295,6 @@ fn dashboard_panel(
             }
             DashboardPanel::new("Goal", lines)
         }),
-        DashboardPanelKind::Plan => {
-            let mut lines = Vec::new();
-            if let Some(explanation) = &shell.plan_explanation {
-                lines.push(Line::from(explanation.clone().dim()));
-            }
-            if shell.plan_steps.is_empty() {
-                lines.push(Line::from("no active plan".dim()));
-            } else {
-                for step in shell.plan_steps.iter().take(5) {
-                    lines.push(plan_step_line(step.status, &step.step));
-                }
-            }
-            Some(DashboardPanel::new("Plan", lines))
-        }
         DashboardPanelKind::Tools => Some(DashboardPanel::new(
             "Tools",
             activity_lines(&shell.tool_activity, content_width, "idle"),
@@ -365,15 +348,6 @@ fn goal_status_span(status: codex_app_server_protocol::ThreadGoalStatus) -> Span
         }
         codex_app_server_protocol::ThreadGoalStatus::Paused => badge_span(label, Tone::Codex),
     }
-}
-
-fn plan_step_line(status: TurnPlanStepStatus, step: &str) -> Line<'static> {
-    let marker = match status {
-        TurnPlanStepStatus::Pending => "-".dim(),
-        TurnPlanStepStatus::InProgress => ">".fg(palette::cyan()).bold(),
-        TurnPlanStepStatus::Completed => "x".fg(palette::success()),
-    };
-    Line::from(vec![marker, " ".dim(), step.to_string().into()])
 }
 
 fn tool_activity_line(activity: &ToolActivity, width: usize) -> Line<'static> {

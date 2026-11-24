@@ -6,22 +6,16 @@ expression: "render_shell(&shell, area)"
  ▎ YOU  Create a divergent standalone TUI.                            │  Status   │  Agents  │  Sessions  │  Settings
                                                                       │━━━━━━━━━━━─────────────────────────────────────
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │
- ▎ PLAN  1. Build shell                                               │▎◆ PLAN
-         2. Wire transcript                                           │▎Build the standalone shell in slices.
-         3. Render dashboard                                          │▎x Shell frame
-                                                                      │▎> Transcript model
-        > Edited files                                                │▎- Approvals
+ ▎ PLAN  1. Build shell                                               │▎◆ TOOLS
+         2. Wire transcript                                           │▎completed exec just test -p codex-tui
+         3. Render dashboard                                          │
+                                                                      │▎◆ EDITS
+        > Edited files                                                │▎3 files +128 -24
  ▎ PLAN  1. Route activity into dashboard panels                      │
-                                                                      │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen surface.                  │▎completed exec just test -p codex-tui
-                                                                      │
-          Thinking... · 0 tok/s                                       │▎◆ EDITS
-                                                                      │▎3 files +128 -24
-                                                                      │
                                                                       │▎◆ WORKSPACE
-                                                                      │▎profile managed
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │▎profile managed
                                                                       │▎cwd /workspace/better-codex
-                                                                      │▎files restricted, net restricted
+          Thinking... · 0 tok/s                                       │▎files restricted, net restricted
                                                                       │▎roots none selected
                                                                       │
                                                                       │▎◆ TOKENS
@@ -30,6 +24,12 @@ expression: "render_shell(&shell, area)"
                                                                       │
                                                                       │▎◆ BACKGROUND
                                                                       │▎workspace refresh queued
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
                                                                       │
                                                                       │
                                                                       │
