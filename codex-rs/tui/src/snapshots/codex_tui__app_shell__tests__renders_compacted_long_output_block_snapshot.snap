@@ -5,14 +5,14 @@ expression: "render_shell(&shell, area)"
                             │
                             │  Status   │  Agents  │  Sessions  │  Settings
      ▌ output ... 118 earlie│───────────────────────━━━━━━━━━━━━─────────────
-     ▌        cargo build ou│▎◆ SESSIONS
-     ▌        cargo build ou│▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-     ▌        cargo build ou│▎+ New session  Ctrl+N
-                            │▎loading sessions
-                            │▎◆ THREAD
-                            │▎stage-one
-                            │▎id 01900000-0000-7000-8000-000000000001
-                            │▎resume, fork, archive, delete in session list
+     ▌        cargo build ou│ Projects
+     ▌        cargo build ou│ No projects
+     ▌        cargo build ou│ Recents  0 sessions
+                            │ + New session  Ctrl+N
+                            │ loading sessions
+                            │
+                            │
+                            │
                             │
                             │
                             │

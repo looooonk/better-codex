@@ -6,15 +6,15 @@ expression: "render_shell(&shell, area)"
                                                               │  Status   │  Agents  │  Sessions  │  Settings
    # Result                                                   │───────────────────────━━━━━━━━━━━━─────────────
                                                               │
-   • Render assistant text as markdown.                       │▎◆ SESSIONS
-   • Preserve local links like render.rs (codex-rs/tui/src/   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-     app_shell/render.rs:1).                                  │▎+ New session  Ctrl+N
-                                                              │▎loading sessions
-   fn transcript() -> &'static str {                          │
-   "markdown"                                                 │▎◆ THREAD
-   }                                                          │▎stage-one
-                                                              │▎id 01900000-0000-7000-8000-000000000001
-    Area     Status                                           │▎resume, fork, archive, delete in session list
+   • Render assistant text as markdown.                       │ Projects
+   • Preserve local links like render.rs (codex-rs/tui/src/   │ No projects
+     app_shell/render.rs:1).                                  │
+                                                              │ Recents  0 sessions
+   fn transcript() -> &'static str {                          │ + New session  Ctrl+N
+   "markdown"                                                 │ loading sessions
+   }                                                          │
+                                                              │
+    Area     Status                                           │
    ━━━━━━━  ━━━━━━━━                                          │
     code     done                                             │
    ───────  ────────                                          │

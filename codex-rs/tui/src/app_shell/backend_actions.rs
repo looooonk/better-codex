@@ -369,7 +369,10 @@ impl ShellState {
                 Ok(started) => {
                     self.complete_session_switch(started, app_server).await;
                 }
-                Err(err) => self.report_action_error("failed to resume session", err),
+                Err(err) => {
+                    self.status = "failed to resume session".to_owned();
+                    self.project_action_error(&err);
+                }
             },
             BackendActionResult::DescendantCount {
                 thread_id,

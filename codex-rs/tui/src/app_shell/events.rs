@@ -91,7 +91,9 @@ impl ShellState {
                 }
                 let refresh_session_list = matches!(
                     &notification,
-                    ServerNotification::ThreadStarted(_)
+                    ServerNotification::ProjectChanged(_)
+                        | ServerNotification::ThreadProjectUpdated(_)
+                        | ServerNotification::ThreadStarted(_)
                         | ServerNotification::ThreadReverted(_)
                         | ServerNotification::ThreadArchived(_)
                         | ServerNotification::ThreadDeleted(_)

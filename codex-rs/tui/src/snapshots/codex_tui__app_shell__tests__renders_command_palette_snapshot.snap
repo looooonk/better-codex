@@ -6,15 +6,15 @@ expression: "render_shell(&shell, area)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
    > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │ Projects
+                                                  │ No projects
    Started a f╭──────────────────────────────────────────────────────────────────────╮
    server turn│◆ ACTIONS  Ctrl+P                                                     │
    ▎ PLAN  1. │                                                                      │
            2. │▌ New session  Start an empty session in the c...                     │
            3. │  Copy transcript item                                                │
-              │  Clear visible transcript                                            │00001
-      ▸ Edited│  Select latest transcript item                                       │ession list
+              │  Clear visible transcript                                            │
+      ▸ Edited│  Select latest transcript item                                       │
               │  Jump transcript to top                                              │
    The new she│  Jump transcript to bottom                                           │
               │  Interrupt active turn                                               │

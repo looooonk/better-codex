@@ -5,12 +5,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 48, 16))"
 │       ╭────────────────────────╮
 │  Statu│ Select model           │ │ Settings
 │───────│ gpt-5-0              ✓ │━────────────
-│▎◆ SESS│ gpt-5-1                │
-│▎○ CLIC│ gpt-5-2                │ions
-│▎+ New │ gpt-5-3                │
-│▎loadin│ gpt-5-4                │
-│▎◆ THRE│ gpt-5-5                │
-│▎stage-│ gpt-5-6                │
+│ Projec│ gpt-5-1                │
+│ No pro│ gpt-5-2                │
+│ Recent│ gpt-5-3                │
+│ + New │ gpt-5-4                │
+│ loadin│ gpt-5-5                │
+│       │ gpt-5-6                │
 │       │ gpt-5-7                │
 ╭───────│ gpt-5-8                │─────────────╮
 │> Summa│ gpt-5-9                ▾cture        │

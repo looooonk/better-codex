@@ -1,10 +1,15 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::backend::app_shell_request_id;
 use super::backend_actions::ActionGroup;
 use super::backend_actions::BackendActionResult;
 use crate::app_server_session::AppServerStartedThread;
 use crate::legacy_core::config::Config;
 use crate::session_resume::effective_resume_cwd_mode;
+use codex_app_server_protocol::ClientRequest;
+use codex_app_server_protocol::Project;
+use codex_app_server_protocol::ProjectReadParams;
+use codex_app_server_protocol::ProjectReadResponse;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_config::types::ResumeCwdMode;
 use codex_protocol::ThreadId;
@@ -22,11 +27,26 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        self.new_session_in(config, app_server, None).await
+    }
+
+    pub(super) async fn new_session_in<S: AppShellBackend>(
+        &mut self,
+        config: &Config,
+        app_server: &mut S,
+        project: Option<&Project>,
+    ) -> Result<()> {
         if self.block_session_switch_if_busy() {
             return Ok(());
         }
 
         let mut session_config = self.current_session_config(config)?;
+        if let Some(project) = project
+            && let Some(root) = project.roots.first()
+        {
+            session_config.cwd = root.path.clone();
+            session_config.workspace_roots = project.roots.iter().map(|r| r.path.clone()).collect();
+        }
         let refresh_catalog = self.next_model_provider.is_some();
         if refresh_catalog {
             session_config.model = self.next_provider_model.clone();
@@ -43,6 +63,7 @@ impl ShellState {
                 self.next_model_provider
                     .as_deref()
                     .or(Some(self.model_provider_id.as_str())),
+                project,
             )
             .await?;
         self.next_model_provider = None;
@@ -83,6 +104,7 @@ impl ShellState {
     ) where
         S: AppShellBackend,
     {
+        self.finish_subscription_cleanup().await;
         self.cancel_agent_history().await;
         let provider_changed = self.model_provider_id != started.session.model_provider_id;
         let previous_thread_ids = self.tracked_thread_ids();
@@ -116,10 +138,52 @@ impl ShellState {
         });
     }
 
-    pub(super) fn resume_session<S>(&mut self, config: &Config, app_server: &S, thread_id: ThreadId)
-    where
+    pub(super) async fn resume_session<S>(
+        &mut self,
+        config: &Config,
+        app_server: &S,
+        thread_id: ThreadId,
+    ) where
         S: AppShellBackend,
     {
+        let cwd = self.session_list.cwd_for_thread(thread_id).cloned();
+        let project = if let Some(id) = self.session_list.project_for_thread(thread_id) {
+            if let Some(group) = self.projects.group(id) {
+                Some(group.project.clone())
+            } else {
+                // Recents may finish loading before the project catalog.
+                let Some(handle) = app_server.app_server_request_handle() else {
+                    self.push_error("Could not load the selected chat’s project");
+                    return;
+                };
+                let request = ClientRequest::ProjectRead {
+                    request_id: app_shell_request_id("resume-project"),
+                    params: ProjectReadParams {
+                        project_id: id.to_owned(),
+                    },
+                };
+                match handle.request_typed::<ProjectReadResponse>(request).await {
+                    Ok(response) => Some(response.project),
+                    Err(err) => {
+                        self.project_action_error(&err.into());
+                        return;
+                    }
+                }
+            }
+        } else {
+            None
+        };
+        self.resume_workspace_session(config, app_server, thread_id, cwd, project);
+    }
+
+    pub(super) fn resume_workspace_session<S: AppShellBackend>(
+        &mut self,
+        config: &Config,
+        app_server: &S,
+        thread_id: ThreadId,
+        cwd: Option<PathBuf>,
+        project: Option<Project>,
+    ) {
         if self.block_session_switch_if_busy() {
             return;
         }
@@ -127,15 +191,24 @@ impl ShellState {
             self.push_status("session is already open");
             return;
         }
-        let session_cwd = self.session_list.cwd_for_thread(thread_id).cloned();
-        let Some(session_config) = self.session_switch_config(
-            config,
-            session_cwd.as_deref(),
-            app_server.uses_remote_workspace(),
-        ) else {
+        let session_config = if let Some(project) = &project
+            && let Some(root) = project.roots.first()
+        {
+            let mut session_config = config.clone();
+            session_config.cwd = cwd
+                .filter(|dir| project.roots.iter().any(|r| dir.starts_with(&r.path)))
+                .and_then(|dir| AbsolutePathBuf::from_absolute_path(dir).ok())
+                .unwrap_or_else(|| root.path.clone());
+            session_config.workspace_roots = project.roots.iter().map(|r| r.path.clone()).collect();
+            session_config
+        } else if let Some(config) =
+            self.session_switch_config(config, cwd.as_deref(), app_server.uses_remote_workspace())
+        {
+            config
+        } else {
             return;
         };
-        let request = app_server.resume_thread_in_background(session_config, thread_id);
+        let request = app_server.resume_thread_in_background(session_config, thread_id, project);
         self.start_backend_action(ActionGroup::SessionSwitch, "resuming session", async move {
             BackendActionResult::SessionResume {
                 result: request.await,

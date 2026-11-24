@@ -133,6 +133,9 @@ mod paste;
 mod pets;
 mod plugin_management;
 mod pointer;
+mod project_catalog;
+mod project_controller;
+mod project_hub;
 mod queued_message_popup_view;
 mod queued_messages;
 mod recap;
@@ -481,6 +484,7 @@ struct ShellState {
     text_selection: TextSelectionState,
     transcript_render_cache: RefCell<TranscriptRenderCache>,
     terminal_clear_requested: Cell<bool>,
+    projects: project_hub::ProjectHub,
     session_list: SessionListState,
     settings: SettingsState,
     mcp_inventory: McpInventorySummary,
@@ -652,6 +656,7 @@ impl ShellState {
             text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             terminal_clear_requested: Cell::new(false),
+            projects: Default::default(),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -2484,6 +2489,7 @@ impl ShellState {
             text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             terminal_clear_requested: Cell::new(false),
+            projects: Default::default(),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -2798,6 +2804,7 @@ pub mod bench_support {
             text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             terminal_clear_requested: Cell::new(false),
+            projects: Default::default(),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),

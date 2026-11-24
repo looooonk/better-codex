@@ -6,15 +6,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
    > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-              ╭──────────────────────────────────────────────────────────────────────╮ns
+                                                  │ Projects
+              ╭──────────────────────────────────────────────────────────────────────╮
    Started a f│◆ SAFETY REVIEW                                                       │
    server turn│Our systems are thinking a bit more about this request before         │
    ▎ PLAN  1. │responding.                                                           │
            2. │                                                                      │
            3. │Hang tight or retry with a faster model for a quicker response, though│
-              │it may be less capable of handling complex requests.                  │00001
-      ▸ Edited│                                                                      │ession list
+              │it may be less capable of handling complex requests.                  │
+      ▸ Edited│                                                                      │
               │> Retry with a faster model                                           │
               │  Dismiss and keep waiting                                            │
    > Explain t│  Learn more                                                          │

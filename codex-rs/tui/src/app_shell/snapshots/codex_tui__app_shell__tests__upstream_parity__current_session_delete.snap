@@ -6,15 +6,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │  Status   │  Agents  │  Sessions  │  Settings
                                                             │───────────────────────━━━━━━━━━━━━─────────────
    > Create a divergent standalone TUI.                     │
-                                                            │▎◆ SESSIONS
-                                                            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   Started a fullscreen app shell backed by app-server      │▎+ New session  Ctrl+N
-   turns.                                                   │▎loading sessions
+                                                            │ Projects
+                                                            │ No projects
+   Started a fullscreen app shell backed by app-server      │
+   turns.                                                   │ Recents  0 sessions
    ▎ PLAN  1. Build╭──────────────────────────────────────────────────────────────────────╮
            2. Wire │◆ DELETE SESSION                                                      │
            3. Rende│Delete session: stage-one                                             │
-                   │Session ID: 01900000-0000-7000-8000-000000000001                      │0000000001
-      ▸ Edited file│No spawned descendants will be deleted.                               │ in session list
+                   │Session ID: 01900000-0000-7000-8000-000000000001                      │
+      ▸ Edited file│No spawned descendants will be deleted.                               │
                    │This permanently deletes all persisted history in that subtree.       │
    The new shell ow│                                                                      │
                    │> Delete permanently Enter/y                                          │

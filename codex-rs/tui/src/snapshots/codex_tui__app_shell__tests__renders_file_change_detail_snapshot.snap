@@ -6,15 +6,15 @@ expression: "render_shell(&shell, area)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
    Started a fullscreen app shell backed by     │ │───────────────────────━━━━━━━━━━━━─────────────
    app-server turns.                            │ │
-   ▎ PLAN  1. Build shell                       │ │▎◆ SESSIONS
-           2. Wire transcript                   ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-           3. Render dashboard                  ┃ │▎+ New session  Ctrl+N
-                                                ┃ │▎loading sessions
-      ⌄ Edited files                            ┃ │
-                                                ┃ │▎◆ THREAD
-        ▌ tool exec just test -p codex-tui      ┃ │▎stage-one
-                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
-        ▌ edited 3 files +128 -24               ┃ │▎resume, fork, archive, delete in session list
+   ▎ PLAN  1. Build shell                       │ │ Projects
+           2. Wire transcript                   ┃ │ No projects
+           3. Render dashboard                  ┃ │
+                                                ┃ │ Recents  0 sessions
+      ⌄ Edited files                            ┃ │ + New session  Ctrl+N
+                                                ┃ │ loading sessions
+        ▌ tool exec just test -p codex-tui      ┃ │
+                                                ┃ │
+        ▌ edited 3 files +128 -24               ┃ │
                                                 ┃ │
         ▌ edited 4 files +4 -3                  ┃ │
         ▌          M src/app.rs                 ┃ │

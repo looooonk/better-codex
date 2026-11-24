@@ -5,13 +5,13 @@ expression: rendered
                             │
                             │  Status   │  Agents  │  Sessions  │  Settings
                             │───────────────────────━━━━━━━━━━━━─────────────
-   > Create a divergent stan│▎◆ SESSIONS
-                            │▎● FOCUSED  ARCHIVED  0 sessions
-                            │▎loading sessions
-   Started a fullscreen app │▎◆ THREAD
-   ▎ PLAN  1. Build shell   │▎stage-one
-           2. Wire transcrip│▎id 01900000-0000-7000-8000-000000000001
-           3. Render dashboa│▎resume, fork, archive, delete in session list
+   > Create a divergent stan│ Projects
+                            │ No projects
+                            │ Archived  0 sessions
+   Started a fullscreen app │ loading sessions
+   ▎ PLAN  1. Build shell   │
+           2. Wire transcrip│
+           3. Render dashboa│
                             │
       ▸ Edited files        │
                             │

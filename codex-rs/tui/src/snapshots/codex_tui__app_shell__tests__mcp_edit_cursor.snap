@@ -6,15 +6,15 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
    > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
-   server turns.                                  │▎loading sessions
-   ▎ PLAN  1. Build shell                         │
+                                                  │ Projects
+                                                  │ No projects
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents  0 sessions
+   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
            2. ╭──────────────────────────────────────────────────────────────────────╮
            3. │◆ MCP SERVERS                                                         │
-              │Add MCP server                                                        │00001
-      ▸ Edited│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
+              │Add MCP server                                                        │
+      ▸ Edited│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│
    ▎ STATUS  m│                                                                      │
               │…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
    The new she│                                                                      │

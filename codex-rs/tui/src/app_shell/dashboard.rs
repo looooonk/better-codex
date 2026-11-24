@@ -32,7 +32,7 @@ enum DashboardPanelKind {
     Navigation,
     Sessions,
     Settings,
-    Thread,
+    Projects,
     Tokens,
     Approvals,
     Background,
@@ -117,8 +117,8 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
     match route {
         DashboardRoute::Sessions => &[
             DashboardPanelKind::Navigation,
+            DashboardPanelKind::Projects,
             DashboardPanelKind::Sessions,
-            DashboardPanelKind::Thread,
         ],
         DashboardRoute::Agents => &[
             DashboardPanelKind::Navigation,
@@ -149,44 +149,35 @@ fn dashboard_panel(
         DashboardPanelKind::Navigation => {
             Some(dashboard_navigation_panel(shell.dashboard_route, width))
         }
-        DashboardPanelKind::Sessions => Some(DashboardPanel::new(
-            "Sessions",
-            shell.session_list.lines(content_width),
-        )),
+        DashboardPanelKind::Sessions => {
+            let mut panel = DashboardPanel::new(
+                "Sessions",
+                shell.session_list.lines(
+                    content_width,
+                    shell.session_list.focused && shell.projects.selected.is_none(),
+                ),
+            );
+            panel.show_title = false;
+            Some(panel)
+        }
         DashboardPanelKind::Settings => {
             let mut panel = DashboardPanel::new("Settings", shell.settings.lines(shell, width));
             panel.show_title = false;
             Some(panel)
         }
-        DashboardPanelKind::Thread => {
-            let thread_label = shell.thread_name.as_deref().unwrap_or("untitled thread");
-            Some(DashboardPanel::new(
-                "Thread",
-                vec![
-                    Line::from(dashboard_value(
-                        thread_label,
-                        content_width,
-                        /*prefix_width*/ 0,
-                    )),
-                    Line::from(vec![
-                        "id ".dim(),
-                        dashboard_value(
-                            &shell.thread_id.to_string(),
-                            content_width,
-                            /*prefix_width*/ 3,
-                        )
-                        .fg(palette::cyan()),
-                    ]),
-                    Line::from(
-                        dashboard_value(
-                            "resume, fork, archive, delete in session list",
-                            content_width,
-                            /*prefix_width*/ 0,
-                        )
-                        .dim(),
-                    ),
-                ],
-            ))
+        DashboardPanelKind::Projects => {
+            shell.projects.width.set(content_width);
+            let mut panel = DashboardPanel::new(
+                "Projects",
+                shell
+                    .projects
+                    .rows(content_width)
+                    .into_iter()
+                    .map(|r| r.line)
+                    .collect(),
+            );
+            panel.show_title = false;
+            Some(panel)
         }
         DashboardPanelKind::Tokens => {
             let mut lines = vec![

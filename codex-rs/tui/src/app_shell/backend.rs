@@ -96,6 +96,7 @@ pub(super) trait AppShellBackend {
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
         model_provider_override: Option<&str>,
+        project: Option<&codex_app_server_protocol::Project>,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
 
     fn resume_thread(
@@ -108,6 +109,7 @@ pub(super) trait AppShellBackend {
         &self,
         config: Config,
         thread_id: ThreadId,
+        project: Option<codex_app_server_protocol::Project>,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static;
 
     fn fork_side_thread_in_background(
@@ -481,12 +483,14 @@ impl AppShellBackend for AppServerSession {
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
         model_provider_override: Option<&str>,
+        project: Option<&codex_app_server_protocol::Project>,
     ) -> Result<AppServerStartedThread> {
         AppServerSession::start_thread_with_session_start_source(
             self,
             config,
             session_start_source,
             model_provider_override,
+            project,
         )
         .await
     }
@@ -503,8 +507,9 @@ impl AppShellBackend for AppServerSession {
         &self,
         config: Config,
         thread_id: ThreadId,
+        project: Option<codex_app_server_protocol::Project>,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
-        AppServerSession::resume_thread_in_background(self, config, thread_id)
+        AppServerSession::resume_thread_in_background(self, config, thread_id, project)
     }
 
     fn fork_side_thread_in_background(

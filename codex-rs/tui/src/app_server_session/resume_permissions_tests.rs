@@ -156,7 +156,7 @@ async fn remote_history_rejects_permission_overrides_before_dispatch() -> color_
         );
         assert_eq!(
             session
-                .resume_thread_in_background(config.clone(), thread_id)
+                .resume_thread_in_background(config.clone(), thread_id, /*project*/ None)
                 .await
                 .unwrap_err()
                 .to_string(),

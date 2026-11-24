@@ -90,6 +90,7 @@ async fn runtime_provider_choice_reaches_remote_thread_creation() -> color_eyre:
             &config,
             /*session_start_source*/ None,
             Some("ollama"),
+            /*project*/ None,
         )
         .await?;
     server.shutdown().await?;
@@ -133,6 +134,7 @@ async fn fresh_start_uses_provider_and_model_saved_after_launch() -> color_eyre:
                 &config,
                 Some(ThreadStartSource::Startup),
                 /*model_provider_override*/ None,
+                /*project*/ None,
             )
             .await?;
         assert_eq!(

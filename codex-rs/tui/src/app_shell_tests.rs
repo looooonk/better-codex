@@ -2,6 +2,9 @@ use codex_app_server_protocol::ThreadItemPayload;
 #[path = "app_shell/agent_runtime_tests.rs"]
 mod agent_runtime;
 
+#[path = "app_shell/project_hub_tests.rs"]
+mod project_hub_tests;
+
 #[path = "app_shell/dashboard_focus_tests.rs"]
 mod dashboard_focus;
 
@@ -759,7 +762,7 @@ async fn remote_archive_can_be_unarchived_and_resumed() {
     finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.session_list.selected_thread_id(), Some(thread_id));
 
-    shell.resume_session(&config, &backend, thread_id);
+    shell.resume_session(&config, &backend, thread_id).await;
     complete_backend_actions(&mut shell, &backend).await;
     assert_eq!(shell.session_unavailable_reason, None);
     assert!(
@@ -1240,7 +1243,7 @@ fn renders_loading_archived_session_list_snapshot() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("ARCHIVED  0 sessions"), "{rendered}");
+    assert!(rendered.contains("Archived  0 sessions"), "{rendered}");
     assert!(rendered.contains("loading sessions"), "{rendered}");
     assert!(
         !rendered.contains("stale active-session error"),
@@ -1273,9 +1276,9 @@ fn renders_scrolled_session_list_snapshot() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("4/10 Session 04"), "{rendered}");
-    assert!(rendered.contains("8/10 Session 08"), "{rendered}");
-    assert!(!rendered.contains("1/10 Session 01"), "{rendered}");
+    assert!(rendered.contains("Session 04"), "{rendered}");
+    assert!(rendered.contains("Session 08"), "{rendered}");
+    assert!(!rendered.contains("Session 01"), "{rendered}");
     insta::assert_snapshot!(rendered);
 }
 
@@ -1784,7 +1787,7 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
             .iter()
             .map(|panel| panel.title.as_str())
             .collect::<Vec<_>>(),
-        vec!["Navigation", "Sessions", "Thread"]
+        vec!["Navigation", "Projects", "Sessions"]
     );
 
     shell.dashboard_route = DashboardRoute::Status;
@@ -2541,7 +2544,7 @@ fn session_rows_use_display_width_for_wide_characters() {
         ),
     ]);
     let width = 46;
-    let lines = shell.session_list.lines(width);
+    let lines = shell.session_list.lines(width, /*focused*/ true);
 
     assert_eq!(
         lines
@@ -5086,7 +5089,7 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     assert!(
         search
             .session_list
-            .lines(/*width*/ 80)
+            .lines(/*width*/ 80, /*focused*/ true)
             .iter()
             .any(|line| line_text(line).contains("alpha X▏beta"))
     );
@@ -5118,7 +5121,7 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     assert!(
         rename
             .session_list
-            .lines(/*width*/ 80)
+            .lines(/*width*/ 80, /*focused*/ true)
             .iter()
             .any(|line| line_text(line).contains("…") && line_text(line).contains('▏'))
     );
@@ -8548,7 +8551,7 @@ fn narrow_dashboard_keeps_the_active_route_interactive() {
     let rendered = render_shell(&shell, area);
 
     assert!(rendered.contains("Sessions"));
-    assert!(rendered.contains("CLICK TO FOCUS"));
+    assert!(rendered.contains("Recents"));
     assert!(rendered.contains("Run command: cargo test"));
 }
 
@@ -14422,7 +14425,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
 
     refresh_session_list(&mut shell, &backend).await;
     assert!(
-        shell.session_list.lines(/*width*/ 80)[0]
+        shell.session_list.lines(/*width*/ 80, /*focused*/ true)[0]
             .to_string()
             .contains("20+ sessions")
     );
@@ -14446,7 +14449,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     }
     assert_eq!(shell.session_list.selected_thread_id(), None);
     assert!(
-        shell.session_list.lines(/*width*/ 80)[2]
+        shell.session_list.lines(/*width*/ 80, /*focused*/ true)[2]
             .to_string()
             .contains("filter* needle▏  · Enter search all")
     );
@@ -14480,7 +14483,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.session_list.selected_thread_id(), Some(target_id));
     assert!(
-        shell.session_list.lines(/*width*/ 80)[2]
+        shell.session_list.lines(/*width*/ 80, /*focused*/ true)[2]
             .to_string()
             .contains("search needle  · server results")
     );
@@ -17083,6 +17086,7 @@ impl backend::AppShellBackend for RecordingBackend {
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
         model_provider_override: Option<&str>,
+        _project: Option<&codex_app_server_protocol::Project>,
     ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
         self.push(RecordedBackendCall::Start(session_start_source));
         self.start_provider_overrides
@@ -17119,6 +17123,7 @@ impl backend::AppShellBackend for RecordingBackend {
         &self,
         config: Config,
         thread_id: codex_protocol::ThreadId,
+        _project: Option<codex_app_server_protocol::Project>,
     ) -> impl std::future::Future<
         Output = color_eyre::Result<crate::app_server_session::AppServerStartedThread>,
     > + Send

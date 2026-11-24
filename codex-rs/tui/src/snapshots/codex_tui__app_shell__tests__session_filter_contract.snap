@@ -6,16 +6,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
    > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-                                                  │▎● FOCUSED  ACTIVE  0 shown / 20+ loaded
-   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
-   server turns.                                  │▎filter* needle▏  · Enter search all
-   ▎ PLAN  1. Build shell                         │▎no matching sessions
-           2. Wire transcript                     │
-           3. Render dashboard                    │▎◆ THREAD
-                                                  │▎stage-one
-      ▸ Edited files                              │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+                                                  │ Projects
+                                                  │ No projects
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents  0 shown / 20+ loaded
+   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
+           2. Wire transcript                     │ filter* needle▏  · Enter search all
+           3. Render dashboard                    │ no matching sessions
+                                                  │
+      ▸ Edited files                              │
+                                                  │
    The new shell owns the fullscreen surface.     │
                                                   │
                                                   │

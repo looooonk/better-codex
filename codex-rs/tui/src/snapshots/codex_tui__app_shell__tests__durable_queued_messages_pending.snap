@@ -5,7 +5,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
                               │
                               │  Status   │  Agents  │  Sessions  │  Settings
            3. Render dashboard│───────────────────────━━━━━━━━━━━━─────────────
-                              │▎◆ SESSIONS
+                              │ Projects
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ QUEUED  2                                                           │
 │   1  first queued                                                    │

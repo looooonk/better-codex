@@ -508,6 +508,9 @@ impl ShellState {
             self.dashboard_visible = true;
             self.set_dashboard_route(route);
             self.session_list.focused = route_already_visible && route == DashboardRoute::Sessions;
+            if self.session_list.focused && !self.projects.groups.is_empty() {
+                self.project_menu(super::project_hub::HubView::Browse);
+            }
             self.settings.focused = route_already_visible && route == DashboardRoute::Settings;
             self.agents_focused = route_already_visible && route == DashboardRoute::Agents;
             if self.settings.focused {
@@ -541,6 +544,9 @@ impl ShellState {
                 DashboardRouteStep::Next => self.dashboard_route.next(),
             };
             self.set_dashboard_route(route);
+            if route == DashboardRoute::Sessions {
+                self.start_session_list_refresh(app_server);
+            }
             self.session_list.focused = false;
             self.settings.focused = false;
             self.agents_focused = false;

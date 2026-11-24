@@ -6,19 +6,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
    > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-                                                  │▎● FOCUSED  ACTIVE  25 sessions
-   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
-   server turns.                                  │▎  17/25 Session 16 [main]  pagination fixture
-   ▎ PLAN  1. Build shell                         │▎  18/25 Session 17 [main]  pagination fixture
-           2. Wire transcript                     │▎  19/25 Session 18 [main]  pagination fixture
-           3. Render dashboard                    │▎  20/25 Session 19 [main]  pagination fixture
-                                                  │▎› 21/25 Session 20 [main]  pagination fixture
-      ▸ Edited files                              │
-                                                  │▎◆ THREAD
-   The new shell owns the fullscreen surface.     │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+                                                  │ Projects
+                                                  │ No projects
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents  25 sessions
+   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
+           2. Wire transcript                     │   Session 16                                 …
+           3. Render dashboard                    │   Session 17                                 …
+                                                  │   Session 18                                 …
+      ▸ Edited files                              │   Session 19                                 …
+                                                  │ › Session 20                                 …
+   The new shell owns the fullscreen surface.     │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

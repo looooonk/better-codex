@@ -1,0 +1,40 @@
+---
+source: tui/src/app_shell/project_hub_tests.rs
+expression: "render_shell(&shell, area)"
+---
+                                                                  │
+                                                                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                                  │───────────────────────━━━━━━━━━━━━─────────────
+   > Create a divergent standalone TUI.                           │
+                                                                  │ Projects
+                                                                  │ ⌄ Research                                   …
+   Started a fullscreen app shell backed by app-server turns.     │     Earlier experiment                       …
+   ▎ PLAN  1. Build shell                                         │     ↓ Older chats
+           2. Wire transcript                                     │     + New chat
+           3. Render dashboard                                    │
+                                                                  │ Recents  2 sessions
+      ▸ Edited files                                              │ + New session  Ctrl+N
+                                                                  │   Earlier experiment                         …
+   The new shell owns the fullscreen surface.                     │   Loose notes                                …
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+                                                                  │
+╭────────────────────────────────────────────────────────────────╮│
+│> Type a message                                                ││
+│                                                                ││
+│                                                                ││
+│ ⓘ Ask for approval ▾   gpt-5-codex ▾   Default ▾   ◷ Default ▾ ││
+╰────────────────────────────────────────────────────────────────╯│

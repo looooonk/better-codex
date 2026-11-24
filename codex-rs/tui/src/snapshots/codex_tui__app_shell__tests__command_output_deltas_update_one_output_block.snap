@@ -6,15 +6,15 @@ expression: "render_shell(&shell, area)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
       ▸ Running command...                        │───────────────────────━━━━━━━━━━━━─────────────
                                                   │
-                                                  │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
-                                                  │▎loading sessions
+                                                  │ Projects
+                                                  │ No projects
                                                   │
-                                                  │▎◆ THREAD
-                                                  │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+                                                  │ Recents  0 sessions
+                                                  │ + New session  Ctrl+N
+                                                  │ loading sessions
+                                                  │
+                                                  │
+                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

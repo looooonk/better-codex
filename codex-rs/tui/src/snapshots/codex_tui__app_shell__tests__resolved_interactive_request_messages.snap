@@ -6,15 +6,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
    ▎ STATUS  request resolved                     │───────────────────────━━━━━━━━━━━━─────────────
    ▎ STATUS  elicitation requested: MCP github:   │
-             URL request                          │▎◆ SESSIONS
-   ▎ STATUS  request resolved                     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
-   The new shell owns the fullscreen surface.     │▎loading sessions
+             URL request                          │ Projects
+   ▎ STATUS  request resolved                     │ No projects
                                                   │
-                                                  │▎◆ THREAD
-                                                  │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+   The new shell owns the fullscreen surface.     │ Recents  0 sessions
+                                                  │ + New session  Ctrl+N
+                                                  │ loading sessions
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

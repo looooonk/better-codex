@@ -6,15 +6,15 @@ expression: "render_shell(&permissions_shell, area)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
    app-server turns.                            │ │───────────────────────━━━━━━━━━━━━─────────────
    ▎ PLAN  1. Build shell                       │ │
-           2. Wire transcript                   │ │▎◆ SESSIONS
-           3. Render dashboard                  ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                ┃ │▎+ New session  Ctrl+N
-      ▸ Edited files                            ┃ │▎loading sessions
+           2. Wire transcript                   │ │ Projects
+           3. Render dashboard                  ┃ │ No projects
                                                 ┃ │
-   The new shell owns the fullscreen surface.   ┃ │▎◆ THREAD
-                                                  │▎stage-one
-╭────────────────────────────────────────────────╮│▎id 01900000-0000-7000-8000-000000000001
-│◆ APPROVAL                                      ││▎resume, fork, archive, delete in session list
+      ▸ Edited files                            ┃ │ Recents  0 sessions
+                                                ┃ │ + New session  Ctrl+N
+   The new shell owns the fullscreen surface.   ┃ │ loading sessions
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ APPROVAL                                      ││
 │? Grant permissions                             ││
 │  Reason: Need package registry access          ││
 │  Working directory: /workspace/better-codex    ││

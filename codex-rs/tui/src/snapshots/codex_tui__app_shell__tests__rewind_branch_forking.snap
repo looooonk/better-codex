@@ -6,15 +6,15 @@ expression: "render_shell(&shell, area)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
    ▎ SYSTEM  switched session                     │───────────────────────━━━━━━━━━━━━─────────────
    ▎ SYSTEM  loaded 1 previous turns              │
-                                                  │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   > Rewrite this prompt.                         │▎+ New session  Ctrl+N
-                                                  │▎loading sessions
+                                                  │ Projects
+                                                  │ No projects
+   > Rewrite this prompt.                         │
+                                                  │ Recents  0 sessions
+                                                  │ + New session  Ctrl+N
+   ──────── Took 1.00s ────────────────────────── │ loading sessions
                                                   │
-   ──────── Took 1.00s ────────────────────────── │▎◆ THREAD
-                                                  │▎rewind-source
-                                                  │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

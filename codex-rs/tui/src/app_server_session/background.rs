@@ -39,6 +39,7 @@ impl AppServerSession {
         &self,
         config: Config,
         thread_id: ThreadId,
+        project: Option<codex_app_server_protocol::Project>,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
         let permissions = self.validate_remote_history_permissions(&config, "resuming");
         let request_handle = self.request_handle();
@@ -51,6 +52,7 @@ impl AppServerSession {
             self.session_config_with_effective_service_tier(&config)
         };
         let request = BackgroundThreadResume {
+            project,
             request_handle,
             config,
             session_config,
@@ -169,6 +171,7 @@ where
 }
 
 pub(super) struct BackgroundThreadResume {
+    pub(super) project: Option<codex_app_server_protocol::Project>,
     pub(super) request_handle: AppServerRequestHandle,
     pub(super) config: Config,
     pub(super) session_config: Config,
@@ -183,6 +186,7 @@ pub(super) async fn resume_thread(
     request: BackgroundThreadResume,
 ) -> Result<AppServerStartedThread> {
     let BackgroundThreadResume {
+        project,
         request_handle,
         config,
         session_config,
@@ -204,6 +208,12 @@ pub(super) async fn resume_thread(
         && let Some(provider) = settings.provider
     {
         params.model_provider = Some(provider);
+    }
+    if let Some(project) = project
+        && !project.roots.is_empty()
+    {
+        params.cwd = Some(config.cwd.display().to_string());
+        params.runtime_workspace_roots = Some(project.roots.into_iter().map(|r| r.path).collect());
     }
     params.exclude_turns = thread_params_mode != ThreadParamsMode::Cloud;
     let mut response: ThreadResumeResponse = request_handle

@@ -20,6 +20,7 @@ const SIDEBAR_PANEL_GAP: u16 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct DashboardPanelPosition {
+    pub(super) column: usize,
     pub(super) line: usize,
     pub(super) width: usize,
 }
@@ -95,6 +96,24 @@ impl DashboardView {
             let earliest = (last + 1).saturating_sub(usize::from(body.height));
             scroll = scroll.max(earliest).min(first).min(max_scroll);
         }
+        if shell.dashboard_route == DashboardRoute::Sessions && shell.projects.reveal.replace(false)
+        {
+            let (panel, row) = if let Some(row) = shell.projects.selected {
+                ("Projects", row)
+            } else {
+                ("Sessions", 0)
+            };
+            if let Some(layout) = body_panels
+                .iter()
+                .find(|layout| panels[layout.index].title == panel)
+            {
+                let line = layout.top + row;
+                scroll = scroll
+                    .max((line + 1).saturating_sub(usize::from(body.height)))
+                    .min(line)
+                    .min(max_scroll);
+            }
+        }
         shell.dashboard_scroll.set(scroll);
         Self {
             panels,
@@ -157,20 +176,15 @@ impl DashboardView {
         let panel = &self.panels[layout.index];
         let title_height = usize::from(panel.show_title);
         let panel_row = logical_row.saturating_sub(layout.top);
-        let text_x = self
-            .body
-            .x
-            .saturating_add(u16::try_from(title_height).unwrap_or(u16::MAX));
+        let inset = u16::from(panel.show_title || matches!(title, "Projects" | "Sessions"));
+        let text_x = self.body.x.saturating_add(inset);
         if panel_row < title_height || position.x < text_x {
             return None;
         }
         Some(DashboardPanelPosition {
+            column: usize::from(position.x - text_x),
             line: panel_row.saturating_sub(title_height),
-            width: usize::from(
-                self.body
-                    .width
-                    .saturating_sub(u16::try_from(title_height).unwrap_or(u16::MAX)),
-            ),
+            width: usize::from(self.body.width.saturating_sub(inset)),
         })
     }
 }
@@ -257,6 +271,13 @@ fn render_panel(
             slice.area.width.saturating_sub(1),
             slice.area.height,
         )
+    } else if matches!(panel.title.as_str(), "Projects" | "Sessions") {
+        Rect::new(
+            slice.area.x + 1,
+            slice.area.y,
+            slice.area.width.saturating_sub(1),
+            slice.area.height,
+        )
     } else {
         slice.area
     };
@@ -306,7 +327,7 @@ fn render_hover(
         return;
     }
     let interactive = match (shell.dashboard_route, panel.title.as_str()) {
-        (DashboardRoute::Sessions, "Sessions")
+        (DashboardRoute::Sessions, "Sessions" | "Projects")
         | (DashboardRoute::Agents, "Agents")
         | (DashboardRoute::Settings, "Settings") => true,
         (DashboardRoute::Status, "Edits") => shell.diff_store.has_session_edits(),

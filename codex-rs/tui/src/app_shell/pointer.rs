@@ -348,14 +348,37 @@ impl ShellState {
             return Ok(());
         }
         if self.dashboard_route == DashboardRoute::Sessions
+            && let Some(target) = view.dashboard_panel_position_at(area, position, "Projects")
+        {
+            let rows = self.projects.rows(target.width);
+            if let Some(row) = rows.get(target.line) {
+                let action = if target.column + 4 >= target.width {
+                    row.more.as_ref().or(row.action.as_ref())
+                } else {
+                    row.action.as_ref()
+                };
+                if let Some(action) = action.cloned() {
+                    self.session_list.focused = true;
+                    self.projects.selected = Some(target.line);
+                    self.activate_project(action, config, app_server).await;
+                }
+            }
+            return Ok(());
+        }
+        if self.dashboard_route == DashboardRoute::Sessions
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Sessions")
         {
+            self.projects.selected = None;
             match self.session_list.hit_at_line(target.line) {
                 Some(SessionListHit::NewSession) => {
                     self.start_new_session(config, app_server).await?;
                 }
                 Some(SessionListHit::Thread(thread_id)) => {
-                    self.resume_session(config, app_server, thread_id);
+                    if target.column + 4 >= target.width && !self.session_list.show_archived() {
+                        self.project_menu(super::project_hub::HubView::Move(thread_id));
+                    } else {
+                        self.resume_session(config, app_server, thread_id).await;
+                    }
                 }
                 None => {}
             }
@@ -542,6 +565,26 @@ impl ShellState {
         position: Position,
         direction: MouseScrollDirection,
     ) -> bool {
+        if self.dashboard_route == DashboardRoute::Sessions
+            && let Some(target) =
+                (ShellView { shell: self }).dashboard_panel_position_at(area, position, "Projects")
+            && let Some(super::project_hub::Action::Open(id, _)) = self
+                .projects
+                .rows(target.width)
+                .get(target.line)
+                .and_then(|row| row.action.clone())
+            && self.projects.task.is_none()
+            && self.projects.page(
+                &id,
+                match direction {
+                    MouseScrollDirection::Down => super::project_hub::Direction::Next,
+                    MouseScrollDirection::Up => super::project_hub::Direction::Previous,
+                },
+            )
+        {
+            self.projects.wheel_page = true;
+            return true;
+        }
         let nested_panel = match self.dashboard_route {
             DashboardRoute::Sessions => Some("Sessions"),
             DashboardRoute::Agents => Some("Agents"),

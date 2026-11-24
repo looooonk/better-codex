@@ -40,6 +40,9 @@ impl ShellState {
             }
             return Ok(true);
         }
+        if self.handle_project_key(key, config, app_server).await {
+            return Ok(true);
+        }
         if !is_unmodified_action_key(key) {
             return Ok(matches!(
                 key.code,
@@ -68,7 +71,7 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::Enter => {
-                self.resume_selected_session(config, app_server);
+                self.resume_selected_session(config, app_server).await;
                 Ok(true)
             }
             KeyCode::Char('/') => {
@@ -81,7 +84,7 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::Char('r') => {
-                self.resume_selected_session(config, app_server);
+                self.resume_selected_session(config, app_server).await;
                 Ok(true)
             }
             KeyCode::Char('f') => {
@@ -301,7 +304,7 @@ impl ShellState {
         }
     }
 
-    fn resume_selected_session<S>(&mut self, config: &Config, app_server: &S)
+    async fn resume_selected_session<S>(&mut self, config: &Config, app_server: &S)
     where
         S: AppShellBackend,
     {
@@ -309,7 +312,7 @@ impl ShellState {
             self.push_status("no session selected");
             return;
         };
-        self.resume_session(config, app_server, thread_id);
+        self.resume_session(config, app_server, thread_id).await;
     }
 
     async fn fork_selected_session<S>(&mut self, config: &Config, app_server: &mut S) -> Result<()>

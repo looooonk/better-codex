@@ -420,7 +420,9 @@ pub(crate) async fn run(
                                 position,
                                 direction,
                             );
-                            if load_more {
+                            if std::mem::take(&mut shell.projects.wheel_page) {
+                                shell.refresh_projects(&app_server);
+                            } else if load_more {
                                 shell.start_session_list_next_page(&app_server);
                             }
                             tui.frame_requester().schedule_frame();
@@ -591,6 +593,7 @@ where
                     config,
                     Some(codex_app_server_protocol::ThreadStartSource::Startup),
                     /*model_provider_override*/ None,
+                    /*project*/ None,
                 )
                 .await
         }

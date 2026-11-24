@@ -6,15 +6,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
    > Create a divergent standalone TUI.           │
-                                                  │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
-   server turns.                                  │▎loading sessions
-   ▎ PLAN  1. Build shell                         │
+                                                  │ Projects
+                                                  │ No projects
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents  0 sessions
+   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
            2. ╭──────────────────────────────────────────────────────────────────────╮
            3. │◆ ACCOUNT LOGIN                                                       │
-              │Finish signing in with ChatGPT in your browser.                       │00001
-      ▸ Edited│                                                                      │ession list
+              │Finish signing in with ChatGPT in your browser.                       │
+      ▸ Edited│                                                                      │
               │https://auth.example.test/workspace                                   │
    The new she│                                                                      │
               │Enter open link   Esc cancel                                          │

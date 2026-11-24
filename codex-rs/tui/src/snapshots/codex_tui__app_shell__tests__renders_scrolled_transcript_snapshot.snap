@@ -6,15 +6,15 @@ expression: "render_shell(&shell, area)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
    ▎ PLAN  1. Build shell                       │ │───────────────────────━━━━━━━━━━━━─────────────
            2. Wire transcript                   │ │
-           3. Render dashboard                  ┃ │▎◆ SESSIONS
-                                                ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-      ▸ Edited files                            ┃ │▎+ New session  Ctrl+N
-   ▎ STATUS  first checkpoint                   │ │▎loading sessions
-   ▎ STATUS  second checkpoint                  │ │
-                                                  │▎◆ THREAD
-╭────────────────────────────────────────────────╮│▎stage-one
-│> Summarize the new shell architecture          ││▎id 01900000-0000-7000-8000-000000000001
-│                                                ││▎resume, fork, archive, delete in session list
+           3. Render dashboard                  ┃ │ Projects
+                                                ┃ │ No projects
+      ▸ Edited files                            ┃ │
+   ▎ STATUS  first checkpoint                   │ │ Recents  0 sessions
+   ▎ STATUS  second checkpoint                  │ │ + New session  Ctrl+N
+                                                  │ loading sessions
+╭────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture          ││
+│                                                ││
 │                                                ││
 │ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

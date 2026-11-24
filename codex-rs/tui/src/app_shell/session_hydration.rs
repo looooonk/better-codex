@@ -169,6 +169,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        self.refresh_projects(app_server);
         let params = self.session_list.first_page_params();
         self.start_session_list_lookup(app_server, params, SessionListLoad::Replace);
     }
@@ -355,7 +356,8 @@ impl ShellState {
     }
 
     pub(super) fn has_pending_session_hydration(&self) -> bool {
-        self.session_hydration.goal_task.is_some()
+        self.projects.task.is_some()
+            || self.session_hydration.goal_task.is_some()
             || self.session_hydration.workspace_task.is_some()
             || self.session_hydration.session_list_task.is_some()
             || self.session_hydration.rate_limits_task.is_some()
@@ -370,7 +372,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        let mut changed = false;
+        let mut changed = self.poll_projects().await;
         if self
             .session_hydration
             .thread_revert_task
@@ -591,6 +593,10 @@ impl ShellState {
     }
 
     pub(super) fn cancel_session_hydration(&mut self) {
+        if let Some(task) = self.projects.task.take() {
+            task.abort();
+        }
+        self.projects.requested_page = None;
         if let Some(task) = self.session_hydration.goal_task.take() {
             task.abort();
         }

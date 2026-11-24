@@ -6,15 +6,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
    ──────── Took 1.00s ──────────────────────── │ │───────────────────────━━━━━━━━━━━━─────────────
                                                 │ │
-   ▎ SYSTEM  2 queued follow-ups remain on      │ │▎◆ SESSIONS
-             the previous session 01900000-     │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-             0000-7000-8000-000000000001. Open  ┃ │▎+ New session  Ctrl+N
-             Sessions to return to it.          ┃ │▎loading sessions
+   ▎ SYSTEM  2 queued follow-ups remain on      │ │ Projects
+             the previous session 01900000-     │ │ No projects
+             0000-7000-8000-000000000001. Open  ┃ │
+             Sessions to return to it.          ┃ │ Recents  0 sessions
+                                                ┃ │ + New session  Ctrl+N
+                                                ┃ │ loading sessions
+   > Explain the request                        ┃ │
                                                 ┃ │
-                                                ┃ │▎◆ THREAD
-   > Explain the request                        ┃ │▎forked
-                                                ┃ │▎id 01900000-0000-7000-8000-000000000202
-                                                ┃ │▎resume, fork, archive, delete in session list
+                                                ┃ │
      Also keep this clarification               ┃ │
                                                 ┃ │
                                                 ┃ │

@@ -6,15 +6,15 @@ expression: "render_shell(&shell, area)"
                                                   │  Status   │  Agents  │  Sessions  │  Settings
       ⌄ Edited files                              │───────────────────────━━━━━━━━━━━━─────────────
                                                   │
-        ▌ edited 4 files +4 -3                    │▎◆ SESSIONS
-        ▌          M src/app.rs                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-        ▌          A src/new.rs                   │▎+ New session  Ctrl+N
-        ▌          D src/old.rs                   │▎loading sessions
-        ▌          R src/from.rs -> src/to.rs     │
-                                                  │▎◆ THREAD
-                                                  │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+        ▌ edited 4 files +4 -3                    │ Projects
+        ▌          M src/app.rs                   │ No projects
+        ▌          A src/new.rs                   │
+        ▌          D src/old.rs                   │ Recents  0 sessions
+        ▌          R src/from.rs -> src/to.rs     │ + New session  Ctrl+N
+                                                  │ loading sessions
+                                                  │
+                                                  │
+                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

@@ -483,6 +483,7 @@ impl AppServerSession {
     pub(crate) async fn start_thread(&mut self, config: &Config) -> Result<AppServerStartedThread> {
         self.start_thread_with_session_start_source(
             config, /*session_start_source*/ None, /*model_provider_override*/ None,
+            /*project*/ None,
         )
         .await
     }
@@ -492,6 +493,7 @@ impl AppServerSession {
         config: &Config,
         session_start_source: Option<ThreadStartSource>,
         model_provider_override: Option<&str>,
+        project: Option<&codex_app_server_protocol::Project>,
     ) -> Result<AppServerStartedThread> {
         let request_id = self.next_request_id();
         let provider_override = model_provider_override
@@ -526,6 +528,14 @@ impl AppServerSession {
         {
             params.model_provider = Some(provider.to_owned());
         }
+        if let Some(project) = project {
+            params.project_id = Some(project.id.clone());
+            if let Some(first) = project.roots.first() {
+                params.cwd = Some(first.path.display().to_string());
+                params.runtime_workspace_roots =
+                    Some(project.roots.iter().map(|r| r.path.clone()).collect());
+            }
+        }
         let response: ThreadStartResponse = self
             .client
             .request_typed(ClientRequest::ThreadStart { request_id, params })
@@ -550,6 +560,7 @@ impl AppServerSession {
             self.session_config_with_effective_service_tier(&config)
         };
         background::resume_thread(background::BackgroundThreadResume {
+            project: None,
             request_handle: self.request_handle(),
             config,
             session_config,
