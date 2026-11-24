@@ -3,19 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ TOOLS
- ▎ PLAN  1. Build shell                           │▎completed exec just test -p codex-tui
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ EDITS
-                                                  │▎retained edit history is incomplete
-        > Edited files                            │
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ TOOLS
+   Started a fullscreen app shell backed by app-  │▎completed exec just test -p codex-tui
+   server turns.                                  │
+   ▎ PLAN  1. Build shell                         │▎◆ EDITS
+           2. Wire transcript                     │▎retained edit history is incomplete
+           3. Render dashboard                    │
                                                   │▎◆ WORKSPACE
- ▎ CODEX  The new shell owns the fullscreen       │▎profile managed
-          surface.                                │▎cwd /workspace/better-codex
-                                                  │▎files restricted, net restricted
+          ▸ Edited files                          │▎profile managed
+                                                  │▎cwd /workspace/better-codex
+   The new shell owns the fullscreen surface.     │▎files restricted, net restricted
                                                   │▎roots none selected
                                                   │
                                                   │▎◆ TOKENS

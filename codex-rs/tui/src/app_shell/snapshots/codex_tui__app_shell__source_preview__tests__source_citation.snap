@@ -3,12 +3,12 @@ source: tui/src/app_shell/source_preview_tests.rs
 expression: "render_shell(&shell, area)"
 ---
               │
-         2. Wi│  Status   │  Agents  │  Sessions  │  Settings
+              │  Status   │  Agents  │  Sessions  │  Settings
   ╭ Source ──────────────────────────────────────────────────╮─
   │ ./Makefile:5:3                                           │
   │                                                          │
   │     2  two                                               │
- ▎│     3  three                                             │
+  │     3  three                                             │
   │     4  four                                              │
 ╭─│     5  abcdef                                            │─╮
 │>│     6  six                                               │ │

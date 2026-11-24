@@ -3,27 +3,10 @@ source: tui/src/app_shell/vim_flow_tests.rs
 expression: "rendered_outcomes.join(\"\\n---\\n\")"
 ---
 
- ▎ STATUS  Vim input cancelled
 
- ▎ CODEX  The new shell owns the fullscreen surface.
+   ▎ STATUS  Vim input cancelled
 
-
-
-
-
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│> Keep this composer draft.                                                   │
-│                                                                              │
-│                                                                              │
-│ ⓘ Ask for approval ▾                 gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
-╰──────────────────────────────────────────────────────────────────────────────╯
----
-
- ▎ STATUS  Vim input cancelled
- ▎ STATUS  Vim input was empty
-
- ▎ CODEX  The new shell owns the fullscreen surface.
+   The new shell owns the fullscreen surface.
 
 
 
@@ -37,12 +20,29 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ---
 
- ▎ STATUS  Vim input cancelled
- ▎ STATUS  Vim input was empty
- ▎ ERROR  failed to open Vim input: editor unavailable
 
- ▎ CODEX  The new shell owns the fullscreen surface.
+   ▎ STATUS  Vim input cancelled
+   ▎ STATUS  Vim input was empty
 
+   The new shell owns the fullscreen surface.
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│> Keep this composer draft.                                                   │
+│                                                                              │
+│                                                                              │
+│ ⓘ Ask for approval ▾                 gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+---
+
+
+   ▎ STATUS  Vim input cancelled
+   ▎ STATUS  Vim input was empty
+   ▎ ERROR  failed to open Vim input: editor unavailable
+
+   The new shell owns the fullscreen surface.
 
 
 

@@ -3,6 +3,38 @@ use crate::app_shell::TranscriptLine;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn user_prompt_shades_wrapped_text_and_both_margins() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.clear_visible_transcript();
+    shell.clear_active_turn();
+    shell.push_user("A prompt long enough to wrap.\n\nNext paragraph.");
+    shell.push_assistant("An answer.");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 26, /*height*/ 13,
+    );
+    let mut buf = Buffer::empty(area);
+    render_transcript(&shell, area, /*hover_position*/ None, &mut buf);
+
+    // Make shaded spaces visible in the snapshot, including both ends of each row.
+    let rows = area
+        .rows()
+        .map(|row| {
+            let mut text = String::new();
+            for x in row.x..row.right() {
+                let cell = &buf[(x, row.y)];
+                if cell.bg == palette::surface() && cell.symbol() == " " {
+                    text.push('·');
+                } else {
+                    text.push_str(cell.symbol());
+                }
+            }
+            text.trim_end().to_owned()
+        })
+        .collect::<Vec<_>>();
+    insta::assert_snapshot!(rows.join("\n").trim_end());
+}
+
+#[test]
 fn output_card_renders_crlf_progress_and_tabs_as_terminal_text() {
     let rendered = tool_block_lines(
         TranscriptKind::Output,
@@ -186,6 +218,8 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
                         (area.x..area.right())
                             .map(|x| buffer[(x, y)].symbol())
                             .collect::<String>()
+                            .trim_end()
+                            .to_owned()
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -332,8 +366,7 @@ fn diff_hit_testing_tracks_the_scrolled_card_and_excludes_its_gutter() {
     );
 
     assert!(viewport.scrollbar.is_some());
-    let card_left =
-        viewport.text_body.x + transcript_prefix_width(TranscriptKind::Assistant) as u16;
+    let card_left = viewport.text_body.x + ACTIVITY_INDENT;
     assert_eq!(
         transcript_card_at(&shell, area, Position::new(card_left - 1, y)),
         None
@@ -371,8 +404,8 @@ fn card_hover_uses_each_card_indent() {
     );
     let viewport = transcript_viewport(&shell, area);
 
-    let assistant_indent = transcript_prefix_width(TranscriptKind::Assistant);
-    for (transcript_index, indent) in [(0, assistant_indent), (1, OUTPUT_BLOCK_INDENT)] {
+    let detail_indent = usize::from(ACTIVITY_INDENT);
+    for (transcript_index, indent) in [(0, detail_indent), (1, OUTPUT_BLOCK_INDENT)] {
         let rows = viewport
             .layout
             .transcript_row_range(transcript_index)
@@ -626,34 +659,30 @@ fn selected_text_normalizes_reverse_drag_and_preserves_blank_rows() {
     let user_text = rendered_line_text(
         viewport
             .layout
-            .row_at(0)
+            .row_at(1)
             .and_then(TranscriptLayoutRow::line)
             .expect("user row should be rendered"),
     );
     let assistant_text = rendered_line_text(
         viewport
             .layout
-            .row_at(2)
+            .row_at(3)
             .and_then(TranscriptLayoutRow::line)
             .expect("assistant row should be rendered"),
     );
-    assert!(matches!(
-        viewport.layout.row_at(1),
-        Some(TranscriptLayoutRow::Blank)
-    ));
     let user_column = user_text[..user_text.find('界').expect("wide grapheme")].width();
     let assistant_byte = assistant_text.find("e\u{301}").expect("combined grapheme");
     let assistant_column = assistant_text[..assistant_byte].width();
-    let user_hit = grapheme_hit_at(&user_text, /*row*/ 0, user_column).expect("user hit");
+    let user_hit = grapheme_hit_at(&user_text, /*row*/ 1, user_column).expect("user hit");
     let assistant_hit =
-        grapheme_hit_at(&assistant_text, /*row*/ 2, assistant_column).expect("assistant hit");
+        grapheme_hit_at(&assistant_text, /*row*/ 3, assistant_column).expect("assistant hit");
     let forward = NormalizedVisualRange::from_hits(user_hit, assistant_hit);
     let reverse = NormalizedVisualRange::from_hits(assistant_hit, user_hit);
 
     assert_eq!(forward, reverse);
     assert_eq!(
         transcript_selected_text(&shell, area, forward),
-        Some("界 omega\n\n▎ CODEX  beta e\u{301}".to_string())
+        Some("界 omega\n\nbeta e\u{301}".to_string())
     );
 }
 
@@ -685,7 +714,7 @@ fn selected_text_excludes_visual_continuation_prefixes() {
         .and_then(TranscriptLayoutRow::line)
         .expect("last assistant row");
     let last = rendered_line_text(last_line);
-    let anchor = grapheme_hit_at(&first, /*row*/ 0, /*column*/ 0).expect("first label hit");
+    let anchor = grapheme_hit_at(&first, /*row*/ 0, /*column*/ 0).expect("first text hit");
     let last = trim_synthetic_right_padding(&last);
     let focus = grapheme_hit_at(last, last_row, last.width().saturating_sub(1))
         .expect("last assistant text hit");
@@ -697,7 +726,7 @@ fn selected_text_excludes_visual_continuation_prefixes() {
             NormalizedVisualRange::from_hits(anchor, focus),
         ),
         Some(
-            "▎ CODEX  Released the alpha.9 source and started CD.\n\n\
+            "Released the alpha.9 source and started CD.\n\n\
              • Version bumped to 0.1.0-alpha.9.\n\
              • Commit pushed: 307e72ba1"
                 .to_string()
@@ -730,7 +759,7 @@ fn selected_text_excludes_visual_continuation_prefixes() {
 }
 
 #[test]
-fn selected_text_trims_full_width_card_padding() {
+fn selected_output_preserves_leading_whitespace() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.clear_streaming_assistant();
@@ -753,8 +782,6 @@ fn selected_text_trims_full_width_card_padding() {
             .and_then(TranscriptLayoutRow::line)
             .expect("second output row"),
     );
-    assert!(first.ends_with(' '));
-    assert!(second.ends_with(' '));
     let first_column = first[..first.find("first").expect("first output text")].width();
     let second = trim_synthetic_right_padding(&second);
     let last_column = second.width().saturating_sub(1);
@@ -825,7 +852,7 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.clear_streaming_assistant();
-    shell.push_assistant("first line\n\nsecond line");
+    shell.push_user("first line\n\nsecond line");
     let area = Rect::new(
         /*x*/ 3, /*y*/ 2, /*width*/ 60, /*height*/ 12,
     );
@@ -833,21 +860,21 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
     let first = rendered_line_text(
         viewport
             .layout
-            .row_at(0)
+            .row_at(1)
             .and_then(TranscriptLayoutRow::line)
-            .expect("first assistant row"),
+            .expect("first prompt row"),
     );
-    let last_row = viewport.layout.total_lines.saturating_sub(1);
+    let last_row = viewport.layout.total_lines - 2;
     let last = rendered_line_text(
         viewport
             .layout
             .row_at(last_row)
             .and_then(TranscriptLayoutRow::line)
-            .expect("last assistant row"),
+            .expect("last prompt row"),
     );
-    let anchor = grapheme_hit_at(&first, /*row*/ 0, /*column*/ 0).expect("first label hit");
-    let focus = grapheme_hit_at(&last, last_row, last.width().saturating_sub(1))
-        .expect("last assistant hit");
+    let anchor = grapheme_hit_at(&first, /*row*/ 1, /*column*/ 2).expect("first text hit");
+    let focus =
+        grapheme_hit_at(&last, last_row, last.width().saturating_sub(1)).expect("last prompt hit");
     let selection = NormalizedVisualRange::from_hits(anchor, focus);
     let mut buf = Buffer::empty(area);
 
@@ -860,7 +887,7 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
                 .layout
                 .row_at(row)
                 .and_then(TranscriptLayoutRow::line)
-                .expect("assistant row");
+                .expect("prompt row");
             let text = rendered_line_text(line);
             let y = viewport
                 .text_body
@@ -891,19 +918,10 @@ fn text_selection_does_not_patch_visual_continuation_prefixes() {
 }
 
 #[test]
-fn turn_separator_aligns_with_assistant_text_and_fills_the_available_width() {
+fn turn_separator_keeps_its_indent_and_fills_the_available_width() {
     let label = "Took 12.50s · 8.4 tok/s";
-    let reply = render_transcript_line(
-        TranscriptKind::Assistant,
-        "Answer",
-        /*tool_status*/ None,
-        /*width*/ 60,
-        std::path::Path::new("."),
-        /*selected*/ false,
-    );
-    let reply = reply[0].line.to_string();
-    let indent = reply.split_once("Answer").unwrap().0.width();
-    let mut lines = vec![reply];
+    let indent = usize::from(ACTIVITY_INDENT);
+    let mut lines = Vec::new();
     for width in [60, 35, 18, 5, 0] {
         let line = turn_separator_line(label, width).to_string();
         assert_eq!(line.width(), width);

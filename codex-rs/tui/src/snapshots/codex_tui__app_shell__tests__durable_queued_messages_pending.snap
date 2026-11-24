@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
                               │
-         2. Wire transcript   │  Status   │  Agents  │  Sessions  │  Settings
-         3. Render dashboard  │───────────────────────━━━━━━━━━━━━─────────────
+                              │  Status   │  Agents  │  Sessions  │  Settings
+           3. Render dashboard│───────────────────────━━━━━━━━━━━━─────────────
                               │▎◆ SESSIONS
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ QUEUED  2                                                           │

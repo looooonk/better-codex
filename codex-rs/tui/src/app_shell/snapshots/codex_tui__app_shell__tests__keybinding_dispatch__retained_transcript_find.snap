@@ -3,15 +3,15 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
 
- ▎ YOU  Find the café response
-
- ▎ CODEX  The café serves tea
-
- ▎ CODEX  An unrelated answer
-
- ▎ CODEX  The new shell owns the fullscreen surface.
 
 
+   > Find the café response
+
+   The café serves tea
+
+   An unrelated answer
+
+   The new shell owns the fullscreen surface.
                      ╭ Find retained text: café▏ ───────────────────────────────────────╮
                      │ › 1 ○ Assistant: The café serves tea                             │
                      │                                                                  │

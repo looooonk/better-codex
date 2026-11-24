@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
 ---
                                                   │
- ▎ SYSTEM  switched session                       │  Status   │  Agents  │  Sessions  │  Settings
- ▎ SYSTEM  loaded 1 previous turns                │───────────────────────━━━━━━━━━━━━─────────────
- ▎ YOU  Earlier context                           │
-                                                  │▎◆ SESSIONS
- ──────── Took 1.00s ──────────────────────────── │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
- ▎ SYSTEM  2 queued follow-ups remain on the      │▎loading sessions
-           previous session 01900000-0000-7000-   │
-           8000-000000000001. Open Sessions to    │▎◆ THREAD
-           return to it.                          │▎forked
- ▎ YOU  Explain the request                       │▎id 01900000-0000-7000-8000-000000000202
-                                                  │▎resume, fork, archive, delete in session list
-                                                  │
-        Also keep this clarification              │
-                                                  │
-          Thinking... · 0 tok/s                   │
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   > Earlier context                            │ │───────────────────────━━━━━━━━━━━━─────────────
+                                                │ │
+   ──────── Took 1.00s ──────────────────────── ┃ │▎◆ SESSIONS
+                                                ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   ▎ SYSTEM  2 queued follow-ups remain on      ┃ │▎+ New session  Ctrl+N
+             the previous session 01900000-     ┃ │▎loading sessions
+             0000-7000-8000-000000000001. Open  ┃ │
+             Sessions to return to it.          ┃ │▎◆ THREAD
+                                                ┃ │▎forked
+   > Explain the request                        ┃ │▎id 01900000-0000-7000-8000-000000000202
+                                                ┃ │▎resume, fork, archive, delete in session list
+                                                ┃ │
+     Also keep this clarification               ┃ │
+                                                ┃ │
+            Thinking... · 0 tok/s               ┃ │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Keep this unsent draft                        ││

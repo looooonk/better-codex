@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-   ▌ output ... 4 earlier output lines            │  Status   │  Agents  │  Sessions  │  Settings
-   ▌        line 5                                │───────────────────────━━━━━━━━━━━━─────────────
-   ▌        line 6                                │
-   ▌        line 7                                │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+     ▌ output ... 4 earlier output lines          │───────────────────────━━━━━━━━━━━━─────────────
+     ▌        line 5                              │
+     ▌        line 6                              │▎◆ SESSIONS
+     ▌        line 7                              │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N
                                                   │▎loading sessions
                                                   │

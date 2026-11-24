@@ -3,20 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- ▎ YOU  Create a divergent standalone TUI.
-
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
- ▎ PLAN  1. Build shell
-         2. Wire transcript
-         3. Render dashboard
-
-        > Edited files
-
- ▎ CODEX  The new shell owns the fullscreen surface.
-
-          Thinking... · 0 tok/s
 
 
+   > Create a divergent standalone TUI.
+
+   Started a fullscreen app shell backed by app-server turns.
+   ▎ PLAN  1. Build shell
+           2. Wire transcript
+           3. Render dashboard
+
+          ▸ Edited files
+
+   The new shell owns the fullscreen surface.
+
+            Thinking... · 0 tok/s
 
 
 

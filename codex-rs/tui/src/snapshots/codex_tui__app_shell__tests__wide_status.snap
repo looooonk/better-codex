@@ -3,18 +3,18 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
 ---
                                                               │
- ▎ YOU  Create a divergent standalone TUI.                    │  Status   │  Agents  │  Sessions  │  Settings
+                                                              │  Status   │  Agents  │  Sessions  │  Settings
                                                               │────────────────────────────────────━━━━━━━━━━━━
- ▎ CODEX  Started a fullscreen app shell backed by app-server │
-          turns.                                              │◆ PERMISSIONS
- ▎ PLAN  1. Build shell                                       │› ● ⓘ Ask for approval
-         2. Wire transcript                                   │  ○ ⛨ Unless trusted
-         3. Render dashboard                                  │  ○ ⚠ Full access
-                                                              │
-        > Edited files                                        │◆ APPEARANCE
-                                                              │  ● Tokyo Night
- ▎ CODEX  The new shell owns the fullscreen surface.          │  ○ Gruvbox Dark
-                                                              │  ○ Catppuccin Mocha
+   > Create a divergent standalone TUI.                       │
+                                                              │◆ PERMISSIONS
+   Started a fullscreen app shell backed by app-server turns. │› ● ⓘ Ask for approval
+   ▎ PLAN  1. Build shell                                     │  ○ ⛨ Unless trusted
+           2. Wire transcript                                 │  ○ ⚠ Full access
+           3. Render dashboard                                │
+                                                              │◆ APPEARANCE
+          ▸ Edited files                                      │  ● Tokyo Night
+                                                              │  ○ Gruvbox Dark
+   The new shell owns the fullscreen surface.                 │  ○ Catppuccin Mocha
                                                               │  ○ Monochrome
                                                               │  Syntax theme: default
                                                               │  Animations: on

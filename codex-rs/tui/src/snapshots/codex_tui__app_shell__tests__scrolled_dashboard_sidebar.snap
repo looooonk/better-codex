@@ -3,14 +3,14 @@ source: tui/src/app_shell_tests.rs
 expression: after
 ---
                                                   │
- ▎ PLAN  1. Build shell                         │ │  Status   │  Agents  │  Sessions  │  Settings
-         2. Wire transcript                     │ │━━━━━━━━━━━─────────────────────────────────────
-         3. Render dashboard                    ┃ │▎◆ EDITS
-                                                ┃ │▎3 files +128 -24
-        > Edited files                          ┃ │
-                                                ┃ │▎◆ WORKSPACE
- ▎ CODEX  The new shell owns the fullscreen     ┃ │▎profile managed
-          surface.                              ┃ │▎cwd /workspace/better-codex
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   ▎ PLAN  1. Build shell                       │ │━━━━━━━━━━━─────────────────────────────────────
+           2. Wire transcript                   │ │▎◆ EDITS
+           3. Render dashboard                  ┃ │▎3 files +128 -24
+                                                ┃ │
+          ▸ Edited files                        ┃ │▎◆ WORKSPACE
+                                                ┃ │▎profile managed
+   The new shell owns the fullscreen surface.   ┃ │▎cwd /workspace/better-codex
                                                   │▎files restricted, net restricted
 ╭────────────────────────────────────────────────╮│▎roots none selected
 │> Summarize the new shell architecture          ││

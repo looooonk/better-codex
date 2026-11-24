@@ -3,10 +3,10 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- ▎ ERROR  This agent does not accept direct       │  Status   │  Agents  │  Sessions  │  Settings
-          messages. Send instructions through its │───────────────────────━━━━━━━━━━━━─────────────
-          parent conversation.                    │
-                                                  │▎◆ SESSIONS
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   ▎ ERROR  This agent does not accept direct     │───────────────────────━━━━━━━━━━━━─────────────
+            messages. Send instructions through   │
+            its parent conversation.              │▎◆ SESSIONS
                                                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N
                                                   │▎loading sessions

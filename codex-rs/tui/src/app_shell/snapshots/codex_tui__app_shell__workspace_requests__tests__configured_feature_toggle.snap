@@ -3,9 +3,9 @@ source: tui/src/app_shell/workspace_requests_tests.rs
 expression: rendered
 ---
 
- ▎ SYSTEM  shell_snapshot enabled in configuration
- ▎ CODEX  The new shell owns the fullscreen surface.
 
+   ▎ SYSTEM  shell_snapshot enabled in configuration
+   The new shell owns the fullscreen surface.
 
 
 

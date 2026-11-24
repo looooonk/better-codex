@@ -3,9 +3,9 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
 ---
 
- ▎ SYSTEM  Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.
- ▎ STATUS  Wait for the side workspace action to finish before returning to the main conversation
 
+   ▎ SYSTEM  Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.
+   ▎ STATUS  Wait for the side workspace action to finish before returning to the main conversation
 
 
 

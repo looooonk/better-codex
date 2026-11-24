@@ -3,25 +3,25 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                               │
- ▎ CODEX  # Result                                            │  Status   │  Agents  │  Sessions  │  Settings
-                                                              │───────────────────────━━━━━━━━━━━━─────────────
-          • Render assistant text as markdown.                │
-          • Preserve local links like render.rs (codex-rs/    │▎◆ SESSIONS
-            tui/src/app_shell/render.rs:1).                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                              │▎+ New session  Ctrl+N
-          fn transcript() -> &'static str {                   │▎loading sessions
-          "markdown"                                          │
-          }                                                   │▎◆ THREAD
-                                                              │▎stage-one
-           Area     Status                                    │▎id 01900000-0000-7000-8000-000000000001
-          ━━━━━━━  ━━━━━━━━                                   │▎resume, fork, archive, delete in session list
-           code     done                                      │
-          ───────  ────────                                   │
-           table    done                                      │
- ▎ PLAN  1. Keep transcript rendering width-aware.            │
-         2. Leave selection and copy mode for the next slice. │
+                                                              │  Status   │  Agents  │  Sessions  │  Settings
+   # Result                                                   │───────────────────────━━━━━━━━━━━━─────────────
                                                               │
-                                                              │
+   • Render assistant text as markdown.                       │▎◆ SESSIONS
+   • Preserve local links like render.rs (codex-rs/tui/src/   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+     app_shell/render.rs:1).                                  │▎+ New session  Ctrl+N
+                                                              │▎loading sessions
+   fn transcript() -> &'static str {                          │
+   "markdown"                                                 │▎◆ THREAD
+   }                                                          │▎stage-one
+                                                              │▎id 01900000-0000-7000-8000-000000000001
+    Area     Status                                           │▎resume, fork, archive, delete in session list
+   ━━━━━━━  ━━━━━━━━                                          │
+    code     done                                             │
+   ───────  ────────                                          │
+    table    done                                             │
+   ▎ PLAN  1. Keep transcript rendering width-aware.          │
+           2. Leave selection and copy mode for the next      │
+              slice.                                          │
                                                               │
                                                               │
 ╭────────────────────────────────────────────────────────────╮│

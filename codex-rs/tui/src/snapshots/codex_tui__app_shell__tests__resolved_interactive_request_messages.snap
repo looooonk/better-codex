@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- ▎ STATUS  request resolved                       │  Status   │  Agents  │  Sessions  │  Settings
- ▎ STATUS  elicitation requested: MCP github:     │───────────────────────━━━━━━━━━━━━─────────────
-           URL request                            │
- ▎ STATUS  request resolved                       │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  The new shell owns the fullscreen       │▎+ New session  Ctrl+N
-          surface.                                │▎loading sessions
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   ▎ STATUS  request resolved                     │───────────────────────━━━━━━━━━━━━─────────────
+   ▎ STATUS  elicitation requested: MCP github:   │
+             URL request                          │▎◆ SESSIONS
+   ▎ STATUS  request resolved                     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+   The new shell owns the fullscreen surface.     │▎loading sessions
                                                   │
                                                   │▎◆ THREAD
                                                   │▎stage-one

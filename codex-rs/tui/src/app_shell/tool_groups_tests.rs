@@ -158,7 +158,7 @@ fn output_arriving_before_its_call_is_never_absorbed_by_an_unrelated_call() {
         Some(ToolAction::Call("docs/lookup".into())),
     );
     let folded = rows(&shell);
-    assert!(folded.contains("> Called docs/lookup"));
+    assert!(folded.contains("▸ Called docs/lookup"));
     assert!(!folded.contains("unmatched result"));
     shell.toggle_tool_group(0);
     assert!(rows(&shell).contains("unmatched result"));
@@ -217,7 +217,7 @@ fn trimming_an_expanded_group_evicts_whole_calls_and_preserves_the_remaining_gro
     shell.toggle_tool_group(0);
     let folded = rows(&shell);
     assert!(!folded.contains("output"));
-    assert!(folded.contains("> Ran command"));
+    assert!(folded.contains("▸ Ran command"));
 }
 
 #[test]
@@ -229,28 +229,28 @@ fn parallel_tool_header_tracks_unfinished_calls_then_the_latest_invocation_resul
         ToolBlockStatus::Running,
         Some(ToolAction::Command),
     );
-    assert_eq!(rows(&shell).trim(), "> Running command...");
+    assert_eq!(rows(&shell).trim(), "▸ Running command...");
     shell.push_tool_with_status_for_item(
         "search",
         "web search: docs",
         ToolBlockStatus::Running,
         Some(ToolAction::Search),
     );
-    assert_eq!(rows(&shell).trim(), "> Searching web...");
+    assert_eq!(rows(&shell).trim(), "▸ Searching web...");
     shell.push_tool_with_status_for_item(
         "search",
         "web search: docs",
         ToolBlockStatus::Success,
         Some(ToolAction::Search),
     );
-    assert_eq!(rows(&shell).trim(), "> Running command...");
+    assert_eq!(rows(&shell).trim(), "▸ Running command...");
     shell.push_tool_with_status_for_item(
         "command",
         "exec pwd",
         ToolBlockStatus::Success,
         Some(ToolAction::Command),
     );
-    assert_eq!(rows(&shell).trim(), "> Searched web");
+    assert_eq!(rows(&shell).trim(), "▸ Searched web");
 
     shell.push_assistant("I’ll run one final check.");
     let failed: ThreadItem = serde_json::from_value(json!({
@@ -259,7 +259,7 @@ fn parallel_tool_header_tracks_unfinished_calls_then_the_latest_invocation_resul
     }))
     .unwrap();
     shell.ingest_completed_item(failed, CompletedItemOrigin::Live);
-    assert!(rows(&shell).ends_with("> Command failed"));
+    assert!(rows(&shell).ends_with("▸ Command failed"));
 }
 
 #[test]
@@ -276,17 +276,17 @@ fn a_turn_ending_without_an_item_result_closes_running_labels_in_live_output_and
     for (status, expected, block_status) in [
         (
             TurnStatus::Interrupted,
-            "> Command interrupted",
+            "▸ Command interrupted",
             ToolBlockStatus::Interrupted,
         ),
         (
             TurnStatus::Failed,
-            "> Command result unavailable",
+            "▸ Command result unavailable",
             ToolBlockStatus::Unconfirmed,
         ),
         (
             TurnStatus::Completed,
-            "> Command result unavailable",
+            "▸ Command result unavailable",
             ToolBlockStatus::Unconfirmed,
         ),
     ] {

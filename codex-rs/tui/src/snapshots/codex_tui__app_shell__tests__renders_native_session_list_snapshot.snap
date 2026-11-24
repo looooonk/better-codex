@@ -3,19 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  2 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎› 1/2 Refactor dashboard navigation [main]
-                                                  │▎  2/2 Investigate approval rendering regressio…
-        > Edited files                            │
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎● FOCUSED  ACTIVE  2 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎› 1/2 Refactor dashboard navigation [main]
+           2. Wire transcript                     │▎  2/2 Investigate approval rendering regressio…
+           3. Render dashboard                    │
                                                   │▎◆ THREAD
- ▎ CODEX  The new shell owns the fullscreen       │▎stage-one
-          surface.                                │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+          ▸ Edited files                          │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+   The new shell owns the fullscreen surface.     │▎resume, fork, archive, delete in session list
                                                   │
                                                   │
                                                   │

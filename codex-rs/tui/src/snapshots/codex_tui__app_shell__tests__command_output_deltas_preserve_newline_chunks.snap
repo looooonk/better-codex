@@ -3,9 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 20,))"
 ---
                                                   │
-   ▌ output first                                 │  Status   │  Agents  │  Sessions  │  Settings
-   ▌        second                                │───────────────────────━━━━━━━━━━━━─────────────
-                                                  │
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+     ▌ output first                               │───────────────────────━━━━━━━━━━━━─────────────
+     ▌        second                              │
                                                   │▎◆ SESSIONS
                                                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N

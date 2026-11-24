@@ -3,19 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎loading sessions
-                                                  │
-        > Edited files                            │▎◆ THREAD
- ▎ ERROR  failed to save settings: thread         │▎stage-one
-          settings update failed; global config   │▎id 01900000-0000-7000-8000-000000000001
-          changes were rolled back: thread update │▎resume, fork, archive, delete in session list
-          rejected                                │
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎loading sessions
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ THREAD
+                                                  │▎stage-one
+          ▸ Edited files                          │▎id 01900000-0000-7000-8000-000000000001
+   ▎ ERROR  failed to save settings: thread       │▎resume, fork, archive, delete in session list
+            settings update failed; global config │
  ╭────────────────────────────────────────────╮   │
  │ Save failed: thread settings update failed │   │
  │ ⓘ Ask for approval                       ✓ │   │

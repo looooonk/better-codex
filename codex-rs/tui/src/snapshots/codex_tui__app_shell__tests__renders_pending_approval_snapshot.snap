@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-                                                │ │  Status   │  Agents  │  Sessions  │  Settings
-        > Edited files                          │ │───────────────────────━━━━━━━━━━━━─────────────
-                                                ┃ │
- ▎ CODEX  The new shell owns the fullscreen     ┃ │▎◆ SESSIONS
-          surface.                              ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                │ │───────────────────────━━━━━━━━━━━━─────────────
+          ▸ Edited files                        │ │
+                                                ┃ │▎◆ SESSIONS
+   The new shell owns the fullscreen surface.   ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N
 ╭────────────────────────────────────────────────╮│▎loading sessions
 │◆ APPROVAL                                      ││

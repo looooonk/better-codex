@@ -3,9 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
-        > Edited files                                    │
+
                                                           ┃
- ▎ CODEX  The new shell owns the fullscreen surface.      ┃
+   The new shell owns the fullscreen surface.             ┃
 
 ╭──────────────────────────────────────────────────────────╮
 │◆ MCP ELICITATION                                         │

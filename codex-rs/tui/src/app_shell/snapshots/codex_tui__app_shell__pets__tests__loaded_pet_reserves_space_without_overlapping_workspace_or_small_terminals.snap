@@ -3,18 +3,18 @@ source: tui/src/app_shell/pets_tests.rs
 expression: rendered
 ---
                                        │
- ▎ YOU  Create a divergent standalone T│  Status   │  Agents  │  Sessions  │  Settings
+                                       │  Status   │  Agents  │  Sessions  │  Settings
                                        │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shel│▎◆ SESSIONS
- ▎ PLAN  1. Build shell                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript            │▎+ New session  Ctrl+N
-         3. Render dashboard           │▎loading sessions
-                                       │▎◆ THREAD
-        > Edited files                 │▎stage-one
+   > Create a divergent standalone TUI.│▎◆ SESSIONS
+                                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   Started a fullscreen app shell backe│▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell              │▎loading sessions
+           2. Wire transcript          │▎◆ THREAD
+           3. Render dashboard         │▎stage-one
                                        │▎id 01900000-0000-7000-8000-000000000001
- ▎ CODEX  The new shell owns the fullsc│▎resume, fork, archive, delete in session list
+          ▸ Edited files               │▎resume, fork, archive, delete in session list
                                        │
-                                       │
+   The new shell owns the fullscreen su│
                                        │
                                        │
                                        │

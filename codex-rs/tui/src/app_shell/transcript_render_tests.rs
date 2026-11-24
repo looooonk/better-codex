@@ -9,7 +9,7 @@ use std::path::Path;
 const WIDTH: u16 = 80;
 
 #[test]
-fn grouped_cards_align_with_reply_text_even_when_output_arrives_first() {
+fn grouped_cards_keep_their_indent_even_when_output_arrives_first() {
     let mut shell = ShellState::snapshot_fixture();
     shell.clear_visible_transcript();
     shell.push_assistant("Reply");
@@ -37,11 +37,11 @@ fn grouped_cards_align_with_reply_text_even_when_output_arrives_first() {
                 .find_map(|row| row.line.to_string().find(label))
                 .expect("label should be visible")
         };
-        let reply = rows[0].line.to_string();
-        let reply_column = reply.split_once("Reply").unwrap().0.chars().count();
-        assert_eq!(rail("⌄ ") + 2, reply_column);
-        assert_eq!(rail("▌ tool"), reply_column);
-        assert_eq!(rail("▌ output"), reply_column + 2);
+        assert_eq!(rows[0].line.to_string(), "Reply");
+        let detail_indent = usize::from(ACTIVITY_INDENT);
+        assert_eq!(rail("⌄ ") + 2, detail_indent);
+        assert_eq!(rail("▌ tool"), detail_indent);
+        assert_eq!(rail("▌ output"), detail_indent + 2);
         assert!(
             rows.iter()
                 .all(|row| row.line.width() <= usize::from(width))
@@ -130,18 +130,18 @@ fn rendered_line_cache_tracks_app_theme() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
-    shell.push_assistant("A response whose cached styling follows the app theme.");
+    shell.push_user("A prompt whose background follows the app theme.");
     shell.app_theme = TuiAppTheme::GruvboxDark;
     let revision = shell.transcript[0].render_revision;
     let cwd = PathBuf::from(&shell.cwd);
     let mut cache = TranscriptRenderCache::default();
-    let gruvbox_purple = {
+    let gruvbox_surface = {
         let _theme = crate::app_theme::activate(TuiAppTheme::GruvboxDark);
-        crate::app_theme::palette().purple
+        crate::app_theme::palette().surface
     };
-    let catppuccin_purple = {
+    let catppuccin_surface = {
         let _theme = crate::app_theme::activate(TuiAppTheme::CatppuccinMocha);
-        crate::app_theme::palette().purple
+        crate::app_theme::palette().surface
     };
 
     let gruvbox = cache.layout(&shell, WIDTH, &cwd);
@@ -155,10 +155,10 @@ fn rendered_line_cache_tracks_app_theme() {
     ));
     assert_eq!(
         [
-            chunk_lines(&gruvbox, revision)[0].line.spans[0].style.fg,
-            chunk_lines(&catppuccin, revision)[0].line.spans[0].style.fg,
+            chunk_lines(&gruvbox, revision)[1].line.style.bg,
+            chunk_lines(&catppuccin, revision)[1].line.style.bg,
         ],
-        [Some(gruvbox_purple), Some(catppuccin_purple),]
+        [Some(gruvbox_surface), Some(catppuccin_surface),]
     );
 }
 

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,))"
 ---
                                                   │
-        > Running command...                      │  Status   │  Agents  │  Sessions  │  Settings
-                                                  │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+          ▸ Running command...                    │───────────────────────━━━━━━━━━━━━─────────────
                                                   │
                                                   │▎◆ SESSIONS
                                                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

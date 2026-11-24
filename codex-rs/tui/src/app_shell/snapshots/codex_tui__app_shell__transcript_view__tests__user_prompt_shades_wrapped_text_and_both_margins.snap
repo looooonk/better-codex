@@ -1,0 +1,13 @@
+---
+source: tui/src/app_shell/transcript_view_tests.rs
+expression: "rows.join(\"\\n\").trim_end()"
+---
+
+
+   ······················
+   >·A·prompt·long·enough
+   ··to·wrap.············
+   ······················
+   ··Next·paragraph.·····
+   ······················
+   An answer.

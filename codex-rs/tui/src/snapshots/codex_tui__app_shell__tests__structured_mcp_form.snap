@@ -3,16 +3,16 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-          server turns.                                   │
- ▎ PLAN  1. Build shell                                   │
-         2. Wire transcript                               ┃
-         3. Render dashboard                              ┃
+
+   ▎ PLAN  1. Build shell                                 │
+           2. Wire transcript                             │
+           3. Render dashboard                            │
                                                           ┃
-        > Edited files                                    ┃
- ▎ STATUS  elicitation requested: MCP deployments: form   ┃
-           request                                        ┃
+          ▸ Edited files                                  ┃
+   ▎ STATUS  elicitation requested: MCP deployments:      ┃
+             form request                                 ┃
                                                           ┃
- ▎ CODEX  The new shell owns the fullscreen surface.      ┃
+   The new shell owns the fullscreen surface.             ┃
 
 ╭──────────────────────────────────────────────────────────╮
 │◆ MCP ELICITATION                                         │

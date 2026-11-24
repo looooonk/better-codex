@@ -3,18 +3,18 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- SELECT 5/6  e BRANCH EDIT
- ▎ SYSTEM  switched session
- ▎ SYSTEM  loaded 2 previous turns
- ▎ YOU  Plan the first implementation.
 
- ──────── Took 1.00s ──────────────────────────────────────────────────────────────────────────────
+   SELECT 5/6  e BRANCH EDIT
+   ▎ SYSTEM  switched session
+   ▎ SYSTEM  loaded 2 previous turns
 
- ▶ YOU  Replace the inherited chat UI.
+   > Plan the first implementation.
 
- ──────── Took 1.00s ──────────────────────────────────────────────────────────────────────────────
+   ──────── Took 1.00s ────────────────────────────────────────────────────────────────────────────
 
+   > Replace the inherited chat UI.
 
+   ──────── Took 1.00s ────────────────────────────────────────────────────────────────────────────
 
 
 

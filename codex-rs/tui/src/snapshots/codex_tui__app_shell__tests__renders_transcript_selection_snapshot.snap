@@ -3,20 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- SELECT 1/5  Tab TOOLS                            │  Status   │  Agents  │  Sessions  │  Settings
- ▶ YOU  Create a divergent standalone TUI.        │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   SELECT 1/5  Tab TOOLS                          │───────────────────────━━━━━━━━━━━━─────────────
                                                   │
- ▎ CODEX  Started a fullscreen app shell backed   │▎◆ SESSIONS
-          by app-server turns.                    │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ PLAN  1. Build shell                           │▎+ New session  Ctrl+N
-         2. Wire transcript                       │▎loading sessions
-         3. Render dashboard                      │
-                                                  │▎◆ THREAD
-        > Edited files                            │▎stage-one
+   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
+   server turns.                                  │▎loading sessions
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ THREAD
+           3. Render dashboard                    │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
- ▎ CODEX  The new shell owns the fullscreen       │▎resume, fork, archive, delete in session list
-          surface.                                │
+          ▸ Edited files                          │▎resume, fork, archive, delete in session list
                                                   │
+   The new shell owns the fullscreen surface.     │
                                                   │
                                                   │
                                                   │

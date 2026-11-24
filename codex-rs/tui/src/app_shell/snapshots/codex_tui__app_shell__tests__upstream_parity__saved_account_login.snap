@@ -3,19 +3,19 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎loading sessions
-                                                  │
-        > Edit╭──────────────────────────────────────────────────────────────────────╮
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎loading sessions
+           2. Wire transcript                     │
+           3. ╭──────────────────────────────────────────────────────────────────────╮
               │◆ ACCOUNT LOGIN                                                       │
- ▎ CODEX  The │Finish signing in with ChatGPT in your browser.                       │00001
-          surf│                                                                      │ession list
-              │https://auth.example.test/workspace                                   │
+          ▸ Ed│Finish signing in with ChatGPT in your browser.                       │00001
+              │                                                                      │ession list
+   The new she│https://auth.example.test/workspace                                   │
               │                                                                      │
               │Enter open link   Esc cancel                                          │
               │                                                                      │

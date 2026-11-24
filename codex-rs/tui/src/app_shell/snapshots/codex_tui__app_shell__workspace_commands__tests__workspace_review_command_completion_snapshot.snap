@@ -3,16 +3,16 @@ source: tui/src/app_shell/workspace_commands_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- ▎ YOU  Create a divergent standalone TUI.
 
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
- ▎ PLAN  1. Build shell
-         2. Wire transcript
-         3. Render dashboard
 
-        > Edited files
+   > Create a divergent standalone TUI.
 
- ▎ CODEX  The new shell owns the fullscreen surface.
+   Started a fullscreen app shell backed by app-server turns.
+   ▎ PLAN  1. Build shell
+           2. Wire transcript
+           3. Render dashboard
+
+          ▸ Edited files
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
 │▌ /review  Review changes; accepts instructions or --base/--commit    │

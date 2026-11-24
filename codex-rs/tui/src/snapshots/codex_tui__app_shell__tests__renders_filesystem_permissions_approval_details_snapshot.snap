@@ -3,15 +3,15 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&permissions_shell, area)"
 ---
                                                   │
-          by app-server turns.                  │ │  Status   │  Agents  │  Sessions  │  Settings
- ▎ PLAN  1. Build shell                         │ │───────────────────────━━━━━━━━━━━━─────────────
-         2. Wire transcript                     ┃ │
-         3. Render dashboard                    ┃ │▎◆ SESSIONS
-                                                ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-        > Edited files                          ┃ │▎+ New session  Ctrl+N
-                                                ┃ │▎loading sessions
- ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │▎◆ THREAD
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   app-server turns.                            │ │───────────────────────━━━━━━━━━━━━─────────────
+   ▎ PLAN  1. Build shell                       │ │
+           2. Wire transcript                   ┃ │▎◆ SESSIONS
+           3. Render dashboard                  ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                ┃ │▎+ New session  Ctrl+N
+          ▸ Edited files                        ┃ │▎loading sessions
+                                                ┃ │
+   The new shell owns the fullscreen surface.   ┃ │▎◆ THREAD
                                                   │▎stage-one
 ╭────────────────────────────────────────────────╮│▎id 01900000-0000-7000-8000-000000000001
 │◆ APPROVAL                                      ││▎resume, fork, archive, delete in session list

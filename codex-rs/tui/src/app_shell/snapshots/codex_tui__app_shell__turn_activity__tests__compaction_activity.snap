@@ -3,10 +3,10 @@ source: tui/src/app_shell/turn_activity_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- ▎ CODEX  Here is the latest result.
 
-          Compacting... · 0 tok/s
+   Here is the latest result.
 
+            Compacting... · 0 tok/s
 
 
 

@@ -3,25 +3,25 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎loading sessions
-                                                  │
-        > Edited files                            │▎◆ THREAD
- ▎ SYSTEM  Our most capable model yet. GPT-       │▎stage-one
-           5.6 Sol can tackle complex code        │▎id 01900000-0000-7000-8000-000000000001
-           changes, dig into research, produce    │▎resume, fork, archive, delete in session list
-           polished documents, and take on your   │
-           most ambitious work. Sol is highly     │
-           capable at lower reasoning efforts—try │
-           starting lower, then turn it up for    │
-           harder jobs.                           │
-                                                  │
-                                                  │
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎loading sessions
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ THREAD
+                                                  │▎stage-one
+          ▸ Edited files                          │▎id 01900000-0000-7000-8000-000000000001
+   ▎ SYSTEM  Our most capable model yet. GPT-     │▎resume, fork, archive, delete in session list
+             5.6 Sol can tackle complex code      │
+             changes, dig into research, produce  │
+             polished documents, and take on your │
+             most ambitious work. Sol is highly   │
+             capable at lower reasoning efforts—  │
+             try starting lower, then turn it up  │
+             for harder jobs.                     │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

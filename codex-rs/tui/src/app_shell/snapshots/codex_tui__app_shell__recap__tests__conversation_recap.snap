@@ -3,14 +3,14 @@ source: tui/src/app_shell/recap_tests.rs
 expression: screen
 ---
 
- ▎ SYSTEM  Recap
 
-           The updated interface supports the current model catalog and keeps existing
-           conversations available. Validation is still running.
+   ▎ SYSTEM  Recap
 
-           Next: Review the remaining test failures before publishing.
- ▎ CODEX  The new shell owns the fullscreen surface.
+             The updated interface supports the current model catalog and keeps existing
+             conversations available. Validation is still running.
 
+             Next: Review the remaining test failures before publishing.
+   The new shell owns the fullscreen surface.
 
 
 

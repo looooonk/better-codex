@@ -3,19 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │────────────────────────────────────━━━━━━━━━━━━
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │◆ PERMISSIONS
- ▎ PLAN  1. Build shell                           │  ● ⓘ Ask for approval
-         2. Wire transcript                       │  ○ ⛨ Unless trusted
-         3. Render dashboard                      │  ○ ⚠ Full access
-                                                  │
-        > Edited files                            │◆ APPEARANCE
+   > Create a divergent standalone TUI.           │
+                                                  │◆ PERMISSIONS
+   Started a fullscreen app shell backed by app-  │  ● ⓘ Ask for approval
+   server turns.                                  │  ○ ⛨ Unless trusted
+   ▎ PLAN  1. Build shell                         │  ○ ⚠ Full access
+           2. Wire transcript                     │
+           3. Render dashboard                    │◆ APPEARANCE
                                                   │  ● Tokyo Night
- ▎ CODEX  The new shell owns the fullscreen       │  ○ Gruvbox Dark
-          surface.                                │  ○ Catppuccin Mocha
-                                                  │  ○ Monochrome
+          ▸ Edited files                          │  ○ Gruvbox Dark
+                                                  │  ○ Catppuccin Mocha
+   The new shell owns the fullscreen surface.     │  ○ Monochrome
                                                   │  Syntax theme: default
                                                   │  Animations: on
                                                   │  Tooltips: on

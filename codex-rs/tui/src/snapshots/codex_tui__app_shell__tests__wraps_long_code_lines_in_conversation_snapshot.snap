@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- ▎ CODEX  Run this command:
 
-          codex exec --sandbox workspace-write --config
-          model_reasoning_effort="high" --config
-          shell_environment_policy.inherit=all "Inspect the workspace and fix
-          every failing test."
+   Run this command:
 
+   codex exec --sandbox workspace-write --config
+   model_reasoning_effort="high" --config
+   shell_environment_policy.inherit=all "Inspect the workspace and fix every
+   failing test."
 
 
 

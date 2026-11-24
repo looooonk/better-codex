@@ -3,10 +3,10 @@ source: tui/src/app_shell/vim_flow_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
 
- ▎ STATUS  Vim input returned to composer
 
- ▎ CODEX  The new shell owns the fullscreen surface.
+   ▎ STATUS  Vim input returned to composer
 
+   The new shell owns the fullscreen surface.
 
 
 

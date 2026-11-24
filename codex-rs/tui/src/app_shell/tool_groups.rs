@@ -141,7 +141,7 @@ pub(super) struct ToolGroup<'a> {
 
 impl ToolGroup<'_> {
     pub(super) fn header(&self, width: u16, selected: bool) -> HyperlinkLine {
-        let marker = if self.expanded { "⌄ " } else { "> " };
+        let marker = if self.expanded { "⌄ " } else { "▸ " };
         let mut line = Line::from(vec![
             marker.fg(palette::cyan()).bold(),
             self.action.label(self.status).fg(match self.status {

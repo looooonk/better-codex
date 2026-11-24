@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- ▎ YOU  Run just test -p codex-tui.
- ▎ SYSTEM  skipped 42 best-effort backend events
 
 
+   > Run just test -p codex-tui.
 
+   ▎ SYSTEM  skipped 42 best-effort backend events
 
 
 

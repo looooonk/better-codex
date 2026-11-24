@@ -23,17 +23,14 @@ use super::text_selection::trim_synthetic_right_padding;
 use super::transcript_render::TranscriptLayout;
 use super::transcript_render::TranscriptLayoutRow;
 use super::transcript_render::TranscriptTarget;
-use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
 use crate::markdown;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
 use crate::terminal_hyperlinks::prefix_hyperlink_lines;
-use crate::terminal_hyperlinks::visible_lines;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -45,6 +42,7 @@ use std::sync::Arc;
 use unicode_width::UnicodeWidthStr;
 
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
+pub(super) const ACTIVITY_INDENT: u16 = 9;
 const OUTPUT_BLOCK_INDENT: usize = 2;
 const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 
@@ -74,10 +72,10 @@ pub(super) fn render_transcript(
     let visible_hyperlink_lines = viewport
         .layout
         .visible_hyperlink_lines(viewport.visible_from, viewport.visible_count);
-    let visible_lines = visible_lines(visible_hyperlink_lines.clone());
-    Paragraph::new(visible_lines)
-        .style(pane_style(palette::base()))
-        .render(viewport.text_body, buf);
+    buf.set_style(viewport.text_body, pane_style(palette::base()));
+    for (row, line) in viewport.text_body.rows().zip(&visible_hyperlink_lines) {
+        (&line.line).render(row, buf);
+    }
     mark_buffer_hyperlinks(
         buf,
         viewport.text_body,
@@ -396,7 +394,15 @@ fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
             .get()
             .unwrap_or(shell.transcript_scroll)
     };
-    let content = pane_content_rect(area);
+    let inner = pane_content_rect(area);
+    let left = 2.min(inner.width.saturating_sub(1));
+    let top = 1.min(inner.height.saturating_sub(1));
+    let content = Rect::new(
+        inner.x + left,
+        inner.y + top,
+        inner.width - left,
+        inner.height - top,
+    );
     let body = if shell.transcript_selection.is_some() {
         body_rect_after_title(content)
     } else {
@@ -444,6 +450,12 @@ fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
         && let Some(selected) = shell.transcript_selection
         && let Some(rows) = layout.transcript_row_range(selected)
     {
+        // Reveal prompt text even when only its shaded margin is on screen.
+        let rows = if shell.transcript[selected].kind == TranscriptKind::User {
+            rows.start + 1..rows.end - 1
+        } else {
+            rows
+        };
         let visible_end = visible_from.saturating_add(visible_count);
         if rows.end <= visible_from {
             visible_from = rows.start.min(max_scroll);
@@ -588,28 +600,36 @@ pub(super) fn render_transcript_line_with_visualizations(
         return tool_block_lines(kind, text, width, status, selected);
     }
 
-    let width = usize::from(width).max(12);
-    let label = kind.label();
-    let style = match kind {
-        TranscriptKind::System => LineStyle::Dim,
-        TranscriptKind::User => LineStyle::Cyan,
-        TranscriptKind::Assistant => LineStyle::Magenta,
-        TranscriptKind::Plan => LineStyle::Green,
-        TranscriptKind::Tool => LineStyle::Cyan,
-        TranscriptKind::Diff => LineStyle::Green,
-        TranscriptKind::Output => LineStyle::Dim,
-        TranscriptKind::Separator => LineStyle::Dim,
-        TranscriptKind::Status => LineStyle::Dim,
-        TranscriptKind::Audit => LineStyle::Cyan,
-        TranscriptKind::Error => LineStyle::Red,
+    let text_color = match kind {
+        TranscriptKind::System
+        | TranscriptKind::Output
+        | TranscriptKind::Separator
+        | TranscriptKind::Status => palette::muted(),
+        TranscriptKind::Diff | TranscriptKind::Plan => palette::success(),
+        TranscriptKind::Error => palette::error(),
+        TranscriptKind::Assistant
+        | TranscriptKind::User
+        | TranscriptKind::Audit
+        | TranscriptKind::Tool => palette::text(),
     };
-
-    let prefix_width = transcript_prefix_width(kind);
-    let body_width = width.saturating_sub(prefix_width).max(1);
-    let initial_prefix = style.label_prefix(label, selected);
-    let subsequent_prefix = " ".repeat(prefix_width).into();
-
-    let mut rendered_lines = if matches!(kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
+    let prefix = match kind {
+        TranscriptKind::User => "> ".bold(),
+        TranscriptKind::Assistant => Span::default(),
+        _ => {
+            let marker = if selected { "▶" } else { "▎" };
+            let color = if matches!(kind, TranscriptKind::Tool | TranscriptKind::Audit) {
+                palette::cyan()
+            } else {
+                text_color
+            };
+            format!("{marker} {}  ", kind.label().to_uppercase())
+                .fg(color)
+                .bold()
+        }
+    };
+    let prefix_width = prefix.width();
+    let body_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let mut lines = if matches!(kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
         let rendered = markdown::render_markdown_agent_with_styles(
             text,
             Some(body_width),
@@ -618,42 +638,39 @@ pub(super) fn render_transcript_line_with_visualizations(
             crate::markdown_render::ListSpacing::AfterMultiline,
             markdown_styles(),
         );
-        let rendered = crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines(
+        crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines(
             &rendered,
             crate::wrapping::RtOptions::new(body_width),
         )
-        .into_iter()
-        .map(|line| line.style(style.line_style()))
-        .collect();
-        prefix_hyperlink_lines(rendered, initial_prefix, subsequent_prefix)
     } else {
-        let options = textwrap::Options::new(body_width);
-        let wrapped_lines: Vec<HyperlinkLine> = textwrap::wrap(text, options)
+        textwrap::wrap(text, textwrap::Options::new(body_width))
             .into_iter()
-            .map(|wrapped| {
-                HyperlinkLine::new(
-                    Line::from(style.text(wrapped.into_owned())).style(style.line_style()),
-                )
-            })
-            .collect();
-        prefix_hyperlink_lines(wrapped_lines, initial_prefix, subsequent_prefix)
+            .map(|wrapped| HyperlinkLine::from(wrapped.into_owned()))
+            .collect()
     };
-
-    if selected {
-        rendered_lines = rendered_lines
-            .into_iter()
-            .map(|line| line.style(selection_style()))
-            .collect();
+    if prefix_width > 0 {
+        lines = prefix_hyperlink_lines(lines, prefix, " ".repeat(prefix_width).into());
     }
-    rendered_lines
-}
-
-pub(super) fn transcript_prefix_width(kind: TranscriptKind) -> usize {
-    kind.label().width() + 4 // "▎ " before the label and two spaces after it.
+    if kind == TranscriptKind::User {
+        if let Some(first) = lines.first_mut() {
+            first.synthetic_prefix_width = prefix_width;
+        }
+        // Keep the shaded margins with the message as it wraps and scrolls.
+        lines.insert(0, " ".into());
+        lines.push(" ".into());
+    }
+    let style = if selected {
+        selection_style()
+    } else if kind == TranscriptKind::User {
+        pane_style(palette::surface())
+    } else {
+        Style::new().fg(text_color)
+    };
+    lines.into_iter().map(|line| line.style(style)).collect()
 }
 
 fn turn_separator_line(label: &str, width: usize) -> Line<'static> {
-    let indent = transcript_prefix_width(TranscriptKind::Assistant);
+    let indent = usize::from(ACTIVITY_INDENT);
     let border = palette::border();
     if label.is_empty() || width <= indent {
         return Line::from("─".repeat(width).fg(border));
@@ -689,18 +706,6 @@ fn tool_block_lines(
         0
     };
     let block_width = width.saturating_sub(block_indent).max(1);
-    let block_background = match kind {
-        TranscriptKind::Output => palette::dark(),
-        TranscriptKind::Tool | TranscriptKind::Diff => palette::surface(),
-        TranscriptKind::System
-        | TranscriptKind::User
-        | TranscriptKind::Assistant
-        | TranscriptKind::Plan
-        | TranscriptKind::Separator
-        | TranscriptKind::Status
-        | TranscriptKind::Audit
-        | TranscriptKind::Error => palette::surface(),
-    };
     let label = kind.label();
     let label_width = label.width();
     let label_prefix_width = label_width + 3;
@@ -741,7 +746,6 @@ fn tool_block_lines(
         .into_iter()
         .enumerate()
         .map(|(index, wrapped)| {
-            let wrapped_width = wrapped.width();
             let label_span = if index == 0 {
                 format!("{label} ").bold()
             } else {
@@ -761,27 +765,7 @@ fn tool_block_lines(
             } else {
                 spans.push(wrapped.into());
             }
-            let occupied_width = block_indent + label_prefix_width + wrapped_width;
-            if occupied_width < width {
-                spans.push(Span::styled(
-                    " ".repeat(width - occupied_width),
-                    Style::new().bg(block_background),
-                ));
-            }
-            let mut line = Line::from(spans);
-            for span in line.spans.iter_mut().skip(usize::from(block_indent > 0)) {
-                span.style = span.style.patch(Style::new().bg(block_background));
-            }
-            if line_width(&line) > width {
-                line = truncate_line_to_width(line, width);
-            }
-            let rendered_width = line_width(&line);
-            if rendered_width < width {
-                line.spans.push(Span::styled(
-                    " ".repeat(width - rendered_width),
-                    Style::new().bg(block_background),
-                ));
-            }
+            let line = truncate_line_to_width(Line::from(spans), width);
             let mut line = HyperlinkLine::new(line);
             if index > 0 {
                 line.synthetic_prefix_width = block_indent + label_prefix_width;
@@ -802,62 +786,10 @@ fn tool_block_lines(
 impl ToolBlockStatus {
     fn accent_style(self) -> Style {
         match self {
-            Self::Running => Style::new().fg(palette::cyan()).bg(palette::surface()),
-            Self::Success => Style::new().fg(palette::success()).bg(palette::surface()),
-            Self::Fail => Style::new().fg(palette::error()).bg(palette::surface()),
-            Self::Interrupted | Self::Unconfirmed => {
-                Style::new().fg(palette::warning()).bg(palette::surface())
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum LineStyle {
-    Cyan,
-    Dim,
-    Green,
-    Magenta,
-    Red,
-}
-
-impl LineStyle {
-    fn label_prefix(self, text: &str, selected: bool) -> Span<'static> {
-        if selected {
-            self.label(format!("▶ {}  ", text.to_uppercase()))
-        } else {
-            self.label(format!("▎ {}  ", text.to_uppercase()))
-        }
-    }
-
-    fn label(self, text: String) -> Span<'static> {
-        Span::styled(text, Style::new().fg(self.color()).bold())
-    }
-
-    fn text(self, text: String) -> Span<'static> {
-        Span::styled(text, Style::new().fg(self.text_color()))
-    }
-
-    fn line_style(self) -> Style {
-        Style::new().fg(self.text_color())
-    }
-
-    fn color(self) -> Color {
-        match self {
-            Self::Cyan => palette::cyan(),
-            Self::Dim => palette::muted(),
-            Self::Green => palette::success(),
-            Self::Magenta => palette::purple(),
-            Self::Red => palette::error(),
-        }
-    }
-
-    fn text_color(self) -> Color {
-        match self {
-            Self::Dim => palette::muted(),
-            Self::Green => palette::success(),
-            Self::Red => palette::error(),
-            Self::Cyan | Self::Magenta => palette::text(),
+            Self::Running => Style::new().fg(palette::cyan()),
+            Self::Success => Style::new().fg(palette::success()),
+            Self::Fail => Style::new().fg(palette::error()),
+            Self::Interrupted | Self::Unconfirmed => Style::new().fg(palette::warning()),
         }
     }
 }

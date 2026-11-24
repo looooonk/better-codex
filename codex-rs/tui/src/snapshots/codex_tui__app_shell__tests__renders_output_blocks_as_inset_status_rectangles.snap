@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- ▌ tool exec cargo test
 
-   ▌ output ... 4 earlier output lines
-   ▌        line 5
-   ▌        line 6
-   ▌        line 7
+   ▌ tool exec cargo test
 
+     ▌ output ... 4 earlier output lines
+     ▌        line 5
+     ▌        line 6
+     ▌        line 7
 
 
 

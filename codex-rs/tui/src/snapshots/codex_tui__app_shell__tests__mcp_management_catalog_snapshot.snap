@@ -3,20 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ---
                                                             │
- ▎ YOU  Create a divergent standalone TUI.                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │  Status   │  Agents  │  Sessions  │  Settings
                                                             │────────────────────────────────────━━━━━━━━━━━━
- ▎ CODEX  Started a fullscreen app shell backed by app-     │
-          server turns.                                     │◆ PERMISSIONS
- ▎ PLAN  1. Build shell                                     │  ● ⓘ Ask for approval
-         2. Wire transcript                                 │  ○ ⛨ Unless trusted
-         3. Render dashboard                                │  ○ ⚠ Full access
-                                                            │
-        > Edited files                                      │◆ APPEARANCE
- ▎ STATUS  mcp manager opened                               │  ● Tokyo Night
-                                                            │  ○ Gruvbox Dark
- ▎ CODEX  The new shell owns the fullscreen surface.        │  ○ Catppuccin Mocha
+   > Create a divergent standalone TUI.                     │
+                                                            │◆ PERMISSIONS
+   Started a fullscreen app shell backed by app-server      │  ● ⓘ Ask for approval
+   turns.                                                   │  ○ ⛨ Unless trusted
+   ▎ PLAN  1. Build shell                                   │  ○ ⚠ Full access
+           2. Wire transcript                               │
+           3. Render dashboard                              │◆ APPEARANCE
+                                                            │  ● Tokyo Night
+          ▸ Edited files                                    │  ○ Gruvbox Dark
+   ▎ STATUS  mcp manager opened                             │  ○ Catppuccin Mocha
                    ╭──────────────────────────────────────────────────────────────────────╮
-                   │◆ MCP SERVERS                                                         │
+   The new shell ow│◆ MCP SERVERS                                                         │
                    │1/2 mcp servers  ↑↓ / j k navigate                                    │
                    │Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
                    │> login        github 2 tools                                         │

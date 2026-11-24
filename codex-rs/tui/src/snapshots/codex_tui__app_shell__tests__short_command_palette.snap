@@ -3,10 +3,10 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
-        > Edited files                          │ │  Status   │  Agents  │  Sessions  │  Settings
-              ╭──────────────────────────────────────────────────────────────────────╮─────────────
- ▎ CODEX  The │◆ ACTIONS  Ctrl+P                                                     │
-          surf│                                                                      │
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+          ▸ Ed╭──────────────────────────────────────────────────────────────────────╮─────────────
+              │◆ ACTIONS  Ctrl+P                                                     │
+   The new she│                                                                      │
               │  Fork thread                                                         │ns
 ╭─────────────│  Import Claude Code setup                                            │
 │> Summarize t│▌ Compact context  Compact the current thread context                 │

@@ -22,15 +22,16 @@ fn white_highlight_moves_right_across_gray_activity_and_rate() {
         [colors(&static_text), colors(&early), colors(&late)],
         [[gray, gray], [white, gray], [gray, white]]
     );
-    assert_eq!(
-        early
-            .content
-            .iter()
-            .map(ratatui::buffer::Cell::symbol)
-            .collect::<String>()
-            .trim(),
-        "Thinking... · 32 tok/s"
-    );
+    for elapsed_ms in (0..2200).step_by(50) {
+        let animated = frame(Some(Duration::from_millis(elapsed_ms)));
+        let dots = &animated.content[8..11];
+        assert!(dots.iter().all(|dot| dot.fg == dots[0].fg));
+        for (animated_cell, static_cell) in animated.content.iter().zip(&static_text.content) {
+            let mut expected = static_cell.clone();
+            expected.set_fg(animated_cell.fg);
+            assert_eq!(animated_cell, &expected);
+        }
+    }
 }
 
 #[test]
@@ -76,7 +77,7 @@ fn activity_follows_tool_cards_and_wrapped_output_and_scrolls_with_them() {
     );
     let (indent, _) = rows[last + 2].split_once("Thinking...").unwrap();
     let output_indent = rows[last].width() - rows[last].trim_start().width();
-    assert_eq!(indent.width(), output_indent);
+    assert_eq!(indent.width(), output_indent + usize::from(ACTIVITY_INDENT));
     shell.scroll_transcript_to_top();
     assert!(render_shell(&shell, area).contains("Editing files"));
     assert!(!render_shell(&shell, area).contains("Thinking..."));

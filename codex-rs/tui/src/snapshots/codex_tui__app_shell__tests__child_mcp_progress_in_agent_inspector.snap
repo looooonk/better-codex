@@ -3,10 +3,10 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
-        > Starting agent...                       │  Status   │  Agents  │  Sessions  │  Settings
-                                                  │────────────━━━━━━━━━━──────────────────────────
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │▎◆ AGENTS
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+          ▸ Starting agent...                     │────────────━━━━━━━━━━──────────────────────────
+                                                  │
+   The new shell owns the fullscreen surface.     │▎◆ AGENTS
                                                   │▎Agents 1  ● 1 active
                                                   │▎› ● running  agent-thread
                                                   │▎Inspector  agent-thread  ● running

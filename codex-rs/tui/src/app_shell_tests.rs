@@ -1599,14 +1599,9 @@ fn renders_output_blocks_as_inset_status_rectangles() {
     assert!(rendered.contains("line 6"));
     assert!(rendered.contains("line 7"));
     assert_eq!(output_accent_x, tool_accent_x + 2);
-    assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, tool_row, design::palette::surface()),
-        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::dark()),
-    );
-    assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::dark()),
-        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::dark()),
-    );
+    for row in [tool_row, output_row, output_tail_row] {
+        assert!((area.x..area.right()).all(|x| buf[(x, row)].bg == design::palette::base()));
+    }
     assert_eq!(
         buf.cell((output_accent_x, output_row))
             .expect("output accent cell should exist")
@@ -1633,14 +1628,13 @@ fn renders_output_blocks_as_inset_status_rectangles() {
 
     shell.pointer_position = Some(Position::new(output_accent_x, output_row));
     let hovered = render_shell_buffer(&shell, area);
-    assert_eq!(
-        rightmost_bg_x_for_row(&hovered, area, output_row, design::palette::border()),
-        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::dark())
-    );
-    assert_eq!(
-        rightmost_bg_x_for_row(&hovered, area, output_tail_row, design::palette::border()),
-        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::dark())
-    );
+    let right_edge = area.right() - 2; // The transcript ends one cell inside the pane.
+    for row in [output_row, output_tail_row] {
+        assert_eq!(
+            rightmost_bg_x_for_row(&hovered, area, row, design::palette::border()),
+            Some(right_edge)
+        );
+    }
     insta::assert_snapshot!(rendered);
 }
 
@@ -8504,30 +8498,6 @@ fn tool_transcript_blocks_use_status_accent_colors() {
     assert_eq!(
         accent_color_for_row(&buf, area, "exec false"),
         Some(design::palette::error())
-    );
-}
-
-#[test]
-fn tool_transcript_block_background_spans_conversation_width() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.transcript.clear();
-    shell.streaming_assistant.clear();
-    shell.push_tool_with_status("exec short", ToolBlockStatus::Running);
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
-    );
-
-    let buf = render_shell_buffer(&shell, area);
-    let row = row_containing(&buf, area, "exec short").expect("tool row should render");
-    let content = design::pane_content_rect(ShellView { shell: &shell }.input_area(area));
-    let right_edge = content.right().saturating_sub(1);
-
-    assert_eq!(
-        buf.cell((right_edge, row))
-            .expect("right edge cell should exist")
-            .style()
-            .bg,
-        Some(design::palette::surface())
     );
 }
 

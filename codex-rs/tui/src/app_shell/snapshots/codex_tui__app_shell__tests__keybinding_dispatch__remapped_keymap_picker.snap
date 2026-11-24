@@ -3,19 +3,19 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
- ▎ YOU  Create a divergent standalone TUI.                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │  Status   │  Agents  │  Sessions  │  Settings
                      ╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━─────────────
- ▎ CODEX  Started a f│ › 1 ○ global.open_agents                                         │
-          server turn│       f2 / ⌃space - select to change                             │
- ▎ PLAN  1. Build she│   2 ○ global.open_transcript                                     │ sessions
-         2. Wire tran│       unbound - select to change                                 │
-         3. Render da│   3 ○ global.find_transcript                                     │
+   > Create a diverge│ › 1 ○ global.open_agents                                         │
+                     │       f2 / ⌃space - select to change                             │
+   Started a fullscre│   2 ○ global.open_transcript                                     │ sessions
+   turns.            │       unbound - select to change                                 │
+   ▎ PLAN  1. Build s│   3 ○ global.find_transcript                                     │
+           2. Wire tr│       unbound - select to change                                 │
+           3. Render │   4 ○ global.focus_activity                                      │
                      │       unbound - select to change                                 │
-        > Edited file│   4 ○ global.focus_activity                                      │
-                     │       unbound - select to change                                 │
- ▎ CODEX  The new she│   5 ○ global.open_external_editor                                │000000000001
+          ▸ Edited fi│   5 ○ global.open_external_editor                                │000000000001
                      │       unbound - select to change                                 │te in session list
-                     │   6 ○ global.copy                                                │
+   The new shell owns│   6 ○ global.copy                                                │
                      │       ⌃o - select to change                                      │
                      │   7 ○ global.clear_terminal                                      │
                      │       unbound - select to change                                 │

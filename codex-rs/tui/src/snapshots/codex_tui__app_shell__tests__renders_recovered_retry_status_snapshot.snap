@@ -3,12 +3,12 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 16,),)"
 ---
 
- ▎ ERROR  stream disconnected
 
- ▎ CODEX  Recovered response.
+   ▎ ERROR  stream disconnected
 
-          Thinking... · 3 tok/s
+   Recovered response.
 
+            Thinking... · 3 tok/s
 
 
 

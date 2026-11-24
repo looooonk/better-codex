@@ -2,7 +2,7 @@
 source: tui/src/app_shell/tool_groups_tests.rs
 expression: live.1
 ---
-▎ CODEX  I’ll check both sources.
+I’ll check both sources.
 
        ⌄ Searched web
 
@@ -14,6 +14,6 @@ expression: live.1
 
          ▌ tool web search: build documentation
 
-▎ CODEX  The build passed.
+The build passed.
 
-       > Called docs/lookup
+       ▸ Called docs/lookup

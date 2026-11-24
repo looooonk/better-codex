@@ -3,11 +3,11 @@ source: tui/src/app_shell/managed_worktree_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- ▎ ERROR  Creating a worktree requires an idle session without queued input, active voice, or pending
-          requests
 
- ▎ CODEX  The new shell owns the fullscreen surface.
+   ▎ ERROR  Creating a worktree requires an idle session without queued input, active voice, or pending
+            requests
 
+   The new shell owns the fullscreen surface.
 
 
 

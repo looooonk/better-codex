@@ -3,9 +3,9 @@ source: tui/src/app_shell/pointer_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
-        > Edited files                                                      │
+
                                                                             ┃
- ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
+   The new shell owns the fullscreen surface.                               ┃
 
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> message line 01                                                           │

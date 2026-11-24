@@ -3,19 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  1 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎› 1/1 Delete this investigation [main]
-              ╭──────────────────────────────────────────────────────────────────────╮
-        > Edit│◆ DELETE SESSION                                                      │
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎● FOCUSED  ACTIVE  1 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎› 1/1 Delete this investigation [main]
+           2. ╭──────────────────────────────────────────────────────────────────────╮
+           3. │◆ DELETE SESSION                                                      │
               │Delete session: Delete this investigation                             │
- ▎ CODEX  The │Session ID: 01900000-0000-7000-8000-000000000511                      │00001
-          surf│2 spawned descendants will also be deleted.                           │ession list
-              │This permanently deletes all persisted history in that subtree.       │
+          ▸ Ed│Session ID: 01900000-0000-7000-8000-000000000511                      │00001
+              │2 spawned descendants will also be deleted.                           │ession list
+   The new she│This permanently deletes all persisted history in that subtree.       │
               │                                                                      │
               │> Delete permanently Enter/y                                          │
               │  Cancel Esc/n                                                        │

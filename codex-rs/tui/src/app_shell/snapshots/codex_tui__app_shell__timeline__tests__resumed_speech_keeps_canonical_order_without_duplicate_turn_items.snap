@@ -3,15 +3,15 @@ source: tui/src/app_shell/timeline_tests.rs
 expression: "lines.join(\"\\n\")"
 ---
 
- ▎ YOU  Voice: Please fix the bug.
-
- ▎ CODEX  The fix is ready.
-
- ▎ CODEX  Voice: Ready to review.
-
- ▎ CODEX  The new shell owns the fullscreen surface.
 
 
+   > Voice: Please fix the bug.
+
+   The fix is ready.
+
+   Voice: Ready to review.
+
+   The new shell owns the fullscreen surface.
 
 
 

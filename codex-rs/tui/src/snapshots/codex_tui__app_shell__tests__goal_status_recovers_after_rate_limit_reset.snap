@@ -3,19 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 34,))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ GOAL
- ▎ PLAN  1. Build shell                           │▎status active
-         2. Wire transcript                       │▎Continue after the account limit resets
-         3. Render dashboard                      │▎1m | 12,345/50,000 tokens
-                                                  │
-        > Edited files                            │▎◆ TOOLS
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ GOAL
+   Started a fullscreen app shell backed by app-  │▎status active
+   server turns.                                  │▎Continue after the account limit resets
+   ▎ PLAN  1. Build shell                         │▎1m | 12,345/50,000 tokens
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ TOOLS
                                                   │▎completed exec just test -p codex-tui
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │▎◆ EDITS
-                                                  │▎3 files +128 -24
+          ▸ Edited files                          │
+                                                  │▎◆ EDITS
+   The new shell owns the fullscreen surface.     │▎3 files +128 -24
                                                   │
                                                   │▎◆ WORKSPACE
                                                   │▎profile managed

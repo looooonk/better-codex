@@ -2,7 +2,6 @@
 source: tui/src/app_shell/transcript_view_tests.rs
 expression: "lines.join(\"\\n\").trim_end()"
 ---
-▎ CODEX  Answer
 ──────── Took 12.50s · 8.4 tok/s ───────────────────────────
 ──────── Took 12.50s · 8.4 tok/s ──
 ──────── Took 12.…

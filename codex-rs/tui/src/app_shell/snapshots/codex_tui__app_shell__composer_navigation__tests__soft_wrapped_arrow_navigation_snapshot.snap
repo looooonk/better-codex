@@ -3,14 +3,14 @@ source: tui/src/app_shell/composer_navigation_tests.rs
 expression: "render_shell_with_visible_cursor(&shell, area)"
 ---
 
- ▎ PLAN  1. Build shell                         │
-         2. Wire transcript                     │
-         3. Render dashboard                    ┃
+
+   ▎ PLAN  1. Build shell                       │
+           2. Wire transcript                   │
+           3. Render dashboard                  ┃
                                                 ┃
-        > Edited files                          ┃
+          ▸ Edited files                        ┃
                                                 ┃
- ▎ CODEX  The new shell owns the fullscreen     ┃
-          surface.                              ┃
+   The new shell owns the fullscreen surface.   ┃
 
 ╭────────────────────────────────────────────────╮
 │> You sh▏uld do items A, B, plus items C and D, │

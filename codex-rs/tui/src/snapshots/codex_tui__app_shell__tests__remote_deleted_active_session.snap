@@ -3,21 +3,21 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  1 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎› 1/1 remaining [main]  available session
-                                                  │
-        > Edited files                            │▎◆ THREAD
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎● FOCUSED  ACTIVE  1 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎› 1/1 remaining [main]  available session
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ THREAD
                                                   │▎stage-one
- ▎ CODEX  The new shell owns the fullscreen       │▎id 01900000-0000-7000-8000-000000000001
-          surface.                                │▎resume, fork, archive, delete in session list
- ▎ ERROR  active session was deleted remotely;    │
-          choose or start another session         │
-                                                  │
+          ▸ Edited files                          │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+   The new shell owns the fullscreen surface.     │
+   ▎ ERROR  active session was deleted remotely;  │
+            choose or start another session       │
                                                   │
                                                   │
                                                   │

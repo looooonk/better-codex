@@ -3,20 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎loading sessions
-                                                  │
-        > Edit╭──────────────────────────────────────────────────────────────────────╮
- ▎ STATUS  mcp│◆ MCP SERVERS                                                         │
-              │Add MCP server                                                        │00001
- ▎ CODEX  The │Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
-          surf│                                                                      │
-              │…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎loading sessions
+           2. Wire transcript                     │
+           3. ╭──────────────────────────────────────────────────────────────────────╮
+              │◆ MCP SERVERS                                                         │
+          ▸ Ed│Add MCP server                                                        │00001
+   ▎ STATUS  m│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│ession list
+              │                                                                      │
+   The new she│…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
               │                                                                      │
               │Enter save  Esc cancel                                                │
               │                                                                      │

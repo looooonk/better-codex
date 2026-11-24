@@ -3,9 +3,9 @@ source: tui/src/app_shell/automatic_recap_tests.rs
 expression: screen
 ---
 
- ▎ SYSTEM  Automatic recaps off. Manual /recap remains available.
- ▎ CODEX  The new shell owns the fullscreen surface.
 
+   ▎ SYSTEM  Automatic recaps off. Manual /recap remains available.
+   The new shell owns the fullscreen surface.
 
 
 

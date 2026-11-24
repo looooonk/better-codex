@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ GOAL
- ▎ PLAN  1. Build shell                           │▎status active
-         2. Wire transcript                       │▎Ship the standalone shell
-         3. Render dashboard                      │▎1m | 12,345 tokens
-                                                  │
-        > Edited files                            │▎◆ TOOLS
- ▎ STATUS  goal set: Ship the standalone shell    │▎completed exec just test -p codex-tui
- ▎ STATUS  goal active. Objective: Ship the       │
-           standalone shell Time: 1m.             │▎◆ EDITS
-                                                  │▎3 files +128 -24
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │▎◆ WORKSPACE
-                                                  │▎profile managed
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ GOAL
+   Started a fullscreen app shell backed by app-  │▎status active
+   server turns.                                  │▎Ship the standalone shell
+   ▎ PLAN  1. Build shell                         │▎1m | 12,345 tokens
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ TOOLS
+                                                  │▎completed exec just test -p codex-tui
+          ▸ Edited files                          │
+   ▎ STATUS  goal set: Ship the standalone shell  │▎◆ EDITS
+   ▎ STATUS  goal active. Objective: Ship the     │▎3 files +128 -24
+             standalone shell Time: 1m.           │
+                                                  │▎◆ WORKSPACE
+   The new shell owns the fullscreen surface.     │▎profile managed
                                                   │▎cwd /workspace/better-codex
                                                   │▎files restricted, net restricted
                                                   │▎roots none selected

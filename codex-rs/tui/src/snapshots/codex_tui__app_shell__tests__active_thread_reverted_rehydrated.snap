@@ -3,24 +3,24 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
 ---
 
- ▎ SYSTEM  session reverted
- ▎ SYSTEM  loaded 2 previous turns
- ▎ YOU  retained prompt
 
- ▎ CODEX  retained response
+   ▎ SYSTEM  session reverted
+   ▎ SYSTEM  loaded 2 previous turns
 
-        > Command result unavailable
+   > retained prompt
 
- ──────── Took 1.00s ──────────────────────────────────────────────────────────────────────────────
+   retained response
 
- ▎ YOU  current queued follower
+          ▸ Command result unavailable
 
- ▌ tool mcp progress: live mcp progress survives
- ▎ ERROR  live retry detail survives
+   ──────── Took 1.00s ────────────────────────────────────────────────────────────────────────────
 
-          Thinking... · 0 tok/s
+   > current queued follower
 
+   ▌ tool mcp progress: live mcp progress survives
+   ▎ ERROR  live retry detail survives
 
+            Thinking... · 0 tok/s
 
 
 

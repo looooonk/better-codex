@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ▎ CODEX  Started a fullscreen app shell backed │ │  Status   │  Agents  │  Sessions  │  Settings
-          by app-server turns.                  ┃ │───────────────────────━━━━━━━━━━━━─────────────
- ▎ PLAN  1. Build shell                         ┃ │
-         2. Wire transcript                     ┃ │▎◆ SESSIONS
-         3. Render dashboard                    ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   app-server turns.                            │ │───────────────────────━━━━━━━━━━━━─────────────
+   ▎ PLAN  1. Build shell                       │ │
+           2. Wire transcript                   │ │▎◆ SESSIONS
+           3. Render dashboard                  ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                 ┃ │▎+ New session  Ctrl+N
-        ⌄ Edited files                          ┃ │▎loading sessions
+          ⌄ Edited files                        ┃ │▎loading sessions
                                                 ┃ │
-          ▌ tool exec just test -p codex-tui    ┃ │▎◆ THREAD
+            ▌ tool exec just test -p codex-tui  ┃ │▎◆ THREAD
                                                 ┃ │▎stage-one
-          ▌ edited 3 files +128 -24             ┃ │▎id 01900000-0000-7000-8000-000000000001
+            ▌ edited 3 files +128 -24           ┃ │▎id 01900000-0000-7000-8000-000000000001
                                                 ┃ │▎resume, fork, archive, delete in session list
-          ▌ edited 4 files +4 -3                ┃ │
-          ▌          M src/app.rs               ┃ │
-          ▌          A src/new.rs               ┃ │
-          ▌          D src/old.rs               ┃ │
-          ▌          R src/from.rs -> src/to.rs ┃ │
+            ▌ edited 4 files +4 -3              ┃ │
+            ▌          M src/app.rs             ┃ │
+            ▌          A src/new.rs             ┃ │
+            ▌          D src/old.rs             ┃ │
+            ▌          R src/from.rs -> src/    ┃ │
+            ▌        to.rs                      ┃ │
                                                 ┃ │
- ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │
+   The new shell owns the fullscreen surface.   ┃ │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

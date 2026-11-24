@@ -3,20 +3,20 @@ source: tui/src/app_shell/ide_tests.rs
 expression: rendered
 ---
 
- ▎ YOU  Create a divergent standalone TUI.
-
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
- ▎ PLAN  1. Build shell
-         2. Wire transcript
-         3. Render dashboard
-
-        > Edited files
- ▎ SYSTEM  IDE context is off.
- ▎ SYSTEM  IDE context was skipped for this message. Open this project in VS Code or Cursor with the Codex
-           extension active.
- ▎ CODEX  The new shell owns the fullscreen surface.
 
 
+   > Create a divergent standalone TUI.
+
+   Started a fullscreen app shell backed by app-server turns.
+   ▎ PLAN  1. Build shell
+           2. Wire transcript
+           3. Render dashboard
+
+          ▸ Edited files
+   ▎ SYSTEM  IDE context is off.
+   ▎ SYSTEM  IDE context was skipped for this message. Open this project in VS Code or Cursor with the Codex
+             extension active.
+   The new shell owns the fullscreen surface.
 
 
 

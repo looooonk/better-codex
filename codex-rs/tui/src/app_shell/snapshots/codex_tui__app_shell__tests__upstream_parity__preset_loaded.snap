@@ -3,21 +3,21 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
- ▎ YOU  Create a divergent standalone TUI.                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │  Status   │  Agents  │  Sessions  │  Settings
                                                             │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed by app-     │
-          server turns.                                     │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                                     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                                 │▎+ New session  Ctrl+N
-         3. Render dashboard                                │▎loading sessions
-                                                            │
-        > Edited files                                      │▎◆ THREAD
- ▎ STATUS  preset loaded; press Enter to send               │▎stage-one
- ▎ SYSTEM  Preset ready; your draft was kept:               │▎id 01900000-0000-7000-8000-000000000001
-           Another preset                                   │▎resume, fork, archive, delete in session list
- ▎ CODEX  The new shell owns the fullscreen surface.        │
-                                                            │
-                                                            │
+   > Create a divergent standalone TUI.                     │
+                                                            │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-server      │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   turns.                                                   │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                                   │▎loading sessions
+           2. Wire transcript                               │
+           3. Render dashboard                              │▎◆ THREAD
+                                                            │▎stage-one
+          ▸ Edited files                                    │▎id 01900000-0000-7000-8000-000000000001
+   ▎ STATUS  preset loaded; press Enter to send             │▎resume, fork, archive, delete in session list
+   ▎ SYSTEM  Preset ready; your draft was kept:             │
+             Another preset                                 │
+   The new shell owns the fullscreen surface.               │
                                                             │
                                                             │
                                                             │

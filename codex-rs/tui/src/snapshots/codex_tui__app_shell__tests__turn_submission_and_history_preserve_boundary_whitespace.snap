@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,))"
 ---
 
- ▎ YOU    indented content
+
+
+   >   indented content
 
 
 
-          Thinking... · 0 tok/s
-
-
+            Thinking... · 0 tok/s
 
 
 ╭──────────────────────────────────────────────────────────────────────────────╮

@@ -1,8 +1,7 @@
 //! Animated status at the live end of the conversation.
 
 use super::ShellState;
-use super::TranscriptKind;
-use super::transcript_view::transcript_prefix_width;
+use super::transcript_view::ACTIVITY_INDENT;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::terminal_palette::rgb_color;
 use ratatui::buffer::Buffer;
@@ -30,11 +29,10 @@ impl ShellState {
         else {
             return;
         };
-        let indent = transcript_prefix_width(TranscriptKind::Assistant) as u16;
         let area = Rect::new(
-            row.x.saturating_add(indent),
+            row.x.saturating_add(ACTIVITY_INDENT),
             row.y,
-            row.width.saturating_sub(indent),
+            row.width.saturating_sub(ACTIVITY_INDENT),
             row.height,
         );
         let elapsed = self
@@ -68,12 +66,12 @@ fn render_activity(
         .next()
         .map(|ch| ch.to_uppercase().to_string())
         .unwrap_or_default();
-    let label = format!("{first}{}...", chars.as_str());
+    let label = Line::from(format!("{first}{}...", chars.as_str()));
     let suffix = format!(" · {rate} tok/s");
-    let mut line = truncate_line_with_ellipsis_if_overflow(
-        Line::from(label),
-        usize::from(area.width).saturating_sub(suffix.chars().count()),
-    );
+    let label_budget = usize::from(area.width).saturating_sub(suffix.chars().count());
+    let label_width = label.width();
+    let dots = label_width - 3..label_width.min(label_budget);
+    let mut line = truncate_line_with_ellipsis_if_overflow(label, label_budget);
     line.spans.push(suffix.into());
     let width = line.width().min(usize::from(area.width)) as u16;
     let gray = 152;
@@ -86,8 +84,15 @@ fn render_activity(
         // before the next pass begins.
         let radius = 4.0;
         let center = (elapsed.as_secs_f64() * 15.0) % (f64::from(width) + 3.0 * radius) - radius;
+        // Terminals can shape "..." as a ligature. Give all three periods the
+        // same foreground so a passing highlight never splits that glyph run.
         for column in 0..width {
-            let intensity = (1.0 - (f64::from(column) - center).abs() / radius).max(0.0);
+            let sample = if dots.contains(&usize::from(column)) {
+                (dots.start + 1) as f64
+            } else {
+                f64::from(column)
+            };
+            let intensity = (1.0 - (sample - center).abs() / radius).max(0.0);
             if intensity > 0.0 {
                 let shade = (f64::from(gray) + 96.0 * intensity).round() as u8;
                 buf[(area.x + column, area.y)].set_fg(rgb_color((shade, shade, shade)));

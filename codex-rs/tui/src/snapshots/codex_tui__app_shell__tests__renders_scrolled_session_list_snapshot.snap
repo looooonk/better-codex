@@ -3,19 +3,19 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎● FOCUSED  ACTIVE  10 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎   4/10 Session 04 [main]  Preview for session…
-                                                  │▎   5/10 Session 05 [main]  Preview for session…
-        > Edited files                            │▎   6/10 Session 06 [main]  Preview for session…
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎● FOCUSED  ACTIVE  10 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎   4/10 Session 04 [main]  Preview for session…
+           2. Wire transcript                     │▎   5/10 Session 05 [main]  Preview for session…
+           3. Render dashboard                    │▎   6/10 Session 06 [main]  Preview for session…
                                                   │▎   7/10 Session 07 [main]  Preview for session…
- ▎ CODEX  The new shell owns the fullscreen       │▎›  8/10 Session 08 [main]  Preview for session…
-          surface.                                │
-                                                  │▎◆ THREAD
+          ▸ Edited files                          │▎›  8/10 Session 08 [main]  Preview for session…
+                                                  │
+   The new shell owns the fullscreen surface.     │▎◆ THREAD
                                                   │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list

@@ -3,10 +3,10 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 14,),)"
 ---
 
- ▎ CODEX  The authoritative first answer.
 
- ▎ CODEX  The second answer streams independently.
+   The authoritative first answer.
 
+   The second answer streams independently.
 
 
 

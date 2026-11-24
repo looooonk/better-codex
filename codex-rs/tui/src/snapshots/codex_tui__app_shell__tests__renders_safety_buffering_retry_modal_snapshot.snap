@@ -3,21 +3,21 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Bu╭──────────────────────────────────────────────────────────────────────╮ns
-         2. Wi│◆ SAFETY REVIEW                                                       │
-         3. Re│Our systems are thinking a bit more about this request before         │
-              │responding.                                                           │
-        > Edit│                                                                      │
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a f╭──────────────────────────────────────────────────────────────────────╮ns
+   server turn│◆ SAFETY REVIEW                                                       │
+   ▎ PLAN  1. │Our systems are thinking a bit more about this request before         │
+           2. │responding.                                                           │
+           3. │                                                                      │
               │Hang tight or retry with a faster model for a quicker response, though│
- ▎ YOU  Explai│it may be less capable of handling complex requests.                  │00001
+          ▸ Ed│it may be less capable of handling complex requests.                  │00001
               │                                                                      │ession list
-          Wait│> Retry with a faster model                                           │
+   > Explain t│> Retry with a faster model                                           │
               │  Dismiss and keep waiting                                            │
-              │  Learn more                                                          │
+            Wa│  Learn more                                                          │
               │                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
               │close when the response is ready.                                     │

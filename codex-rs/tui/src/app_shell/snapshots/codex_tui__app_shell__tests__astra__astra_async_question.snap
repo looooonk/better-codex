@@ -3,24 +3,24 @@ source: tui/src/app_shell/astra_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
- ▎ YOU  Create a divergent standalone TUI.        │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                       │▎+ New session  Ctrl+N
-         3. Render dashboard                      │▎loading sessions
-                                                  │
-        > Edited files                            │▎◆ THREAD
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+   Started a fullscreen app shell backed by app-  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   server turns.                                  │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell                         │▎loading sessions
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ THREAD
                                                   │▎stage-one
- ▎ CODEX  Which approach?                         │▎id 01900000-0000-7000-8000-000000000001
+          ▸ Edited files                          │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
-          • Small change                          │
-          • Full rewrite                          │
+   Which approach?                                │
                                                   │
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │
+   • Small change                                 │
+   • Full rewrite                                 │
                                                   │
+   The new shell owns the fullscreen surface.     │
                                                   │
                                                   │
                                                   │

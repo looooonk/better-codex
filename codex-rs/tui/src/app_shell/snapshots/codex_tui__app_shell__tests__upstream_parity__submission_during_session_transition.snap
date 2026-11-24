@@ -3,21 +3,21 @@ source: tui/src/app_shell/upstream_parity_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
 
- ▎ YOU  Create a divergent standalone TUI.
-
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
- ▎ PLAN  1. Build shell
-         2. Wire transcript
-         3. Render dashboard
-
-        > Edited files
- ▎ STATUS  wait for the session transition before sending a message
-
- ▎ CODEX  The new shell owns the fullscreen surface.
-
-          Changing session... · 0 tok/s
 
 
+   > Create a divergent standalone TUI.
+
+   Started a fullscreen app shell backed by app-server turns.
+   ▎ PLAN  1. Build shell
+           2. Wire transcript
+           3. Render dashboard
+
+          ▸ Edited files
+   ▎ STATUS  wait for the session transition before sending a message
+
+   The new shell owns the fullscreen surface.
+
+            Changing session... · 0 tok/s
 
 
 

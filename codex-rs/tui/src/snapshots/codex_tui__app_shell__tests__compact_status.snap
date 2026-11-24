@@ -3,18 +3,18 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ---
                             │
- ▎ YOU  Create a divergent s│  Status   │  Agents  │  Sessions  │  Settings
+                            │  Status   │  Agents  │  Sessions  │  Settings
                             │────────────────────────────────────━━━━━━━━━━━━
- ▎ CODEX  Started a fullscre│◆ PERMISSIONS
- ▎ PLAN  1. Build shell     │› ● ⓘ Ask for approval
-         2. Wire transcript │  ○ ⛨ Unless trusted
-         3. Render dashboard│  ○ ⚠ Full access
-                            │
-        > Edited files      │◆ APPEARANCE
+   > Create a divergent stan│◆ PERMISSIONS
+                            │› ● ⓘ Ask for approval
+   Started a fullscreen app │  ○ ⛨ Unless trusted
+   ▎ PLAN  1. Build shell   │  ○ ⚠ Full access
+           2. Wire transcrip│
+           3. Render dashboa│◆ APPEARANCE
                             │  ● Tokyo Night
- ▎ CODEX  The new shell owns│  ○ Gruvbox Dark
+          ▸ Edited files    │  ○ Gruvbox Dark
                             │  ○ Catppuccin Mocha
-                            │  ○ Monochrome
+   The new shell owns the fu│  ○ Monochrome
                             │  Syntax theme: default
                             │  Animations: on
                             │  Tooltips: on

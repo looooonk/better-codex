@@ -3,8 +3,8 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
+use super::transcript_view::ACTIVITY_INDENT;
 use super::transcript_view::render_transcript_line_with_visualizations;
-use super::transcript_view::transcript_prefix_width;
 use crate::app_theme::TuiAppTheme;
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::terminal_hyperlinks::HyperlinkLine;
@@ -80,8 +80,7 @@ impl TranscriptRenderCache {
         };
 
         // Leave room for the card label and value on very narrow terminals.
-        let detail_indent = (transcript_prefix_width(TranscriptKind::Assistant) as u16)
-            .min(width.saturating_sub(12));
+        let detail_indent = ACTIVITY_INDENT.min(width.saturating_sub(12));
         let mut groups = shell.tool_groups().peekable();
         for (index, item) in shell.transcript.iter().enumerate() {
             if groups.peek().is_some_and(|group| group.rows.end <= index) {
@@ -290,6 +289,11 @@ fn should_separate_transcript_item(
     previous_kind: Option<TranscriptKind>,
     current_kind: TranscriptKind,
 ) -> bool {
+    // User blocks carry their own top and bottom rows. Leave a visible break
+    // between consecutive prompts, which would otherwise share a background.
+    if current_kind == TranscriptKind::User || previous_kind == Some(TranscriptKind::User) {
+        return current_kind == TranscriptKind::User && previous_kind == Some(TranscriptKind::User);
+    }
     if current_kind == TranscriptKind::Separator || previous_kind == Some(TranscriptKind::Separator)
     {
         return true;
@@ -305,8 +309,7 @@ fn should_separate_transcript_item(
     }
     matches!(
         current_kind,
-        TranscriptKind::User
-            | TranscriptKind::Assistant
+        TranscriptKind::Assistant
             | TranscriptKind::Tool
             | TranscriptKind::Diff
             | TranscriptKind::Output
@@ -462,7 +465,8 @@ impl TranscriptLayout {
         Self {
             chunks,
             total_lines: output_rows + trailing_rows,
-            activity_row: output_rows + usize::from(output_rows > 0),
+            activity_row: output_rows
+                + usize::from(output_rows > 0 && last_kind != Some(TranscriptKind::User)),
         }
     }
 

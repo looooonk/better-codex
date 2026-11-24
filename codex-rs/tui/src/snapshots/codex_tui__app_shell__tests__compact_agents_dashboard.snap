@@ -3,18 +3,18 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ---
                             │
- ▎ YOU  Create a divergent s│  Status   │  Agents  │  Sessions  │  Settings
+                            │  Status   │  Agents  │  Sessions  │  Settings
                             │────────────━━━━━━━━━━──────────────────────────
- ▎ CODEX  Started a fullscre│▎◆ AGENTS
- ▎ PLAN  1. Build shell     │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
-         2. Wire transcript │▎  × 1 failed
-         3. Render dashboard│▎  ● running  Hypatia
-                            │▎    └ ✓ completed  Picasso
-        > Edited files      │▎  ! interrupted  Turing
+   > Create a divergent stan│▎◆ AGENTS
+                            │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
+   Started a fullscreen app │▎  × 1 failed
+   ▎ PLAN  1. Build shell   │▎  ● running  Hypatia
+           2. Wire transcrip│▎    └ ✓ completed  Picasso
+           3. Render dashboa│▎  ! interrupted  Turing
                             │▎›   └ × errored  Socrates
- ▎ CODEX  The new shell owns│▎Inspector  Socrates  × errored
+          ▸ Edited files    │▎Inspector  Socrates  × errored
                             │▎Model  gpt-5-codex
-                            │▎Reasoning  high
+   The new shell owns the fu│▎Reasoning  high
                             │▎Path  /root/testing/failure
                             │▎Task  Review the new TUI flow and visual
                             │▎      hierarchy.

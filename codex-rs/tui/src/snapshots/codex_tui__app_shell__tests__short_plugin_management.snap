@@ -3,10 +3,10 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
- ▎ STATUS  plugin manager opened                │ │  Status   │  Agents  │  Sessions  │  Settings
-              ╭──────────────────────────────────────────────────────────────────────╮─────────────
- ▎ CODEX  The │◆ PLUGINS                                                             │
-          surf│12/12 plugin catalog  ↑↓ / j k navigate                               │
+                                                  │  Status   │  Agents  │  Sessions  │  Settings
+   ▎ STATUS  p╭──────────────────────────────────────────────────────────────────────╮─────────────
+              │◆ PLUGINS                                                             │
+   The new she│12/12 plugin catalog  ↑↓ / j k navigate                               │
               │Install / update ↵  Toggle e  Uninstall u  Refresh r                  │ns
 ╭─────────────│> available  Plugin 11 (local)                                        │
 │> Summarize t│                                                                      │

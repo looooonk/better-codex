@@ -3,18 +3,18 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                             │
- ▎ YOU  Create a divergent s│  Status   │  Agents  │  Sessions  │  Settings
+                            │  Status   │  Agents  │  Sessions  │  Settings
                             │───────────────────────━━━━━━━━━━━━─────────────
- ▎ CODEX  Started a fullscre│▎◆ SESSIONS
- ▎ PLAN  1. Build shell     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript │▎+ New session  Ctrl+N
-         3. Render dashboard│▎loading sessions
-                            │▎◆ THREAD
-        > Edited files      │▎stage-one
+   > Create a divergent stan│▎◆ SESSIONS
+                            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   Started a fullscreen app │▎+ New session  Ctrl+N
+   ▎ PLAN  1. Build shell   │▎loading sessions
+           2. Wire transcrip│▎◆ THREAD
+           3. Render dashboa│▎stage-one
                             │▎id 01900000-0000-7000-8000-000000000001
- ▎ CODEX  The new shell owns│▎resume, fork, archive, delete in session list
+          ▸ Edited files    │▎resume, fork, archive, delete in session list
                             │
-                            │
+   The new shell owns the fu│
                             │
                             │
                             │
