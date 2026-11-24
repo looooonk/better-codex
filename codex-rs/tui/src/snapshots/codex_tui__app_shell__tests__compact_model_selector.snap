@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 48, 16))"
 ---
 │       ╭────────────────────────╮
-│  Statu│ Select model           │ │ Settings
-│───────│ gpt-5-0              ✓ │━────────────
+│  Sessi│ Select model           │ │ Settings
+│━━━━━━━│ gpt-5-0              ✓ │─────────────
 │ Projec│ gpt-5-1                │
 │ No pro│ gpt-5-2                │
 │ Recent│ gpt-5-3                │

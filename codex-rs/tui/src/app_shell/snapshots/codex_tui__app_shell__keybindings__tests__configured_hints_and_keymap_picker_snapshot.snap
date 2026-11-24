@@ -3,7 +3,7 @@ source: tui/src/app_shell/keybindings_tests.rs
 expression: rendered
 ---
                                                             │
-                                                            │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │  Sessions   │  Status  │  Agents  │  Settings
                                                             │────────────────────────────────────━━━━━━━━━━━━
    > Create a divergent standalone TUI.                     │
                                                             │◆ PERMISSIONS

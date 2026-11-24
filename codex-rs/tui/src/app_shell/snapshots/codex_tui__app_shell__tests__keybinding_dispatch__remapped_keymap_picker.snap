@@ -3,8 +3,8 @@ source: tui/src/app_shell/keybinding_dispatch_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 ---
                                                             │
-                                                            │  Status   │  Agents  │  Sessions  │  Settings
-                     ╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━─────────────
+                                                            │  Sessions   │  Status  │  Agents  │  Settings
+                     ╭ Key bindings ────────────────────────────────────────────────────╮────────────────────
    > Create a diverge│ › 1 ○ global.open_agents                                         │
                      │       f2 / ⌃space - select to change                             │
                      │   2 ○ global.open_transcript                                     │

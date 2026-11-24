@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-   ▎ STATUS  request resolved                     │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+   ▎ STATUS  request resolved                     │━━━━━━━━━━━━━───────────────────────────────────
    ▎ STATUS  elicitation requested: MCP github:   │
              URL request                          │ Projects
    ▎ STATUS  request resolved                     │ No projects

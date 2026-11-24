@@ -10,15 +10,15 @@ const COMPACT_TAB_WIDTH: u16 = 36;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum DashboardRoute {
+    Sessions,
     #[default]
     Status,
     Agents,
-    Sessions,
     Settings,
 }
 
 impl DashboardRoute {
-    pub(super) const ALL: [Self; 4] = [Self::Status, Self::Agents, Self::Sessions, Self::Settings];
+    pub(super) const ALL: [Self; 4] = [Self::Sessions, Self::Status, Self::Agents, Self::Settings];
 
     pub(super) fn label(self) -> &'static str {
         match self {
@@ -211,11 +211,11 @@ mod tests {
             vec![34; 2]
         );
         let expected_routes = [
+            (Some(DashboardRoute::Sessions), 8),
+            (None, 1),
             (Some(DashboardRoute::Status), 8),
             (None, 1),
-            (Some(DashboardRoute::Agents), 8),
-            (None, 1),
-            (Some(DashboardRoute::Sessions), 7),
+            (Some(DashboardRoute::Agents), 7),
             (None, 1),
             (Some(DashboardRoute::Settings), 8),
         ]
@@ -236,7 +236,7 @@ mod tests {
 
         assert_eq!(
             DashboardRoute::ALL.map(|route| tabs.column_range(route)),
-            [Some(0..8), Some(9..16), Some(17..26), Some(27..36)]
+            [Some(0..10), Some(11..18), Some(19..26), Some(27..36)]
         );
     }
 
@@ -256,6 +256,6 @@ mod tests {
             .map(|span| span.content.into_owned())
             .collect::<String>();
 
-        assert_eq!(line, "  Status  │  Agents  │  Sessions  │ Settings  ");
+        assert_eq!(line, "  Sessions  │  Status  │  Agents  │ Settings  ");
     }
 }

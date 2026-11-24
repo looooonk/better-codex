@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-   ──────── Took 1.00s ──────────────────────── │ │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+   ──────── Took 1.00s ──────────────────────── │ │━━━━━━━━━━━━━───────────────────────────────────
                                                 │ │
    ▎ SYSTEM  2 queued follow-ups remain on      │ │ Projects
              the previous session 01900000-     │ │ No projects

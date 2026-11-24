@@ -79,7 +79,6 @@ pub(super) struct ProjectHub {
     pub reveal: Cell<bool>,
     pub error: Option<String>,
     pub width: Cell<usize>,
-    pub wheel_page: bool,
     pub requested_page: Option<(String, Vec<Option<String>>)>,
     pub load_error: Option<String>,
     pub task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<Group>>>>,

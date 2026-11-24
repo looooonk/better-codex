@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-      ⌄ Edited files                              │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+      ⌄ Edited files                              │━━━━━━━━━━━━━───────────────────────────────────
                                                   │
         ▌ edited 4 files +4 -3                    │ Projects
         ▌          M src/app.rs                   │ No projects

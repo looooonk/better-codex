@@ -163,3 +163,33 @@ async fn keyboard_navigation_keeps_recent_chats_visible_below_expanded_projects(
     assert!(rendered.contains("› Loose notes"));
     insta::assert_snapshot!("sessions_recents_below_projects", rendered);
 }
+
+#[test]
+fn wheel_over_project_chats_scrolls_the_dashboard_without_requesting_a_page() {
+    for width in [116, 78] {
+        let (mut shell, _) = project_shell();
+        let group = &mut shell.projects.groups[0];
+        for index in 2..=5 {
+            group.chats.push(Chat {
+                id: ThreadId::default(),
+                title: format!("Experiment {index}"),
+                cwd: group.project.roots[0].path.to_path_buf(),
+            });
+        }
+        let area = Rect::new(/*x*/ 0, /*y*/ 0, width, /*height*/ 14);
+        let buffer = render_shell_buffer(&shell, area);
+        let y = row_containing(&buffer, area, "Earlier experiment").unwrap();
+        let x = row_needle_x(&buffer, area, y, "Earlier experiment").unwrap();
+        let pointer = Position::new(x, y);
+
+        shell.handle_mouse_scroll(area, pointer, tui::MouseScrollDirection::Down);
+        assert!(shell.dashboard_scroll.get() > 0);
+        assert_eq!(shell.projects.requested_page, None);
+        if width == 116 {
+            insta::assert_snapshot!("wheel_over_project_chats", render_shell(&shell, area));
+        }
+        shell.handle_mouse_scroll(area, pointer, tui::MouseScrollDirection::Up);
+        assert_eq!(shell.dashboard_scroll.get(), 0);
+        assert_eq!(shell.projects.requested_page, None);
+    }
+}

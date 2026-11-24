@@ -3,8 +3,8 @@ source: tui/src/app_shell/project_hub_tests.rs
 expression: rendered
 ---
                                                                   │
-                                                                  │  Status   │  Agents  │  Sessions  │  Settings
-                                                                  │───────────────────────━━━━━━━━━━━━─────────────
+                                                                  │  Sessions   │  Status  │  Agents  │  Settings
+                                                                  │━━━━━━━━━━━━━───────────────────────────────────
    > Create a divergent standalone TUI.                           │     + New chat
                                                                   │ ⌄ Project 5                                  …
                                                                   │     + New chat

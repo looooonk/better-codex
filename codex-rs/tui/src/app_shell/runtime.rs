@@ -420,9 +420,7 @@ pub(crate) async fn run(
                                 position,
                                 direction,
                             );
-                            if std::mem::take(&mut shell.projects.wheel_page) {
-                                shell.refresh_projects(&app_server);
-                            } else if load_more {
+                            if load_more {
                                 shell.start_session_list_next_page(&app_server);
                             }
                             tui.frame_requester().schedule_frame();

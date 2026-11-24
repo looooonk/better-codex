@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
    ▎ STATUS  p╭──────────────────────────────────────────────────────────────────────╮─────────────
               │◆ PLUGINS                                                             │
    The new she│12/12 plugin catalog  ↑↓ / j k navigate                               │

@@ -565,26 +565,6 @@ impl ShellState {
         position: Position,
         direction: MouseScrollDirection,
     ) -> bool {
-        if self.dashboard_route == DashboardRoute::Sessions
-            && let Some(target) =
-                (ShellView { shell: self }).dashboard_panel_position_at(area, position, "Projects")
-            && let Some(super::project_hub::Action::Open(id, _)) = self
-                .projects
-                .rows(target.width)
-                .get(target.line)
-                .and_then(|row| row.action.clone())
-            && self.projects.task.is_none()
-            && self.projects.page(
-                &id,
-                match direction {
-                    MouseScrollDirection::Down => super::project_hub::Direction::Next,
-                    MouseScrollDirection::Up => super::project_hub::Direction::Previous,
-                },
-            )
-        {
-            self.projects.wheel_page = true;
-            return true;
-        }
         let nested_panel = match self.dashboard_route {
             DashboardRoute::Sessions => Some("Sessions"),
             DashboardRoute::Agents => Some("Agents"),

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-                                                  │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+                                                  │━━━━━━━━━━━━━───────────────────────────────────
    > Create a divergent standalone TUI.           │
                                                   │ Projects
               ╭──────────────────────────────────────────────────────────────────────╮

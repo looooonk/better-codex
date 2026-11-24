@@ -4601,25 +4601,20 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
 
 #[test]
 fn dashboard_route_key_mapping_uses_terminal_safe_shortcuts() {
-    assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)),
-        Some(DashboardRoute::Status)
-    );
-    assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
-        Some(DashboardRoute::Agents)
-    );
+    for (number, route) in [
+        (1, DashboardRoute::Sessions),
+        (2, DashboardRoute::Status),
+        (3, DashboardRoute::Agents),
+        (4, DashboardRoute::Settings),
+    ] {
+        assert_eq!(
+            dashboard_route_from_key(KeyEvent::new(KeyCode::F(number), KeyModifiers::NONE)),
+            Some(route)
+        );
+    }
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL)),
         Some(DashboardRoute::Agents)
-    );
-    assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)),
-        Some(DashboardRoute::Sessions)
-    );
-    assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)),
-        Some(DashboardRoute::Settings)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
@@ -6734,7 +6729,7 @@ async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     let f4_settings = KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE);
-    let f3_sessions = KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE);
+    let f1_sessions = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -6771,9 +6766,9 @@ async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
     shell
-        .handle_key(f3_sessions, &config, &mut backend)
+        .handle_key(f1_sessions, &config, &mut backend)
         .await
-        .expect("F3 should select sessions");
+        .expect("F1 should select sessions");
 
     assert_eq!(
         (
@@ -6786,9 +6781,9 @@ async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
 
     shell
-        .handle_key(f3_sessions, &config, &mut backend)
+        .handle_key(f1_sessions, &config, &mut backend)
         .await
-        .expect("F3 should focus selected sessions");
+        .expect("F1 should focus selected sessions");
 
     assert_eq!(
         (
@@ -6817,20 +6812,20 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
     };
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
-    let f3_sessions = KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE);
-    let f1_status = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+    let f1_sessions = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+    let f2_status = KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE);
 
     tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
         shell
-            .handle_key(f3_sessions, &config, &mut backend)
+            .handle_key(f1_sessions, &config, &mut backend)
             .await
-            .expect("F3 should start loading sessions");
+            .expect("F1 should start loading sessions");
         shell
-            .handle_key(f3_sessions, &config, &mut backend)
+            .handle_key(f1_sessions, &config, &mut backend)
             .await
-            .expect("repeated F3 should coalesce with the pending load");
+            .expect("repeated F1 should coalesce with the pending load");
         shell
-            .handle_key(f1_status, &config, &mut backend)
+            .handle_key(f2_status, &config, &mut backend)
             .await
             .expect("other dashboard input should stay responsive");
     })

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-   SELECT 1/5  Tab TOOLS                          │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+   SELECT 1/5  Tab TOOLS                          │━━━━━━━━━━━━━───────────────────────────────────
                                                   │
    > Create a divergent standalone TUI.           │ Projects
                                                   │ No projects

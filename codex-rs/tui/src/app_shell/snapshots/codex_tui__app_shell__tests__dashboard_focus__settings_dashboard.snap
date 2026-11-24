@@ -3,7 +3,7 @@ source: tui/src/app_shell/dashboard_focus_tests.rs
 expression: "render_shell(&shell, wide)"
 ---
                                                             │
-                                                            │  Status   │  Agents  │  Sessions  │  Settings
+                                                            │  Sessions   │  Status  │  Agents  │  Settings
                                                             │────────────────────────────────────━━━━━━━━━━━━
    > Create a divergent standalone TUI.                     │
                                                             │◆ PERMISSIONS

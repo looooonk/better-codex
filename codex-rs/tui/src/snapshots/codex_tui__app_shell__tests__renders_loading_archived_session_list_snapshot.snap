@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                             │
-                            │  Status   │  Agents  │  Sessions  │  Settings
-                            │───────────────────────━━━━━━━━━━━━─────────────
+                            │  Sessions   │  Status  │  Agents  │  Settings
+                            │━━━━━━━━━━━━━───────────────────────────────────
    > Create a divergent stan│ Projects
                             │ No projects
                             │ Archived  0 sessions

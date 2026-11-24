@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-                                                  │━━━━━━━━━━━─────────────────────────────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+                                                  │──────────────━━━━━━━━━━────────────────────────
    > Create a divergent standalone TUI.           │
                                                   │▎◆ TOOLS
                                                   │▎completed exec just test -p codex-tui

@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
   ╭ Session edits ───────────────────────────────────────────────────────────────────────────────╮─
   │ CHANGED FILES         │OLD FILE                          │NEW FILE                           │
   │                       │src/tab\tname.rs                  │src/tab\tname.rs                   │

@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-      ▸ Running command...                        │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+      ▸ Running command...                        │━━━━━━━━━━━━━───────────────────────────────────
                                                   │
                                                   │ Projects
                                                   │ No projects

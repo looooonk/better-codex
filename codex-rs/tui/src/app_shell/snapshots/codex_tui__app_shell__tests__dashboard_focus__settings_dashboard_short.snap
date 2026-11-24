@@ -3,7 +3,7 @@ source: tui/src/app_shell/dashboard_focus_tests.rs
 expression: rendered
 ---
 │
-│  Status  │  Agents  │  Sessions  │ Settings
+│  Sessions  │  Status  │  Agents  │ Settings
 │───────────────────────────────────━━━━━━━━━━━
 │  Animations: on
 │  Tooltips: on

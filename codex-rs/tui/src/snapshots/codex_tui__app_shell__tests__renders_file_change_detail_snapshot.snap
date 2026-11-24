@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
-                                                  │  Status   │  Agents  │  Sessions  │  Settings
-   Started a fullscreen app shell backed by     │ │───────────────────────━━━━━━━━━━━━─────────────
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+   Started a fullscreen app shell backed by     │ │━━━━━━━━━━━━━───────────────────────────────────
    app-server turns.                            │ │
    ▎ PLAN  1. Build shell                       │ │ Projects
            2. Wire transcript                   ┃ │ No projects

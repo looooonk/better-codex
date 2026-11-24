@@ -3193,20 +3193,14 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
         return None;
     }
 
-    if key_hint::plain(KeyCode::F(1)).is_press(key) {
-        return Some(DashboardRoute::Status);
-    }
-    if key_hint::plain(KeyCode::F(2)).is_press(key) {
-        return Some(DashboardRoute::Agents);
+    if let KeyCode::F(number) = key.code
+        && key.modifiers.is_empty()
+        && let Some(index) = number.checked_sub(1)
+    {
+        return DashboardRoute::ALL.get(usize::from(index)).copied();
     }
     if key_hint::ctrl(KeyCode::Char(' ')).is_press(key) {
         return Some(DashboardRoute::Agents);
-    }
-    if key_hint::plain(KeyCode::F(3)).is_press(key) {
-        return Some(DashboardRoute::Sessions);
-    }
-    if key_hint::plain(KeyCode::F(4)).is_press(key) {
-        return Some(DashboardRoute::Settings);
     }
 
     None

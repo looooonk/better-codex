@@ -3,8 +3,8 @@ source: tui/src/app_shell/image_submission_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
 ---
                                                             │
-                                                            │  Status   │  Agents  │  Sessions  │  Settings
-                                                            │───────────────────────━━━━━━━━━━━━─────────────
+                                                            │  Sessions   │  Status  │  Agents  │  Settings
+                                                            │━━━━━━━━━━━━━───────────────────────────────────
                                                             │
                         ⢀⣠⣴⠶⠿⠛⠛⠿⠶⣦⣄⡀                        │ Projects
                       ⢀⣴⠟⠋        ⠙⠻⣦⡀                      │ No projects
