@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-                                                  │
-   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
                                                   │▎● FOCUSED  ACTIVE  25 sessions
-                                                  │▎+ New session  Ctrl+N
-   Started a fullscreen app shell backed by app-  │▎  17/25 Session 16 [main]  pagination fixture
-   server turns.                                  │▎  18/25 Session 17 [main]  pagination fixture
-   ▎ PLAN  1. Build shell                         │▎  19/25 Session 18 [main]  pagination fixture
-           2. Wire transcript                     │▎  20/25 Session 19 [main]  pagination fixture
-           3. Render dashboard                    │▎› 21/25 Session 20 [main]  pagination fixture
-                                                  │
-      ▸ Edited files                              │▎◆ THREAD
-                                                  │▎stage-one
-   The new shell owns the fullscreen surface.     │▎id 01900000-0000-7000-8000-000000000001
+   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
+   server turns.                                  │▎  17/25 Session 16 [main]  pagination fixture
+   ▎ PLAN  1. Build shell                         │▎  18/25 Session 17 [main]  pagination fixture
+           2. Wire transcript                     │▎  19/25 Session 18 [main]  pagination fixture
+           3. Render dashboard                    │▎  20/25 Session 19 [main]  pagination fixture
+                                                  │▎› 21/25 Session 20 [main]  pagination fixture
+      ▸ Edited files                              │
+                                                  │▎◆ THREAD
+   The new shell owns the fullscreen surface.     │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
                                                   │
                                                   │

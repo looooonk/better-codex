@@ -4,7 +4,7 @@ expression: "lines.join(\"\\n\")"
 ---
 
 
-   > Create a divergent standalone TUI.                                                           │
+   > Create a divergent standalone TUI.                                                           ┃
                                                                                                   ┃
                                                                                                   ┃
    Started a fullscreen app shell backed by app-server turns.                                     ┃

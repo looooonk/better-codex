@@ -4,7 +4,7 @@ expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
-   > Create a divergent standalone TUI.         │ │───────────────────────━━━━━━━━━━━━─────────────
+   > Create a divergent standalone TUI.         ┃ │───────────────────────━━━━━━━━━━━━─────────────
                                                 ┃ │
                                                 ┃ │▎◆ SESSIONS
    Started a fullscreen app shell backed by     ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

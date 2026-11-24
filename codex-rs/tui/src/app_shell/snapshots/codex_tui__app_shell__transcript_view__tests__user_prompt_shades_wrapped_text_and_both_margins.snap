@@ -4,7 +4,6 @@ expression: "rows.join(\"\\n\").trim_end()"
 ---
 
 
-
    ······················
    >·A·prompt·long·enough
    ··to·wrap.············
@@ -14,6 +13,13 @@ expression: "rows.join(\"\\n\").trim_end()"
 
    ······················
    >·One·more·thing.·····
+   ······················
+
+   ▎ SYSTEM  Session
+             updated.
+
+   ······················
+   >·Last·detail.········
    ······················
 
    An answer.

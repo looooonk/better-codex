@@ -5,18 +5,18 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │
                             │  Status   │  Agents  │  Sessions  │  Settings
                             │────────────━━━━━━━━━━──────────────────────────
-                            │▎◆ AGENTS
-   > Create a divergent stan│▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
+   > Create a divergent stan│▎◆ AGENTS
+                            │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
                             │▎  × 1 failed
-                            │▎  ● running  Hypatia
-   Started a fullscreen app │▎    └ ✓ completed  Picasso
-   ▎ PLAN  1. Build shell   │▎  ! interrupted  Turing
-           2. Wire transcrip│▎›   └ × errored  Socrates
-           3. Render dashboa│▎Inspector  Socrates  × errored
-                            │▎Model  gpt-5-codex
-      ▸ Edited files        │▎Reasoning  high
-                            │▎Path  /root/testing/failure
-   The new shell owns the fu│▎Task  Review the new TUI flow and visual
+   Started a fullscreen app │▎  ● running  Hypatia
+   ▎ PLAN  1. Build shell   │▎    └ ✓ completed  Picasso
+           2. Wire transcrip│▎  ! interrupted  Turing
+           3. Render dashboa│▎›   └ × errored  Socrates
+                            │▎Inspector  Socrates  × errored
+      ▸ Edited files        │▎Model  gpt-5-codex
+                            │▎Reasoning  high
+   The new shell owns the fu│▎Path  /root/testing/failure
+                            │▎Task  Review the new TUI flow and visual
                             │▎      hierarchy.
                             │▎Latest  Compact flow failed
                             │

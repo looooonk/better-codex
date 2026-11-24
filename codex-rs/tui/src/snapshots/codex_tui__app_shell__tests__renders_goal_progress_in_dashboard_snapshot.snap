@@ -5,19 +5,19 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
-                                                  │
-   > Create a divergent standalone TUI.           │▎◆ GOAL
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ GOAL
                                                   │▎status active
-                                                  │▎Complete the unchecked dashboard progress item
-   Started a fullscreen app shell backed by app-  │▎1m | 12,345/50,000 tokens
-   server turns.                                  │
-   ▎ PLAN  1. Build shell                         │▎◆ TOOLS
-           2. Wire transcript                     │▎completed exec just test -p codex-tui
-           3. Render dashboard                    │
-                                                  │▎◆ EDITS
-      ▸ Edited files                              │▎3 files +128 -24
+   Started a fullscreen app shell backed by app-  │▎Complete the unchecked dashboard progress item
+   server turns.                                  │▎1m | 12,345/50,000 tokens
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ TOOLS
+           3. Render dashboard                    │▎completed exec just test -p codex-tui
                                                   │
-   The new shell owns the fullscreen surface.     │▎◆ WORKSPACE
+      ▸ Edited files                              │▎◆ EDITS
+                                                  │▎3 files +128 -24
+   The new shell owns the fullscreen surface.     │
+                                                  │▎◆ WORKSPACE
                                                   │▎profile managed
                                                   │▎cwd /workspace/better-codex
                                                   │▎files restricted, net restricted

@@ -5,19 +5,19 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
-                                                  │
-   > Create a divergent standalone TUI.           │▎◆ TOOLS
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ TOOLS
                                                   │▎completed exec just test -p codex-tui
-                                                  │
-   Started a fullscreen app shell backed by app-  │▎◆ EDITS
-   server turns.                                  │▎3 files +128 -24
-   ▎ PLAN  1. Build shell                         │
-           2. Wire transcript                     │▎◆ WORKSPACE
-           3. Render dashboard                    │▎changes 13 paths
-                                                  │▎  staged 4
-      ▸ Edited files                              │▎  unstaged 5
-                                                  │▎  conflicted 1
-   The new shell owns the fullscreen surface.     │▎  untracked 3
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │▎◆ EDITS
+   ▎ PLAN  1. Build shell                         │▎3 files +128 -24
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ WORKSPACE
+                                                  │▎changes 13 paths
+      ▸ Edited files                              │▎  staged 4
+                                                  │▎  unstaged 5
+   The new shell owns the fullscreen surface.     │▎  conflicted 1
+                                                  │▎  untracked 3
                                                   │▎branch feature/app-shell-dashboard
                                                   │▎profile managed
                                                   │▎cwd /workspace/better-codex

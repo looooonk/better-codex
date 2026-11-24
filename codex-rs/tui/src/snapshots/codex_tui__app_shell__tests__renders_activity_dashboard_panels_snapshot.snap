@@ -5,21 +5,21 @@ expression: "render_shell(&shell, area)"
                                                                       │
                                                                       │  Status   │  Agents  │  Sessions  │  Settings
                                                                       │━━━━━━━━━━━─────────────────────────────────────
-                                                                      │
-   > Create a divergent standalone TUI.                               │▎◆ TOOLS
+   > Create a divergent standalone TUI.                               │
+                                                                      │▎◆ TOOLS
                                                                       │▎completed exec just test -p codex-tui
+   Started a fullscreen app shell backed by app-server turns.         │
+   ▎ PLAN  1. Build shell                                             │▎◆ EDITS
+           2. Wire transcript                                         │▎3 files +128 -24
+           3. Render dashboard                                        │
+                                                                      │▎◆ WORKSPACE
+      ▸ Edited files                                                  │▎profile managed
+   ▎ PLAN  1. Route activity into dashboard panels                    │▎cwd /workspace/better-codex
+                                                                      │▎files restricted, net restricted
+   The new shell owns the fullscreen surface.                         │▎roots none selected
                                                                       │
-   Started a fullscreen app shell backed by app-server turns.         │▎◆ EDITS
-   ▎ PLAN  1. Build shell                                             │▎3 files +128 -24
-           2. Wire transcript                                         │
-           3. Render dashboard                                        │▎◆ WORKSPACE
-                                                                      │▎profile managed
-      ▸ Edited files                                                  │▎cwd /workspace/better-codex
-   ▎ PLAN  1. Route activity into dashboard panels                    │▎files restricted, net restricted
-                                                                      │▎roots none selected
-   The new shell owns the fullscreen surface.                         │
-                                                                      │▎◆ TOKENS
-            Thinking... · 0 tok/s                                     │▎input 1k | output 240
+            Thinking... · 0 tok/s                                     │▎◆ TOKENS
+                                                                      │▎input 1k | output 240
                                                                       │▎Context 100% left
                                                                       │
                                                                       │▎◆ BACKGROUND

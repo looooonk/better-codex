@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-                                                  │
-   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
                                                   │▎● FOCUSED  ACTIVE  1 sessions
-                                                  │▎+ New session  Ctrl+N
-   Started a fullscreen app shell backed by app-  │▎› 1/1 Delete this investigation [main]
-   server turn╭──────────────────────────────────────────────────────────────────────╮
-   ▎ PLAN  1. │◆ DELETE SESSION                                                      │
-           2. │Delete session: Delete this investigation                             │
-           3. │Session ID: 01900000-0000-7000-8000-000000000511                      │00001
-              │2 spawned descendants will also be deleted.                           │ession list
-      ▸ Edited│This permanently deletes all persisted history in that subtree.       │
-              │                                                                      │
-   The new she│> Delete permanently Enter/y                                          │
+   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
+   server turns.                                  │▎› 1/1 Delete this investigation [main]
+   ▎ PLAN  1. ╭──────────────────────────────────────────────────────────────────────╮
+           2. │◆ DELETE SESSION                                                      │
+           3. │Delete session: Delete this investigation                             │
+              │Session ID: 01900000-0000-7000-8000-000000000511                      │00001
+      ▸ Edited│2 spawned descendants will also be deleted.                           │ession list
+              │This permanently deletes all persisted history in that subtree.       │
+   The new she│                                                                      │
+              │> Delete permanently Enter/y                                          │
               │  Cancel Esc/n                                                        │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

@@ -5,7 +5,6 @@ expression: rendered
 
 
 
-
    > Create a divergent standalone TUI.
 
 
@@ -18,6 +17,7 @@ expression: rendered
    ▎ STATUS  wait for the workspace action or session transition before saving settings
 
    The new shell owns the fullscreen surface.
+
 
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮

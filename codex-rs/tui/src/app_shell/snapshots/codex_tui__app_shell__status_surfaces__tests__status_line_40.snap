@@ -5,7 +5,6 @@ expression: rendered
 
 
 
-
    > Create a divergent standalone TUI.
 
 
@@ -19,6 +18,7 @@ expression: rendered
 
    The new shell owns the fullscreen
    surface.
+
 
 ╭──────────────────────────────────────╮
 │> Summarize the new shell architecture│

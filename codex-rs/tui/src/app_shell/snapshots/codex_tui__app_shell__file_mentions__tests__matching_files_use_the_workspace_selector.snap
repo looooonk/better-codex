@@ -5,18 +5,18 @@ expression: text
 
 
 
-
    > Create a divergent standalone TUI.
 
 
    Started a fullscreen app shell backed by app-server turns.
-   ▎ PLAN  1. Bu╭ Mention a file ──────────────────────────────────────────────────╮
-           2. Wi│ › 1 ○ src/main.rs                                                │
-           3. Re│       /workspace/project                                         │
-                │  wheel / j k  Enter select  Esc cancel  1/1                      │
-      ▸ Edited f╰──────────────────────────────────────────────────────────────────╯
-
+   ▎ PLAN  1. Build shell
+           2. Wi╭ Mention a file ──────────────────────────────────────────────────╮
+           3. Re│ › 1 ○ src/main.rs                                                │
+                │       /workspace/project                                         │
+      ▸ Edited f│  wheel / j k  Enter select  Esc cancel  1/1                      │
+                ╰──────────────────────────────────────────────────────────────────╯
    The new shell owns the fullscreen surface.
+
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │

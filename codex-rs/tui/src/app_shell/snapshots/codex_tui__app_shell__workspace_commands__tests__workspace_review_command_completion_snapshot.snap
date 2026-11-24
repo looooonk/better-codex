@@ -5,7 +5,6 @@ expression: "lines.join(\"\\n\")"
 
 
 
-
    > Create a divergent standalone TUI.
 
 
@@ -13,6 +12,7 @@ expression: "lines.join(\"\\n\")"
    ▎ PLAN  1. Build shell
            2. Wire transcript
            3. Render dashboard
+
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
 │▌ /review  Review changes; accepts instructions or --base/--commit    │

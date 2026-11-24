@@ -4,25 +4,25 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
-   > Create a divergent standalone TUI.         │ │───────────────────────━━━━━━━━━━━━─────────────
-                                                ┃ │
-                                                ┃ │▎◆ SESSIONS
-   Started a fullscreen app shell backed by     ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   app-server turns.                            ┃ │▎+ New session  Ctrl+N
-   ▎ PLAN  1. Build shell                       ┃ │▎loading sessions
-           2. Wire transcript                   ┃ │
-           3. Render dashboard                  ┃ │▎◆ THREAD
-                                                ┃ │▎stage-one
-      ▸ Edited files                            ┃ │▎id 01900000-0000-7000-8000-000000000001
-   ▎ SYSTEM  Our most capable model yet. GPT-   ┃ │▎resume, fork, archive, delete in session list
-             5.6 Sol can tackle complex code    ┃ │
-             changes, dig into research,        ┃ │
-             produce polished documents, and    ┃ │
-             take on your most ambitious work.  ┃ │
-             Sol is highly capable at lower     ┃ │
-             reasoning efforts—try starting     ┃ │
-             lower, then turn it up for harder  ┃ │
-             jobs.                              ┃ │
+                                                  │───────────────────────━━━━━━━━━━━━─────────────
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
+                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
+   server turns.                                  │▎loading sessions
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ THREAD
+           3. Render dashboard                    │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+      ▸ Edited files                              │▎resume, fork, archive, delete in session list
+   ▎ SYSTEM  Our most capable model yet. GPT-     │
+             5.6 Sol can tackle complex code      │
+             changes, dig into research, produce  │
+             polished documents, and take on your │
+             most ambitious work. Sol is highly   │
+             capable at lower reasoning efforts—  │
+             try starting lower, then turn it up  │
+             for harder jobs.                     │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

@@ -290,19 +290,19 @@ fn should_separate_transcript_item(
     previous_kind: Option<TranscriptKind>,
     current_kind: TranscriptKind,
 ) -> bool {
+    let Some(previous_kind) = previous_kind else {
+        return current_kind == TranscriptKind::Separator;
+    };
     // Prompts and turn dividers share a single blank row with each neighbor.
     if matches!(
         current_kind,
         TranscriptKind::User | TranscriptKind::Separator
     ) || matches!(
         previous_kind,
-        Some(TranscriptKind::User | TranscriptKind::Separator)
+        TranscriptKind::User | TranscriptKind::Separator
     ) {
         return true;
     }
-    let Some(previous_kind) = previous_kind else {
-        return false;
-    };
     if previous_kind == TranscriptKind::Audit || current_kind == TranscriptKind::Audit {
         return true;
     }

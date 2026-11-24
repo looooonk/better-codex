@@ -5,7 +5,6 @@ expression: rendered
 
 
 
-
    > Create a divergent standalone TUI.
 
 
@@ -19,6 +18,7 @@ expression: rendered
    ▎ SYSTEM  IDE context was skipped for this message. Open this project in VS Code or Cursor with the Codex
              extension active.
    The new shell owns the fullscreen surface.
+
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                                      │

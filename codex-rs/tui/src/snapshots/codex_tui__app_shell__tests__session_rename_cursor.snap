@@ -5,19 +5,19 @@ expression: "render_shell(&rename, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-                                                  │
-   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
                                                   │▎● FOCUSED  ACTIVE  1 sessions
-                                                  │▎+ New session  Ctrl+N
-   Started a fullscreen app shell backed by app-  │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
-   server turns.                                  │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
-   ▎ PLAN  1. Build shell                         │
-           2. Wire transcript                     │▎◆ THREAD
-           3. Render dashboard                    │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
-      ▸ Edited files                              │▎resume, fork, archive, delete in session list
-                                                  │
+   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
+   server turns.                                  │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
+   ▎ PLAN  1. Build shell                         │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
+           2. Wire transcript                     │
+           3. Render dashboard                    │▎◆ THREAD
+                                                  │▎stage-one
+      ▸ Edited files                              │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
    The new shell owns the fullscreen surface.     │
+                                                  │
                                                   │
                                                   │
                                                   │

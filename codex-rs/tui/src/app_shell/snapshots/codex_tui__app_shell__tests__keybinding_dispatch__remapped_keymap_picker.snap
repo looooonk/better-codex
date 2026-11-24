@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │
                                                             │  Status   │  Agents  │  Sessions  │  Settings
                      ╭ Key bindings ────────────────────────────────────────────────────╮━━━━━━━─────────────
-                     │ › 1 ○ global.open_agents                                         │
-   > Create a diverge│       f2 / ⌃space - select to change                             │
+   > Create a diverge│ › 1 ○ global.open_agents                                         │
+                     │       f2 / ⌃space - select to change                             │
                      │   2 ○ global.open_transcript                                     │ sessions
-                     │       unbound - select to change                                 │
-   Started a fullscre│   3 ○ global.find_transcript                                     │
-   turns.            │       unbound - select to change                                 │
-   ▎ PLAN  1. Build s│   4 ○ global.focus_activity                                      │
-           2. Wire tr│       unbound - select to change                                 │
-           3. Render │   5 ○ global.open_external_editor                                │000000000001
-                     │       unbound - select to change                                 │te in session list
-      ▸ Edited files │   6 ○ global.copy                                                │
-                     │       ⌃o - select to change                                      │
-   The new shell owns│   7 ○ global.clear_terminal                                      │
+   Started a fullscre│       unbound - select to change                                 │
+   turns.            │   3 ○ global.find_transcript                                     │
+   ▎ PLAN  1. Build s│       unbound - select to change                                 │
+           2. Wire tr│   4 ○ global.focus_activity                                      │
+           3. Render │       unbound - select to change                                 │
+                     │   5 ○ global.open_external_editor                                │000000000001
+      ▸ Edited files │       unbound - select to change                                 │te in session list
+                     │   6 ○ global.copy                                                │
+   The new shell owns│       ⌃o - select to change                                      │
+                     │   7 ○ global.clear_terminal                                      │
                      │       unbound - select to change                                 │
                      │   8 ○ global.toggle_fast_mode                                    │
                      │       unbound - select to change                                 │

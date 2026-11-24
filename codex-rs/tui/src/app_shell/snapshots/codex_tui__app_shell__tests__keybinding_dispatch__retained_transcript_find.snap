@@ -5,15 +5,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
 
 
 
-
    > Find the café response
 
 
    The café serves tea
 
    An unrelated answer
-                     ╭ Find retained text: café▏ ───────────────────────────────────────╮
-   The new shell owns│ › 1 ○ Assistant: The café serves tea                             │
+
+   The new shell owns╭ Find retained text: café▏ ───────────────────────────────────────╮
+                     │ › 1 ○ Assistant: The café serves tea                             │
                      │                                                                  │
                      │   2 ○ You: Find the café response                                │
                      │                                                                  │

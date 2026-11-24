@@ -5,19 +5,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │───────────────────────━━━━━━━━━━━━─────────────
-                                                  │
-   > Create a divergent standalone TUI.           │▎◆ SESSIONS
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ SESSIONS
                                                   │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎+ New session  Ctrl+N
-   Started a fullscreen app shell backed by app-  │▎loading sessions
-   server turns.                                  │
-   ▎ PLAN  1. Build shell                         │▎◆ THREAD
-           2. Wire transcript                     │▎stage-one
-           3. Render dashboard                    │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
-      ▸ Edite╭────────────────────────╮           │
-             │ Select model           │           │
-   The new sh│ gpt-5-0              ✓ │rface.     │
+   Started a fullscreen app shell backed by app-  │▎+ New session  Ctrl+N
+   server turns.                                  │▎loading sessions
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ THREAD
+           3. Render dashboard                    │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+      ▸ Edited files                              │▎resume, fork, archive, delete in session list
+             ╭────────────────────────╮           │
+   The new sh│ Select model           │rface.     │
+             │ gpt-5-0              ✓ │           │
              │ gpt-5-1                │           │
              │ gpt-5-2                │           │
              │ gpt-5-3                │           │

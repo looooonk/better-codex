@@ -5,22 +5,22 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │  Status   │  Agents  │  Sessions  │  Settings
                                                   │━━━━━━━━━━━─────────────────────────────────────
-                                                  │
-   > Create a divergent standalone TUI.           │▎◆ GOAL
+   > Create a divergent standalone TUI.           │
+                                                  │▎◆ GOAL
                                                   │▎status active
-                                                  │▎Ship the standalone shell
-   Started a fullscreen app shell backed by app-  │▎1m | 12,345 tokens
-   server turns.                                  │
-   ▎ PLAN  1. Build shell                         │▎◆ TOOLS
-           2. Wire transcript                     │▎completed exec just test -p codex-tui
-           3. Render dashboard                    │
-                                                  │▎◆ EDITS
-      ▸ Edited files                              │▎3 files +128 -24
-   ▎ STATUS  goal set: Ship the standalone shell  │
-   ▎ STATUS  goal active. Objective: Ship the     │▎◆ WORKSPACE
-             standalone shell Time: 1m.           │▎profile managed
-                                                  │▎cwd /workspace/better-codex
-   The new shell owns the fullscreen surface.     │▎files restricted, net restricted
+   Started a fullscreen app shell backed by app-  │▎Ship the standalone shell
+   server turns.                                  │▎1m | 12,345 tokens
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                     │▎◆ TOOLS
+           3. Render dashboard                    │▎completed exec just test -p codex-tui
+                                                  │
+      ▸ Edited files                              │▎◆ EDITS
+   ▎ STATUS  goal set: Ship the standalone shell  │▎3 files +128 -24
+   ▎ STATUS  goal active. Objective: Ship the     │
+             standalone shell Time: 1m.           │▎◆ WORKSPACE
+                                                  │▎profile managed
+   The new shell owns the fullscreen surface.     │▎cwd /workspace/better-codex
+                                                  │▎files restricted, net restricted
                                                   │▎roots none selected
                                                   │
                                                   │▎◆ TOKENS

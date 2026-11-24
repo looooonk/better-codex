@@ -5,18 +5,18 @@ expression: rendered
                                        │
                                        │  Status   │  Agents  │  Sessions  │  Settings
                                        │───────────────────────━━━━━━━━━━━━─────────────
-                                       │▎◆ SESSIONS
-   > Create a divergent standalone TUI.│▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   > Create a divergent standalone TUI.│▎◆ SESSIONS
+                                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                        │▎+ New session  Ctrl+N
-                                       │▎loading sessions
-   Started a fullscreen app shell backe│▎◆ THREAD
-   ▎ PLAN  1. Build shell              │▎stage-one
-           2. Wire transcript          │▎id 01900000-0000-7000-8000-000000000001
-           3. Render dashboard         │▎resume, fork, archive, delete in session list
-                                       │
+   Started a fullscreen app shell backe│▎loading sessions
+   ▎ PLAN  1. Build shell              │▎◆ THREAD
+           2. Wire transcript          │▎stage-one
+           3. Render dashboard         │▎id 01900000-0000-7000-8000-000000000001
+                                       │▎resume, fork, archive, delete in session list
       ▸ Edited files                   │
                                        │
    The new shell owns the fullscreen su│
+                                       │
                                        │
                                        │
                                        │

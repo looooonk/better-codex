@@ -5,7 +5,6 @@ expression: "lines.join(\"\\n\")"
 
 
 
-
    > Voice: Please fix the bug.
 
 
@@ -14,6 +13,7 @@ expression: "lines.join(\"\\n\")"
    Voice: Ready to review.
 
    The new shell owns the fullscreen surface.
+
 
 
 

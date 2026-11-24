@@ -10,9 +10,11 @@ fn user_prompt_shades_wrapped_text_and_both_margins() {
     shell.clear_active_turn();
     shell.push_user("A prompt long enough to wrap.\n\nNext paragraph.");
     shell.push_user("One more thing.");
+    shell.push_system("Session updated.");
+    shell.push_user("Last detail.");
     shell.push_assistant("An answer.");
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 26, /*height*/ 18,
+        /*x*/ 0, /*y*/ 0, /*width*/ 26, /*height*/ 24,
     );
     let mut buf = Buffer::empty(area);
     render_transcript(&shell, area, /*hover_position*/ None, &mut buf);
@@ -658,26 +660,28 @@ fn selected_text_normalizes_reverse_drag_and_preserves_blank_rows() {
         /*x*/ 4, /*y*/ 2, /*width*/ 64, /*height*/ 12,
     );
     let viewport = transcript_viewport(&shell, area);
+    let user_row = viewport.layout.transcript_row_range(0).unwrap().start + 1;
+    let assistant_row = viewport.layout.transcript_row_range(1).unwrap().start;
     let user_text = rendered_line_text(
         viewport
             .layout
-            .row_at(2)
+            .row_at(user_row)
             .and_then(TranscriptLayoutRow::line)
             .expect("user row should be rendered"),
     );
     let assistant_text = rendered_line_text(
         viewport
             .layout
-            .row_at(5)
+            .row_at(assistant_row)
             .and_then(TranscriptLayoutRow::line)
             .expect("assistant row should be rendered"),
     );
     let user_column = user_text[..user_text.find('界').expect("wide grapheme")].width();
     let assistant_byte = assistant_text.find("e\u{301}").expect("combined grapheme");
     let assistant_column = assistant_text[..assistant_byte].width();
-    let user_hit = grapheme_hit_at(&user_text, /*row*/ 2, user_column).expect("user hit");
+    let user_hit = grapheme_hit_at(&user_text, user_row, user_column).expect("user hit");
     let assistant_hit =
-        grapheme_hit_at(&assistant_text, /*row*/ 5, assistant_column).expect("assistant hit");
+        grapheme_hit_at(&assistant_text, assistant_row, assistant_column).expect("assistant hit");
     let forward = NormalizedVisualRange::from_hits(user_hit, assistant_hit);
     let reverse = NormalizedVisualRange::from_hits(assistant_hit, user_hit);
 
