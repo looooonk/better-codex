@@ -12264,13 +12264,14 @@ async fn app_theme_selection_applies_only_after_local_persistence_succeeds() {
         (shell.dashboard_route, shell.settings.selected_action()),
         (
             DashboardRoute::Settings,
-            SettingsAction::AppTheme(shell.app_theme)
+            SettingsAction::AppTheme
         )
     );
 
+    shell.activate_selected_setting(&mut backend.clone()).await.unwrap();
     for key in [KeyCode::Down, KeyCode::Enter] {
         shell
-            .handle_settings_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
             .await
             .expect("app theme update should start");
     }
@@ -12307,14 +12308,15 @@ async fn failed_app_theme_write_keeps_the_previous_theme_and_shows_the_error() {
         (shell.dashboard_route, shell.settings.selected_action()),
         (
             DashboardRoute::Settings,
-            SettingsAction::AppTheme(shell.app_theme)
+            SettingsAction::AppTheme
         )
     );
     backend.fail_next_action("config write rejected");
 
+    shell.activate_selected_setting(&mut backend.clone()).await.unwrap();
     for key in [KeyCode::Down, KeyCode::Enter] {
         shell
-            .handle_settings_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
             .await
             .expect("app theme update should start");
     }
@@ -15851,9 +15853,9 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
     );
     assert_eq!(
         shell.mcp_inventory.label(),
-        "2 servers / 3 tools / 1 login needed"
+        "2 servers"
     );
-    assert_eq!(shell.plugin_inventory.label(), "1 installed / 2 available");
+    assert_eq!(shell.plugin_inventory.label(), "1 installed");
     let rendered = render_shell(
         &shell,
         Rect::new(
@@ -15861,8 +15863,8 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
         ),
     );
     assert!(
-        rendered.contains("MCP servers: 2 servers / 3 tools")
-            && rendered.contains("Plugins: 1 installed / 2 available"),
+        rendered.contains("MCP servers: 2 servers")
+            && rendered.contains("Plugins: 1 installed"),
         "settings should render native integration summaries:\n{rendered}"
     );
 }
@@ -16205,6 +16207,9 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         )
         .await
         .expect("theme edit should start");
+    for key in [KeyCode::End, KeyCode::Enter] {
+        shell.handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend).await.unwrap();
+    }
     for ch in "missing-theme".chars() {
         shell
             .handle_settings_key(key_char(ch), &mut backend)

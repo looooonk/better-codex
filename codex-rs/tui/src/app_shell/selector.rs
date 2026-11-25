@@ -48,6 +48,9 @@ pub(super) enum ServiceTierValue {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum SelectorValue {
+    AppTheme(crate::app_theme::TuiAppTheme),
+    SyntaxTheme(String),
+    EditSyntaxTheme,
     StatusSurface(super::status_surfaces::SurfaceChange),
     Keybinding(String),
     TranscriptMatch(u64),
@@ -103,7 +106,7 @@ pub(super) enum SelectorOutcome<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Presentation {
     Modal,
-    Menu(ComposerControl),
+    Menu(Option<ComposerControl>),
     Slider(effort_slider::EffortSlider),
 }
 
@@ -134,13 +137,22 @@ impl<T> SelectorState<T> {
     }
 
     fn anchored_menu(mut self, control: ComposerControl) -> Self {
-        self.presentation = Presentation::Menu(control);
+        self.presentation = Presentation::Menu(Some(control));
         self
+    }
+
+    pub(super) fn settings_menu(mut self) -> Self {
+        self.presentation = Presentation::Menu(None);
+        self
+    }
+
+    pub(super) fn settings_menu_height(&self) -> Option<u16> {
+        matches!(self.presentation, Presentation::Menu(None)).then(|| 3 + self.options.len().clamp(1, 12) as u16)
     }
 
     pub(super) fn composer_control(&self) -> Option<ComposerControl> {
         match self.presentation {
-            Presentation::Menu(control) => Some(control),
+            Presentation::Menu(control) => control,
             Presentation::Slider(_) => Some(ComposerControl::ReasoningEffort),
             Presentation::Modal => None,
         }

@@ -28,12 +28,11 @@ impl ShellState {
             return;
         };
         let state = PluginManagementState::from_response(response);
-        if state.is_empty() {
-            self.settings.set_info("no plugins found");
-            return;
-        }
+        self.dashboard_visible = true;
+        self.set_dashboard_route(super::DashboardRoute::Settings);
+        self.settings.focused = true;
+        self.settings.focus_action(super::settings::SettingsAction::Plugins);
         self.pending_plugin_management = Some(state);
-        self.push_status("plugin manager opened");
     }
 
     pub(in crate::app_shell) async fn handle_plugin_management_key<S>(
@@ -131,14 +130,9 @@ impl ShellState {
             self.push_status("selected plugin cannot be enabled or disabled");
             return Ok(());
         }
-        let display_name = entry.display_name();
         let enabled = !entry.plugin.enabled;
         let plugin_id = entry.plugin.id.clone();
         app_server.plugin_set_enabled(plugin_id, enabled).await?;
-        self.push_status(format!(
-            "{display_name} {}",
-            if enabled { "enabled" } else { "disabled" }
-        ));
         self.refresh_plugin_inventory(app_server).await;
         self.rebuild_plugin_management_from_catalog();
         Ok(())
@@ -159,11 +153,9 @@ impl ShellState {
             self.push_status("selected plugin cannot be uninstalled");
             return Ok(());
         };
-        let display_name = entry.display_name();
         app_server
             .plugin_uninstall(PluginUninstallParams { plugin_id })
             .await?;
-        self.push_status(format!("{display_name} uninstalled"));
         self.refresh_plugin_inventory(app_server).await;
         self.rebuild_plugin_management_from_catalog();
         Ok(())
@@ -180,16 +172,14 @@ impl ShellState {
         } else {
             "installed"
         };
-        if response.apps_needing_auth.is_empty() {
-            self.push_status(format!("{plugin_name} {action}"));
-        } else {
+        if !response.apps_needing_auth.is_empty() {
             let app_names = response
                 .apps_needing_auth
                 .iter()
                 .map(|app| app.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.push_status(format!(
+            self.push_system(format!(
                 "{plugin_name} {action}; auth required for {app_names}"
             ));
         }
@@ -253,11 +243,11 @@ impl PluginManagementState {
         }
     }
 
-    fn move_up(&mut self) {
+    pub(super) fn move_up(&mut self) {
         self.selected = self.selected.saturating_sub(1);
     }
 
-    fn move_down(&mut self) {
+    pub(super) fn move_down(&mut self) {
         self.selected = (self.selected + 1).min(self.entries.len().saturating_sub(1));
     }
 

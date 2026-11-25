@@ -29,8 +29,5 @@ fn enabling_without_a_compatible_terminal_never_persists_the_experiment() {
     shell.toggle_graphical_math();
     assert!(!shell.graphics.borrow().enabled());
     assert!(!shell.equation_preference().exists());
-    assert!(matches!(
-        shell.settings.feedback,
-        Some(SettingsFeedback::Error(_))
-    ));
+    assert!(shell.settings.feedback.is_some());
 }

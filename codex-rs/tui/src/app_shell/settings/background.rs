@@ -104,12 +104,13 @@ impl ShellState {
                         && selector.is_effort_slider())
             });
             if let Some(selector) = picker {
-                selector.save_error = Some(format!("Save failed: {err}"));
+                selector.save_error = Some(format!("Save failed: {}", err.root_cause()));
             } else {
                 self.settings
                     .set_error(format!("failed to save settings: {err:#}"));
             }
-            self.report_action_error("failed to save settings", err);
+            self.status = "action failed".into();
+            tracing::warn!(%err, "failed to save settings");
             return;
         }
         match update.change {
@@ -142,7 +143,11 @@ impl ShellState {
             }
             SettingsChange::ApprovalPolicy(policy) => self.approval_policy = policy,
             SettingsChange::AppTheme(app_theme) => self.app_theme = app_theme,
-            SettingsChange::Theme(theme) => self.tui_theme = theme,
+            SettingsChange::Theme(theme) => {
+                crate::render::highlight::set_syntax_theme(crate::render::highlight::resolve_theme_with_override(theme.as_deref(), Some(&self.codex_home)));
+                self.tui_theme = theme;
+                self.transcript_render_cache.get_mut().clear();
+            }
             SettingsChange::Animations(animations) => self.animations = animations,
             SettingsChange::Tooltips(show_tooltips) => self.show_tooltips = show_tooltips,
         }

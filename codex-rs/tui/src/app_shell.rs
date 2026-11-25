@@ -839,7 +839,6 @@ impl ShellState {
                     if cursor.is_none() {
                         self.mcp_inventory = McpInventorySummary::from_response(&response);
                         self.mcp_catalog = Some(response);
-                        self.settings.set_info("mcp inventory refreshed");
                         return;
                     }
                 }
@@ -879,7 +878,6 @@ impl ShellState {
             Ok(response) => {
                 self.plugin_inventory = PluginInventorySummary::from_response(&response);
                 self.plugin_catalog = Some(response);
-                self.settings.set_info("plugin inventory refreshed");
             }
             Err(err) => {
                 self.plugin_inventory = PluginInventorySummary::from_error(err.to_string());

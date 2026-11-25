@@ -31,12 +31,11 @@ impl ShellState {
             return;
         };
         let state = McpManagementState::from_response(response);
-        if state.is_empty() {
-            self.settings.set_info("no mcp servers found");
-            return;
-        }
+        self.dashboard_visible = true;
+        self.set_dashboard_route(super::DashboardRoute::Settings);
+        self.settings.focused = true;
+        self.settings.focus_action(super::settings::SettingsAction::McpServers);
         self.pending_mcp_management = Some(state);
-        self.push_status("mcp manager opened");
     }
 
     pub(in crate::app_shell) async fn handle_mcp_management_key<S>(
@@ -145,7 +144,6 @@ impl ShellState {
         app_server.mcp_server_refresh().await?;
         self.refresh_mcp_inventory(app_server).await;
         self.rebuild_mcp_management_from_catalog();
-        self.push_status("mcp servers reloaded");
         Ok(())
     }
 
@@ -172,7 +170,7 @@ impl ShellState {
                 timeout_secs: None,
             })
             .await?;
-        self.push_status(format!(
+        self.push_system(format!(
             "{} login started: {}",
             server.name, response.authorization_url
         ));
@@ -194,7 +192,6 @@ impl ShellState {
             )
             .await?;
         self.reload_mcp_servers(app_server).await?;
-        self.push_status(format!("{} disabled", server.name));
         Ok(())
     }
 
@@ -213,7 +210,6 @@ impl ShellState {
             )
             .await?;
         self.reload_mcp_servers(app_server).await?;
-        self.push_status(format!("{} removed", server.name));
         Ok(())
     }
 
@@ -236,7 +232,6 @@ impl ShellState {
         if let Some(state) = &mut self.pending_mcp_management {
             state.select_server_name(&server_name);
         }
-        self.push_status(format!("{server_name} saved"));
         Ok(())
     }
 
@@ -279,7 +274,7 @@ impl McpManagementState {
         }
         let mut lines = vec![
             vec![
-                format!("{}/{}", self.selected + 1, self.servers.len())
+                format!("{}/{}", (self.selected + 1).min(self.servers.len()), self.servers.len())
                     .fg(palette::cyan())
                     .bold(),
                 " mcp servers".into(),
@@ -374,11 +369,11 @@ impl McpManagementState {
         }
     }
 
-    fn move_up(&mut self) {
+    pub(super) fn move_up(&mut self) {
         self.selected = self.selected.saturating_sub(1);
     }
 
-    fn move_down(&mut self) {
+    pub(super) fn move_down(&mut self) {
         self.selected = (self.selected + 1).min(self.servers.len().saturating_sub(1));
     }
 

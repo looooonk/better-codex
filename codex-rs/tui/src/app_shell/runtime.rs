@@ -171,7 +171,7 @@ pub(crate) async fn run(
     if shell.equation_preference().is_file()
         && let Err(reason) = shell.graphics.get_mut().enable()
     {
-        shell.settings.set_info(reason);
+        shell.settings.set_error(reason);
     }
     shell.automatic_recap.enabled = config.tui_auto_recap;
     shell.workspace_command_runner = Some(workspace_command_runner.clone());

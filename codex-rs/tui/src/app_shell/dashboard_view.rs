@@ -262,6 +262,15 @@ pub(super) fn render_dashboard(
     }
 }
 
+pub(super) fn selected_setting_area(shell: &ShellState, placement: DashboardPlacement) -> Option<Rect> {
+    let view = DashboardView::new(shell, placement);
+    let row = *shell.settings.selected_line_range().start();
+    view.visible_body_slices().into_iter().find_map(|slice| {
+        (view.panels[slice.index].title == "Settings").then_some(())?;
+        Some(Rect::new(slice.area.x, visible_row(slice, row)?, slice.area.width, 1))
+    })
+}
+
 pub(super) fn route_at(
     shell: &ShellState,
     placement: DashboardPlacement,

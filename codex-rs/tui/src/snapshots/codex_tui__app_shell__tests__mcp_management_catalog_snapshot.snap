@@ -12,26 +12,26 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
    turns.                                                   │  ○ ⚠ Full access
    ▎ PLAN  1. Build shell                                   │
            2. Wire transcript                               │◆ APPEARANCE
-           3. Render dashboard                              │  ● Tokyo Night
-                                                            │  ○ Gruvbox Dark
-      ▸ Edited files                                        │  ○ Catppuccin Mocha
-   ▎ STATUS  mcp ma╭──────────────────────────────────────────────────────────────────────╮
-                   │◆ MCP SERVERS                                                         │
-   The new shell ow│1/2 mcp servers  ↑↓ / j k navigate                                    │
-                   │Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
-                   │> login        github 2 tools                                         │
-                   │  bearer       linear 1 tools                                         │
-                   │                                                                      │
-                   │Action: press Enter or l to start oauth login                         │
-                   │                                                                      │
-                   ╰──────────────────────────────────────────────────────────────────────╯ools / 1 login ne…
-                                                            │mcp inventory refreshed
-                                                            │  Plugins: not loaded
+           3. Render dashboard                              │  Theme: Tokyo Night ▾
+                                                            │  Syntax theme: default ▾
+      ▸ Edited files                                        │  ● Animations
+                                                            │  ● Tooltips
+   The new shell owns the fullscreen surface.               │
+                                                            │◆ EXPERIMENTAL
+                                                            │  ○ Render LaTeX as images
                                                             │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
+                                                            │◆ INTEGRATIONS
+                                                            │› MCP servers: 2 servers ▾
+                                                        ╭────────────────────────────────────────────────────╮
+                                                        │MCP servers                                         │
+                                                        │1/2 mcp servers  ↑↓ / j k navigate                  │
+                                                        │Login ↵  Disable d  Remove x  Add a  Edit e  Reload │
+                                                        │r                                                   │
+                                                        │> login        github 2 tools                       │
+                                                        │  bearer       linear 1 tools                       │
+                                                        │                                                    │
+                                                        │Action: press Enter or l to start oauth login       │
+                                                        ╰────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                    ││
 │                                                          ││

@@ -21,7 +21,6 @@ use super::input_request_layout::visible_elicitation_panel_lines;
 use super::input_request_layout::visible_request_panel_lines;
 use super::input_request_view::approval_lines;
 use super::input_request_view::user_input_lines;
-use super::modal_view::modal_body_width;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
 use super::shell_layout;
@@ -135,12 +134,8 @@ impl ShellView<'_> {
         if let Some(pending) = &self.shell.pending_external_agent_import {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
         }
-        if let Some(pending) = &self.shell.pending_mcp_management {
-            let width = usize::from(modal_body_width(area));
-            render_modal(area, "MCP Servers", pending.lines_for_width(width), buf);
-        }
-        if let Some(pending) = &self.shell.pending_plugin_management {
-            render_modal(area, "Plugins", pending.lines(), buf);
+        if let Some((panel, title, lines)) = self.management_menu(area) {
+            super::modal_view::render_settings_menu(panel, title, lines, self.shell.pointer_position, buf);
         }
         if let Some(lines) = self.shell.safety_buffering_modal_lines() {
             render_modal(area, "Safety review", lines, buf);
@@ -259,10 +254,40 @@ impl ShellView<'_> {
         dashboard_view::route_at(self.shell, self.layout(area)?.dashboard?, position)
     }
 
+    fn settings_menu_area(&self, screen: Rect, width: u16, height: u16) -> Rect {
+        let anchor = self.layout(screen).and_then(|layout| layout.dashboard)
+            .and_then(|placement| dashboard_view::selected_setting_area(self.shell, placement))
+            .unwrap_or_else(|| Rect::new(screen.x, screen.y, screen.width, 1));
+        let width = width.min(screen.width);
+        let x = anchor.x.min(screen.right().saturating_sub(width));
+        let below = screen.bottom().saturating_sub(anchor.bottom());
+        let above = anchor.y.saturating_sub(screen.y);
+        if below >= height || below >= above {
+            Rect::new(x, anchor.bottom(), width, height.min(below))
+        } else {
+            let height = height.min(above);
+            Rect::new(x, anchor.y - height, width, height)
+        }
+    }
+
+    pub(super) fn management_menu(&self, screen: Rect) -> Option<(Rect, &'static str, Vec<Line<'static>>)> {
+        let width = 54.min(screen.width);
+        let (title, lines) = if let Some(mcp) = &self.shell.pending_mcp_management {
+            ("MCP servers", mcp.lines_for_width(usize::from(width.saturating_sub(2))))
+        } else {
+            ("Plugins", self.shell.pending_plugin_management.as_ref()?.lines())
+        };
+        let height = super::modal_view::settings_menu_height(&lines, width);
+        Some((self.settings_menu_area(screen, width, height), title, lines))
+    }
+
     pub(super) fn selector_area(&self, screen: Rect) -> Rect {
         let Some(selector) = &self.shell.selector else {
             return screen;
         };
+        if let Some(height) = selector.settings_menu_height() {
+            return self.settings_menu_area(screen, 40, height);
+        }
         let Some(control) = selector.composer_control() else {
             return screen;
         };

@@ -6,11 +6,11 @@ expression: rendered
 │  Sessions  │  Status  │  Agents  │ Settings
 │───────────────────────────────────━━━━━━━━━━━
 │◆ EXPERIMENTAL
-│  Render LaTeX as images: off
+│  ○ Render LaTeX as images
 │
 │◆ INTEGRATIONS
-│  MCP servers: not loaded
-│› Plugins: not loaded
+│  MCP servers: not loaded ▾
+│› Plugins: not loaded ▾
 │
 ╭──────────────────────────────────────────────╮
 │> Summarize the new shell architecture        │

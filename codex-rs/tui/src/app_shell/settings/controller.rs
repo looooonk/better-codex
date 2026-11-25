@@ -170,10 +170,9 @@ impl ShellState {
     {
         let action = self.settings.selected_action();
         match action {
-            SettingsAction::AppTheme(theme) => self.apply_app_theme(theme, app_server),
+            SettingsAction::AppTheme => self.open_app_theme_menu(),
             SettingsAction::Theme => {
-                self.settings
-                    .start_theme_edit(self.tui_theme.clone().unwrap_or_default());
+                self.open_syntax_theme_menu();
             }
             SettingsAction::ApprovalPolicy(policy) => {
                 self.apply_approval_policy(policy, app_server)?
@@ -204,24 +203,22 @@ impl ShellState {
                 );
             }
             SettingsAction::McpServers => {
-                if self.mcp_catalog.is_some() {
-                    self.open_mcp_management();
-                } else {
+                if self.mcp_catalog.is_none() {
                     self.refresh_mcp_inventory(app_server).await;
                 }
+                if self.mcp_catalog.is_some() { self.open_mcp_management(); }
             }
             SettingsAction::Plugins => {
-                if self.plugin_catalog.is_some() {
-                    self.open_plugin_management();
-                } else {
+                if self.plugin_catalog.is_none() {
                     self.refresh_plugin_inventory(app_server).await;
                 }
+                if self.plugin_catalog.is_some() { self.open_plugin_management(); }
             }
         }
         Ok(())
     }
 
-    fn apply_theme_edit<S: AppShellBackend>(&mut self, draft: String, app_server: &S) {
+    pub(in crate::app_shell) fn apply_theme_edit<S: AppShellBackend>(&mut self, draft: String, app_server: &S) {
         let theme = (!draft.is_empty()).then_some(draft);
         if let Some(warning) =
             validate_theme_name(theme.as_deref(), Some(self.codex_home.as_path()))
@@ -302,7 +299,7 @@ impl ShellState {
         );
     }
 
-    fn apply_app_theme<S>(&mut self, app_theme: crate::app_theme::TuiAppTheme, app_server: &mut S)
+    pub(in crate::app_shell) fn apply_app_theme<S>(&mut self, app_theme: crate::app_theme::TuiAppTheme, app_server: &mut S)
     where
         S: AppShellBackend,
     {

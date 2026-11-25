@@ -2,15 +2,15 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
-                                                  │
-                                                  │  Sessions   │  Status  │  Agents  │  Settings
-   ▎ STATUS  p╭──────────────────────────────────────────────────────────────────────╮─────────────
-              │◆ PLUGINS                                                             │
-   The new she│12/12 plugin catalog  ↑↓ / j k navigate                               │
-              │Install / update ↵  Toggle e  Uninstall u  Refresh r                  │
-╭─────────────│> available  Plugin 11 (local)                                        │
-│> Summarize t│                                                                      │
-│             │Action: press i or Enter to install                                   │
-│             ╰──────────────────────────────────────────────────────────────────────╯
-│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
+                                              ╭────────────────────────────────────────────────────╮
+                                              │Plugins                                             │
+      ▸ Edited files                          │12/12 plugin catalog  ↑↓ / j k navigate             │
+                                              │Install / update ↵  Toggle e  Uninstall u  Refresh r│
+   The new shell owns the fullscreen surface. │  available  Plugin 07 (local)                      │
+                                              │  available  Plugin 09 (local)                      │
+╭─────────────────────────────────────────────│> available  Plugin 11 (local)                      │
+│> Summarize the new shell architecture       │                                                    │
+│                                             │Action: press i or Enter to install                 │
+│                                             ╰────────────────────────────────────────────────────╯
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││› Plugins: not loaded ▾
 ╰────────────────────────────────────────────────╯│

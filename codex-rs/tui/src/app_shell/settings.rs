@@ -17,6 +17,7 @@ use std::cell::Cell;
 mod background;
 mod controller;
 mod persistence;
+mod menu;
 
 pub(super) use background::SettingsUpdate;
 pub(super) use persistence::persist_settings_update;
@@ -26,7 +27,7 @@ pub(super) struct SettingsState {
     selected: SettingsAction,
     pub(super) focused: bool,
     edit: Option<EditableText>,
-    feedback: Option<SettingsFeedback>,
+    feedback: Option<String>,
     pub(super) reveal_selection: Cell<bool>,
     pub(super) effort_save: EffortSave,
 }
@@ -43,7 +44,7 @@ pub(super) enum EffortSave {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsAction {
     ApprovalPolicy(AskForApproval),
-    AppTheme(TuiAppTheme),
+    AppTheme,
     Theme,
     Animations,
     GraphicalMath,
@@ -56,12 +57,6 @@ impl Default for SettingsAction {
     fn default() -> Self {
         Self::ApprovalPolicy(AskForApproval::OnRequest)
     }
-}
-
-#[derive(Debug, Clone)]
-enum SettingsFeedback {
-    Info(String),
-    Error(String),
 }
 
 #[derive(Clone, Copy)]
@@ -81,10 +76,7 @@ const ROWS: &[SettingRow] = &[
     SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::Never)),
     SettingRow::Spacer,
     SettingRow::Heading("Appearance"),
-    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::TokyoNight)),
-    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::GruvboxDark)),
-    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::CatppuccinMocha)),
-    SettingRow::Action(SettingsAction::AppTheme(TuiAppTheme::Monochrome)),
+    SettingRow::Action(SettingsAction::AppTheme),
     SettingRow::Action(SettingsAction::Theme),
     SettingRow::Action(SettingsAction::Animations),
     SettingRow::Action(SettingsAction::Tooltips),
@@ -130,8 +122,7 @@ impl ShellState {
         if let Err(err) = result {
             self.settings
                 .set_error(format!("Could not save the equation preference: {err}"));
-        } else {
-            self.settings.set_info("Equation display preference saved.");
+
         }
         self.transcript_render_cache.get_mut().clear();
     }
@@ -169,14 +160,8 @@ impl SettingsState {
                                     .into(),
                             ]));
                         }
-                        match &self.feedback {
-                            Some(SettingsFeedback::Info(message)) => {
-                                lines.push(Line::from(message.clone().fg(palette::success())))
-                            }
-                            Some(SettingsFeedback::Error(message)) => {
-                                lines.push(Line::from(message.clone().fg(palette::error())))
-                            }
-                            None => {}
+                        if let Some(message) = &self.feedback {
+                            lines.push(Line::from(message.clone().fg(palette::error())));
                         }
                     }
                 }
@@ -301,12 +286,8 @@ impl SettingsState {
         }
     }
 
-    pub(super) fn set_info(&mut self, message: impl Into<String>) {
-        self.feedback = Some(SettingsFeedback::Info(message.into()));
-    }
-
     pub(super) fn set_error(&mut self, message: impl Into<String>) {
-        self.feedback = Some(SettingsFeedback::Error(message.into()));
+        self.feedback = Some(message.into());
         self.reveal_selection.set(true);
     }
 }
@@ -334,19 +315,16 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
         SettingsAction::ApprovalPolicy(policy) => {
             choice(&permission_caption(policy), policy == shell.approval_policy)
         }
-        SettingsAction::AppTheme(theme) => choice(app_theme_label(theme), theme == shell.app_theme),
+        SettingsAction::AppTheme => format!("Theme: {} ▾", app_theme_label(shell.app_theme)),
         SettingsAction::Theme => format!(
-            "Syntax theme: {}",
+            "Syntax theme: {} ▾",
             shell.tui_theme.as_deref().unwrap_or("default")
         ),
-        SettingsAction::GraphicalMath => format!(
-            "Render LaTeX as images: {}",
-            on_off(shell.graphics.borrow().enabled())
-        ),
-        SettingsAction::Animations => format!("Animations: {}", on_off(shell.animations)),
-        SettingsAction::Tooltips => format!("Tooltips: {}", on_off(shell.show_tooltips)),
-        SettingsAction::McpServers => format!("MCP servers: {}", shell.mcp_inventory.label()),
-        SettingsAction::Plugins => format!("Plugins: {}", shell.plugin_inventory.label()),
+        SettingsAction::GraphicalMath => choice("Render LaTeX as images", shell.graphics.borrow().enabled()),
+        SettingsAction::Animations => choice("Animations", shell.animations),
+        SettingsAction::Tooltips => choice("Tooltips", shell.show_tooltips),
+        SettingsAction::McpServers => format!("MCP servers: {} ▾", shell.mcp_inventory.label()),
+        SettingsAction::Plugins => format!("Plugins: {} ▾", shell.plugin_inventory.label()),
     };
     let color = if matches!(
         action,
@@ -395,10 +373,6 @@ pub(super) fn reasoning_effort_label(effort: &ReasoningEffort) -> String {
         ReasoningEffort::Persistent => "Persistent".to_string(),
         ReasoningEffort::Custom(effort) => effort.clone(),
     }
-}
-
-fn on_off(enabled: bool) -> &'static str {
-    if enabled { "on" } else { "off" }
 }
 
 #[cfg(test)]

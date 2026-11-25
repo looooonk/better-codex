@@ -202,7 +202,7 @@ pub(crate) fn adaptive_default_theme_name() -> &'static str {
 
 /// Build the theme from current override/default-theme settings.
 /// Extracted from the old `theme()` init closure so it can be reused.
-fn resolve_theme_with_override(name: Option<&str>, codex_home: Option<&Path>) -> Theme {
+pub(crate) fn resolve_theme_with_override(name: Option<&str>, codex_home: Option<&Path>) -> Theme {
     let ts = two_face::theme::extra();
 
     // Honor user-configured theme if valid.

@@ -189,6 +189,12 @@ impl ShellState {
                 self.insert_file_mention(&path);
                 self.selector = None;
             }
+            SelectorValue::AppTheme(theme) => self.apply_app_theme(theme, app_server),
+            SelectorValue::SyntaxTheme(theme) => self.apply_theme_edit(theme, app_server),
+            SelectorValue::EditSyntaxTheme => {
+                self.selector = None;
+                self.settings.start_theme_edit(self.tui_theme.clone().unwrap_or_default());
+            }
             SelectorValue::Model(model) => self.apply_model(model, app_server),
             SelectorValue::ReasoningEffort(choice) => {
                 self.apply_reasoning_effort(choice, app_server)

@@ -4,25 +4,25 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-                                                  │━━━━━━━━━━━━━───────────────────────────────────
+                                                  │────────────────────────────────────━━━━━━━━━━━━
    > Create a divergent standalone TUI.           │
-                                                  │ Projects
-                                                  │ No projects
-   Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. ╭──────────────────────────────────────────────────────────────────────╮
-           3. │◆ MCP SERVERS                                                         │
-              │Add MCP server                                                        │
-      ▸ Edited│Format: name {"url":"https://..."} or name {"command":"cmd","args":[]}│
-   ▎ STATUS  m│                                                                      │
-              │…dpointendpointendpointendpointendpointendpointendpointendpoint X▏beta│
-   The new she│                                                                      │
-              │Enter save  Esc cancel                                                │
-              │                                                                      │
-              ╰──────────────────────────────────────────────────────────────────────╯
-                                                  │
-                                                  │
+                                                  │◆ PERMISSIONS
+                                                  │  ● ⓘ Ask for approval
+   Started a fullscreen app shell backed by app-  │  ○ ⛨ Unless trusted
+   server turns.                                  │  ○ ⚠ Full access
+   ▎ PLAN  1. Build shell                         │
+           2. Wire transcript                 ╭────────────────────────────────────────────────────╮
+           3. Render dashboard                │MCP servers                                         │
+                                              │Add MCP server                                      │
+      ▸ Edited files                          │Format: name {"url":"https://..."} or name          │
+                                              │{"command":"cmd","args":[]}                         │
+   The new shell owns the fullscreen surface. │                                                    │
+                                              │…ointendpointendpointendpointendpointendpoint X▏beta│
+                                              │                                                    │
+                                              │Enter save  Esc cancel                              │
+                                              ╰────────────────────────────────────────────────────╯
+                                                  │› MCP servers: not loaded ▾
+                                                  │  Plugins: not loaded ▾
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

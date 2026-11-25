@@ -69,14 +69,38 @@ pub(super) fn modal_hit(
     lines: &[Line<'static>],
 ) -> Option<ModalHit> {
     let panel = modal_panel_area(screen, lines);
+    menu_hit(panel, position, lines)
+}
+
+pub(super) fn settings_menu_height(lines: &[Line<'static>], width: u16) -> u16 {
+    (wrapped_segments(lines, width.saturating_sub(2)).len().min(12) + 3) as u16
+}
+
+pub(super) fn menu_hit(panel: Rect, position: Position, lines: &[Line<'static>]) -> Option<ModalHit> {
     let body = body_rect_after_title(pane_content_rect(panel));
-    if !body.contains(position) {
-        return None;
-    }
+    if !body.contains(position) { return None; }
     let segments = wrapped_segments(lines, body.width);
     let visible = visible_segment_indices(lines, &segments, body.height);
-    let index = *visible.get(usize::from(position.y.saturating_sub(body.y)))?;
-    segment_hit(segments.get(index)?, body, position)
+    let index = *visible.get(usize::from(position.y - body.y))?;
+    segment_hit(&segments[index], body, position)
+}
+
+pub(super) fn render_settings_menu(panel: Rect, title: &str, lines: Vec<Line<'static>>, pointer: Option<Position>, buf: &mut Buffer) {
+    if panel.height < 3 || panel.width < 4 { return; }
+    Clear.render(panel, buf);
+    Block::bordered().border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(palette::border())).style(pane_style(palette::elevated())).render(panel, buf);
+    let content = pane_content_rect(panel);
+    Paragraph::new(title.fg(palette::muted())).render(title_rect(content), buf);
+    let body = body_rect_after_title(content);
+    let segments = wrapped_segments(&lines, body.width);
+    for (area, i) in body.rows().zip(visible_segment_indices(&lines, &segments, body.height)) {
+        let segment = &segments[i];
+        if line_text(&lines[segment.logical_line]).starts_with("> ") || pointer.is_some_and(|p| area.contains(p)) {
+            buf.set_style(area, Style::new().bg(palette::border()));
+        }
+        (&segment.content).render(area, buf);
+    }
 }
 
 pub(super) fn modal_panel_area(screen: Rect, lines: &[Line<'static>]) -> Rect {

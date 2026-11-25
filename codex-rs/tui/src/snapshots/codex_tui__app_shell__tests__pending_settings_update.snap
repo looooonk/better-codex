@@ -12,20 +12,20 @@ expression: "render_shell(&shell, area)"
    ▎ PLAN  1. Build shell                                                                                │  ○ ⚠ Full access
            2. Wire transcript                                                                            │
            3. Render dashboard                                                                           │◆ APPEARANCE
-                                                                                                         │  ● Tokyo Night
-      ▸ Edited files                                                                                     │  ○ Gruvbox Dark
-                                                                                                         │  ○ Catppuccin Mocha
-   The new shell owns the fullscreen surface.                                                            │  ○ Monochrome
-                                                                                                         │  Syntax theme: default
-                                                                                                         │  Animations: on
-                                                                                                         │› Tooltips: on
+                                                                                                         │  Theme: Tokyo Night ▾
+      ▸ Edited files                                                                                     │  Syntax theme: default ▾
+                                                                                                         │  ● Animations
+   The new shell owns the fullscreen surface.                                                            │› ● Tooltips
                                                                                                          │
                                                                                                          │◆ EXPERIMENTAL
-                                                                                                         │  Render LaTeX as images: off
+                                                                                                         │  ○ Render LaTeX as images
                                                                                                          │
                                                                                                          │◆ INTEGRATIONS
-╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮│  MCP servers: not loaded
-│> Summarize the new shell architecture                                                                 ││  Plugins: not loaded
+                                                                                                         │  MCP servers: not loaded ▾
+                                                                                                         │  Plugins: not loaded ▾
+                                                                                                         │
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture                                                                 ││
 │                                                                                                       ││
 │                                                                                                       ││
 │ ⓘ Ask for approval ▾                                          gpt-5-codex ▾   Default ▾   ◷ Default ▾ ││

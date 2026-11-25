@@ -45,12 +45,12 @@ impl<T> SelectorState<T> {
         }
         .min(available);
         let rows = self.options.iter().fold(0u16, |height, option| {
-            height.saturating_add(option_height(option, control, width))
+            height.saturating_add(option_height(option, Some(control), width))
         });
         (width, MENU_CHROME + rows.clamp(1, MAX_VISIBLE_ROWS))
     }
 
-    pub(super) fn menu_rows(&self, panel: Rect, control: ComposerControl) -> Vec<(usize, Rect)> {
+    pub(super) fn menu_rows(&self, panel: Rect, control: Option<ComposerControl>) -> Vec<(usize, Rect)> {
         let capacity = panel.height.saturating_sub(MENU_CHROME);
         if capacity == 0 || self.options.is_empty() {
             return Vec::new();
@@ -87,7 +87,7 @@ impl<T> SelectorState<T> {
     pub(super) fn render_menu(
         &self,
         panel: Rect,
-        control: ComposerControl,
+        control: Option<ComposerControl>,
         pointer: Option<Position>,
         buf: &mut Buffer,
     ) {
@@ -102,8 +102,8 @@ impl<T> SelectorState<T> {
             .style(pane_style(palette::elevated()))
             .render(panel, buf);
         let title = match control {
-            ComposerControl::Permissions => "Permissions",
-            ComposerControl::ServiceTier => "Speed",
+            Some(ComposerControl::Permissions) => "Permissions",
+            Some(ComposerControl::ServiceTier) => "Speed",
             _ => &self.title,
         };
         let heading = Rect::new(panel.x + 2, panel.y + 1, panel.width - 4, 1);
@@ -180,8 +180,8 @@ impl<T> SelectorState<T> {
     }
 }
 
-fn option_height<T>(option: &SelectorOption<T>, control: ComposerControl, width: u16) -> u16 {
-    if control == ComposerControl::Permissions {
+fn option_height<T>(option: &SelectorOption<T>, control: Option<ComposerControl>, width: u16) -> u16 {
+    if control == Some(ComposerControl::Permissions) {
         let lines = textwrap::wrap(&option.detail, usize::from(width.saturating_sub(4)).max(1));
         1u16.saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX))
     } else {

@@ -12,20 +12,20 @@ expression: "render_shell(&shell, area)"
    server turns.                                  │  ○ ⚠ Full access
    ▎ PLAN  1. Build shell                         │
            2. Wire transcript                     │◆ APPEARANCE
-           3. Render dashboard                    │  ● Tokyo Night
-                                                  │  ○ Gruvbox Dark
-      ▸ Edited files                              │  ○ Catppuccin Mocha
-                                                  │  ○ Monochrome
-   The new shell owns the fullscreen surface.     │  Syntax theme: default
-                                                  │  Animations: on
-                                                  │  Tooltips: on
-                                                  │
+           3. Render dashboard                    │  Theme: Tokyo Night ▾
+                                                  │  Syntax theme: default ▾
+      ▸ Edited files                              │  ● Animations
+                                                  │  ● Tooltips
+   The new shell owns the fullscreen surface.     │
                                                   │◆ EXPERIMENTAL
-                                                  │  Render LaTeX as images: off
+                                                  │  ○ Render LaTeX as images
                                                   │
                                                   │◆ INTEGRATIONS
-╭────────────────────────────────────────────────╮│  MCP servers: not loaded
-│> Summarize the new shell architecture          ││  Plugins: not loaded
+                                                  │  MCP servers: not loaded ▾
+                                                  │  Plugins: not loaded ▾
+                                                  │
+╭────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
 │ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││

@@ -12,22 +12,22 @@ expression: "render_shell(&shell, area)"
    server turns.                                  │  ○ ⚠ Full access
    ▎ PLAN  1. Build shell                         │
            2. Wire transcript                     │◆ APPEARANCE
-           3. Render dashboard                    │  ● Tokyo Night
-                                                  │  ○ Gruvbox Dark
-      ▸ Edited files                              │  ○ Catppuccin Mocha
-                                                  │  ○ Monochrome
-   The new shell owns the fullscreen surface.     │› Syntax theme: default
-                                                  │  Edit missing-theme▏
+           3. Render dashboard                    │  Theme: Tokyo Night ▾
+                                                  │› Syntax theme: default ▾
+      ▸ Edited files                              │  Edit missing-theme▏
                                                   │unknown syntax theme `missing-theme`
-                                                  │  Animations: on
-                                                  │  Tooltips: on
+   The new shell owns the fullscreen surface.     │  ● Animations
+                                                  │  ● Tooltips
                                                   │
                                                   │◆ EXPERIMENTAL
-                                                  │  Render LaTeX as images: off
+                                                  │  ○ Render LaTeX as images
                                                   │
                                                   │◆ INTEGRATIONS
-                                                  │  MCP servers: not loaded
-                                                  │  Plugins: not loaded
+                                                  │  MCP servers: not loaded ▾
+                                                  │  Plugins: not loaded ▾
+                                                  │
+                                                  │
+                                                  │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││

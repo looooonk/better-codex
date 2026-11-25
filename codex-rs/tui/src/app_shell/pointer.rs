@@ -5,7 +5,6 @@ use super::command_palette_view;
 use super::external_agent_import::ExternalAgentImportState;
 use super::modal_view;
 use super::navigation::DashboardRoute;
-use super::plugin_management::PluginManagementState;
 use super::render::PointerPane;
 use super::render::ShellView;
 use super::sessions::SessionListHit;
@@ -174,39 +173,16 @@ impl ShellState {
             }
             return Ok(());
         }
-        let modal_width = usize::from(modal_view::modal_body_width(area));
-        if let Some(lines) = self
-            .pending_mcp_management
-            .as_ref()
-            .map(|state| state.lines_for_width(modal_width))
-        {
-            let key = modal_click_key(area, position, &lines, |hit| {
-                self.pending_mcp_management
-                    .as_mut()?
-                    .click_key_at(hit.line, hit.column)
-            });
-            if let Some(key) = key {
-                self.handle_mcp_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
-                    .await?;
-            }
-            return Ok(());
-        }
-        if let Some(lines) = self
-            .pending_plugin_management
-            .as_ref()
-            .map(PluginManagementState::lines)
-        {
-            let key = modal_click_key(area, position, &lines, |hit| {
-                self.pending_plugin_management
-                    .as_mut()?
-                    .click_key_at(hit.line, hit.column)
-            });
-            if let Some(key) = key {
-                self.handle_plugin_management_key(
-                    KeyEvent::new(key, KeyModifiers::NONE),
-                    app_server,
-                )
-                .await?;
+        if let Some((panel, _, lines)) = (ShellView { shell: self }).management_menu(area) {
+            let hit = modal_view::menu_hit(panel, position, &lines);
+            let outside = (!panel.contains(position)).then_some(KeyCode::Esc);
+            if let Some(state) = &mut self.pending_mcp_management {
+                if let Some(key) = outside.or_else(|| hit.and_then(|h| state.click_key_at(h.line, h.column))) {
+                    self.handle_mcp_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server).await?;
+                }
+            } else if let Some(state) = &mut self.pending_plugin_management
+                && let Some(key) = outside.or_else(|| hit.and_then(|h| state.click_key_at(h.line, h.column))) {
+                self.handle_plugin_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server).await?;
             }
             return Ok(());
         }
@@ -465,6 +441,17 @@ impl ShellState {
             match direction {
                 MouseScrollDirection::Up => self.scroll_agent_log_up(),
                 MouseScrollDirection::Down => self.scroll_agent_log_down(),
+            }
+            return false;
+        }
+        if let Some((panel, _, _)) = (ShellView { shell: self }).management_menu(area) {
+            if panel.contains(position) {
+                if let Some(state) = &mut self.pending_mcp_management && !state.editing() {
+                    match direction { MouseScrollDirection::Up => state.move_up(), MouseScrollDirection::Down => state.move_down() }
+                }
+                if let Some(state) = &mut self.pending_plugin_management {
+                    match direction { MouseScrollDirection::Up => state.move_up(), MouseScrollDirection::Down => state.move_down() }
+                }
             }
             return false;
         }
