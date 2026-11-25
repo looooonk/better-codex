@@ -19,9 +19,9 @@ impl CodexRegistrations {
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
             if name != codex_config::CONFIG_TOML_FILE
-                && !name
+                && name
                     .strip_suffix(".config.toml")
-                    .is_some_and(|profile| profile.parse::<codex_config::ProfileV2Name>().is_ok())
+                    .is_none_or(|profile| profile.parse::<codex_config::ProfileV2Name>().is_err())
             {
                 continue;
             }

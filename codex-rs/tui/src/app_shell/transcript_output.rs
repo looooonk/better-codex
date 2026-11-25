@@ -15,15 +15,30 @@ const TRANSCRIPT_OUTPUT_LOW_WATER_LINES: usize = 120;
 pub(super) const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ...\n";
 
 impl TranscriptLine {
+    #[cfg(test)]
     pub(super) fn output(
         text: impl Into<ToolOutputBuffer>,
         status: ToolBlockStatus,
         item_id: String,
     ) -> Self {
         let full_text = text.into();
+        Self::with_output_preview(
+            compact_output_for_transcript(&full_text),
+            full_text,
+            status,
+            item_id,
+        )
+    }
+
+    fn with_output_preview(
+        preview: String,
+        full_text: ToolOutputBuffer,
+        status: ToolBlockStatus,
+        item_id: String,
+    ) -> Self {
         Self {
             kind: TranscriptKind::Output,
-            text: compact_output_for_transcript(&full_text),
+            text: preview,
             full_text: Some(full_text),
             tool_status: Some(status),
             item_id: Some(item_id),
@@ -56,8 +71,8 @@ impl ShellState {
         status: ToolBlockStatus,
     ) {
         let item_id = item_id.into();
-        let mut line = TranscriptLine::output(text, status, item_id.clone());
-        let full_text = line.full_text.as_mut().expect("output has a capture");
+        let mut full_text = text.into();
+        let preview = compact_output_for_transcript(&full_text);
         if status != ToolBlockStatus::Running {
             let previous = self.transcript.iter_mut().rev().find(|entry| {
                 entry.kind == TranscriptKind::Output
@@ -80,7 +95,7 @@ impl ShellState {
                     .map_or(previous.text.len(), |output| output.len())
                     > full_text.len()
                 {
-                    *full_text = previous
+                    full_text = previous
                         .full_text
                         .take()
                         .unwrap_or_else(|| previous.text.clone().into());
@@ -92,8 +107,10 @@ impl ShellState {
                 full_text.clone_from(open.output_buffer());
             }
         }
-        self.replace_open_tool_output(&item_id, full_text, status);
-        self.upsert_line(line);
+        self.replace_open_tool_output(&item_id, &full_text, status);
+        self.upsert_line(TranscriptLine::with_output_preview(
+            preview, full_text, status, item_id,
+        ));
     }
 
     pub(super) fn push_output_delta_with_status_for_item(
