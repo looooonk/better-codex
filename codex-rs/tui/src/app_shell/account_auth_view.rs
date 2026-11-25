@@ -78,7 +78,10 @@ fn with_feedback(mut lines: Vec<Line<'static>>, state: &AccountAuthState) -> Vec
 }
 
 fn choice_lines(state: &AccountAuthState) -> Vec<Line<'static>> {
-    let mut lines = vec!["Choose how to sign in.".into(), "".into()];
+    let mut lines = vec![
+        "This login is shared with the Codex App and CLI.".into(),
+        "".into(),
+    ];
     for (index, choice) in state.choices().into_iter().enumerate() {
         let marker = if index == state.selected { ">" } else { " " };
         lines.push(

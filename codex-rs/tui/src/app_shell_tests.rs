@@ -4432,7 +4432,7 @@ async fn logout_slash_command_stays_in_session_and_allows_login() {
     assert_eq!(backend.calls(), vec![RecordedBackendCall::Logout]);
     assert_eq!(
         shell.input_hint.as_deref(),
-        Some("logged out; run /login to sign in again")
+        Some("signed out of the shared Codex account. Use /login to sign in again")
     );
 
     shell.composer.set_text("/login");

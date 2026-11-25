@@ -158,10 +158,10 @@ enum Subcommand {
     /// Run a code review non-interactively.
     Review(ReviewCommand),
 
-    /// Manage login.
+    /// Manage the login shared with the Codex App and CLI in this Codex home.
     Login(LoginCommand),
 
-    /// Remove stored authentication credentials.
+    /// Sign out of the shared account for all Codex clients using this Codex home.
     Logout(LogoutCommand),
 
     /// Manage external MCP servers for Codex.

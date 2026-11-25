@@ -10,7 +10,7 @@ expression: render_state(&state)
 "                                                                                        "
 "        ╭──────────────────────────────────────────────────────────────────────╮        "
 "        │◆ ACCOUNT LOGIN                                                       │        "
-"        │Choose how to sign in.                                                │        "
+"        │This login is shared with the Codex App and CLI.                      │        "
 "        │                                                                      │        "
 "        │> 1. Use an API key                                                   │        "
 "        │    Store an OpenAI API key through app-server auth.                  │        "

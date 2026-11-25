@@ -11,7 +11,7 @@ expression: terminal.backend().to_string()
 "                                                                                                    "
 "              ╭──────────────────────────────────────────────────────────────────────╮              "
 "              │◆ ACCOUNT LOGIN                                                       │              "
-"              │Choose how to sign in.                                                │              "
+"              │This login is shared with the Codex App and CLI.                      │              "
 "              │                                                                      │              "
 "              │  1. Sign in with ChatGPT                                             │              "
 "              │    Get a one-time code and finish sign-in in your browser.           │              "

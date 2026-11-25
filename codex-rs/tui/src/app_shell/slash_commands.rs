@@ -229,13 +229,13 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
     SlashCommandDefinition {
         id: SlashCommandId::Login,
         name: "/login",
-        description: "Sign in to your OpenAI account",
+        description: "Sign in to the account shared with the Codex App and CLI",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Logout,
         name: "/logout",
-        description: "Sign out of your OpenAI account",
+        description: "Sign out of Better Codex and other Codex clients sharing this login",
         accepts_arguments: false,
     },
     SlashCommandDefinition {

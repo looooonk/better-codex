@@ -32,7 +32,10 @@ impl LoginOnboardingView<'_> {
 pub(super) fn login_lines(state: &LoginOnboardingState, width: usize) -> Vec<Line<'static>> {
     let mut lines = match &state.mode {
         LoginMode::Select => {
-            let mut lines = vec!["Choose how to sign in.".into(), "".into()];
+            let mut lines = vec![
+                "This login is shared with the Codex App and CLI.".into(),
+                "".into(),
+            ];
             for (index, selection) in state.choices().into_iter().enumerate() {
                 let marker = if index == state.selected { ">" } else { " " };
                 lines.push(

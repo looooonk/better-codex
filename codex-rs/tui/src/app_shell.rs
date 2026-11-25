@@ -1130,7 +1130,7 @@ impl ShellState {
                 } else {
                     match app_server.logout_account().await {
                         Ok(()) => {
-                            self.show_hint("logged out; run /login to sign in again");
+                            self.show_hint("signed out of the shared Codex account. Use /login to sign in again");
                             LocalSlashCommandOutcome::Continue
                         }
                         Err(err) => {
