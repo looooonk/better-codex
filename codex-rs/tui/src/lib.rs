@@ -137,6 +137,7 @@ mod external_agent_config_migration_model;
 mod temporary_structured_request;
 
 mod assistant_directives;
+mod equations;
 mod git_action_directives;
 mod goal_display;
 mod hooks_rpc;

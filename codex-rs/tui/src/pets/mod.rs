@@ -22,7 +22,7 @@ mod choices;
 mod frames;
 mod image_protocol;
 mod model;
-mod sixel;
+pub(crate) mod sixel;
 mod terminal_state;
 
 pub(crate) use terminal_state::TerminalPetImage;
@@ -45,7 +45,6 @@ pub(crate) use asset_pack::builtin_spritesheet_path;
 pub(crate) use asset_pack::write_test_pack;
 pub(crate) use choices::PetChoice;
 pub(crate) use choices::available_pet_choices;
-#[cfg(test)]
 pub(crate) use image_protocol::ImageProtocol;
 pub(crate) use image_protocol::PetImageSupport;
 pub(crate) use image_protocol::detect_pet_image_support;

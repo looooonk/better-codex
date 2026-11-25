@@ -24,8 +24,30 @@ pub(super) struct MathMarkdown<'a> {
     replacements: Vec<(Range<usize>, String)>,
 }
 
+/// Source ranges for the transcript image renderer, with the same Markdown exclusions
+/// and streaming delimiter rules as the text renderer.
+pub(crate) fn formula_ranges(input: &str) -> Vec<(Range<usize>, bool)> {
+    let mut spans = Vec::new();
+    MathMarkdown::scan(
+        input,
+        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH,
+        None,
+        Some(&mut spans),
+    );
+    spans
+}
+
 impl<'a> MathMarkdown<'a> {
     pub(super) fn new(input: &'a str, options: Options, width: Option<usize>) -> Self {
+        Self::scan(input, options, width, None)
+    }
+
+    fn scan(
+        input: &'a str,
+        options: Options,
+        width: Option<usize>,
+        mut spans: Option<&mut Vec<(Range<usize>, bool)>>,
+    ) -> Self {
         let mut result = Self {
             markdown: Cow::Borrowed(input),
             pending_start: None,
@@ -101,7 +123,8 @@ impl<'a> MathMarkdown<'a> {
             }
             let body = &input[offset..];
             if open == "$"
-                && (body.starts_with(char::is_whitespace) || body.starts_with(['(', '{']))
+                && (body.starts_with(char::is_whitespace)
+                    || (spans.is_none() && body.starts_with(['(', '{'])))
             {
                 continue;
             }
@@ -158,7 +181,10 @@ impl<'a> MathMarkdown<'a> {
             }
             // Retain rejected pairing only within the lookahead window, so shell PID dollars
             // cannot keep the entire streamed response mutable in the rendering cache.
-            if rejected_display || rejected_close {
+            // A complete display within a prose line gets its own paragraph in the image view.
+            let embedded_display =
+                spans.is_some() && end.is_some_and(|end| !input[offset..end].contains('\n'));
+            if (rejected_display || rejected_close) && !embedded_display {
                 if let Some(end) = end
                     && !input[offset..end].trim().is_empty()
                 {
@@ -182,6 +208,12 @@ impl<'a> MathMarkdown<'a> {
                 continue;
             }
             let Some(end) = end else {
+                if spans.is_some() {
+                    if display {
+                        break;
+                    }
+                    continue;
+                }
                 if display {
                     if body.len() < MAX_MATH_BYTES {
                         result.pending_start.get_or_insert(line_start);
@@ -214,14 +246,25 @@ impl<'a> MathMarkdown<'a> {
                 {
                     continue;
                 }
-                if formula != "0"
+                let numeric_math = spans.is_some() && formula.bytes().all(|b| b.is_ascii_digit());
+                let looks_like_currency = !numeric_math
+                    && formula != "0"
                     && formula.starts_with(|ch: char| ch.is_ascii_digit())
-                    && !formula.contains(['\\', '^', '_', '=', '+', '-', '*', '/', '<', '>'])
-                    || formula.len() > 1 && formula.chars().all(|ch| ch.is_ascii_uppercase())
-                {
+                    && !formula.contains(['\\', '^', '_', '=', '+', '-', '*', '/', '<', '>']);
+                let looks_like_variable = spans.is_none()
+                    && formula.len() > 1
+                    && formula.chars().all(|ch| ch.is_ascii_uppercase());
+                if looks_like_currency || looks_like_variable {
                     offset = span.end;
                     continue;
                 }
+            }
+            if let Some(spans) = &mut spans {
+                if formula.len() < MAX_MATH_BYTES {
+                    spans.push((span.clone(), display));
+                }
+                offset = span.end;
+                continue;
             }
             let rendered = if super::preferences::current().math && formula.len() < MAX_MATH_BYTES {
                 let mode = if !display {

@@ -1,0 +1,45 @@
+x^2+y_1=z
+\frac{a}{1+\frac{b}{c}}
+\dfrac{-b\pm\sqrt{b^2-4ac}}{2a}
+\sqrt[n]{1+x}
+\sum_{i=1}^{n} i^2=\frac{n(n+1)(2n+1)}{6}
+\int_{-\infty}^{\infty} e^{-x^2}\,dx=\sqrt{\pi}
+\lim_{h\to0}\frac{f(x+h)-f(x)}{h}
+\prod_{j=1}^{n}\left(1+\frac{1}{j}\right)
+\mathbb{P}\left[A\mid B\right]=\frac{\mathbb{P}\left[A\cap B\right]}{\mathbb{P}\left[B\right]}
+\mathbb{E}_{X\sim Q}\left[\ln\frac{q(X)}{p(X)}\right]
+\operatorname{Var}\left[X\right]=\mathbb{E}\left[X^2\right]-\mathbb{E}\left[X\right]^2
+\mathbb{I}\left[X\geq t\right]
+\operatorname*{arg\,min}_{\boldsymbol{w}\in\mathbb{R}^d}\ell(\boldsymbol{w})
+\nabla_{\boldsymbol{w}}\mathcal{L}=\mathbf{X}^{\top}\left(\widehat{\boldsymbol y}-\boldsymbol y\right)
+\left\lVert\boldsymbol{x}\right\rVert_2^2=\left\langle\boldsymbol{x},\boldsymbol{x}\right\rangle
+\begin{pmatrix}1&2\\3&4\end{pmatrix}
+\begin{bmatrix}a&b&c\\d&e&f\end{bmatrix}
+\begin{cases}x^2 & x\geq0\\-x & x<0\end{cases}
+\begin{aligned}a&=b+c\\&=d\end{aligned}
+\begin{align*}f(x)&=x^2\\f'(x)&=2x\end{align*}
+\begin{array}{c|cc} A & B & C \\ \hline 1 & 2 & 3 \end{array}
+\binom{n}{k}=\frac{n!}{k!(n-k)!}
+\overbrace{x+\cdots+x}^{n}=nx
+\underbrace{a_1+\dots+a_k}_{\text{first group}}
+\widehat{\theta}_{\mathrm{MLE}}\xrightarrow{p}\theta_0
+\widetilde{O}\!\left(\sqrt{T}\right)
+\frac{\partial^2 f}{\partial x\,\partial y}
+\forall x\in\mathcal{X},\quad \exists y\in\varnothing
+\bigcap_{i=1}^{k}A_i\subseteq\bigcup_{j=1}^{n}B_j
+\left\lfloor\frac{n}{2}\right\rfloor+\left\lceil\frac{n}{2}\right\rceil
+\alpha+\beta+\gamma+\Delta+\Omega+\varepsilon
+\mathbf{W}_{Q}\mathbf{W}_{K}^{\top}/\sqrt{d_k}
+\text{Attention}(Q,K,V)=\operatorname{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+\ell(x)=\max\left\{0,1-y\left\langle w,x\right\rangle\right\}
+\left.\frac{d}{dx}e^x\right|_{x=0}=1
+\mathbb{R}\setminus\left\{0\right\}
+\overset{\mathrm{def}}{=}\underset{n\to\infty}{\limsup}\, a_n
+\vec{v}\times\bar{w}
+a\equiv b\pmod{m}
+\det\!\begin{vmatrix}a&b\\c&d\end{vmatrix}
+\operatorname{D}\!\left(Q\Vert P\right)\geq 0
+\iint_D f(x,y)\,dx\,dy
+\begin{gathered}a=b+c\\d=e\end{gathered}
+\forall \boldsymbol{x}\in\left\{0,1\right\}^n
+\left[ u \right]_+=\max\left\{u,0\right\}

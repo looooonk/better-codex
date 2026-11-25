@@ -163,6 +163,7 @@ impl TerminalHyperlink {
 
 #[derive(Clone, Default)]
 pub(crate) struct HyperlinkLine {
+    pub(crate) math: Option<std::sync::Arc<[crate::equations::MathRun]>>,
     pub(crate) line: Line<'static>,
     pub(crate) hyperlinks: Vec<TerminalHyperlink>,
     pub(crate) source: Option<LogicalLineSource>,
@@ -201,11 +202,18 @@ pub(crate) fn lines_with_sources_eq(left: &[HyperlinkLine], right: &[HyperlinkLi
 impl HyperlinkLine {
     pub(crate) fn new(line: Line<'static>) -> Self {
         Self {
+            math: Default::default(),
             line,
             hyperlinks: Vec::new(),
             source: None,
             synthetic_prefix_width: 0,
         }
+    }
+
+    pub(crate) fn is_math_spacer(&self) -> bool {
+        self.math
+            .as_deref()
+            .is_some_and(|runs| runs.iter().all(|run| run.row != run.formula.above))
     }
 
     pub(crate) fn width(&self) -> usize {
@@ -296,6 +304,11 @@ pub(crate) fn prefix_hyperlink_lines(
             spans.push(prefix);
             spans.extend(line.line.spans);
             line.line = Line::from(spans).style(line.line.style);
+            if let Some(math) = &mut line.math {
+                for run in std::sync::Arc::make_mut(math) {
+                    run.x = run.x.saturating_add(shift as u16);
+                }
+            }
             for hyperlink in &mut line.hyperlinks {
                 hyperlink.columns = hyperlink.columns.start + shift..hyperlink.columns.end + shift;
             }
@@ -436,6 +449,7 @@ pub(crate) fn remap_source_wrapped_line(
                 })
                 .collect();
             HyperlinkLine {
+                math: None,
                 line,
                 hyperlinks,
                 source: Some(logical.wrapped(range, wrapped.prefix_bytes)),
@@ -968,6 +982,7 @@ mod tests {
     fn decorates_a_contiguous_web_link_with_one_osc8_pair() {
         let destination = "https://example.com/a/very/long/path";
         let line = HyperlinkLine {
+            math: None,
             source: None,
             synthetic_prefix_width: 0,
             line: Line::from(destination),
@@ -1035,6 +1050,7 @@ mod tests {
             wrapped,
             vec![
                 HyperlinkLine {
+                    math: None,
                     source: None,
                     synthetic_prefix_width: 0,
                     line: Line::from("  alpha 😀here"),
@@ -1044,6 +1060,7 @@ mod tests {
                     )],
                 },
                 HyperlinkLine {
+                    math: None,
                     source: None,
                     synthetic_prefix_width: 0,
                     line: Line::from("    middle there end"),
@@ -1307,6 +1324,7 @@ mod tests {
         );
         link.retarget_to_trusted_file(&file_url);
         let line = HyperlinkLine {
+            math: None,
             source: None,
             synthetic_prefix_width: 0,
             line: Line::from("view"),

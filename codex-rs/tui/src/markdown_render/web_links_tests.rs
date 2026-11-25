@@ -131,6 +131,7 @@ fn supporting_terminals_render_only_the_styled_label_and_keep_its_target() {
             assert_eq!(
                 render(markdown, /*width*/ 80, display),
                 vec![HyperlinkLine {
+                    math: None,
                     source: None,
                     synthetic_prefix_width: 0,
                     line: Line::from(label),

@@ -14,6 +14,30 @@
 
 use std::time::Duration;
 
+/// A positive reply is required before the experimental renderer sends graphics.
+pub(crate) static EQUATION_GRAPHICS_CONFIRMED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(unix)]
+fn confirms_graphics(protocol: crate::pets::ImageProtocol, replies: &[u8]) -> bool {
+    match protocol {
+        crate::pets::ImageProtocol::Kitty | crate::pets::ImageProtocol::KittyLocalFile => replies
+            .windows(b"\x1b_Gi=23741;OK\x1b\\".len())
+            .any(|s| s == b"\x1b_Gi=23741;OK\x1b\\"),
+        crate::pets::ImageProtocol::Sixel => replies
+            .windows(3)
+            .enumerate()
+            .filter(|(_, s)| *s == b"\x1b[?")
+            .any(|(at, _)| {
+                let rest = &replies[at + 3..];
+                rest.iter().position(|&b| b == b'c').is_some_and(|end| {
+                    rest[..end].iter().all(|b| b.is_ascii_digit() || *b == b';')
+                        && rest[..end].split(|b| *b == b';').skip(1).any(|v| v == b"4")
+                })
+            }),
+    }
+}
+
 /// Default wall-clock budget for each startup probe group.
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_millis(100);
 
@@ -251,7 +275,22 @@ mod imp {
         timeout: Duration,
         keyboard_probe: StartupKeyboardEnhancementProbe,
     ) -> io::Result<StartupProbe> {
+        super::EQUATION_GRAPHICS_CONFIRMED.store(false, std::sync::atomic::Ordering::Relaxed);
         let mut tty = Tty::open()?;
+        let graphics = crate::pets::detect_pet_image_support().protocol();
+        if let Some(protocol) = graphics {
+            match protocol {
+                crate::pets::ImageProtocol::Kitty | crate::pets::ImageProtocol::KittyLocalFile => {
+                    tty.write_all(b"\x1b_Ga=q,t=d,i=23741,f=32,s=1,v=1;AAAAAA==\x1b\\")?
+                }
+                crate::pets::ImageProtocol::Sixel
+                    if keyboard_probe == StartupKeyboardEnhancementProbe::Skip =>
+                {
+                    tty.write_all(b"\x1b[c")?
+                }
+                crate::pets::ImageProtocol::Sixel => {}
+            }
+        }
         match keyboard_probe {
             StartupKeyboardEnhancementProbe::Query => {
                 tty.write_all(b"\x1B[6n\x1B]10;?\x1B\\\x1B]11;?\x1B\\\x1B[?u\x1B[c")?;
@@ -260,7 +299,7 @@ mod imp {
                 tty.write_all(b"\x1B[6n\x1B]10;?\x1B\\\x1B]11;?\x1B\\")?;
             }
         }
-        read_startup_probe(&mut tty, timeout, keyboard_probe)
+        read_startup_probe(&mut tty, timeout, keyboard_probe, graphics)
     }
 
     /// Reads available terminal bytes until `parse` recognizes a probe response or time expires.
@@ -294,6 +333,7 @@ mod imp {
         tty: &mut Tty,
         timeout: Duration,
         keyboard_probe: StartupKeyboardEnhancementProbe,
+        graphics: Option<crate::pets::ImageProtocol>,
     ) -> io::Result<StartupProbe> {
         let deadline = Instant::now() + timeout;
         let mut buffer = Vec::new();
@@ -311,7 +351,14 @@ mod imp {
                 &buffer,
                 keyboard_probe,
             );
-            if startup_probe_complete(&probe, keyboard_probe) {
+            let graphics_confirmed = graphics.is_some_and(|p| super::confirms_graphics(p, &buffer));
+            if graphics_confirmed {
+                super::EQUATION_GRAPHICS_CONFIRMED
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            if (graphics.is_none() || graphics_confirmed)
+                && startup_probe_complete(&probe, keyboard_probe)
+            {
                 return Ok(probe);
             }
             let now = Instant::now();
@@ -891,6 +938,19 @@ pub(crate) use imp::*;
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    #[cfg(unix)]
+    fn requires_a_positive_reply_for_the_selected_graphics_protocol() {
+        use crate::pets::ImageProtocol::Kitty;
+        use crate::pets::ImageProtocol::Sixel;
+        assert!(confirms_graphics(Kitty, b"\x1b_Gi=23741;OK\x1b\\"));
+        assert!(!confirms_graphics(Kitty, b"\x1b_Gi=23740;OK\x1b\\"));
+        assert!(!confirms_graphics(Kitty, b"\x1b_Gi=23741;EINVAL\x1b\\"));
+        assert!(confirms_graphics(Sixel, b"\x1b[?62;4;22c"));
+        assert!(!confirms_graphics(Sixel, b"\x1b[?64;14c"));
+        assert!(!confirms_graphics(Sixel, b"\x1b[?1;4"));
+    }
 
     #[test]
     fn parses_osc_colors_with_bel_and_st() {

@@ -79,6 +79,7 @@ mod inline_directives;
 mod list_spacing;
 mod local_links;
 mod math;
+pub(crate) use math::formula_ranges;
 mod mermaid;
 pub(crate) mod preferences;
 mod source_tables;
