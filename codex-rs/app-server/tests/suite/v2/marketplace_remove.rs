@@ -78,7 +78,7 @@ async fn marketplace_remove_deletes_config_and_installed_root(user_entry: bool) 
         canonicalize_path_with_existing_parent(&installed_root)?,
     );
 
-    let config_path = codex_home.path().join("config.toml");
+    let config_path = codex_home.path().join("better-codex.toml");
     if user_entry {
         let config = std::fs::read_to_string(config_path)?;
         assert!(!config.contains("[marketplaces.debug]"));

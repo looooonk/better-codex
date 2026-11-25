@@ -7823,7 +7823,7 @@ async fn replace_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert_eq!(
         serialized,
@@ -7903,7 +7903,7 @@ async fn replace_mcp_servers_serializes_env_vars() -> anyhow::Result<()> {
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(
         serialized.contains(r#"env_vars = ["ALPHA", "BETA"]"#),
@@ -7968,7 +7968,7 @@ async fn replace_mcp_servers_serializes_sourced_env_vars() -> anyhow::Result<()>
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(
         serialized
@@ -8024,7 +8024,7 @@ async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(
         serialized.contains(r#"cwd = "/tmp/codex-mcp""#),
@@ -8083,7 +8083,7 @@ async fn replace_mcp_servers_streamable_http_serializes_bearer_token() -> anyhow
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert_eq!(
         serialized,
@@ -8158,7 +8158,7 @@ async fn replace_mcp_servers_streamable_http_serializes_custom_headers() -> anyh
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert_eq!(
         serialized,
@@ -8205,7 +8205,7 @@ X-Auth = "DOCS_AUTH"
 async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyhow::Result<()> {
     let codex_home = TempDir::new()?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
 
     let mut servers = BTreeMap::from([(
         "docs".to_string(),
@@ -8320,7 +8320,7 @@ url = "https://example.com/mcp"
 async fn replace_mcp_servers_streamable_http_isolates_headers_between_servers() -> anyhow::Result<()>
 {
     let codex_home = TempDir::new()?;
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
 
     let servers = BTreeMap::from([
         (
@@ -8484,7 +8484,7 @@ async fn replace_mcp_servers_serializes_disabled_flag() -> anyhow::Result<()> {
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(
         serialized.contains("enabled = false"),
@@ -8538,7 +8538,7 @@ async fn replace_mcp_servers_serializes_required_flag() -> anyhow::Result<()> {
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(
         serialized.contains("required = true"),
@@ -8592,7 +8592,7 @@ async fn replace_mcp_servers_serializes_tool_filters() -> anyhow::Result<()> {
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(serialized.contains(r#"enabled_tools = ["allowed"]"#));
     assert!(serialized.contains(r#"disabled_tools = ["blocked"]"#));
@@ -8656,7 +8656,7 @@ async fn replace_mcp_servers_streamable_http_serializes_oauth_resource() -> anyh
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
     let serialized = std::fs::read_to_string(&config_path)?;
     assert!(serialized.contains("[mcp_servers.docs.oauth]"));
     assert!(serialized.contains(r#"client_id = "eci-prd-pub-codex-123""#));
@@ -8682,7 +8682,7 @@ async fn set_model_updates_defaults() -> anyhow::Result<()> {
         .apply()
         .await?;
 
-    let serialized = tokio::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).await?;
+    let serialized = tokio::fs::read_to_string(codex_home.path().join("better-codex.toml")).await?;
     let parsed: ConfigToml = toml::from_str(&serialized)?;
 
     assert_eq!(parsed.model.as_deref(), Some("gpt-5.4"));
@@ -8714,7 +8714,12 @@ async fn for_config_writes_selected_user_config_file() -> anyhow::Result<()> {
         .apply()
         .await?;
 
-    let selected_serialized = tokio::fs::read_to_string(&selected_config).await?;
+    assert_eq!(
+        tokio::fs::read_to_string(&selected_config).await?,
+        r#"model = "gpt-old""#
+    );
+    let selected_serialized =
+        tokio::fs::read_to_string(codex_home.path().join("work.better-codex.toml")).await?;
     let selected: ConfigToml = toml::from_str(&selected_serialized)?;
     assert_eq!(selected.model.as_deref(), Some("gpt-new"));
     assert_eq!(selected.model_reasoning_effort, Some(ReasoningEffort::High));
@@ -8740,7 +8745,7 @@ fn profile_v2_config_path_resolves_validated_names() -> anyhow::Result<()> {
 #[tokio::test]
 async fn set_model_overwrites_existing_model() -> anyhow::Result<()> {
     let codex_home = TempDir::new()?;
-    let config_path = codex_home.path().join(CONFIG_TOML_FILE);
+    let config_path = codex_home.path().join("better-codex.toml");
 
     tokio::fs::write(
         &config_path,
@@ -11020,7 +11025,7 @@ async fn active_project_preserves_cwd_alias_and_repo_root_precedence() -> anyhow
 fn test_set_default_oss_provider() -> std::io::Result<()> {
     let temp_dir = TempDir::new()?;
     let codex_home = temp_dir.path();
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = codex_home.join("better-codex.toml");
 
     // Test setting valid provider on empty config
     set_default_oss_provider(codex_home, OLLAMA_OSS_PROVIDER_ID)?;

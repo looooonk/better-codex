@@ -1887,8 +1887,10 @@ async fn reload_user_config_layer_keeps_previous_config_for_malformed_policy(
     assert!(!config.plugins.allows_plugin("sample@openai-curated-remote"));
 }
 
+#[test_case(false; "inherited files")]
+#[test_case(true; "first edits in private siblings")]
 #[tokio::test]
-async fn reload_user_config_layer_updates_base_and_selected_profile_layers() {
+async fn reload_user_config_layer_updates_base_and_selected_profile_layers(private: bool) {
     let (session, _turn_context) = make_session_and_context().await;
     let codex_home = session.codex_home().await;
     std::fs::create_dir_all(&codex_home).expect("create codex home");
@@ -1915,12 +1917,20 @@ async fn reload_user_config_layer_updates_base_and_selected_profile_layers() {
         let mut state = session.state.lock().await;
         state.session_configuration.original_config_do_not_use = Arc::new(config);
     }
+    let (base_to_update, profile_to_update) = if private {
+        (
+            codex_home.join("better-codex.toml"),
+            codex_home.join("work.better-codex.toml"),
+        )
+    } else {
+        (base_config_path.clone(), profile_config_path.clone())
+    };
     std::fs::write(
-        &base_config_path,
+        &base_to_update,
         "model = \"base\"\napproval_policy = \"never\"\n",
     )
     .expect("update base user config");
-    std::fs::write(&profile_config_path, "model = \"profile-new\"\n")
+    std::fs::write(&profile_to_update, "model = \"profile-new\"\n")
         .expect("update profile user config");
 
     session.reload_user_config_layer().await;

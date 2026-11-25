@@ -27,7 +27,7 @@ const REMOTE_PLUGIN_ID: &str = "plugins~Plugin_linear";
 const WORKSPACE_REMOTE_PLUGIN_ID: &str = "plugins_69f27c3e67848191a45cbaa5f2adb39d";
 
 #[tokio::test]
-async fn plugin_uninstall_removes_plugin_cache_and_config_entry() -> Result<()> {
+async fn plugin_uninstall_removes_its_entry_and_preserves_shared_installations() -> Result<()> {
     let codex_home = TempDir::new()?;
     write_installed_plugin(&codex_home, "debug", "sample-plugin")?;
     std::fs::write(
@@ -49,12 +49,14 @@ enabled = true
     assert_eq!(response, PluginUninstallResponse {});
 
     assert!(
-        !codex_home
+        codex_home
             .path()
             .join("plugins/cache/debug/sample-plugin")
             .exists()
     );
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_config::user_config_file::read_path(
+        &codex_home.path().join("config.toml"),
+    ))?;
     assert!(!config.contains(r#"[plugins."sample-plugin@debug"]"#));
 
     let response = uninstall_plugin(&mut mcp, "sample-plugin@debug").await?;

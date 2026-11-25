@@ -293,8 +293,20 @@ pub async fn load_config_layers_state(
     // Add the base user config layer. When profile-v2 is selected, add the
     // profile config as a second user layer on top so the profile only needs to
     // contain overrides.
-    let active_user_file = overrides.user_config_path(codex_home)?;
-    let base_user_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, codex_home);
+    let inherited_base = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, codex_home);
+    let selected = overrides.user_config_path(codex_home)?;
+    let base_user_file = if ignore_user_config {
+        inherited_base.clone()
+    } else {
+        crate::user_config_file::executor_read_path(fs, inherited_base.clone()).await?
+    };
+    let active_user_file = if selected == inherited_base {
+        base_user_file.clone()
+    } else if !ignore_user_config && selected.as_path().parent() == Some(codex_home) {
+        crate::user_config_file::executor_read_path(fs, selected).await?
+    } else {
+        selected
+    };
     let base_user_layer = load_user_config_layer(
         fs,
         &base_user_file,
@@ -1880,7 +1892,9 @@ async fn discover_project_layers(
         if dot_codex_abs == codex_home_abs || dot_codex_normalized == codex_home_normalized {
             continue;
         }
-        let config_file = dot_codex_abs.join(CONFIG_TOML_FILE);
+        let config_file =
+            crate::user_config_file::executor_read_path(fs, dot_codex_abs.join(CONFIG_TOML_FILE))
+                .await?;
         let config_file_uri = PathUri::from_abs_path(&config_file);
         match fs
             .read_file_text(&config_file_uri, Default::default(), /*sandbox*/ None)
@@ -1997,7 +2011,9 @@ async fn load_root_checkout_project_config(
     hooks_config_folder: &AbsolutePathBuf,
     is_trusted: bool,
 ) -> io::Result<TomlValue> {
-    let hooks_config_file = hooks_config_folder.join(CONFIG_TOML_FILE);
+    let hooks_config_file =
+        crate::user_config_file::executor_read_path(fs, hooks_config_folder.join(CONFIG_TOML_FILE))
+            .await?;
     let hooks_config_file_uri = PathUri::from_abs_path(&hooks_config_file);
     Ok(
         match fs

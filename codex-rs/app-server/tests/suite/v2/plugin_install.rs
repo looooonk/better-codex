@@ -1551,7 +1551,9 @@ plugins = true
             .unwrap_or_default()
             .is_empty()
     );
-    let persisted_config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let persisted_config = std::fs::read_to_string(codex_config::user_config_file::read_path(
+        &codex_home.path().join("config.toml"),
+    ))?;
     let persisted_config = toml::from_str::<toml::Value>(&persisted_config)?;
     assert_eq!(
         persisted_config
@@ -2554,7 +2556,9 @@ async fn plugin_install_makes_bundled_mcp_servers_available_to_followup_requests
     let response: PluginInstallResponse =
         timeout(DEFAULT_TIMEOUT, mcp.read_response(request_id)).await??;
     assert_eq!(response.apps_needing_auth, Vec::<AppSummary>::new());
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_config::user_config_file::read_path(
+        &codex_home.path().join("config.toml"),
+    ))?;
     assert!(!config.contains("[mcp_servers.sample-mcp]"));
 
     let request_id = mcp

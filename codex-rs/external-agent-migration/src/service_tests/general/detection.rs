@@ -780,7 +780,8 @@ async fn import_repo_migrates_mcp_hooks_commands_and_subagents() {
     .await;
 
     let config: TomlValue = toml::from_str(
-        &fs::read_to_string(repo_root.join(".codex").join("config.toml")).expect("read config"),
+        &fs::read_to_string(repo_root.join(".codex").join("better-codex.toml"))
+            .expect("read config"),
     )
     .expect("parse config");
     let expected_config: TomlValue = toml::from_str(

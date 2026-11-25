@@ -9,6 +9,8 @@ use toml_edit::Value as TomlValue;
 use toml_edit::value;
 
 use crate::CONFIG_TOML_FILE;
+use crate::user_config_file::UserConfigEdit;
+use codex_utils_path::write_atomically;
 
 pub struct MarketplaceConfigUpdate<'a> {
     pub source_type: &'a str,
@@ -30,10 +32,10 @@ pub fn record_user_marketplace(
     update: &MarketplaceConfigUpdate<'_>,
 ) -> std::io::Result<()> {
     let config_path = codex_home.join(CONFIG_TOML_FILE);
-    let mut doc = read_or_create_document(&config_path)?;
+    let edit = UserConfigEdit::open(codex_home, &config_path)?;
+    let mut doc = read_or_create_document(edit.read_path.as_deref().unwrap_or(&edit.write_path))?;
     upsert_marketplace(&mut doc, marketplace_name, update);
-    fs::create_dir_all(codex_home)?;
-    fs::write(config_path, doc.to_string())
+    write_atomically(&edit.write_path, &doc.to_string())
 }
 
 pub fn remove_user_marketplace(codex_home: &Path, marketplace_name: &str) -> std::io::Result<bool> {
@@ -46,7 +48,8 @@ pub fn remove_user_marketplace_config(
     marketplace_name: &str,
 ) -> std::io::Result<RemoveMarketplaceConfigOutcome> {
     let config_path = codex_home.join(CONFIG_TOML_FILE);
-    let mut doc = match fs::read_to_string(&config_path) {
+    let edit = UserConfigEdit::open(codex_home, &config_path)?;
+    let mut doc = match fs::read_to_string(edit.read_path.as_ref().unwrap_or(&edit.write_path)) {
         Ok(raw) => raw
             .parse::<DocumentMut>()
             .map_err(|err| std::io::Error::new(ErrorKind::InvalidData, err))?,
@@ -61,8 +64,7 @@ pub fn remove_user_marketplace_config(
         return Ok(outcome);
     }
 
-    fs::create_dir_all(codex_home)?;
-    fs::write(config_path, doc.to_string())?;
+    write_atomically(&edit.write_path, &doc.to_string())?;
     Ok(RemoveMarketplaceConfigOutcome::Removed)
 }
 
@@ -192,9 +194,10 @@ mod tests {
 
         record_user_marketplace(codex_home.path(), "debug", &update).unwrap();
 
-        let config: toml::Value =
-            toml::from_str(&fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).unwrap())
-                .unwrap();
+        let config: toml::Value = toml::from_str(
+            &fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap(),
+        )
+        .unwrap();
         let marketplace = config
             .get("marketplaces")
             .and_then(|marketplaces| marketplaces.get("debug"))
@@ -230,9 +233,10 @@ mod tests {
         let removed = remove_user_marketplace(codex_home.path(), "debug").unwrap();
 
         assert!(removed);
-        let config: toml::Value =
-            toml::from_str(&fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).unwrap())
-                .unwrap();
+        let config: toml::Value = toml::from_str(
+            &fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap(),
+        )
+        .unwrap();
         let marketplaces = config
             .get("marketplaces")
             .and_then(toml::Value::as_table)
@@ -288,9 +292,10 @@ marketplaces = {
         let outcome = remove_user_marketplace_config(codex_home.path(), "debug").unwrap();
 
         assert_eq!(outcome, RemoveMarketplaceConfigOutcome::Removed);
-        let config: toml::Value =
-            toml::from_str(&fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).unwrap())
-                .unwrap();
+        let config: toml::Value = toml::from_str(
+            &fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap(),
+        )
+        .unwrap();
         let marketplaces = config
             .get("marketplaces")
             .and_then(toml::Value::as_table)

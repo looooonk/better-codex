@@ -327,8 +327,10 @@ async fn external_agent_config_detect_does_not_block_configuration_reads() -> Re
         ExternalAgentConfigMigrationItemType::Sessions
     );
     assert!(
-        std::fs::read_to_string(codex_home.path().join("config.toml"))?
-            .contains("model = \"gpt-concurrent\"")
+        std::fs::read_to_string(codex_config::user_config_file::read_path(
+            &codex_home.path().join("config.toml")
+        ))?
+        .contains("model = \"gpt-concurrent\"")
     );
 
     Ok(())
@@ -390,8 +392,10 @@ async fn external_agent_config_migration_source_drives_detect_and_import() -> Re
     assert_eq!(completed.item_type_results[0].successes.len(), 1);
     assert_eq!(completed.item_type_results[0].failures, Vec::new());
     assert!(
-        std::fs::read_to_string(codex_home.path().join("config.toml"))?
-            .contains("SOURCE = \"secondary\"")
+        std::fs::read_to_string(codex_config::user_config_file::read_path(
+            &codex_home.path().join("config.toml")
+        ))?
+        .contains("SOURCE = \"secondary\"")
     );
 
     Ok(())

@@ -365,6 +365,15 @@ impl PluginEntry {
     }
 
     fn action_hint(&self) -> &'static str {
+        if matches!(&self.plugin.source, PluginSource::Remote)
+            && self.uninstall_plugin_id().is_some()
+        {
+            return if self.install_params().is_some() {
+                "press i or Enter to update, or u to uninstall from your account"
+            } else {
+                "press u to uninstall from your account"
+            };
+        }
         if self.install_params().is_some() {
             if self.plugin.installed {
                 "press i or Enter to update from the marketplace"

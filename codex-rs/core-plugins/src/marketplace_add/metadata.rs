@@ -53,7 +53,7 @@ pub(super) fn installed_marketplace_root_for_source(
     install_root: &Path,
     install_metadata: &MarketplaceInstallMetadata,
 ) -> Result<Option<PathBuf>, MarketplaceAddError> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = codex_config::user_config_file::read_path(&codex_home.join(CONFIG_TOML_FILE));
     let config = match fs::read_to_string(&config_path) {
         Ok(config) => config,
         Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),
@@ -96,7 +96,7 @@ pub(super) fn find_marketplace_root_by_name(
     install_root: &Path,
     marketplace_name: &str,
 ) -> Result<Option<PathBuf>, MarketplaceAddError> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = codex_config::user_config_file::read_path(&codex_home.join(CONFIG_TOML_FILE));
     let config = match fs::read_to_string(&config_path) {
         Ok(config) => config,
         Err(err) if err.kind() == ErrorKind::NotFound => return Ok(None),

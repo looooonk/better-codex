@@ -1,4 +1,3 @@
-use crate::path_utils::resolve_symlink_write_paths;
 use crate::path_utils::write_atomically;
 use anyhow::Context;
 use codex_config::CONFIG_TOML_FILE;
@@ -7,6 +6,7 @@ use codex_config::types::McpServerConfig;
 use codex_config::types::ResumeCwdMode;
 use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestDisabledTool;
+use codex_config::user_config_file::UserConfigEdit;
 use codex_features::FEATURES;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::TrustLevel;
@@ -54,6 +54,11 @@ pub enum ConfigEdit {
     SetNoticeExternalConfigMigrationPromptProjectLastPromptedAt(String, i64),
     /// Record that a migration prompt was shown for an old->new model mapping.
     RecordModelMigrationSeen { from: String, to: String },
+    /// Update one server without replacing registrations saved by other clients.
+    SetMcpServer {
+        name: String,
+        config: Option<Box<McpServerConfig>>,
+    },
     /// Replace the entire `[mcp_servers]` table.
     ReplaceMcpServers(BTreeMap<String, McpServerConfig>),
     /// Add a disabled tool suggestion under `[tool_suggest].disabled_tools`.
@@ -303,6 +308,29 @@ impl ConfigDocument {
                 &[NOTICE_TABLE_KEY, "model_migrations", from.as_str()],
                 value(to.clone()),
             )),
+            ConfigEdit::SetMcpServer { name, config } => {
+                if let Some(config) = config {
+                    let Some(table) =
+                        self.descend(&["mcp_servers".to_owned()], TraversalMode::Create)
+                    else {
+                        return Ok(false);
+                    };
+                    document_helpers::write_mcp_server(table, name, config)?;
+                    Ok(true)
+                } else {
+                    let removed = self.clear(&["mcp_servers", name]);
+                    if removed
+                        && self
+                            .doc
+                            .get("mcp_servers")
+                            .and_then(TomlItem::as_table)
+                            .is_some_and(TomlTable::is_empty)
+                    {
+                        self.doc.remove("mcp_servers");
+                    }
+                    Ok(removed)
+                }
+            }
             ConfigEdit::ReplaceMcpServers(servers) => self.replace_mcp_servers(servers),
             ConfigEdit::AddToolSuggestDisabledTool(disabled_tool) => {
                 Ok(self.add_tool_suggest_disabled_tool(disabled_tool))
@@ -479,18 +507,7 @@ impl ConfigDocument {
         }
 
         for (name, config) in servers {
-            if let Some(existing) = table.get_mut(name.as_str()) {
-                if let TomlItem::Value(value) = existing
-                    && let Some(inline) = value.as_inline_table_mut()
-                {
-                    let replacement = document_helpers::serialize_mcp_server_inline(config)?;
-                    document_helpers::merge_inline_table(inline, replacement);
-                } else {
-                    *existing = document_helpers::serialize_mcp_server(config)?;
-                }
-            } else {
-                table.insert(name, document_helpers::serialize_mcp_server(config)?);
-            }
+            document_helpers::write_mcp_server(table, name, config)?;
         }
 
         Ok(true)
@@ -743,10 +760,11 @@ fn write_skill_config_selector(table: &mut TomlTable, selector: &SkillConfigSele
 /// Persist edits using a blocking strategy.
 pub fn apply_blocking(codex_home: &Path, edits: &[ConfigEdit]) -> anyhow::Result<()> {
     let config_path = codex_home.join(CONFIG_TOML_FILE);
-    apply_blocking_to_resolved_file(&config_path, edits)
+    apply_blocking_to_resolved_file(codex_home, &config_path, edits)
 }
 
 fn apply_blocking_to_resolved_file(
+    codex_home: &Path,
     resolved_config_file: &Path,
     edits: &[ConfigEdit],
 ) -> anyhow::Result<()> {
@@ -754,7 +772,7 @@ fn apply_blocking_to_resolved_file(
         return Ok(());
     }
 
-    let write_paths = resolve_symlink_write_paths(resolved_config_file)?;
+    let write_paths = UserConfigEdit::open(codex_home, resolved_config_file)?;
     let serialized = match write_paths.read_path {
         Some(path) => match std::fs::read_to_string(&path) {
             Ok(contents) => contents,
@@ -794,13 +812,14 @@ fn apply_blocking_to_resolved_file(
 /// Fluent builder to batch config edits and apply them atomically.
 #[derive(Default)]
 pub struct ConfigEditsBuilder {
+    codex_home: Option<PathBuf>,
     config_path: PathBuf,
     edits: Vec<ConfigEdit>,
 }
 
 impl ConfigEditsBuilder {
     pub fn new(codex_home: &Path) -> Self {
-        Self::for_config_path(&codex_home.join(CONFIG_TOML_FILE))
+        Self::for_user_config_path(codex_home, &codex_home.join(CONFIG_TOML_FILE))
     }
 
     pub fn for_config(config: &crate::config::Config) -> Self {
@@ -809,11 +828,19 @@ impl ConfigEditsBuilder {
             .get_user_config_file()
             .map(codex_utils_absolute_path::AbsolutePathBuf::to_path_buf)
             .unwrap_or_else(|| config.codex_home.join(CONFIG_TOML_FILE).to_path_buf());
-        Self::for_config_path(&config_path)
+        Self::for_user_config_path(&config.codex_home, &config_path)
+    }
+
+    pub fn for_user_config_path(codex_home: &Path, config_path: &Path) -> Self {
+        Self {
+            codex_home: Some(codex_home.to_owned()),
+            ..Self::for_config_path(config_path)
+        }
     }
 
     pub fn for_config_path(config_path: &Path) -> Self {
         Self {
+            codex_home: None,
             config_path: config_path.to_path_buf(),
             edits: Vec::new(),
         }
@@ -989,16 +1016,18 @@ impl ConfigEditsBuilder {
 
     /// Apply edits on a blocking thread.
     pub fn apply_blocking(self) -> anyhow::Result<()> {
-        apply_blocking_to_resolved_file(&self.config_path, &self.edits)
+        let codex_home = match self.codex_home {
+            Some(home) => home,
+            None => crate::config::find_codex_home()?.to_path_buf(),
+        };
+        apply_blocking_to_resolved_file(&codex_home, &self.config_path, &self.edits)
     }
 
     /// Apply edits asynchronously via a blocking offload.
     pub async fn apply(self) -> anyhow::Result<()> {
-        task::spawn_blocking(move || {
-            apply_blocking_to_resolved_file(&self.config_path, &self.edits)
-        })
-        .await
-        .context("config persistence task panicked")?
+        task::spawn_blocking(move || self.apply_blocking())
+            .await
+            .context("config persistence task panicked")?
     }
 }
 

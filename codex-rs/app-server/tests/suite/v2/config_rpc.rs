@@ -1054,7 +1054,7 @@ access = "deny"
     )?;
     set_project_trust_level(codex_home.path(), workspace.path(), TrustLevel::Trusted)?;
     let codex_home_path = codex_home.path().canonicalize()?;
-    let user_file = AbsolutePathBuf::try_from(codex_home_path.join("config.toml"))?;
+    let user_file = AbsolutePathBuf::try_from(codex_home_path.join("better-codex.toml"))?;
     let project_config = AbsolutePathBuf::try_from(project_config_dir)?;
 
     let mut mcp = TestAppServer::builder()
@@ -1897,7 +1897,8 @@ model = "gpt-old"
         .await?;
     let write: ConfigWriteResponse =
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(write_id)).await??;
-    let expected_file_path = AbsolutePathBuf::resolve_path_against_base("config.toml", codex_home);
+    let expected_file_path =
+        AbsolutePathBuf::resolve_path_against_base("better-codex.toml", codex_home);
 
     assert_eq!(write.status, WriteStatus::Ok);
     assert_eq!(write.file_path, expected_file_path);
@@ -1978,7 +1979,7 @@ async fn config_provider_write_reports_source_displacement() -> Result<()> {
             provider[field] = value;
         }
         let saved: toml::Value = toml::from_str(&std::fs::read_to_string(
-            codex_home.path().join("config.toml"),
+            codex_home.path().join("better-codex.toml"),
         )?)?;
         assert_eq!(
             serde_json::to_value(
@@ -2035,7 +2036,7 @@ url_prefixes = ["https://fixed.example"]
     assert_eq!(write.status, WriteStatus::OkOverridden);
 
     let saved: toml::Value = toml::from_str(&std::fs::read_to_string(
-        codex_home.path().join("config.toml"),
+        codex_home.path().join("better-codex.toml"),
     )?)?;
     assert_eq!(
         serde_json::to_value(&saved["features"]["network_proxy"]["credentials"]["vendor"])?,
@@ -2496,7 +2497,8 @@ async fn config_batch_write_applies_multiple_edits() -> Result<()> {
     let batch_write: ConfigWriteResponse =
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(batch_id)).await??;
     assert_eq!(batch_write.status, WriteStatus::Ok);
-    let expected_file_path = AbsolutePathBuf::resolve_path_against_base("config.toml", codex_home);
+    let expected_file_path =
+        AbsolutePathBuf::resolve_path_against_base("better-codex.toml", codex_home);
     assert_eq!(batch_write.file_path, expected_file_path);
 
     let read_id = mcp
@@ -2638,12 +2640,13 @@ access = "deny"
     assert_eq!(batch_write.status, WriteStatus::Ok);
     assert_eq!(
         batch_write.file_path,
-        AbsolutePathBuf::resolve_path_against_base("config.toml", &codex_home)
+        AbsolutePathBuf::resolve_path_against_base("better-codex.toml", &codex_home)
     );
     assert_eq!(batch_write.overridden_metadata, None);
 
-    let persisted: toml::Value =
-        toml::from_str(&std::fs::read_to_string(codex_home.join("config.toml"))?)?;
+    let persisted: toml::Value = toml::from_str(&std::fs::read_to_string(
+        codex_home.join("better-codex.toml"),
+    )?)?;
     let expected_persisted: toml::Value = toml::from_str(
         r#"
 model = "gpt-existing"

@@ -2,7 +2,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use codex_utils_path::resolve_symlink_write_paths;
+use crate::user_config_file::UserConfigEdit;
 use codex_utils_path::write_atomically;
 use tokio::task;
 use toml_edit::DocumentMut;
@@ -56,7 +56,7 @@ fn apply_user_plugin_config_edits_blocking(
     }
 
     let config_path = codex_home.join(CONFIG_TOML_FILE);
-    let write_paths = resolve_symlink_write_paths(&config_path)?;
+    let write_paths = UserConfigEdit::open(codex_home, &config_path)?;
     let mut doc = read_or_create_document(write_paths.read_path.as_deref())?;
     let mut mutated = false;
     for edit in edits {
@@ -256,7 +256,7 @@ enabled = true
             .unwrap();
 
         assert_eq!(
-            fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).unwrap(),
+            fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap(),
             ""
         );
     }
@@ -269,12 +269,12 @@ enabled = true
             .await
             .unwrap();
 
-        assert!(!codex_home.path().join(CONFIG_TOML_FILE).exists());
+        assert!(!codex_home.path().join("better-codex.toml").exists());
     }
 
     #[tokio::test]
     #[cfg(unix)]
-    async fn set_user_plugin_enabled_follows_config_symlink() {
+    async fn set_user_plugin_enabled_preserves_inherited_config_symlink() {
         use std::os::unix::fs::symlink;
 
         let codex_home = TempDir::new().unwrap();
@@ -289,8 +289,8 @@ enabled = true
         .await
         .unwrap();
 
-        let config =
-            toml::from_str::<toml::Value>(&fs::read_to_string(target_path).unwrap()).unwrap();
+        assert!(!target_path.exists());
+        let config = read_config(codex_home.path());
         let expected: toml::Value = toml::from_str(
             r#"
 [plugins."demo@market"]
@@ -302,6 +302,6 @@ enabled = true
     }
 
     fn read_config(codex_home: &Path) -> toml::Value {
-        toml::from_str(&fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).unwrap()).unwrap()
+        toml::from_str(&fs::read_to_string(codex_home.join("better-codex.toml")).unwrap()).unwrap()
     }
 }

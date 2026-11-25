@@ -2441,7 +2441,8 @@ async fn persist_codex_app_tool_approval_writes_tool_override() {
         .await
         .expect("persist approval");
 
-    let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
+    let contents =
+        std::fs::read_to_string(tmp.path().join("better-codex.toml")).expect("read config");
     let parsed: ConfigToml = toml::from_str(&contents).expect("parse config");
 
     assert_eq!(
@@ -2493,7 +2494,8 @@ async fn persist_custom_mcp_tool_approval_writes_tool_override() {
         .await
         .expect("persist approval");
 
-    let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
+    let contents =
+        std::fs::read_to_string(tmp.path().join("better-codex.toml")).expect("read config");
     let parsed: ConfigToml = toml::from_str(&contents).expect("parse config");
     let tool = parsed
         .mcp_servers
@@ -2753,7 +2755,8 @@ async fn maybe_persist_mcp_tool_approval_preserves_plugin_default_activation() {
 
     maybe_persist_mcp_tool_approval(&session, &turn_context, key.clone()).await;
 
-    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let contents =
+        std::fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config");
     let parsed: ConfigToml = toml::from_str(&contents).expect("parse config");
     let tool = parsed
         .plugins
@@ -2846,7 +2849,7 @@ async fn maybe_persist_mcp_tool_approval_writes_project_config_for_project_serve
 
     maybe_persist_mcp_tool_approval(&session, &turn_context, key.clone()).await;
 
-    let contents = std::fs::read_to_string(project_codex_dir.join(CONFIG_TOML_FILE))
+    let contents = std::fs::read_to_string(project_codex_dir.join("better-codex.toml"))
         .expect("read project config");
     let parsed: ConfigToml = toml::from_str(&contents).expect("parse project config");
     let tool = parsed

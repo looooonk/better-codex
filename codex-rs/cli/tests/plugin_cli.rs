@@ -262,7 +262,7 @@ fn setup_custom_marketplace_under_implicit_system_root() -> Result<(TempDir, std
 }
 
 fn remove_installed_plugin_config(codex_home: &Path, plugin_key: &str) -> Result<()> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = codex_config::user_config_file::read_path(&codex_home.join(CONFIG_TOML_FILE));
     let plugin_header = format!("[plugins.\"{plugin_key}\"]");
     let config = std::fs::read_to_string(&config_path)?;
     let mut rewritten = Vec::new();
@@ -991,7 +991,7 @@ async fn plugin_add_and_remove_updates_installed_plugin_config() -> Result<()> {
         .success()
         .stdout(contains("Added plugin `sample` from marketplace `debug`."));
 
-    let config = std::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     assert!(config.contains("[plugins.\"sample@debug\"]"));
 
     codex_command(codex_home.path())?
@@ -1002,7 +1002,7 @@ async fn plugin_add_and_remove_updates_installed_plugin_config() -> Result<()> {
             "Removed plugin `sample` from marketplace `debug`.",
         ));
 
-    let config = std::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     assert!(!config.contains("[plugins.\"sample@debug\"]"));
 
     Ok(())
@@ -1148,7 +1148,7 @@ async fn plugin_remove_works_after_marketplace_is_removed() -> Result<()> {
             "Removed plugin `sample` from marketplace `debug`.",
         ));
 
-    let config = std::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     assert!(!config.contains("[plugins.\"sample@debug\"]"));
 
     Ok(())

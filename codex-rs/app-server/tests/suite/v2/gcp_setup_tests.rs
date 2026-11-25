@@ -111,7 +111,7 @@ async fn setup_gcp_saves_overrides_restores_adc_and_refreshes_catalog() -> Resul
     catalog.models.push(unsupported_model);
     let catalog_path = home.join("models.json");
     std::fs::write(&catalog_path, serde_json::to_vec(&catalog)?)?;
-    let config_path = home.join("config.toml");
+    let config_path = home.join("better-codex.toml");
     let mut expected_config = json!({
         "model_catalog_json": catalog_path,
         "model_providers": {"gcp": {"http_headers": {"X-Existing": "preserved"}}}

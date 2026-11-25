@@ -40,6 +40,7 @@ use crate::utils::is_missing_or_empty_text_file;
 pub(super) use crate::utils::read_json_file as read_external_settings;
 use crate::utils::rewrite_external_agent_terms;
 use codex_analytics::AnalyticsEventsClient;
+use codex_config::user_config_file::UserConfigEdit;
 use codex_core::config::Config;
 use codex_core_plugins::PluginsManager;
 use codex_core_plugins::marketplace::MarketplacePluginInstallPolicy;
@@ -581,19 +582,17 @@ impl ExternalAgentConfigService {
             return Ok(None);
         }
 
-        let Some(target_parent) = target_config.parent() else {
-            return Err(invalid_data_error("config target path has no parent"));
-        };
-        fs::create_dir_all(target_parent)?;
+        let edit = UserConfigEdit::open(&self.codex_home, &target_config)?;
+        let target_config = edit.read_path.as_ref().unwrap_or(&edit.write_path);
         if !target_config.exists() {
-            write_toml_file(&target_config, &migrated)?;
+            write_toml_file(&edit, &migrated)?;
             return Ok(Some((
                 source_settings.display().to_string(),
-                target_config.display().to_string(),
+                edit.write_path.display().to_string(),
             )));
         }
 
-        let existing_raw = fs::read_to_string(&target_config)?;
+        let existing_raw = fs::read_to_string(target_config)?;
         let mut existing = if existing_raw.trim().is_empty() {
             TomlValue::Table(Default::default())
         } else {
@@ -606,10 +605,10 @@ impl ExternalAgentConfigService {
             return Ok(None);
         }
 
-        write_toml_file(&target_config, &existing)?;
+        write_toml_file(&edit, &existing)?;
         Ok(Some((
             source_settings.display().to_string(),
-            target_config.display().to_string(),
+            edit.write_path.display().to_string(),
         )))
     }
 
@@ -627,17 +626,15 @@ impl ExternalAgentConfigService {
             return Ok(Vec::new());
         }
 
-        let Some(target_parent) = target_config.parent() else {
-            return Err(invalid_data_error("config target path has no parent"));
-        };
-        fs::create_dir_all(target_parent)?;
+        let edit = UserConfigEdit::open(&self.codex_home, &target_config)?;
+        let target_config = edit.read_path.as_ref().unwrap_or(&edit.write_path);
         if !target_config.exists() {
             let migrated_server_names = migrated_mcp_server_names(&migrated);
-            write_toml_file(&target_config, &migrated)?;
+            write_toml_file(&edit, &migrated)?;
             return Ok(migrated_server_names);
         }
 
-        let existing_raw = fs::read_to_string(&target_config)?;
+        let existing_raw = fs::read_to_string(target_config)?;
         let mut existing = if existing_raw.trim().is_empty() {
             TomlValue::Table(Default::default())
         } else {
@@ -646,7 +643,7 @@ impl ExternalAgentConfigService {
         };
         let merged_server_names = merge_missing_mcp_servers(&mut existing, &migrated)?;
         if !merged_server_names.is_empty() {
-            write_toml_file(&target_config, &existing)?;
+            write_toml_file(&edit, &existing)?;
         }
         Ok(merged_server_names)
     }

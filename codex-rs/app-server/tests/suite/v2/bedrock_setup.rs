@@ -105,7 +105,7 @@ async fn discover_bedrock_profiles_and_environment_credentials() -> Result<()> {
     assert_eq!(response, BedrockSetupResponse {});
 
     let config: toml::Value = toml::from_str(&std::fs::read_to_string(
-        codex_home.path().join("config.toml"),
+        codex_home.path().join("better-codex.toml"),
     )?)?;
     assert_eq!(
         config,
@@ -139,7 +139,7 @@ async fn discover_bedrock_profiles_and_environment_credentials() -> Result<()> {
 #[tokio::test]
 async fn setup_bedrock_profile_and_environment() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let config_path = codex_home.path().join("config.toml");
+    let config_path = codex_home.path().join("better-codex.toml");
     let dotenv_path = codex_home.path().join(".env");
     let existing_config = "[model_providers.amazon-bedrock]\nhttp_headers = { X-Existing = \"preserved\" }\n\
          [model_providers.amazon-bedrock.aws]\nprofile = \"old\"\nregion = \"us-east-1\"\n\
@@ -216,7 +216,7 @@ async fn setup_bedrock_profile_and_environment() -> Result<()> {
     );
 
     let managed_home = TempDir::new()?;
-    let managed_config_path = managed_home.path().join("config.toml");
+    let managed_config_path = managed_home.path().join("better-codex.toml");
     std::fs::write(&managed_config_path, "model_provider = 'openai'")?;
     std::fs::write(
         managed_home.path().join("requirements.toml"),
@@ -229,8 +229,15 @@ async fn setup_bedrock_profile_and_environment() -> Result<()> {
         AuthCredentialsStoreMode::File,
         AuthKeyringBackendKind::default(),
     )?;
-    let auth_path = managed_home.path().join("auth.json");
-    let expected_auth = std::fs::read_to_string(&auth_path)?;
+    let read_auth = || {
+        codex_login::load_auth_dot_json(
+            managed_home.path(),
+            AuthCredentialsStoreMode::File,
+            AuthKeyringBackendKind::default(),
+        )
+    };
+    let expected_auth = read_auth()?;
+    assert!(expected_auth.is_some());
     let mut app_server = bedrock_app_server(
         managed_home.path(),
         &[(
@@ -279,7 +286,7 @@ async fn setup_bedrock_profile_and_environment() -> Result<()> {
         error.error.message,
         "Codex-managed Bedrock credentials are already configured and take priority over AWS environment credentials. Run `codex logout` and try again."
     );
-    assert_eq!(std::fs::read_to_string(&auth_path)?, expected_auth);
+    assert_eq!(read_auth()?, expected_auth);
     assert_eq!(
         toml::from_str::<toml::Value>(&std::fs::read_to_string(&managed_config_path)?)?,
         expected_config

@@ -73,7 +73,7 @@ async fn create_and_patch_gateway_providers_without_changing_the_default() -> Re
         expected[field] = value;
         assert_eq!(updated, json!({"provider":expected}));
     }
-    let path = home.path().join("config.toml");
+    let path = home.path().join("better-codex.toml");
     let before = std::fs::read_to_string(&path)?;
     let clear = server.send_request("modelProvider/config/write", Some(json!({"settings":{"type":"customGateway","providerId":"team-gateway","name":null, "baseUrl":"https://must-not-save.example.test"}}))).await?;
     let error = server
@@ -109,7 +109,7 @@ async fn custom_provider_edits_preserve_other_fields_and_respect_policy() -> Res
         home.path().join("requirements.toml"),
         "model_provider = 'corp.gateway'\n[model_providers.\"corp.gateway\"]\nname = 'Managed gateway'\nbase_url = 'https://managed.example.test'\n",
     )?;
-    let config_path = home.path().join("config.toml");
+    let config_path = home.path().join("better-codex.toml");
     let mut expected = json!({
         "model_providers": {
             "basic": {"name":"Basic", "base_url":"https://user:password@basic.example.test/v1"},
@@ -185,7 +185,7 @@ async fn custom_provider_edits_preserve_other_fields_and_respect_policy() -> Res
 async fn custom_provider_writes_reject_builtin_auth_names_and_preserve_existing_ids() -> Result<()>
 {
     let home = TempDir::new()?;
-    let config_path = home.path().join("config.toml");
+    let config_path = home.path().join("better-codex.toml");
     let ids = [r"team\gpu", "corp.gateway", r#"team"gpu"#];
     let mut providers = json!({});
     for id in ids {
@@ -249,7 +249,7 @@ async fn custom_provider_writes_reject_builtin_auth_names_and_preserve_existing_
 #[tokio::test]
 async fn builtin_provider_patches_preserve_auth_and_do_not_select_or_authenticate() -> Result<()> {
     let home = TempDir::new()?;
-    let config_path = home.path().join("config.toml");
+    let config_path = home.path().join("better-codex.toml");
     std::fs::write(
         home.path().join("requirements.toml"),
         "model_provider = 'openai'\n",

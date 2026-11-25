@@ -397,6 +397,7 @@ async fn remove_stale_remote_plugin_caches(
     removed_plugins: &mut Vec<RemotePluginChange>,
 ) -> Result<(), String> {
     let codex_home = store.codex_home().as_path();
+    let shared = tokio::sync::OnceCell::new();
     for marketplace_name in [
         REMOTE_GLOBAL_MARKETPLACE_NAME,
         REMOTE_CREATED_BY_ME_MARKETPLACE_NAME,
@@ -440,6 +441,19 @@ async fn remove_stale_remote_plugin_caches(
                 continue;
             }
 
+            let registrations = shared
+                .get_or_try_init(|| async {
+                    let home = codex_home.to_owned();
+                    tokio::task::spawn_blocking(move || {
+                        crate::shared_installations::CodexRegistrations::read(&home, "plugins")
+                    })
+                    .await
+                    .map_err(|err| format!("failed to inspect Codex plugin settings: {err}"))
+                })
+                .await?;
+            if registrations.contains(&format!("{plugin_name}@{marketplace_name}")) {
+                continue;
+            }
             let cache_path = entry.path();
             let plugin_id = PluginId::new(plugin_name.clone(), marketplace_name.to_string());
             let mut capabilities = RemotePluginCapabilities::default();
@@ -957,6 +971,12 @@ mod tests {
                 ),
             ]);
 
+        std::fs::write(
+            codex_home.path().join("work.config.toml"),
+            "[plugins.'private-plugin@workspace-shared-with-me-private']\nenabled = true\n",
+        )
+        .expect("register a shared plugin missing from this cloud snapshot");
+
         let mut removed = Vec::new();
         remove_stale_remote_plugin_caches(
             &PluginStore::new(codex_home.path().to_path_buf()),
@@ -968,18 +988,15 @@ mod tests {
 
         assert_eq!(
             removed,
-            [
-                "created-by-me-plugin@created-by-me-remote",
-                "private-plugin@workspace-shared-with-me-private",
-            ]
-            .map(|plugin_id| RemotePluginChange {
-                plugin_id: plugin_id.to_string(),
-                capabilities: RemotePluginCapabilities::default(),
-            })
-            .to_vec()
+            ["created-by-me-plugin@created-by-me-remote",]
+                .map(|plugin_id| RemotePluginChange {
+                    plugin_id: plugin_id.to_string(),
+                    capabilities: RemotePluginCapabilities::default(),
+                })
+                .to_vec()
         );
         assert!(!created_by_me_cached_manifest.exists());
-        assert!(!cached_manifest.exists());
+        assert!(cached_manifest.is_file());
         assert!(canonical_cached_manifest.is_file());
     }
 }

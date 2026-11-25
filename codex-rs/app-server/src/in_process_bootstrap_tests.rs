@@ -155,7 +155,7 @@ async fn startup_reloads_the_callers_selected_project() -> anyhow::Result<()> {
     std::fs::create_dir(selected.join(".git"))?;
     set_project_trust_level(&home, &selected, TrustLevel::Trusted)?;
     let selected_url = "https://selected.example/backend-api/";
-    let user_config = home.join("config.toml");
+    let user_config = home.join("better-codex.toml");
     let trust = std::fs::read_to_string(&user_config)?;
     std::fs::write(
         &user_config,

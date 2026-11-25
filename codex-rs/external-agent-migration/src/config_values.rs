@@ -1,6 +1,5 @@
-use std::fs;
+use codex_config::user_config_file::UserConfigEdit;
 use std::io;
-use std::path::Path;
 use toml::Value as TomlValue;
 
 use crate::utils::invalid_data_error;
@@ -74,10 +73,10 @@ pub(super) fn merge_missing_mcp_servers(
     Ok(merged_server_names)
 }
 
-pub(super) fn write_toml_file(path: &Path, value: &TomlValue) -> io::Result<()> {
+pub(super) fn write_toml_file(edit: &UserConfigEdit, value: &TomlValue) -> io::Result<()> {
     let serialized = toml::to_string_pretty(value)
         .map_err(|err| invalid_data_error(format!("failed to serialize config.toml: {err}")))?;
-    fs::write(path, format!("{}\n", serialized.trim_end()))
+    edit.write(&format!("{}\n", serialized.trim_end()))
 }
 
 pub(super) fn migrated_mcp_server_names(value: &TomlValue) -> Vec<String> {

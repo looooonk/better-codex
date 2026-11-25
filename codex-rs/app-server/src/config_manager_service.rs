@@ -318,7 +318,15 @@ impl ConfigManager {
             None => allowed_path.clone(),
         };
 
-        if !paths_match(&allowed_path, &provided_path) {
+        // Older clients keep the inherited layer's filename after the first
+        // write creates its private sibling. Always commit through allowed_path.
+        let inherited_path = self
+            .loader_overrides()
+            .user_config_path(self.codex_home())
+            .map_err(|err| {
+                ConfigManagerError::io("failed to resolve inherited config path", err)
+            })?;
+        if provided_path != inherited_path && !paths_match(&allowed_path, &provided_path) {
             return Err(ConfigManagerError::write(
                 ConfigWriteErrorCode::ConfigLayerReadonly,
                 "Only writes to the user config are allowed",
@@ -343,7 +351,7 @@ impl ConfigManager {
             ));
         }
 
-        self.persist_user_edits(&layers, &user_layer, provided_path, edits)
+        self.persist_user_edits(&layers, &user_layer, allowed_path, edits)
             .await
     }
 
@@ -528,7 +536,7 @@ impl ConfigManager {
             })?;
 
         if !config_edits.is_empty() {
-            ConfigEditsBuilder::for_config_path(provided_path.as_path())
+            ConfigEditsBuilder::for_user_config_path(self.codex_home(), provided_path.as_path())
                 .with_edits(config_edits)
                 .apply()
                 .await
@@ -553,7 +561,9 @@ impl ConfigManager {
                 })?
                 .version
                 .clone(),
-            file_path: provided_path,
+            file_path: self.user_config_path().map_err(|err| {
+                ConfigManagerError::io("failed to resolve updated user config path", err)
+            })?,
             overridden_metadata: overridden,
         })
     }

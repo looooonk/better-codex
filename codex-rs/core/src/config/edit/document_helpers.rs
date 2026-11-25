@@ -223,15 +223,33 @@ fn serialize_mcp_server_tool(config: &McpServerToolConfig) -> anyhow::Result<Tom
     Ok(TomlItem::Table(entry))
 }
 
-pub(super) fn serialize_mcp_server(config: &McpServerConfig) -> anyhow::Result<TomlItem> {
+pub(super) fn write_mcp_server(
+    table: &mut TomlTable,
+    name: &str,
+    config: &McpServerConfig,
+) -> anyhow::Result<()> {
+    if let Some(existing) = table.get_mut(name) {
+        if let Some(inline) = existing.as_inline_table_mut() {
+            let replacement = serialize_mcp_server_inline(config)?;
+            merge_inline_table(inline, replacement);
+        } else {
+            *existing = serialize_mcp_server(config)?;
+        }
+    } else {
+        table.insert(name, serialize_mcp_server(config)?);
+    }
+    Ok(())
+}
+
+fn serialize_mcp_server(config: &McpServerConfig) -> anyhow::Result<TomlItem> {
     Ok(TomlItem::Table(serialize_mcp_server_table(config)?))
 }
 
-pub(super) fn serialize_mcp_server_inline(config: &McpServerConfig) -> anyhow::Result<InlineTable> {
+fn serialize_mcp_server_inline(config: &McpServerConfig) -> anyhow::Result<InlineTable> {
     Ok(serialize_mcp_server_table(config)?.into_inline_table())
 }
 
-pub(super) fn merge_inline_table(existing: &mut InlineTable, replacement: InlineTable) {
+fn merge_inline_table(existing: &mut InlineTable, replacement: InlineTable) {
     existing.retain(|key, _| replacement.get(key).is_some());
 
     for (key, value) in replacement.iter() {

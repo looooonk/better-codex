@@ -119,7 +119,8 @@ pub(super) async fn load_local_config_layers_with_overrides(
     let system_file = system_config_toml_file_with_overrides(overrides)?;
     let system =
         load_config_toml_for_required_layer_raw(fs, &system_file, /*strict_config*/ false).await?;
-    let user_file = codex_home.join(CONFIG_TOML_FILE);
+    let user_file =
+        crate::user_config_file::executor_read_path(fs, codex_home.join(CONFIG_TOML_FILE)).await?;
     let user =
         load_config_toml_for_required_layer_raw(fs, &user_file, /*strict_config*/ false).await?;
 

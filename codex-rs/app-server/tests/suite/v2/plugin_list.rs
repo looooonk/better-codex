@@ -2037,7 +2037,9 @@ async fn app_server_startup_downloads_installed_plugin_bundles_without_discovery
         serde_json::from_str(&std::fs::read_to_string(installed_path.join(".app.json"))?)?;
     assert_eq!(installed_app_manifest, remote_app_manifest);
     assert!(installed_path.join("skills/plan-work/SKILL.md").is_file());
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_config::user_config_file::read_path(
+        &codex_home.path().join("config.toml"),
+    ))?;
     assert!(!config.contains("linear@openai-curated-remote"));
     Ok(())
 }
@@ -2139,7 +2141,9 @@ async fn plugin_list_sync_upgrades_and_removes_remote_installed_plugin_bundles()
     assert_eq!(installed_app_manifest, remote_app_manifest);
     wait_for_path_missing(&old_path).await?;
     wait_for_path_missing(&stale_path).await?;
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_config::user_config_file::read_path(
+        &codex_home.path().join("config.toml"),
+    ))?;
     assert!(!config.contains("linear@openai-curated-remote"));
     Ok(())
 }
@@ -3927,7 +3931,7 @@ trusted_hash = "sha256:unrelated"
     )
     .await?;
     let config: toml::Value = toml::from_str(&std::fs::read_to_string(
-        codex_home.path().join("config.toml"),
+        codex_home.path().join("better-codex.toml"),
     )?)?;
     let hook_states = config["hooks"]["state"].as_table().expect("hook states");
     for hook in &hooks {
@@ -3965,22 +3969,18 @@ trusted_hash = "sha256:unrelated"
     Ok(())
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn plugin_installed_hook_trust_write_failure_stays_untrusted() -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    use std::os::unix::fs::symlink;
-
     let codex_home = TempDir::new()?;
-    let config_target_dir = TempDir::new()?;
-    let config_target = config_target_dir.path().join("config.toml");
+    let config_target = codex_home.path().join("config.toml");
     let server = MockServer::start().await;
     write_remote_plugin_hook_config(
-        config_target_dir.path(),
+        codex_home.path(),
         &format!("{}/backend-api/", server.uri()),
         "",
     )?;
-    symlink(&config_target, codex_home.path().join("config.toml"))?;
+    // A directory at the lock filename makes only the private settings unwritable.
+    std::fs::create_dir(codex_home.path().join("better-codex.toml.lock"))?;
     write_remote_plugin_test_auth(codex_home.path())?;
 
     let bundle_url = mount_remote_plugin_bundle_with_hooks(
@@ -3998,15 +3998,6 @@ async fn plugin_installed_hook_trust_write_failure_stays_untrusted() -> Result<(
         .with_env_overrides(&[(TEST_ALLOW_HTTP_REMOTE_PLUGIN_BUNDLE_DOWNLOADS, Some("1"))])
         .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
-
-    let original_permissions = std::fs::metadata(config_target_dir.path())?.permissions();
-    let _permission_guard = RestorePermissions(
-        config_target_dir.path().to_path_buf(),
-        original_permissions.clone(),
-    );
-    let mut read_only_permissions = original_permissions;
-    read_only_permissions.set_mode(read_only_permissions.mode() & !0o222);
-    std::fs::set_permissions(config_target_dir.path(), read_only_permissions)?;
 
     trigger_plugin_installed_sync(&mut mcp).await?;
     let plugin_ids = ["failed-trust@workspace-directory"];
@@ -5866,14 +5857,4 @@ fn write_plugin_share_local_path_mapping(
         codex_home.join(".tmp/plugin-share-local-paths-v1.json"),
         format!("{contents}\n"),
     )
-}
-
-#[cfg(unix)]
-struct RestorePermissions(std::path::PathBuf, std::fs::Permissions);
-
-#[cfg(unix)]
-impl Drop for RestorePermissions {
-    fn drop(&mut self) {
-        let _ = std::fs::set_permissions(&self.0, self.1.clone());
-    }
 }

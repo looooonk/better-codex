@@ -33,6 +33,7 @@ pub mod remote_legacy;
 mod remote_metadata;
 mod remote_plugin_id_resolver;
 mod script_attribution;
+mod shared_installations;
 mod skill_snapshots;
 pub mod startup_sync;
 pub mod store;

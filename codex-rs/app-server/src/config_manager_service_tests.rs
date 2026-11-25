@@ -10,6 +10,7 @@ use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_config::types::OtelExporterKind;
+use codex_config::user_config_file::PRIVATE_CONFIG_TOML_FILE as CONFIG_TOML_FILE;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -1279,7 +1280,8 @@ async fn version_conflict_rejected() {
 #[tokio::test]
 async fn write_value_defaults_to_user_config_path() {
     let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
+    let inherited = tmp.path().join(codex_config::CONFIG_TOML_FILE);
+    std::fs::write(&inherited, "# original\n").unwrap();
 
     let service = ConfigManager::without_managed_config_for_tests(tmp.path().to_path_buf());
     service
@@ -1293,6 +1295,7 @@ async fn write_value_defaults_to_user_config_path() {
         .await
         .expect("write succeeds");
 
+    assert_eq!(std::fs::read_to_string(inherited).unwrap(), "# original\n");
     let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
     assert!(
         contents.contains("model = \"gpt-new\""),
@@ -1310,7 +1313,7 @@ async fn model_provider_settings_use_the_active_profile_layer() -> Result<()> {
     use codex_app_server_protocol::ProviderSettingsPatch;
 
     let home = tempdir()?;
-    let profile = home.path().join("work.config.toml");
+    let profile = home.path().join("work.better-codex.toml");
     let system = home.path().join("system.toml");
     std::fs::write(
         &system,
@@ -1440,7 +1443,7 @@ async fn model_provider_settings_use_the_active_profile_layer() -> Result<()> {
 async fn write_value_defaults_to_selected_user_config_path() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"gpt-main\"").unwrap();
-    let selected_path = tmp.path().join("work.config.toml");
+    let selected_path = tmp.path().join("work.better-codex.toml");
     std::fs::write(&selected_path, "").unwrap();
 
     let mut loader_overrides =
@@ -2591,7 +2594,7 @@ async fn structured_feature_toggle_ignores_unrelated_managed_settings() -> Resul
     assert_eq!(result.status, WriteStatus::Ok);
     assert_eq!(result.overridden_metadata, None);
 
-    let selected_path = tmp.path().join("work.config.toml");
+    let selected_path = tmp.path().join("work.better-codex.toml");
     std::fs::write(&selected_path, "")?;
     let mut loader_overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_path);
     loader_overrides.user_config_path = Some(AbsolutePathBuf::from_absolute_path(&selected_path)?);

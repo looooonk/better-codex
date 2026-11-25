@@ -160,7 +160,12 @@ impl ConfigManager {
     }
 
     pub(crate) fn user_config_path(&self) -> std::io::Result<AbsolutePathBuf> {
-        self.loader_overrides.user_config_path(self.codex_home())
+        let path = self.loader_overrides.user_config_path(self.codex_home())?;
+        if path.as_path().parent() == Some(self.codex_home()) {
+            AbsolutePathBuf::from_absolute_path(codex_config::user_config_file::read_path(&path))
+        } else {
+            Ok(path)
+        }
     }
 
     pub(crate) fn loader_overrides(&self) -> &LoaderOverrides {

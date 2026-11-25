@@ -3649,7 +3649,7 @@ async fn install_plugin_updates_config_with_relative_path_and_plugin_key() {
         }
     );
 
-    let config = fs::read_to_string(tmp.path().join("config.toml")).unwrap();
+    let config = fs::read_to_string(tmp.path().join("better-codex.toml")).unwrap();
     assert!(config.contains(r#"[plugins."sample-plugin@debug"]"#));
     assert!(config.contains("enabled = true"));
 }
@@ -4051,7 +4051,7 @@ async fn install_plugin_supports_relative_git_subdir_marketplace_sources() {
 }
 
 #[tokio::test]
-async fn uninstall_plugin_removes_cache_and_config_entry() {
+async fn uninstall_plugin_preserves_shared_cache_and_removes_private_config_entry() {
     let tmp = tempfile::tempdir().unwrap();
     write_plugin(
         &tmp.path().join("plugins/cache/debug"),
@@ -4079,11 +4079,11 @@ enabled = true
         .unwrap();
 
     assert!(
-        !tmp.path()
+        tmp.path()
             .join("plugins/cache/debug/sample-plugin")
             .exists()
     );
-    let config = fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).unwrap();
+    let config = fs::read_to_string(tmp.path().join("better-codex.toml")).unwrap();
     assert!(!config.contains(r#"[plugins."sample-plugin@debug"]"#));
 }
 

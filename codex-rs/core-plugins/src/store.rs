@@ -341,6 +341,13 @@ impl PluginStore {
     }
 
     pub fn uninstall(&self, plugin_id: &PluginId) -> Result<(), PluginStoreError> {
+        if crate::shared_installations::referenced_by_codex(
+            &self.codex_home,
+            "plugins",
+            &plugin_id.as_key(),
+        ) {
+            return Ok(());
+        }
         remove_existing_target(self.plugin_base_root(plugin_id).as_path())
     }
 

@@ -261,7 +261,7 @@ mod tests {
                 .is_file()
         );
 
-        let config = fs::read_to_string(codex_home.path().join(codex_config::CONFIG_TOML_FILE))?;
+        let config = fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
         assert!(config.contains("[marketplaces.debug]"));
         assert!(config.contains("source_type = \"git\""));
         assert!(config.contains("source = \"https://github.com/owner/repo.git\""));
@@ -356,7 +356,7 @@ host_pattern = '^allowed\.test$'
                 .exists()
         );
 
-        let config = fs::read_to_string(codex_home.path().join(codex_config::CONFIG_TOML_FILE))?;
+        let config = fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
         let config: toml::Value = toml::from_str(&config)?;
         assert_eq!(
             config["marketplaces"]["debug"]["source_type"].as_str(),

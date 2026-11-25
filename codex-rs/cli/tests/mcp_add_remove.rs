@@ -85,7 +85,7 @@ async fn npm_server_names_round_trip_through_cli() -> Result<()> {
         .assert()
         .success();
 
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     assert!(config.contains(&format!("[mcp_servers.\"{name}\"]")));
     let servers = load_global_mcp_servers(codex_home.path()).await?;
     assert_eq!(
@@ -191,7 +191,7 @@ async fn add_and_login_discover_oauth_through_configured_http_proxy() -> Result<
     } else {
         r#"printf '{"X-Gateway":"gateway-token"}'"#
     };
-    let config_path = codex_home.path().join("config.toml");
+    let config_path = codex_home.path().join("better-codex.toml");
     let mut config = std::fs::read_to_string(&config_path)?;
     config.push_str(&format!(
         "http_headers_helper = {}\n",
@@ -342,7 +342,7 @@ async fn add_streamable_http_without_manual_token() -> Result<()> {
 
     assert!(!codex_home.path().join(".credentials.json").exists());
     assert!(!codex_home.path().join(".env").exists());
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     assert!(!config.contains("client_registration"));
     assert!(!config.contains("[mcp_servers.github.oauth]"));
 
@@ -578,5 +578,35 @@ async fn add_cant_add_command_and_url() -> Result<()> {
     let servers = load_global_mcp_servers(codex_home.path()).await?;
     assert!(servers.is_empty());
 
+    Ok(())
+}
+
+#[test]
+fn concurrent_adds_preserve_both_servers_in_the_private_settings() -> Result<()> {
+    let home = TempDir::new()?;
+    let inherited = home.path().join("config.toml");
+    let original = "# Shared Codex preferences\nmodel = 'shared-model'\n";
+    std::fs::write(&inherited, original)?;
+    let binary = codex_utils_cargo_bin::cargo_bin("codex")?;
+    let children = ["first", "second"].map(|name| {
+        std::process::Command::new(&binary)
+            .env("CODEX_HOME", home.path())
+            .args(["mcp", "add", name, "--", "echo", name])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+    });
+    for child in children {
+        assert!(child?.wait()?.success());
+    }
+    let private: toml::Value = toml::from_str(&std::fs::read_to_string(
+        home.path().join("better-codex.toml"),
+    )?)?;
+    for name in ["first", "second"] {
+        assert_eq!(
+            private["mcp_servers"][name]["command"].as_str(),
+            Some("echo")
+        );
+    }
+    assert_eq!(std::fs::read_to_string(inherited)?, original);
     Ok(())
 }

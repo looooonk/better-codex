@@ -58,6 +58,7 @@ impl MigrationScope {
         for relative_path in [
             ".codex",
             ".codex/config.toml",
+            ".codex/better-codex.toml",
             ".codex/agents",
             ".codex/hooks",
             ".agents",

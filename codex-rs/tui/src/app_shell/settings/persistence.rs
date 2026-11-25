@@ -84,7 +84,7 @@ async fn read_user_config_snapshot(
         .ok_or_else(|| eyre!("config/read omitted requested layers"))?;
     let Some(layer) = layers
         .into_iter()
-        .find(|layer| matches!(&layer.name, ConfigLayerSource::User { profile: None, .. }))
+        .find(|layer| matches!(&layer.name, ConfigLayerSource::User { .. }))
     else {
         return Ok(UserConfigSnapshot {
             version: None,

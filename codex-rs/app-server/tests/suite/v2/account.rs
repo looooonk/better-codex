@@ -187,7 +187,7 @@ shell_snapshot = false
 
 fn read_config_toml(codex_home: &Path) -> Result<toml::Value> {
     Ok(toml::from_str(&std::fs::read_to_string(
-        codex_home.join("config.toml"),
+        codex_config::user_config_file::read_path(&codex_home.join("config.toml")),
     )?)?)
 }
 
@@ -1623,7 +1623,7 @@ async fn logout_managed_bedrock_restores_default_account(
         }
     );
 
-    let config_path = codex_home.path().join("config.toml");
+    let config_path = codex_home.path().join("better-codex.toml");
     let config = std::fs::read_to_string(&config_path)?
         .replace(
             "model_provider = \"amazon-bedrock\"",

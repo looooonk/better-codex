@@ -16,6 +16,7 @@ use codex_core::McpManager;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::LoaderOverrides;
+use codex_core::config::edit::ConfigEdit;
 use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::find_codex_home;
 use codex_core::config::load_global_mcp_servers;
@@ -444,14 +445,17 @@ async fn run_add(config: &Config, add_args: AddArgs) -> Result<()> {
         tools: HashMap::new(),
     };
 
-    let mut servers = load_global_mcp_servers(codex_home)
+    load_global_mcp_servers(codex_home)
         .await
         .with_context(|| format!("failed to load MCP servers from {}", codex_home.display()))?;
     let credential_name = new_entry.oauth_credential_name(&name);
-    servers.insert(name.clone(), new_entry);
+    let oauth = new_entry.oauth.clone();
 
     ConfigEditsBuilder::new(codex_home)
-        .replace_mcp_servers(&servers)
+        .with_edits([ConfigEdit::SetMcpServer {
+            name: name.clone(),
+            config: Some(Box::new(new_entry)),
+        }])
         .apply()
         .await
         .with_context(|| format!("failed to write MCP servers to {}", codex_home.display()))?;
@@ -476,7 +480,7 @@ async fn run_add(config: &Config, add_args: AddArgs) -> Result<()> {
                 oauth_config.http_headers,
                 oauth_config.env_http_headers,
                 &resolved_scopes,
-                servers[&name].oauth.as_ref(),
+                oauth.as_ref(),
                 client_registration,
                 oauth_resource.as_deref(),
                 config.mcp_oauth_callback_port,
@@ -509,15 +513,18 @@ async fn run_remove(config_overrides: &CliConfigOverrides, remove_args: RemoveAr
     validate_server_name(&name)?;
 
     let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
-    let mut servers = load_global_mcp_servers(&codex_home)
+    let servers = load_global_mcp_servers(&codex_home)
         .await
         .with_context(|| format!("failed to load MCP servers from {}", codex_home.display()))?;
 
-    let removed = servers.remove(&name).is_some();
+    let removed = servers.contains_key(&name);
 
     if removed {
         ConfigEditsBuilder::new(&codex_home)
-            .replace_mcp_servers(&servers)
+            .with_edits([ConfigEdit::SetMcpServer {
+                name: name.clone(),
+                config: None,
+            }])
             .apply()
             .await
             .with_context(|| format!("failed to write MCP servers to {}", codex_home.display()))?;

@@ -1029,9 +1029,9 @@ struct FeaturesCli {
 enum FeaturesSubcommand {
     /// List known features with their stage and effective state.
     List,
-    /// Enable a feature in config.toml.
+    /// Enable a feature in Better Codex settings.
     Enable(FeatureSetArgs),
-    /// Disable a feature in config.toml.
+    /// Disable a feature in Better Codex settings.
     Disable(FeatureSetArgs),
 }
 
@@ -2020,7 +2020,7 @@ async fn enable_feature_in_config(feature: &str) -> anyhow::Result<()> {
         .set_feature_enabled(feature, /*enabled*/ true)
         .apply()
         .await?;
-    println!("Enabled feature `{feature}` in config.toml.");
+    println!("Enabled feature `{feature}` in Better Codex settings.");
     maybe_print_under_development_feature_warning(&codex_home, feature);
     Ok(())
 }
@@ -2032,7 +2032,7 @@ async fn disable_feature_in_config(feature: &str) -> anyhow::Result<()> {
         .set_feature_enabled(feature, /*enabled*/ false)
         .apply()
         .await?;
-    println!("Disabled feature `{feature}` in config.toml.");
+    println!("Disabled feature `{feature}` in Better Codex settings.");
     Ok(())
 }
 
@@ -2073,7 +2073,8 @@ fn maybe_print_under_development_feature_warning(codex_home: &std::path::Path, f
         return;
     }
 
-    let config_path = codex_home.join(codex_config::CONFIG_TOML_FILE);
+    let config_path =
+        codex_config::user_config_file::read_path(&codex_home.join(codex_config::CONFIG_TOML_FILE));
     eprintln!(
         "Under-development features enabled: {feature}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {}.",
         config_path.display()

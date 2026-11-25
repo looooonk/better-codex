@@ -9,5 +9,8 @@ pub(crate) async fn reload(
     path: &AbsolutePathBuf,
 ) -> Result<ConfigLayerStack> {
     let contents = tokio::fs::read_to_string(path.as_path()).await?;
-    Ok(stack.with_user_config(path, toml::from_str(&contents)?)?)
+    // The first save can fork a previously inherited layer. Preserve its slot
+    // in the existing stack until the next full configuration reload.
+    let layer = stack.get_user_config_file().unwrap_or(path);
+    Ok(stack.with_user_config(layer, toml::from_str(&contents)?)?)
 }

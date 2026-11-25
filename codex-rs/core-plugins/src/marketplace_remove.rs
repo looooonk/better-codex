@@ -57,7 +57,10 @@ fn remove_marketplace_sync(
 
     // Removing a user override must not delete a snapshot still referenced by
     // another enabled layer, including a lower-precedence layer it shadows.
-    let user_config_file = AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, codex_home);
+    let user_config_file = AbsolutePathBuf::resolve_path_against_base(
+        codex_config::user_config_file::read_path(&codex_home.join(CONFIG_TOML_FILE)),
+        codex_home,
+    );
     if let Some(layer) = config_layer_stack.layers_high_to_low().find(|layer| {
         !matches!(
             &layer.name,
@@ -92,7 +95,15 @@ fn remove_marketplace_sync(
     }
 
     let removed_config = config_outcome == RemoveMarketplaceConfigOutcome::Removed;
-    let removed_installed_root = remove_marketplace_root(&destination)?;
+    let removed_installed_root = if crate::shared_installations::referenced_by_codex(
+        codex_home,
+        "marketplaces",
+        &marketplace_name,
+    ) {
+        None
+    } else {
+        remove_marketplace_root(&destination)?
+    };
 
     if removed_installed_root.is_none() && !removed_config {
         return Err(MarketplaceRemoveError::InvalidRequest(format!(
@@ -182,8 +193,7 @@ mod tests {
             outcome.removed_installed_root,
             Some(AbsolutePathBuf::try_from(installed_root.clone()).unwrap())
         );
-        let config =
-            fs::read_to_string(codex_home.path().join(codex_config::CONFIG_TOML_FILE)).unwrap();
+        let config = fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap();
         assert!(!config.contains("[marketplaces.debug]"));
         assert!(!installed_root.exists());
     }
@@ -294,8 +304,7 @@ mod tests {
             "marketplace `Debug` does not match configured marketplace `debug` exactly"
         );
         assert!(installed_root.exists());
-        let config =
-            fs::read_to_string(codex_home.path().join(codex_config::CONFIG_TOML_FILE)).unwrap();
+        let config = fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap();
         assert!(config.contains("[marketplaces.debug]"));
     }
 
@@ -363,13 +372,12 @@ mod tests {
             }
         );
         assert!(!installed_root.exists());
-        let config =
-            fs::read_to_string(codex_home.path().join(codex_config::CONFIG_TOML_FILE)).unwrap();
+        let config = fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap();
         assert!(!config.contains("[marketplaces.debug]"));
     }
 
     #[test]
-    fn remove_marketplace_sync_removes_inline_config_entry() {
+    fn remove_marketplace_sync_removes_inherited_inline_entry_only_from_private_config() {
         let codex_home = TempDir::new().unwrap();
         fs::write(
             codex_home.path().join(codex_config::CONFIG_TOML_FILE),
@@ -391,13 +399,9 @@ marketplaces = { debug = { source_type = "git", source = "https://github.com/own
         .unwrap();
 
         assert_eq!(outcome.marketplace_name, "debug");
-        assert_eq!(
-            outcome.removed_installed_root,
-            Some(AbsolutePathBuf::try_from(installed_root.clone()).unwrap())
-        );
-        assert!(!installed_root.exists());
-        let config =
-            fs::read_to_string(codex_home.path().join(codex_config::CONFIG_TOML_FILE)).unwrap();
+        assert_eq!(outcome.removed_installed_root, None);
+        assert!(installed_root.exists());
+        let config = fs::read_to_string(codex_home.path().join("better-codex.toml")).unwrap();
         assert!(!config.contains("debug"));
     }
 }

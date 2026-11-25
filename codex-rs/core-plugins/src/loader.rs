@@ -468,7 +468,7 @@ pub fn refresh_curated_plugin_cache(
                         plugin_id.as_key()
                     )
                 })?;
-                cache_refreshed = true;
+                cache_refreshed |= !store.plugin_base_root(plugin_id).as_path().exists();
             }
             continue;
         }
@@ -782,7 +782,7 @@ fn configured_plugins_from_codex_home(
     read_error_message: &str,
     parse_error_message: &str,
 ) -> HashMap<String, PluginConfig> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = codex_config::user_config_file::read_path(&codex_home.join(CONFIG_TOML_FILE));
     let user_config = match fs::read_to_string(&config_path) {
         Ok(user_config) => user_config,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return HashMap::new(),

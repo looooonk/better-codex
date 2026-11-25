@@ -89,6 +89,7 @@ impl ExternalAgentConfigService {
             || self.codex_home.join("config.toml"),
             |repo_root| repo_root.join(".codex").join("config.toml"),
         );
+        let target_config = codex_config::user_config_file::read_path(&target_config);
         if let Some(settings) = settings.as_ref() {
             let migrated = self.source.build_config(settings)?;
             if !is_empty_toml_table(&migrated) {

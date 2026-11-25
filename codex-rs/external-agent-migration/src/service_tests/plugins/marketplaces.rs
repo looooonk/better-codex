@@ -161,7 +161,7 @@ async fn import_plugins_treats_empty_cwd_as_home_scope() {
             raw_errors: Vec::new(),
         }
     );
-    let config = fs::read_to_string(codex_home.join("config.toml")).expect("read config");
+    let config = fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config");
     assert!(config.contains(r#"[plugins."cloudflare@my-plugins"]"#));
     assert!(config.contains("enabled = true"));
 }
@@ -265,9 +265,10 @@ source = {configured_marketplace_root:?}
             raw_errors: Vec::new(),
         }
     );
-    let config: TomlValue =
-        toml::from_str(&fs::read_to_string(codex_home.join("config.toml")).expect("read config"))
-            .expect("parse config");
+    let config: TomlValue = toml::from_str(
+        &fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config"),
+    )
+    .expect("parse config");
     let expected: TomlValue = toml::from_str(&format!(
         r#"[marketplaces.my-plugins]
 source_type = "local"
@@ -473,7 +474,7 @@ async fn import_plugins_supports_relative_external_agent_plugin_marketplace_path
             raw_errors: Vec::new(),
         }
     );
-    let config = fs::read_to_string(codex_home.join("config.toml")).expect("read config");
+    let config = fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config");
     assert!(config.contains(r#"[plugins."cloudflare@my-plugins"]"#));
     assert!(config.contains("enabled = true"));
 }

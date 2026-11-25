@@ -170,16 +170,21 @@ fn strict_config_is_not_supported_for_cloud_command() -> Result<()> {
 async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
     let codex_home = TempDir::new()?;
 
+    let shared = codex_home.path().join("config.toml");
+    let original = "# Keep this comment and the upstream preference.\nmodel = 'shared-model'\n";
+    std::fs::write(&shared, original)?;
     for feature in ["unified_exec", "shell_tool"] {
         let mut cmd = codex_command(codex_home.path())?;
         cmd.args(["features", "enable", feature])
             .assert()
             .success()
             .stdout(contains(format!(
-                "Enabled feature `{feature}` in config.toml."
+                "Enabled feature `{feature}` in Better Codex settings."
             )));
 
-        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
+        assert_eq!(std::fs::read_to_string(&shared)?, original);
+        assert!(config.contains("shared-model"));
         assert!(config.contains("[features]"));
         assert!(config.contains(&format!("{feature} = true")));
     }
@@ -195,9 +200,11 @@ async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
     cmd.args(["features", "disable", "shell_tool"])
         .assert()
         .success()
-        .stdout(contains("Disabled feature `shell_tool` in config.toml."));
+        .stdout(contains(
+            "Disabled feature `shell_tool` in Better Codex settings.",
+        ));
 
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     assert!(config.contains("[features]"));
     assert!(config.contains("shell_tool = false"));
 

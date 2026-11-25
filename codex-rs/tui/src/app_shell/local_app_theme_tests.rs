@@ -88,3 +88,25 @@ app_theme = "catppuccin-mocha"
         TuiAppTheme::CatppuccinMocha
     );
 }
+
+#[tokio::test]
+async fn first_local_edit_refreshes_the_inherited_display_layer() -> color_eyre::Result<()> {
+    let home = tempfile::tempdir()?;
+    let inherited = home.path().join(CONFIG_TOML_FILE);
+    let original = "[tui]\napp_theme = 'tokyo-night'\n";
+    tokio::fs::write(&inherited, original).await?;
+    let config = ConfigBuilder::default()
+        .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+        .codex_home(home.path().to_owned())
+        .build()
+        .await?;
+    let local = super::selected_config_path(&config);
+    super::persist(local.clone(), TuiAppTheme::CatppuccinMocha).await?;
+    let refreshed = crate::presentation_config::reload(&config.config_layer_stack, &local).await?;
+    assert_eq!(
+        refreshed.effective_config()["tui"]["app_theme"].as_str(),
+        Some("catppuccin-mocha")
+    );
+    assert_eq!(tokio::fs::read_to_string(inherited).await?, original);
+    Ok(())
+}

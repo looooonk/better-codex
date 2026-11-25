@@ -105,7 +105,7 @@ fn record_git_marketplace(
 }
 
 fn disable_plugin_startup_tasks(codex_home: &Path) -> Result<()> {
-    let config_path = codex_home.join("config.toml");
+    let config_path = codex_home.join("better-codex.toml");
     let config = std::fs::read_to_string(&config_path)?;
     std::fs::write(
         config_path,
@@ -159,7 +159,7 @@ async fn marketplace_upgrade_all_configured_git_marketplaces() -> Result<()> {
         serde_json::to_string(&tools_new_revision)?,
     );
     disable_plugin_startup_tasks(codex_home.path())?;
-    let config_before = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config_before = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
 
     let mut mcp = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -188,7 +188,7 @@ async fn marketplace_upgrade_all_configured_git_marketplaces() -> Result<()> {
         std::fs::read_to_string(tools_root.as_path().join("marker.txt"))?,
         "tools new"
     );
-    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     assert_eq!(config, config_before);
     for (root, expected_revision) in [
         (debug_root, debug_new_revision),
@@ -247,7 +247,7 @@ async fn automatic_upgrade_isolates_git_while_explicit_install_preserves_configu
         source.path(),
         /*ref_name*/ None,
     )?;
-    let config_path = codex_home.path().join("config.toml");
+    let config_path = codex_home.path().join("better-codex.toml");
     std::fs::write(
         &config_path,
         format!(

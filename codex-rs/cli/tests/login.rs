@@ -178,7 +178,7 @@ fn logout_clears_only_the_selected_bedrock_provider() -> Result<()> {
         ("openai", false, "gpt-5.6-sol"),
     ] {
         let codex_home = TempDir::new()?;
-        let config_path = codex_home.path().join("config.toml");
+        let config_path = codex_home.path().join("better-codex.toml");
         std::fs::write(
             &config_path,
             format!(

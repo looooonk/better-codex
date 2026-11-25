@@ -102,6 +102,7 @@ async fn marketplace_add_git_source_cleans_staging_after_failures() -> Result<()
             assert_eq!(std::fs::read_dir(&staging_root)?.count(), 0);
             assert!(!install_root.join("debug").exists());
             assert!(!codex_home.path().join(CONFIG_TOML_FILE).exists());
+            assert!(!codex_home.path().join("better-codex.toml").exists());
         }
     }
 
@@ -113,7 +114,7 @@ async fn marketplace_add_git_source_cleans_staging_after_failures() -> Result<()
         .args(["plugin", "marketplace", "add", source_url])
         .assert()
         .success();
-    let config = std::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
 
     // A different ref bypasses the already-added shortcut and conflicts after cloning.
     codex_command(codex_home.path())?
@@ -132,7 +133,7 @@ async fn marketplace_add_git_source_cleans_staging_after_failures() -> Result<()
         "git source"
     );
     assert_eq!(
-        std::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE))?,
+        std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?,
         config
     );
     Ok(())
@@ -155,7 +156,7 @@ async fn marketplace_add_local_directory_source() -> Result<()> {
     let installed_root = marketplace_install_root(codex_home.path()).join("debug");
     assert!(!installed_root.exists());
 
-    let config = std::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE))?;
+    let config = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
     let config: toml::Value = toml::from_str(&config)?;
     let expected_source = source.path().canonicalize()?.display().to_string();
     assert_eq!(

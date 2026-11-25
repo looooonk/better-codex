@@ -4,6 +4,7 @@ use codex_config::types::McpServerOAuthConfig;
 use codex_config::types::McpServerToolConfig;
 use codex_config::types::McpServerTransportConfig;
 use codex_config::types::SessionPickerViewMode;
+use codex_config::user_config_file::PRIVATE_CONFIG_TOML_FILE as CONFIG_TOML_FILE;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -597,13 +598,13 @@ profiles = { fast = { model = "gpt-4o", sandbox_mode = "strict" } }
 
 #[cfg(unix)]
 #[test]
-fn blocking_set_model_writes_through_symlink_chain() {
+fn blocking_set_model_preserves_inherited_symlink_chain() {
     let tmp = tempdir().expect("tmpdir");
     let codex_home = tmp.path();
     let target_dir = tempdir().expect("target dir");
     let target_path = target_dir.path().join(CONFIG_TOML_FILE);
     let link_path = codex_home.join("config-link.toml");
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = codex_home.join(codex_config::CONFIG_TOML_FILE);
 
     symlink(&target_path, &link_path).expect("symlink link");
     symlink("config-link.toml", &config_path).expect("symlink config");
@@ -620,7 +621,9 @@ fn blocking_set_model_writes_through_symlink_chain() {
     let meta = std::fs::symlink_metadata(&config_path).expect("config metadata");
     assert!(meta.file_type().is_symlink());
 
-    let contents = std::fs::read_to_string(&target_path).expect("read target");
+    assert!(!target_path.exists());
+    let contents =
+        std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read private settings");
     let expected = r#"model = "gpt-5.4"
 model_reasoning_effort = "high"
 "#;
@@ -629,12 +632,12 @@ model_reasoning_effort = "high"
 
 #[cfg(unix)]
 #[test]
-fn blocking_set_model_replaces_symlink_on_cycle() {
+fn blocking_set_model_preserves_an_unreadable_inherited_symlink_cycle() {
     let tmp = tempdir().expect("tmpdir");
     let codex_home = tmp.path();
     let link_a = codex_home.join("a.toml");
     let link_b = codex_home.join("b.toml");
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let config_path = codex_home.join(codex_config::CONFIG_TOML_FILE);
 
     symlink("b.toml", &link_a).expect("symlink a");
     symlink("a.toml", &link_b).expect("symlink b");
@@ -647,15 +650,10 @@ fn blocking_set_model_replaces_symlink_on_cycle() {
             effort: None,
         }],
     )
-    .expect("persist");
+    .expect_err("cyclic inherited settings cannot be read");
 
-    let meta = std::fs::symlink_metadata(&config_path).expect("config metadata");
-    assert!(!meta.file_type().is_symlink());
-
-    let contents = std::fs::read_to_string(&config_path).expect("read config");
-    let expected = r#"model = "gpt-5.4"
-"#;
-    assert_eq!(contents, expected);
+    assert!(config_path.is_symlink());
+    assert!(!codex_home.join(CONFIG_TOML_FILE).exists());
 }
 
 #[test]

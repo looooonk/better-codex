@@ -33,9 +33,13 @@ fn write_installed_marketplace(codex_home: &Path, marketplace_name: &str) -> Res
 }
 
 #[tokio::test]
-async fn marketplace_remove_deletes_config_and_installed_root() -> Result<()> {
+async fn removing_inherited_marketplace_preserves_the_standard_codex_registration_and_root()
+-> Result<()> {
     let codex_home = TempDir::new()?;
-    record_user_marketplace(codex_home.path(), "debug", &configured_marketplace_update())?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        "[marketplaces.debug]\nsource_type = 'git'\nsource = 'https://github.com/owner/repo.git'\n",
+    )?;
     write_installed_marketplace(codex_home.path(), "debug")?;
 
     codex_command(codex_home.path())?
@@ -45,10 +49,11 @@ async fn marketplace_remove_deletes_config_and_installed_root() -> Result<()> {
         .stdout(contains("Removed marketplace `debug`."));
 
     let config_path = codex_home.path().join("config.toml");
-    let config = std::fs::read_to_string(config_path)?;
-    assert!(!config.contains("[marketplaces.debug]"));
+    assert!(std::fs::read_to_string(config_path)?.contains("[marketplaces.debug]"));
+    let private = std::fs::read_to_string(codex_home.path().join("better-codex.toml"))?;
+    assert!(!private.contains("[marketplaces.debug]"));
     assert!(
-        !marketplace_install_root(codex_home.path())
+        marketplace_install_root(codex_home.path())
             .join("debug")
             .exists()
     );
@@ -101,7 +106,7 @@ async fn marketplace_remove_preserves_marketplace_referenced_by_session_config()
     let codex_home = TempDir::new()?;
     record_user_marketplace(codex_home.path(), "debug", &configured_marketplace_update())?;
     write_installed_marketplace(codex_home.path(), "debug")?;
-    let config_path = codex_home.path().join("config.toml");
+    let config_path = codex_home.path().join("better-codex.toml");
     let config = std::fs::read_to_string(&config_path)?;
 
     codex_command(codex_home.path())?

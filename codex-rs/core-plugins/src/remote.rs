@@ -1810,6 +1810,15 @@ fn remove_remote_plugin_cache(
         )
     })?;
 
+    if plugin_cache_root.exists()
+        || crate::shared_installations::referenced_by_codex(
+            &codex_home,
+            "plugins",
+            &format!("{legacy_plugin_id}@{marketplace_name}"),
+        )
+    {
+        return Ok(());
+    }
     let legacy_remote_plugin_cache_root = codex_home
         .join(PLUGINS_CACHE_DIR)
         .join(marketplace_name)

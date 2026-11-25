@@ -8,11 +8,15 @@ use color_eyre::Result;
 use color_eyre::eyre::eyre;
 
 pub(super) fn selected_config_path(config: &Config) -> AbsolutePathBuf {
-    config
+    let path = config
         .config_layer_stack
         .get_user_config_file()
         .cloned()
-        .unwrap_or_else(|| config.codex_home.join(CONFIG_TOML_FILE))
+        .unwrap_or_else(|| config.codex_home.join(CONFIG_TOML_FILE));
+    AbsolutePathBuf::resolve_path_against_base(
+        codex_config::user_config_file::write_path(&config.codex_home, path.as_path()),
+        &config.codex_home,
+    )
 }
 
 pub(super) async fn persist(config_path: AbsolutePathBuf, app_theme: TuiAppTheme) -> Result<()> {

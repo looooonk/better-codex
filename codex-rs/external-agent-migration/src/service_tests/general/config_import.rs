@@ -180,9 +180,10 @@ async fn import_home_migrates_supported_config_fields_skills_and_agents_md() {
         "Codex guidance"
     );
 
-    let config: TomlValue =
-        toml::from_str(&fs::read_to_string(codex_home.join("config.toml")).expect("read config"))
-            .expect("parse config");
+    let config: TomlValue = toml::from_str(
+        &fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config"),
+    )
+    .expect("parse config");
     let expected: TomlValue = toml::from_str(
         r#"
 sandbox_mode = "workspace-write"
@@ -235,9 +236,10 @@ async fn import_home_config_uses_local_settings_over_project_settings() {
         }])
         .await;
 
-    let config: TomlValue =
-        toml::from_str(&fs::read_to_string(codex_home.join("config.toml")).expect("read config"))
-            .expect("parse config");
+    let config: TomlValue = toml::from_str(
+        &fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config"),
+    )
+    .expect("parse config");
     let expected: TomlValue = toml::from_str(
         r#"
 sandbox_mode = "workspace-write"
@@ -280,7 +282,7 @@ async fn import_home_config_ignores_invalid_local_settings() {
         .await;
 
     assert_eq!(
-        fs::read_to_string(codex_home.join("config.toml")).expect("read config"),
+        fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config"),
         "[shell_environment_policy]\ninherit = \"core\"\n\n[shell_environment_policy.set]\nFOO = \"project\"\n"
     );
 }
@@ -403,7 +405,7 @@ async fn import_local_plugins_returns_completed_status() {
             raw_errors: Vec::new(),
         }]
     );
-    let config = fs::read_to_string(codex_home.join("config.toml")).expect("read config");
+    let config = fs::read_to_string(codex_home.join("better-codex.toml")).expect("read config");
     assert!(config.contains(r#"[plugins."cloudflare@my-plugins"]"#));
     assert!(config.contains("enabled = true"));
 }
