@@ -76,8 +76,9 @@ impl WriterHandoff {
             match send().await {
                 Err(error) if writer_busy(&error) => continue,
                 other => {
-                    break other
-                        .map_err(|err| bootstrap_request_error("thread/resume failed in TUI", err));
+                    break other.map_err(|err| {
+                        bootstrap_request_error("thread/resume failed in TUI", err)
+                    });
                 }
             }
         };

@@ -4491,7 +4491,7 @@ mod tests {
 
         assert_eq!(state.density, SessionListDensity::Dense);
         let contents =
-            std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
+            std::fs::read_to_string(tmp.path().join("better-codex.toml")).expect("read config");
         assert_eq!(
             contents,
             r#"[tui]

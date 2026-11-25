@@ -54,7 +54,8 @@ async fn native_presets_round_trip_without_changing_other_settings() -> Result<(
         panic!("expected loaded preset")
     };
     assert_eq!(input, "Review the current changes");
-    let saved: toml::Value = toml::from_str(&tokio::fs::read_to_string(&path).await?)?;
+    let saved_path = home.path().join("better-codex.toml");
+    let saved: toml::Value = toml::from_str(&tokio::fs::read_to_string(saved_path).await?)?;
     assert_eq!(saved["model"].as_str(), Some("gpt-6-luna"));
     assert_eq!(
         saved["tui"]["presets"]["3"]["input"].as_str(),
@@ -184,7 +185,9 @@ async fn profile_preset_deletion_preserves_and_reports_inherited_values() -> Res
     };
     assert_eq!(input, "base third preset");
     assert_eq!(tokio::fs::read_to_string(&base_path).await?, base);
-    let saved: toml::Value = toml::from_str(&tokio::fs::read_to_string(&profile_path).await?)?;
+    assert_eq!(tokio::fs::read_to_string(&profile_path).await?, profile);
+    let saved_path = home.path().join("work.better-codex.toml");
+    let saved: toml::Value = toml::from_str(&tokio::fs::read_to_string(saved_path).await?)?;
     assert!(
         saved
             .get("tui")

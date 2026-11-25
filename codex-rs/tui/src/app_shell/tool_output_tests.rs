@@ -275,7 +275,9 @@ fn full_output_survives_preview_compaction_and_live_updates() {
     shell.push_output_with_status_for_item("exec-1", initial.clone(), ToolBlockStatus::Running);
 
     let preview = &shell.transcript[1].text;
-    assert!(preview.starts_with(super::super::transcript_output::TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX));
+    assert!(
+        preview.starts_with(super::super::transcript_output::TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX)
+    );
     assert!(!preview.contains("compile line 000"));
     assert!(shell.open_tool_output_at(/*transcript_index*/ 1));
     assert_eq!(

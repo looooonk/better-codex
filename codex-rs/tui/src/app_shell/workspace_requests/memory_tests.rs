@@ -47,7 +47,8 @@ async fn disabling_memory_use_preserves_generation_preference() -> Result<()> {
         panic!("expected memory status")
     };
     insta::assert_snapshot!("memory_preferences", message);
-    let saved: toml::Value = toml::from_str(&tokio::fs::read_to_string(path).await?)?;
+    let saved_path = home.path().join("better-codex.toml");
+    let saved: toml::Value = toml::from_str(&tokio::fs::read_to_string(saved_path).await?)?;
     assert_eq!(
         saved["memories"]
             .clone()

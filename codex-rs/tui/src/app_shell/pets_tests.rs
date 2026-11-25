@@ -221,7 +221,7 @@ async fn saved_preference_respects_higher_priority_pet_configuration() {
         (Some("disabled"), true)
     );
     assert!(
-        std::fs::read_to_string(home.path().join("config.toml"))
+        std::fs::read_to_string(home.path().join("better-codex.toml"))
             .unwrap()
             .contains("pet = \"codex\"")
     );

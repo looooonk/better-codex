@@ -531,7 +531,7 @@ mod tests {
                 None
             );
             let persisted: toml::Value = toml::from_str(&std::fs::read_to_string(
-                temp_dir.path().join("config.toml"),
+                temp_dir.path().join("better-codex.toml"),
             )?)?;
             assert_eq!(persisted["tui"]["resume_cwd"].as_str(), Some(expected_mode));
         }

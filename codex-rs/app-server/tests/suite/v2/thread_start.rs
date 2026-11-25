@@ -1579,7 +1579,13 @@ model_reasoning_effort = "high"
         })
         .await?;
 
-    let config_toml = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config_toml = std::fs::read_to_string(codex_config::user_config_file::read_path(
+        &codex_home.path().join("config.toml"),
+    ))?;
+    assert_eq!(
+        std::fs::read_to_string(codex_home.path().join("config.toml"))?,
+        config_before
+    );
     if cfg!(windows) {
         assert_eq!(
             first_response.sandbox,
@@ -1710,7 +1716,13 @@ async fn thread_start_with_nested_git_cwd_respects_effective_permissions_for_pro
         })
         .await?;
 
-    let config_toml = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    let config_toml = std::fs::read_to_string(codex_config::user_config_file::read_path(
+        &codex_home.path().join("config.toml"),
+    ))?;
+    assert_eq!(
+        std::fs::read_to_string(codex_home.path().join("config.toml"))?,
+        config_before
+    );
     if cfg!(windows) {
         assert_eq!(
             sandbox,

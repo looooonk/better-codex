@@ -617,7 +617,7 @@ async fn loaded_session_refreshes_externally_updated_plugin_hooks() -> Result<()
             reload_user_config: true,
         })
         .await?;
-    let _: codex_app_server_protocol::ConfigWriteResponse =
+    let saved_config: codex_app_server_protocol::ConfigWriteResponse =
         timeout(DEFAULT_TIMEOUT, mcp.read_response(trust_id)).await??;
     let start_id = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -674,9 +674,8 @@ async fn loaded_session_refreshes_externally_updated_plugin_hooks() -> Result<()
             .expect("plugin should register a user-prompt hook");
         assert_eq!(hook.trust_status, expected_trust);
         if expected_trust == HookTrustStatus::Trusted {
-            let saved: toml::Value = toml::from_str(&std::fs::read_to_string(
-                codex_home.path().join("config.toml"),
-            )?)?;
+            let saved: toml::Value =
+                toml::from_str(&std::fs::read_to_string(&saved_config.file_path)?)?;
             // Older clients compare only the declaration hash; keep that approval valid.
             let declaration_hash = command_hook_hash(
                 "user_prompt_submit",
