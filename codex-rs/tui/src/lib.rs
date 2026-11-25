@@ -217,6 +217,10 @@ pub use public_widgets::composer_input::ComposerAction;
 pub use public_widgets::composer_input::ComposerInput;
 // (tests access modules directly within the crate)
 
+const TUI_CLIENT_NAME: &str = "codex-tui";
+// Session commands exit after their RPC. The server must keep their queued work running.
+const SESSION_COMMAND_CLIENT_NAME: &str = "codex-session-command";
+
 const TUI_LOG_FILE_NAME: &str = "codex-tui.log";
 
 #[cfg(unix)]
@@ -225,6 +229,7 @@ const AUTO_CONNECT_DAEMON_CONNECT_TIMEOUT: std::time::Duration =
 
 #[allow(clippy::too_many_arguments)]
 async fn start_embedded_app_server(
+    client_name: &str,
     arg0_paths: Arg0DispatchPaths,
     config: Config,
     cli_kv_overrides: Vec<(String, toml::Value)>,
@@ -238,6 +243,7 @@ async fn start_embedded_app_server(
     embedded_network_policy: codex_app_server_client::EmbeddedNetworkPolicy,
 ) -> color_eyre::Result<InProcessAppServerClient> {
     start_embedded_app_server_with(
+        client_name,
         arg0_paths,
         config,
         cli_kv_overrides,
@@ -401,12 +407,13 @@ pub fn remote_addr_supports_auth_token(endpoint: &RemoteAppServerEndpoint) -> bo
 }
 
 async fn connect_remote_app_server(
+    client_name: &str,
     endpoint: RemoteAppServerEndpoint,
 ) -> color_eyre::Result<AppServerClient> {
     let app_server = RemoteAppServerClient::connect(RemoteAppServerConnectArgs {
         required_human_approval: true,
         endpoint,
-        client_name: "codex-tui".to_string(),
+        client_name: client_name.to_owned(),
         client_version: codex_build_info::CODEX_BACKEND_COMPAT_VERSION.to_string(),
         experimental_api: true,
         mcp_server_openai_form_elicitation: true,
@@ -454,6 +461,7 @@ async fn maybe_probe_default_daemon_socket(_codex_home: &Path) -> Option<Absolut
 
 #[allow(clippy::too_many_arguments)]
 async fn start_app_server(
+    client_name: &str,
     target: &AppServerTarget,
     arg0_paths: Arg0DispatchPaths,
     config: Config,
@@ -469,6 +477,7 @@ async fn start_app_server(
 ) -> color_eyre::Result<AppServerClient> {
     match target {
         AppServerTarget::Embedded => start_embedded_app_server(
+            client_name,
             arg0_paths,
             config,
             cli_kv_overrides,
@@ -484,7 +493,7 @@ async fn start_app_server(
         .await
         .map(AppServerClient::InProcess),
         AppServerTarget::LocalDaemon { endpoint } | AppServerTarget::Remote { endpoint } => {
-            connect_remote_app_server(endpoint.clone()).await
+            connect_remote_app_server(client_name, endpoint.clone()).await
         }
     }
 }
@@ -498,6 +507,7 @@ pub(crate) async fn start_app_server_for_picker(
     embedded_network_policy: codex_app_server_client::EmbeddedNetworkPolicy,
 ) -> color_eyre::Result<AppServerSession> {
     let app_server = start_app_server(
+        TUI_CLIENT_NAME,
         target,
         Arg0DispatchPaths::default(),
         config.clone(),
@@ -535,6 +545,7 @@ pub(crate) async fn start_embedded_app_server_for_picker(
 
 #[allow(clippy::too_many_arguments)]
 async fn start_embedded_app_server_with<F, Fut>(
+    client_name: &str,
     arg0_paths: Arg0DispatchPaths,
     config: Config,
     cli_kv_overrides: Vec<(String, toml::Value)>,
@@ -581,7 +592,7 @@ where
         session_source: serde_json::from_value(serde_json::json!("cli"))
             .unwrap_or_else(|err| panic!("cli session source should deserialize: {err}")),
         enable_codex_api_key_env: false,
-        client_name: "codex-tui".to_string(),
+        client_name: client_name.to_owned(),
         client_version: codex_build_info::CODEX_BACKEND_COMPAT_VERSION.to_string(),
         experimental_api: true,
         mcp_server_openai_form_elicitation: true,
@@ -1463,6 +1474,7 @@ async fn run_ratatui_app(
     session_log::maybe_init(&initial_config);
 
     let app_server_session = match start_app_server(
+        TUI_CLIENT_NAME,
         &app_server_target,
         arg0_paths.clone(),
         initial_config.clone(),
@@ -1836,6 +1848,7 @@ async fn run_ratatui_app(
     let mut app_server = match app_server {
         Some(app_server) => app_server,
         None => match start_app_server(
+            TUI_CLIENT_NAME,
             &app_server_target,
             arg0_paths,
             config.clone(),
@@ -2371,6 +2384,7 @@ mod tests {
         let state_db =
             init_state_db_for_app_server_target(&config, &AppServerTarget::Embedded).await?;
         start_embedded_app_server(
+            TUI_CLIENT_NAME,
             Arg0DispatchPaths::default(),
             config,
             Vec::new(),
@@ -3219,6 +3233,7 @@ mod tests {
         let observed_client_version = Arc::new(Mutex::new(None));
         let observed_client_version_for_start = Arc::clone(&observed_client_version);
         let result = start_embedded_app_server_with(
+            TUI_CLIENT_NAME,
             Arg0DispatchPaths::default(),
             config,
             Vec::new(),
@@ -3231,6 +3246,7 @@ mod tests {
             Arc::new(EnvironmentManager::default_for_tests()),
             codex_app_server_client::EmbeddedNetworkPolicy::default(),
             move |args| {
+                assert_eq!(args.client_name, "codex-tui");
                 *observed_client_version_for_start
                     .lock()
                     .expect("observed client version lock should not be poisoned") =

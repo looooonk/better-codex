@@ -462,6 +462,7 @@ async fn start_app_server_for_archive_command(
         .await
         .wrap_err("failed to initialize state database")?;
     let app_server = super::start_app_server(
+        super::SESSION_COMMAND_CLIENT_NAME,
         &app_server_target,
         arg0_paths,
         config,

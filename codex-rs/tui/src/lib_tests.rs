@@ -378,6 +378,7 @@ pub(crate) async fn start_test_embedded_app_server(
 ) -> color_eyre::Result<InProcessAppServerClient> {
     let state_db = init_state_db_for_app_server_target(&config, &AppServerTarget::Embedded).await?;
     start_embedded_app_server(
+        crate::TUI_CLIENT_NAME,
         Arg0DispatchPaths::default(),
         config,
         Vec::new(),
@@ -1570,6 +1571,7 @@ async fn embedded_app_server_start_failure_is_returned() -> color_eyre::Result<(
     let temp_dir = TempDir::new()?;
     let config = build_config(&temp_dir).await?;
     let result = start_embedded_app_server_with(
+        crate::TUI_CLIENT_NAME,
         Arg0DispatchPaths::default(),
         config,
         Vec::new(),

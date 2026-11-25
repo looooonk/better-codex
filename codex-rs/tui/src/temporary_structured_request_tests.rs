@@ -94,6 +94,7 @@ async fn managed_workspace_default_respects_read_only_availability() -> color_ey
             mcp_server_names: Vec::new(),
         };
         let client = crate::start_embedded_app_server(
+            crate::TUI_CLIENT_NAME,
             Default::default(),
             config,
             Vec::new(),

@@ -46,6 +46,7 @@ pub(crate) async fn prepare_startup(
         let mut lookup_config = source.clone();
         lookup_config.analytics_enabled = Some(false);
         let client = crate::start_embedded_app_server(
+            crate::SESSION_COMMAND_CLIENT_NAME,
             arg0_paths.clone(),
             lookup_config,
             cli_overrides.clone(),

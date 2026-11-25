@@ -135,6 +135,7 @@ async fn profile_preset_deletion_preserves_and_reports_inherited_values() -> Res
         .build()
         .await?;
     let client = crate::start_embedded_app_server(
+        crate::TUI_CLIENT_NAME,
         Default::default(),
         config,
         Vec::new(),

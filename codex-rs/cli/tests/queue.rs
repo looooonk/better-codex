@@ -49,6 +49,10 @@ where
     let initialize: Value = serde_json::from_str(initialize.to_text()?)?;
     assert_eq!(initialize["method"], "initialize");
     assert_eq!(
+        initialize["params"]["clientInfo"]["name"],
+        "codex-session-command"
+    );
+    assert_eq!(
         initialize["params"]["capabilities"]["experimentalApi"],
         true
     );
@@ -536,6 +540,10 @@ async fn remote_session_commands_with_workload_identity_use_server_auth() -> Res
             )
             .await?;
             let requests = model_requests.received_requests().await;
+            assert_eq!(
+                requests[1].headers["authorization"].to_str()?,
+                "Bearer server-only-test-key"
+            );
             assert!(
                 requests[1].body_json::<Value>()?["input"]
                     .to_string()

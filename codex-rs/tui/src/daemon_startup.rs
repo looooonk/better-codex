@@ -199,9 +199,10 @@ pub(super) async fn check(
 ) -> Result<(), CompatibilityError> {
     let mut requested = server_features(cli_kv_overrides);
     let check = async {
-        let client = connect_remote_app_server(endpoint.clone())
-            .await
-            .map_err(|error| format!("could not connect to the background server: {error}"))?;
+        let client =
+            connect_remote_app_server(super::SESSION_COMMAND_CLIENT_NAME, endpoint.clone())
+                .await
+                .map_err(|error| format!("could not connect to the background server: {error}"))?;
         let result = async {
             if let AppServerClient::Remote(remote) = &client
                 && remote.server_version() != Some(codex_build_info::CODEX_BACKEND_COMPAT_VERSION)

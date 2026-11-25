@@ -604,7 +604,9 @@ trust_level = "trusted"
                 Ok::<_, anyhow::Error>(())
             })
             .await
-            .with_context(|| format!("daemon status timed out: {}", screen.screen().contents()))??;
+            .with_context(|| {
+                format!("daemon status timed out: {}", screen.screen().contents())
+            })??;
         }
         if analytics {
             for reason in ["turn_start", "resize"] {
