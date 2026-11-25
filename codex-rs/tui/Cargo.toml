@@ -78,6 +78,7 @@ dunce = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
 image = { workspace = true }
+lru = { workspace = true }
 pulldown-cmark = { workspace = true }
 rand = { workspace = true }
 ratatui = { workspace = true, features = [
@@ -86,6 +87,10 @@ ratatui = { workspace = true, features = [
     "unstable-rendered-line-info",
     "unstable-widget-ref",
 ] }
+ratex-layout = "0.1.16"
+ratex-parser = "0.1.16"
+ratex-render = { version = "0.1.16", features = ["embed-fonts"] }
+ratex-types = "0.1.16"
 regex-lite = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "json"] }
 serde = { workspace = true, features = ["derive"] }
