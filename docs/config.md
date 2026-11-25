@@ -5,9 +5,23 @@ appearance, and integrations. Use `/theme` to jump directly to the current app
 theme. The message pane has controls for model, reasoning effort, service tier,
 and permissions.
 
-Advanced and backend options live in the retained Codex configuration model, normally in
-`$CODEX_HOME/config.toml` or `~/.codex/config.toml` when `CODEX_HOME` is not
-set.
+Better Codex reads the settings in `$CODEX_HOME/config.toml` (normally
+`~/.codex/config.toml`). The first edit saves the current settings and your
+change in a sibling file, `better-codex.toml`. Further Better Codex edits use
+that file. The Codex App and CLI continue using `config.toml`. A selected
+`--profile work` works the same way for `work.config.toml` and
+`work.better-codex.toml`. Remove the private file to inherit the current
+Codex settings again.
+
+Better Codex also reads your existing command and network approval rules.
+Approvals you save in Better Codex go into
+`$CODEX_HOME/better-codex.exec-policy`. You can still manage the standard
+clients' rules in `$CODEX_HOME/rules/`.
+
+Plugin versions are shared. Local removal in Better Codex keeps downloads
+and marketplace snapshots referenced by the standard user config or a named
+profile. Updating an installed plugin updates the shared version. Removing a
+cloud-managed plugin from your account applies to all clients signed into it.
 
 The upstream references describe this shared model:
 

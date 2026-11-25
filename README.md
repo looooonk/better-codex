@@ -35,8 +35,15 @@ Install the latest release on macOS or Linux, then launch it from any project:
 curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh
 ```
 
-On first launch, choose ChatGPT sign-in, an OpenAI API key, or Amazon Bedrock
-setup, then type your first message in the conversation.
+Better Codex uses the login and saved chats already in your Codex home. From
+the same project, run `better-codex resume --last` to continue a chat from the
+Codex App or CLI. You can reopen it in either client afterward. If you are new
+to Codex, choose ChatGPT sign-in, an OpenAI API key, or Amazon Bedrock during
+setup.
+
+Better Codex inherits your existing settings. The first time you edit a
+settings file in Better Codex, it saves a private copy alongside the original.
+The standard App and CLI keep using their original file.
 
 ### System requirements
 
@@ -74,10 +81,12 @@ git clone https://github.com/looooonk/better-codex.git
 cd better-codex/codex-rs
 cargo install --locked just
 just build --release
-mkdir -p "$HOME/.local/bin"
-install -m 755 target/release/codex "$HOME/.local/bin/better-codex"
-install -m 755 target/release/codex-code-mode-host "$HOME/.local/bin/codex-code-mode-host"
-install -m 755 target/release/codex-exec-server "$HOME/.local/bin/codex-exec-server"
+install_dir="$HOME/.local/share/better-codex/source/bin"
+mkdir -p "$install_dir" "$HOME/.local/bin"
+install -m 755 target/release/codex "$install_dir/better-codex"
+install -m 755 target/release/codex-code-mode-host "$install_dir/"
+install -m 755 target/release/codex-exec-server "$install_dir/"
+ln -sfn "$install_dir/better-codex" "$HOME/.local/bin/better-codex"
 ```
 
 The workspace pins its Rust toolchain, so `rustup` selects the expected version

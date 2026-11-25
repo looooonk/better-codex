@@ -10,8 +10,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 48, 18))"
    Started a fullscreen app shell backed by   ┃
 ╭──────────────────────────────────────────────╮
 │◆ COMMANDS                                    │
-│  /login   Sign in to your OpenAI account     │
-│▌ /logout  Sign out of your OpenAI account    │
+│  /login   Sign in across Codex clients       │
+│▌ /logout  Sign out across Codex clients      │
 │↑↓ navigate   Tab complete   Enter run   Esc …│
 ╰──────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────╮
