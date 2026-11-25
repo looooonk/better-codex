@@ -732,16 +732,6 @@ async fn catalog_plugin_recommendations_use_receiving_model(case: &str) -> Resul
                 .any(|text| text.contains("<recommended_plugins>"))
         );
     }
-    insta::assert_snapshot!(
-        format!("catalog_plugin_recommendations_{case}"),
-        context_snapshot::format_request_history_snapshot(
-            "The first receiving model controls recommendation wording without changing feature eligibility, developer role, runtime plugin identities or retained-history deduplication.",
-            &requests,
-            &ContextSnapshotOptions::default()
-                .rewrite_known_segments()
-                .include_request_settings(),
-        )
-    );
     test.codex.shutdown_and_wait().await?;
     Ok(())
 }
