@@ -193,7 +193,7 @@ fn keyboard_cycles_tool_groups_and_folds_each_independently() {
 #[test]
 fn trimming_an_expanded_group_evicts_whole_calls_and_preserves_the_remaining_group() {
     let mut shell = shell();
-    for i in 0..crate::app_shell::MAX_TRANSCRIPT_LINES / 2 {
+    for i in 0..crate::app_shell::transcript_retention::MAX_DETAIL_ITEMS / 2 {
         let id = format!("exec-{i}");
         shell.push_tool_with_status_for_item(
             &id,
@@ -318,4 +318,16 @@ fn a_turn_ending_without_an_item_result_closes_running_labels_in_live_output_and
             assert!(!displayed.contains("Running command..."));
         }
     }
+}
+
+
+#[test]
+fn collapsed_calls_keep_earlier_conversation_in_scrollback() {
+    let mut shell = shell();
+    shell.push_user("opening prompt");
+    for i in 0..super::super::MAX_TRANSCRIPT_LINES + 10 {
+        shell.push_diff(format!("edit {i}"));
+    }
+    shell.push_assistant("done");
+    insta::assert_snapshot!(rows(&shell));
 }

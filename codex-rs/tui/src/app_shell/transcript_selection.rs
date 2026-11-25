@@ -58,7 +58,6 @@ impl ShellState {
             return;
         };
         self.transcript_selection = Some(next);
-        self.scroll_transcript_up(selected.saturating_sub(next));
         self.transcript_selection_needs_reveal.set(true);
     }
 
@@ -88,7 +87,6 @@ impl ShellState {
             return;
         };
         self.transcript_selection = Some(next);
-        self.scroll_transcript_down(next.saturating_sub(selected));
         self.transcript_selection_needs_reveal.set(true);
     }
 }

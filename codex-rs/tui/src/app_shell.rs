@@ -183,6 +183,7 @@ mod tool_payload;
 mod transcript_copy;
 mod transcript_export;
 mod transcript_render;
+mod transcript_retention;
 mod transcript_selection;
 mod transcript_view;
 mod turn_summary;
@@ -2297,6 +2298,7 @@ impl ShellState {
             existing.text = compact_output_for_transcript(full_text.to_string());
             existing.tool_status = Some(status);
             existing.mark_render_changed();
+            self.trim_transcript();
             return;
         }
 
@@ -2341,40 +2343,6 @@ impl ShellState {
         self.trim_transcript();
     }
 
-    fn trim_transcript(&mut self) {
-        if self.transcript.len() > MAX_TRANSCRIPT_LINES {
-            self.clear_transcript_text_selection();
-        }
-        while self.transcript.len() > MAX_TRANSCRIPT_LINES
-            && let Some(first) = self.transcript.pop_front()
-        {
-            let mut removed = 1;
-            if first.tool_action().is_some() {
-                while self
-                    .transcript
-                    .front()
-                    .is_some_and(|line| line.is_tool_child_of(first.item_id.as_deref()))
-                {
-                    self.transcript.pop_front();
-                    removed += 1;
-                }
-                if first.tool_group_expanded
-                    && let Some(next) = self.transcript.front_mut()
-                    && next.tool_action().is_some()
-                {
-                    next.tool_group_expanded = true;
-                    next.mark_render_changed();
-                }
-            }
-            if let Some(selected) = self.transcript_selection {
-                self.transcript_selection = selected.checked_sub(removed);
-                if self.transcript_selection.is_none() {
-                    self.transcript_selection_needs_reveal.set(false);
-                }
-            }
-        }
-    }
-
     fn upsert_line(&mut self, mut line: TranscriptLine) {
         if let Some(item_id) = line.item_id.as_deref()
             && let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
@@ -2386,6 +2354,7 @@ impl ShellState {
                 line.tool_action = existing.tool_action.take();
             }
             *existing = line;
+            self.trim_transcript();
             return;
         }
 

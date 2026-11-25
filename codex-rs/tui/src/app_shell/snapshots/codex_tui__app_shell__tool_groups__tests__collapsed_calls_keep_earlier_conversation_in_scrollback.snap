@@ -1,0 +1,12 @@
+---
+source: tui/src/app_shell/tool_groups_tests.rs
+assertion_line: 332
+expression: rows(&shell)
+---
+
+> opening prompt
+
+
+   ▸ Edited files
+
+done

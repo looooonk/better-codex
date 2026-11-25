@@ -60,6 +60,17 @@ impl TranscriptRenderCache {
                 self.math_metrics = Default::default();
             }
         }
+        if let Some(index) = self
+                .layouts
+                .iter()
+                .position(|cached| cached.reusable && cached.matches(shell, width, cwd))
+            && let Some(cached) = self.layouts.remove(index)
+        {
+            let layout = Arc::clone(&cached.layout);
+            self.layouts.push_back(cached);
+            return layout;
+        }
+
         let has_visualizations = shell
             .transcript
             .iter()
@@ -68,18 +79,6 @@ impl TranscriptRenderCache {
                 &shell.streaming_assistant,
             )
             || crate::inline_visualization::contains_inline_visualization(&shell.streaming_plan);
-        if !has_visualizations
-            && let Some(index) = self
-                .layouts
-                .iter()
-                .position(|cached| cached.matches(shell, width, cwd))
-            && let Some(cached) = self.layouts.remove(index)
-        {
-            let layout = Arc::clone(&cached.layout);
-            self.layouts.push_back(cached);
-            return layout;
-        }
-
         let visualization_context = has_visualizations
             .then(|| self.visualizations.context(shell))
             .flatten();
@@ -89,7 +88,7 @@ impl TranscriptRenderCache {
                 + usize::from(!shell.streaming_plan.is_empty())
                 + usize::from(!shell.streaming_assistant.is_empty()),
         );
-        let mut chunks = Vec::with_capacity(current_items.capacity());
+        let mut chunks = Vec::new();
         let mut previous_kind = None;
         let context = CachedRenderContext {
             width,
@@ -222,6 +221,7 @@ impl TranscriptRenderCache {
             cwd: cwd.to_path_buf(),
             selected: shell.transcript_selection,
             app_theme: shell.app_theme,
+            reusable: !has_visualizations,
             revisions: render_revisions(shell).collect(),
             layout: Arc::clone(&layout),
         });
@@ -238,6 +238,7 @@ impl TranscriptRenderCache {
 }
 
 struct CachedTranscriptLayout {
+    reusable: bool,
     width: u16,
     cwd: PathBuf,
     selected: Option<usize>,
