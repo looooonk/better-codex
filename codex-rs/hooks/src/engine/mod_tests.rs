@@ -1608,11 +1608,42 @@ fn discovers_hooks_from_json_and_toml_in_the_same_layer() {
 }
 
 #[test]
+fn named_profile_hook_keeps_its_key_after_first_edit() {
+    let temp = tempdir().expect("temporary home");
+    let home = AbsolutePathBuf::try_from(temp.path().to_owned()).expect("absolute home");
+    let inherited = home.join("work.config.toml");
+    let private = home.join("work.better-codex.toml");
+    let hook_key = format!("{}:pre_tool_use:0:0", inherited.display());
+    for file in [inherited, private] {
+        let stack = ConfigLayerStack::new(
+            vec![ConfigLayerEntry::new(
+                ConfigLayerSource::User {
+                    file: file.clone(),
+                    profile: Some("work".into()),
+                },
+                config_toml_with_pre_tool_use("echo work"),
+            )],
+            ConfigRequirements::default(),
+            ConfigRequirementsToml::default(),
+        )
+        .expect("profile stack");
+        let listed = crate::list_hooks(crate::HooksConfig {
+            feature_enabled: true,
+            config_layer_stack: Some(stack),
+            ..Default::default()
+        });
+        assert_eq!(listed.hooks.len(), 1);
+        assert_eq!(listed.hooks[0].source_path, file);
+        assert_eq!(listed.hooks[0].key, hook_key);
+    }
+}
+
+#[test]
 fn profile_user_layers_load_shared_hooks_json_once() {
     let temp = tempdir().expect("create temp dir");
     let config_path =
         AbsolutePathBuf::try_from(temp.path().join("config.toml")).expect("absolute config path");
-    let profile_path = AbsolutePathBuf::try_from(temp.path().join("work.config.toml"))
+    let profile_path = AbsolutePathBuf::try_from(temp.path().join("work.better-codex.toml"))
         .expect("absolute profile path");
     let hooks_json_path =
         AbsolutePathBuf::try_from(temp.path().join("hooks.json")).expect("absolute hooks path");
@@ -1701,6 +1732,10 @@ fn profile_user_layers_load_shared_hooks_json_once() {
     assert!(listed.warnings.is_empty());
     assert_eq!(listed.hooks.len(), 1);
     assert_eq!(listed.hooks[0].source_path, hooks_json_path);
+    assert_eq!(
+        listed.hooks[0].key,
+        format!("{}:pre_tool_use:0:0", hooks_json_path.display())
+    );
 }
 
 #[test]

@@ -1166,8 +1166,10 @@ async fn hooks_list_shows_plugin_hook_load_warnings() -> Result<()> {
     Ok(())
 }
 
+#[test_case::test_case("config.toml"; "inherited")]
+#[test_case::test_case("better-codex.toml"; "private")]
 #[tokio::test]
-async fn hooks_list_uses_each_cwds_effective_feature_enablement() -> Result<()> {
+async fn hooks_list_uses_each_cwds_effective_feature_enablement(project_file: &str) -> Result<()> {
     let codex_home = TempDir::new()?;
     let workspace = TempDir::new()?;
     std::fs::write(
@@ -1179,7 +1181,7 @@ hooks = false
     std::fs::create_dir_all(workspace.path().join(".git"))?;
     std::fs::create_dir_all(workspace.path().join(".codex"))?;
     std::fs::write(
-        workspace.path().join(".codex/config.toml"),
+        workspace.path().join(".codex").join(project_file),
         r#"[features]
 hooks = true
 
@@ -1240,7 +1242,9 @@ timeout = 5
                     timeout_sec: 5,
                     status_message: None,
                     additional_context_limit: None,
-                    source_path: project_config_path,
+                    source_path: AbsolutePathBuf::try_from(
+                        workspace.path().join(".codex").join(project_file)
+                    )?,
                     source: HookSource::Project,
                     plugin_id: None,
                     environment_id: None,
@@ -1344,6 +1348,9 @@ async fn hooks_list_uses_root_repo_hooks_for_linked_worktrees() -> Result<()> {
     let _: codex_app_server_protocol::ConfigWriteResponse =
         timeout(DEFAULT_TIMEOUT, mcp.read_response(write_id)).await??;
 
+    let private_repo_config =
+        AbsolutePathBuf::from_absolute_path(repo_root.join(".codex/better-codex.toml"))?;
+    std::fs::copy(&repo_config_path, &private_repo_config)?;
     let list_id = mcp
         .send_hooks_list_request(HooksListParams {
             cwds: vec![worktree_root],
@@ -1351,6 +1358,8 @@ async fn hooks_list_uses_root_repo_hooks_for_linked_worktrees() -> Result<()> {
         })
         .await?;
     let HooksListResponse { data } = timeout(DEFAULT_TIMEOUT, mcp.read_response(list_id)).await??;
+    assert_eq!(data[0].hooks[0].source_path, private_repo_config);
+    assert_eq!(data[0].hooks[0].key, repo_hook.key);
     assert_eq!(data[0].hooks[0].trust_status, HookTrustStatus::Trusted);
 
     Ok(())

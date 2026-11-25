@@ -194,6 +194,19 @@ pub(crate) fn discover_handlers(
             }
 
             for (source_path, hook_events) in [json_hooks, toml_hooks].into_iter().flatten() {
+                // A first edit creates a private sibling. Existing trust decisions
+                // still belong to this declaration as long as its hash matches.
+                let key_source = if source_path == policy_path
+                    && matches!(
+                        layer.name,
+                        ConfigLayerSource::User { .. } | ConfigLayerSource::Project { .. }
+                    ) {
+                    codex_config::user_config_file::logical_path(&source_path)
+                        .display()
+                        .to_string()
+                } else {
+                    source_path.display().to_string()
+                };
                 append_hook_events(
                     &mut handlers,
                     &mut hook_entries,
@@ -201,7 +214,7 @@ pub(crate) fn discover_handlers(
                     &mut display_order,
                     HookHandlerSource {
                         path: &source_path,
-                        key_source: source_path.display().to_string(),
+                        key_source,
                         source: hook_source,
                         is_managed,
                         requirement: HookRequirement::Optional,
@@ -457,9 +470,9 @@ fn config_toml_source_path(layer: &ConfigLayerEntry) -> AbsolutePathBuf {
         | ConfigLayerSource::User { file, .. }
         | ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => file.clone(),
         ConfigLayerSource::Project { dot_codex_folder } => layer
-            .hooks_config_folder()
-            .unwrap_or_else(|| dot_codex_folder.clone())
-            .join(CONFIG_TOML_FILE),
+            .project_hooks_file()
+            .cloned()
+            .unwrap_or_else(|| dot_codex_folder.join(CONFIG_TOML_FILE)),
         ConfigLayerSource::Mdm { domain, key } => {
             synthetic_layer_path(&format!("<mdm:{domain}:{key}>/{CONFIG_TOML_FILE}"))
         }

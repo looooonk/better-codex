@@ -119,7 +119,7 @@ pub struct ConfigLayerEntry {
     pub version: String,
     pub disabled_reason: Option<String>,
     raw_toml: Option<RawTomlLayer>,
-    hooks_config_folder_override: Option<AbsolutePathBuf>,
+    project_hooks_file: Option<AbsolutePathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,7 +137,7 @@ impl ConfigLayerEntry {
             version,
             disabled_reason: None,
             raw_toml: None,
-            hooks_config_folder_override: None,
+            project_hooks_file: None,
         }
     }
 
@@ -157,7 +157,7 @@ impl ConfigLayerEntry {
                 contents: raw_toml,
                 base_dir: raw_toml_base_dir,
             }),
-            hooks_config_folder_override: None,
+            project_hooks_file: None,
         }
     }
 
@@ -173,7 +173,7 @@ impl ConfigLayerEntry {
             version,
             disabled_reason: Some(disabled_reason.into()),
             raw_toml: None,
-            hooks_config_folder_override: None,
+            project_hooks_file: None,
         }
     }
 
@@ -191,12 +191,14 @@ impl ConfigLayerEntry {
         self.raw_toml.as_ref().map(|raw_toml| &raw_toml.base_dir)
     }
 
-    pub(crate) fn with_hooks_config_folder_override(
-        mut self,
-        hooks_config_folder_override: Option<AbsolutePathBuf>,
-    ) -> Self {
-        self.hooks_config_folder_override = hooks_config_folder_override;
+    pub(crate) fn with_project_hooks_file(mut self, project_hooks_file: AbsolutePathBuf) -> Self {
+        self.project_hooks_file = Some(project_hooks_file);
         self
+    }
+
+    /// The project TOML file that supplied hook declarations on the executor.
+    pub fn project_hooks_file(&self) -> Option<&AbsolutePathBuf> {
+        self.project_hooks_file.as_ref()
     }
 
     pub fn metadata(&self) -> ConfigLayerMetadata {
@@ -237,8 +239,9 @@ impl ConfigLayerEntry {
     /// checkout while the rest of the project config still comes from the
     /// worktree.
     pub fn hooks_config_folder(&self) -> Option<AbsolutePathBuf> {
-        self.hooks_config_folder_override
-            .clone()
+        self.project_hooks_file
+            .as_ref()
+            .and_then(AbsolutePathBuf::parent)
             .or_else(|| self.config_folder())
     }
 }

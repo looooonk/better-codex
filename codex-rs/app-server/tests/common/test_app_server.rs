@@ -2008,7 +2008,8 @@ impl TestAppServerBuilder {
         let attribution_settings_server = if mock_chatgpt_backend
             || codex_home.join("auth.json").is_file()
         {
-            let config_path = codex_home.join("config.toml");
+            let config_path =
+                codex_config::user_config_file::read_path(&codex_home.join("config.toml"));
             let config = std::fs::read_to_string(&config_path)?;
             if config
                 .lines()

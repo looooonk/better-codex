@@ -275,7 +275,7 @@ async fn append_project_layers(
         let Some(hooks_config_folder) = layer.hooks_config_folder_override else {
             continue;
         };
-        let root_config =
+        let (root_config, _) =
             load_root_checkout_project_config(fs, &hooks_config_folder, /*is_trusted*/ true)
                 .await?;
         let Some(hooks) = root_config.get("hooks") else {

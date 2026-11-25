@@ -188,7 +188,8 @@ async fn plugin_reconcile_syncs_bundles_and_reports_changes(
     server.reset().await;
 
     // The next RPC must honor the latest config without contacting the plugin service.
-    let config_path = codex_home.path().join("config.toml");
+    let config_path =
+        codex_config::user_config_file::read_path(&codex_home.path().join("config.toml"));
     let config = std::fs::read_to_string(&config_path)?;
     std::fs::write(
         config_path,

@@ -61,6 +61,12 @@ impl SettingsFiles {
     }
 }
 
+/// Stable identity for values keyed by their declaring settings file, such as
+/// hook trust decisions. A private copy represents the same settings layer.
+pub fn logical_path(path: &Path) -> PathBuf {
+    SettingsFiles::for_path(path).map_or_else(|| path.to_owned(), |files| files.inherited)
+}
+
 /// Resolve the destination while the caller knows which local home owns this layer.
 pub fn write_path(codex_home: &Path, path: &Path) -> PathBuf {
     SettingsFiles::for_owned_path(codex_home, path)
@@ -139,7 +145,10 @@ impl UserConfigEdit {
                 }
             }
         };
-        let parent = files.private.parent().expect("private file has a parent");
+        let parent = files
+            .private
+            .parent()
+            .ok_or_else(|| io::Error::other("private settings path needs a parent directory"))?;
         fs::create_dir_all(parent)?;
         let mut options = fs::OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
