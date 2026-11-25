@@ -46,6 +46,7 @@ pub(super) enum SettingsAction {
     AppTheme(TuiAppTheme),
     Theme,
     Animations,
+    GraphicalMath,
     Tooltips,
     McpServers,
     Plugins,
@@ -88,10 +89,53 @@ const ROWS: &[SettingRow] = &[
     SettingRow::Action(SettingsAction::Animations),
     SettingRow::Action(SettingsAction::Tooltips),
     SettingRow::Spacer,
+    SettingRow::Heading("Experimental"),
+    SettingRow::Action(SettingsAction::GraphicalMath),
+    SettingRow::Spacer,
     SettingRow::Heading("Integrations"),
     SettingRow::Action(SettingsAction::McpServers),
     SettingRow::Action(SettingsAction::Plugins),
 ];
+
+impl ShellState {
+    pub(super) fn equation_preference(&self) -> std::path::PathBuf {
+        self.codex_home.join("better-codex").join("graphical-math")
+    }
+
+    fn toggle_graphical_math(&mut self) {
+        let path = self.equation_preference();
+        let graphics = self.graphics.get_mut();
+        let result = if graphics.enabled() {
+            std::fs::remove_file(&path)
+                .or_else(|err| {
+                    if err.kind() == std::io::ErrorKind::NotFound {
+                        Ok(())
+                    } else {
+                        Err(err)
+                    }
+                })
+                .map(|()| graphics.disable())
+        } else {
+            if let Err(reason) = graphics.enable() {
+                self.settings.set_error(reason);
+                return;
+            }
+            let result = std::fs::create_dir_all(self.codex_home.join("better-codex"))
+                .and_then(|()| std::fs::write(&path, []));
+            if result.is_err() {
+                graphics.disable();
+            }
+            result
+        };
+        if let Err(err) = result {
+            self.settings
+                .set_error(format!("Could not save the equation preference: {err}"));
+        } else {
+            self.settings.set_info("Equation display preference saved.");
+        }
+        self.transcript_render_cache.get_mut().clear();
+    }
+}
 
 impl SettingsState {
     pub(super) fn lines(&self, shell: &ShellState, width: usize) -> Vec<Line<'static>> {
@@ -294,6 +338,10 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
         SettingsAction::Theme => format!(
             "Syntax theme: {}",
             shell.tui_theme.as_deref().unwrap_or("default")
+        ),
+        SettingsAction::GraphicalMath => format!(
+            "Render LaTeX as images: {}",
+            on_off(shell.graphics.borrow().enabled())
         ),
         SettingsAction::Animations => format!("Animations: {}", on_off(shell.animations)),
         SettingsAction::Tooltips => format!("Tooltips: {}", on_off(shell.show_tooltips)),

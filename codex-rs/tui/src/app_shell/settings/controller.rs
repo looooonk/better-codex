@@ -178,6 +178,7 @@ impl ShellState {
             SettingsAction::ApprovalPolicy(policy) => {
                 self.apply_approval_policy(policy, app_server)?
             }
+            SettingsAction::GraphicalMath => self.toggle_graphical_math(),
             SettingsAction::Animations => {
                 let animations = !self.animations;
                 self.schedule_settings_update(

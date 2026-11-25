@@ -119,6 +119,13 @@ Consecutive tool calls share a row in the conversation. Click the row to show or
 the original calls and their output. From the keyboard, press Alt+Up to select the
 transcript, Tab to move to a tool group, and Space to toggle it.
 
+**Experimental graphical math.** Open Settings → Experimental → Render LaTeX as images.
+Better Codex checks for a compatible Kitty or Sixel terminal with pixel cell dimensions.
+Assistant replies render inline math (`$…$`, `\(…\)`) and centered display math
+(`$$…$$`, `\[…\]`) as soon as the closing delimiter arrives. The renderer includes its
+own fonts. Equations that exceed its supported syntax or size use the text view.
+The setting is local to Better Codex, and sessions retain their original Markdown.
+
 During a turn, the activity line beneath the latest output shows the estimated token rate
 over the last three seconds of model activity.
 With the Better Codex backend, it holds during tool waits. The turn divider shows total

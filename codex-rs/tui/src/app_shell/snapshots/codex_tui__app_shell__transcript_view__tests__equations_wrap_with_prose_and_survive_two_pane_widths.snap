@@ -1,0 +1,19 @@
+---
+source: tui/src/app_shell/transcript_view_tests.rs
+expression: snapshot
+---
+Let == and == be the two factors.
+           ··
+
+               ········
+               ========
+               ········
+---
+Let == and == be
+           ··
+the two factors.
+
+     ········
+     ========
+     ········
+---

@@ -5,8 +5,8 @@ expression: rendered
 │
 │  Sessions  │  Status  │  Agents  │ Settings
 │───────────────────────────────────━━━━━━━━━━━
-│  Animations: on
-│  Tooltips: on
+│◆ EXPERIMENTAL
+│  Render LaTeX as images: off
 │
 │◆ INTEGRATIONS
 │  MCP servers: not loaded

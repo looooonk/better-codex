@@ -443,6 +443,7 @@ pub(crate) struct ResumeCwdRuntime {
 }
 
 struct ShellState {
+    graphics: RefCell<crate::equations::Graphics>,
     pets: pets::PetState,
     status_surfaces: status_surfaces::StatusSurfaces,
     warnings: diagnostic_commands::WarningHistory,
@@ -615,6 +616,7 @@ impl ShellState {
             session.model.clone()
         };
         Self {
+            graphics: Default::default(),
             pets: pets::PetState::default(),
             status_surfaces: status_surfaces::StatusSurfaces::default(),
             warnings: diagnostic_commands::WarningHistory::default(),
@@ -2451,6 +2453,7 @@ impl ShellState {
         let thread_id = ThreadId::from_string("01900000-0000-7000-8000-000000000001")
             .expect("valid snapshot thread id");
         let mut shell = Self {
+            graphics: Default::default(),
             pets: pets::PetState::default(),
             status_surfaces: status_surfaces::StatusSurfaces::default(),
             warnings: diagnostic_commands::WarningHistory::default(),
@@ -2766,6 +2769,7 @@ pub mod bench_support {
     fn bench_fixture() -> ShellState {
         let thread_id = ThreadId::new();
         let mut shell = ShellState {
+            graphics: Default::default(),
             pets: pets::PetState::default(),
             status_surfaces: status_surfaces::StatusSurfaces::default(),
             warnings: diagnostic_commands::WarningHistory::default(),

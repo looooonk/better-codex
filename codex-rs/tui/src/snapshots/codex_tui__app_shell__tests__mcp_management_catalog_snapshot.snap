@@ -21,12 +21,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                    │Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
                    │> login        github 2 tools                                         │
                    │  bearer       linear 1 tools                                         │
-                   │                                                                      │ools / 1 login ne…
+                   │                                                                      │
                    │Action: press Enter or l to start oauth login                         │
                    │                                                                      │
-                   ╰──────────────────────────────────────────────────────────────────────╯
-                                                            │
-                                                            │
+                   ╰──────────────────────────────────────────────────────────────────────╯ools / 1 login ne…
+                                                            │mcp inventory refreshed
+                                                            │  Plugins: not loaded
                                                             │
                                                             │
                                                             │

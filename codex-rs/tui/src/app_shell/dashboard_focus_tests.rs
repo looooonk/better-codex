@@ -122,7 +122,7 @@ async fn settings_rows_apply_in_place_and_remain_reachable_on_a_short_terminal()
     let short = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16,
     );
-    for key in [KeyCode::Tab, KeyCode::Down] {
+    for key in [KeyCode::Tab, KeyCode::Tab, KeyCode::Down] {
         shell
             .handle_key(
                 KeyEvent::new(key, KeyModifiers::NONE),

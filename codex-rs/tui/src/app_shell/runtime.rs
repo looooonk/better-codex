@@ -167,6 +167,12 @@ pub(crate) async fn run(
     shell.keybindings = super::keybindings::ShellKeymap::from_config(&config.tui_keymap)
         .map_err(|error| color_eyre::eyre::eyre!(error))?;
     shell.pets.configure(&config, tui.frame_requester());
+    shell.graphics.get_mut().configure(tui.frame_requester());
+    if shell.equation_preference().is_file()
+        && let Err(reason) = shell.graphics.get_mut().enable()
+    {
+        shell.settings.set_info(reason);
+    }
     shell.automatic_recap.enabled = config.tui_auto_recap;
     shell.workspace_command_runner = Some(workspace_command_runner.clone());
     shell.restore_thread_lifecycle(thread_status, &turns);

@@ -20,12 +20,12 @@ expression: rendered
                                                             │  Animations: on
                                                             │  Tooltips: on
                                                             │
-                                                            │◆ INTEGRATIONS
-                                                            │  MCP servers: not loaded
-                                                            │  Plugins: not loaded
+                                                            │◆ EXPERIMENTAL
+                                                            │  Render LaTeX as images: off
                                                             │
-╭──────────────────────────────────────────────────────────╮│
-│> Type a message                                          ││
+                                                            │◆ INTEGRATIONS
+╭──────────────────────────────────────────────────────────╮│  MCP servers: not loaded
+│> Type a message                                          ││  Plugins: not loaded
 │                                                          ││
 │                                                          ││
 │ ⓘ Ask for approval ▾   gpt-… ▾   Default ▾   ◷ Default ▾ ││

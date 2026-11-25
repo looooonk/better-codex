@@ -52,19 +52,27 @@ pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Res
     shell.pets.clear()?;
     shell.refresh_terminal_title();
     if shell.terminal_clear_requested.get() {
+        shell.graphics.borrow_mut().viewport_cleared();
         tui.terminal.clear()?;
         shell.terminal_clear_requested.set(false);
     }
     let height = tui.terminal.size()?.height;
-    tui.draw(height, |frame| {
-        let view = ShellView { shell };
-        let area = frame.area();
-        view.render(area, frame.buffer);
-        if let Some(position) = view.cursor_position(area) {
-            frame.set_cursor_style(SetCursorStyle::SteadyBar);
-            frame.set_cursor_position(position);
-        }
-    })?;
+    shell.graphics.borrow_mut().refresh_cell();
+    tui.draw_with_graphics(
+        height,
+        |frame| {
+            shell.graphics.borrow_mut().begin(frame.area());
+            let view = ShellView { shell };
+            let area = frame.area();
+            view.render(area, frame.buffer);
+            shell.graphics.borrow_mut().compose(frame.buffer);
+            if let Some(position) = view.cursor_position(area) {
+                frame.set_cursor_style(SetCursorStyle::SteadyBar);
+                frame.set_cursor_position(position);
+            }
+        },
+        || shell.graphics.borrow_mut().present(&mut std::io::stdout()),
+    )?;
     let size = tui.terminal.size()?;
     shell.draw_pet_image(Rect::new(
         /*x*/ 0,

@@ -20,12 +20,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
                                                               │  Animations: on
                                                               │  Tooltips: on
                                                               │
+                                                              │◆ EXPERIMENTAL
+                                                              │  Render LaTeX as images: off
+                                                              │
                                                               │◆ INTEGRATIONS
                                                               │  MCP servers: not loaded
                                                               │  Plugins: not loaded
-                                                              │
-                                                              │
-                                                              │
 ╭────────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                      ││
 │                                                            ││

@@ -3,9 +3,9 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
+use super::transcript_view::TranscriptVisuals;
 use super::transcript_view::render_transcript_line_with_visualizations;
 use crate::app_theme::TuiAppTheme;
-use crate::inline_visualization::InlineVisualizationContext;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use std::collections::HashMap;
@@ -38,6 +38,8 @@ pub(super) fn tool_label_indent(width: u16) -> u16 {
 /// directory, or theme changes from growing them without limit.
 #[derive(Default)]
 pub(super) struct TranscriptRenderCache {
+    math_cell: Option<crate::equations::CellSize>,
+    math_metrics: std::cell::RefCell<crate::equations::Measurements>,
     items: HashMap<u64, CachedTranscriptItem>,
     layouts: VecDeque<CachedTranscriptLayout>,
     visualizations: super::inline_visualizations::VisualizationState,
@@ -50,6 +52,14 @@ impl TranscriptRenderCache {
         width: u16,
         cwd: &Path,
     ) -> Arc<TranscriptLayout> {
+        let cell = shell.graphics.borrow().cell;
+        if cell != self.math_cell {
+            self.clear();
+            self.math_cell = cell;
+            if cell.is_none() {
+                self.math_metrics = Default::default();
+            }
+        }
         let has_visualizations = shell
             .transcript
             .iter()
@@ -86,7 +96,10 @@ impl TranscriptRenderCache {
             indent: 0,
             cwd,
             app_theme: shell.app_theme,
-            visualization_context,
+            visuals: TranscriptVisuals {
+                inline: visualization_context,
+                math: cell.map(|cell| (cell, &self.math_metrics)),
+            },
         };
 
         let detail_indent = tool_detail_indent(width);
@@ -270,7 +283,7 @@ struct CachedRenderContext<'a> {
     indent: u16,
     cwd: &'a Path,
     app_theme: TuiAppTheme,
-    visualization_context: Option<&'a InlineVisualizationContext>,
+    visuals: TranscriptVisuals<'a>,
 }
 
 fn push_cached_chunk(
@@ -344,7 +357,7 @@ impl CachedTranscriptItem {
             indent,
             cwd,
             app_theme,
-            visualization_context,
+            visuals,
         } = context;
         let selected = source.selected;
         if !crate::inline_visualization::contains_inline_visualization(source.text)
@@ -370,7 +383,7 @@ impl CachedTranscriptItem {
             width - indent,
             cwd,
             selected,
-            visualization_context,
+            visuals,
         );
         let lines = indent_lines(lines, indent);
         self.variants.push_back(CachedRenderVariant {

@@ -11,6 +11,7 @@ pub(in crate::app_shell) fn selected_markdown(
     let plain = transcript_selected_text(shell, area, selection)?;
     let viewport = transcript_viewport(shell, area);
     let mut selected = Vec::new();
+    let mut equations = Vec::new();
     for row in selection.start().row()..=selection.end().row() {
         let separator = if row == selection.start().row() {
             ""
@@ -26,6 +27,9 @@ pub(in crate::app_shell) fn selected_markdown(
             );
             continue;
         };
+        if line.is_math_spacer() {
+            continue;
+        }
         let text = rendered_line_text(line);
         let text = trim_synthetic_right_padding(&text);
         let columns = selectable_columns_on_row(
@@ -34,6 +38,7 @@ pub(in crate::app_shell) fn selected_markdown(
             crate::width::display_width(text),
             line.synthetic_prefix_width,
         )?;
+        equations.extend(selected_equations(line.math.as_deref(), &columns));
         let mut column = 0;
         let mut bytes = text.len()..text.len();
         for (offset, grapheme) in text.grapheme_indices(true) {
@@ -60,7 +65,10 @@ pub(in crate::app_shell) fn selected_markdown(
             SelectedLine::append(&mut selected, source, range, separator);
         }
     }
-    Some(crate::markdown_copy::selection(&selected, &plain).0)
+    Some(crate::equations::copy_source(
+        crate::markdown_copy::selection(&selected, &plain).0,
+        &equations,
+    ))
 }
 
 #[cfg(test)]

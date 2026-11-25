@@ -940,3 +940,56 @@ fn turn_separator_keeps_its_indent_and_fills_the_available_width() {
     }
     insta::assert_snapshot!(lines.join("\n").trim_end());
 }
+
+#[test]
+fn equations_wrap_with_prose_and_survive_two_pane_widths() {
+    let source = r"Let $x^2$ and \(\frac{a}{b}\) be the two factors.
+
+\[
+\begin{pmatrix}a&b\\c&d\end{pmatrix}
+\]";
+    let metrics = std::cell::RefCell::default();
+    let cell = crate::equations::CellSize {
+        width: 8,
+        height: 16,
+    };
+    let mut snapshot = String::new();
+    for width in [38, 19] {
+        let lines = render_transcript_line_with_visualizations(
+            TranscriptKind::Assistant,
+            source,
+            None,
+            width,
+            std::path::Path::new("/"),
+            false,
+            TranscriptVisuals {
+                inline: None,
+                math: Some((cell, &metrics)),
+            },
+        );
+        let mut bases = 0;
+        for line in lines {
+            let mut row = line.line.to_string().chars().collect::<Vec<_>>();
+            for run in line.math.as_deref().unwrap_or_default() {
+                if run.formula.display {
+                    assert_eq!(run.x, (width - run.formula.columns) / 2);
+                }
+                let end = usize::from(run.x + run.formula.columns);
+                assert!(end <= usize::from(width));
+                row.resize(row.len().max(end), ' ');
+                let symbol = if run.row == run.formula.above {
+                    bases += 1;
+                    '='
+                } else {
+                    '·'
+                };
+                row[usize::from(run.x)..end].fill(symbol);
+            }
+            snapshot.push_str(&row.into_iter().collect::<String>());
+            snapshot.push('\n');
+        }
+        assert_eq!(bases, 3, "mathematics must stay atomic at width {width}");
+        snapshot.push_str("---\n");
+    }
+    insta::assert_snapshot!(snapshot);
+}

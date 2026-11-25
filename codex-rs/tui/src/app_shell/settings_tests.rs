@@ -20,3 +20,17 @@ fn hit_testing_skips_the_editor_and_feedback_before_later_actions() {
         ]
     );
 }
+
+#[test]
+fn enabling_without_a_compatible_terminal_never_persists_the_experiment() {
+    let mut shell = ShellState::snapshot_fixture();
+    let home = tempfile::tempdir().unwrap();
+    shell.codex_home = home.path().into();
+    shell.toggle_graphical_math();
+    assert!(!shell.graphics.borrow().enabled());
+    assert!(!shell.equation_preference().exists());
+    assert!(matches!(
+        shell.settings.feedback,
+        Some(SettingsFeedback::Error(_))
+    ));
+}

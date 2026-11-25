@@ -2,7 +2,12 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 fn copy_message(markdown: &str, width: u16) -> String {
+    copy_with_math(markdown, width, None)
+}
+
+fn copy_with_math(markdown: &str, width: u16, cell: Option<crate::equations::CellSize>) -> String {
     let mut shell = ShellState::snapshot_fixture();
+    shell.graphics.borrow_mut().cell = cell;
     shell.transcript.clear();
     shell.clear_streaming_assistant();
     shell.push_assistant(markdown);
@@ -59,4 +64,36 @@ fn selecting_part_of_an_emphasized_unicode_word_balances_the_markup() {
         ),
         Some("**café界**".into())
     );
+}
+
+#[test]
+fn copying_centered_and_inline_math_preserves_original_tex() {
+    let cell = crate::equations::CellSize {
+        width: 8,
+        height: 16,
+    };
+    for width in [40, 87] {
+        let markdown = r"Before $x^2$ then \(\frac{a}{b}\).
+
+\[\begin{pmatrix}a&b\\c&d\end{pmatrix}\]
+
+After $$x+y$$ end.";
+        let result = copy_with_math(markdown, width, Some(cell));
+        // The ordinary Markdown serializer can use two trailing spaces for a hard break.
+        let paragraphs = result
+            .lines()
+            .map(str::trim_end)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paragraphs,
+            vec![
+                r"Before $x^2$ then \(\frac{a}{b}\).",
+                r"\[\begin{pmatrix}a&b\\c&d\end{pmatrix}\]",
+                "After",
+                "$$x+y$$",
+                "end."
+            ]
+        );
+    }
 }

@@ -190,6 +190,7 @@ impl ShellState {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     if self.push_streaming_assistant_delta(&delta.item_id, &delta.delta) {
+                        self.graphics.get_mut().stream_delta(&delta.delta);
                         self.record_streamed_output(&delta.turn_id, &delta.delta);
                     }
                 } else if self.prepare_active_agent_thread(&delta.thread_id) {
@@ -207,6 +208,7 @@ impl ShellState {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     if self.push_streaming_plan_delta(&delta.item_id, &delta.delta) {
+                        self.graphics.get_mut().stream_delta(&delta.delta);
                         self.record_streamed_output(&delta.turn_id, &delta.delta);
                     }
                 }

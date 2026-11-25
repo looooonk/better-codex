@@ -20,12 +20,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │  Animations: on
                                                             │  Tooltips: on
                                                             │
-                                                            │◆ INTEGRATIONS
-                                                            │  MCP servers: not loaded
-                                                            │  Plugins: not loaded
+                                                            │◆ EXPERIMENTAL
+                                                            │  Render LaTeX as images: off
                                                             │
-╭──────────────────────────────────────────────────────────╮│
-│> Summarize the new shell architecture                    ││
+                                                            │◆ INTEGRATIONS
+╭──────────────────────────────────────────────────────────╮│  MCP servers: not loaded
+│> Summarize the new shell architecture                    ││  Plugins: not loaded
 │                                                          ││
 │                                                          ││
 │ ⓘ Ask for approval ▾   gpt-… ▾   Default ▾   ◷ Default ▾ ││

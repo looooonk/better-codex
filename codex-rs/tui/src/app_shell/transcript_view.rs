@@ -75,6 +75,9 @@ pub(super) fn render_transcript(
     buf.set_style(viewport.text_body, pane_style(palette::base()));
     for (row, line) in viewport.text_body.rows().zip(&visible_hyperlink_lines) {
         (&line.line).render(row, buf);
+        if let Some(runs) = &line.math {
+            shell.graphics.borrow_mut().mark(buf, row, runs);
+        }
     }
     mark_buffer_hyperlinks(
         buf,
@@ -189,6 +192,15 @@ pub(super) fn transcript_text_hit_at(
     let text = rendered_line_text(line);
     let text = trim_synthetic_right_padding(&text);
     let column = usize::from(position.x.saturating_sub(viewport.text_body.x));
+    if let Some(run) = line.math.iter().flat_map(|runs| runs.iter()).find(|run| {
+        (usize::from(run.x)..usize::from(run.x + run.formula.columns)).contains(&column)
+    }) {
+        return Some(VisualGraphemeHit::new(
+            row + usize::from(run.formula.above) - usize::from(run.row),
+            usize::from(run.x),
+            usize::from(run.formula.columns),
+        ));
+    }
     if column < line.synthetic_prefix_width {
         return None;
     }
@@ -214,16 +226,27 @@ pub(super) fn transcript_selected_text(
 
     let mut selected_rows = Vec::new();
     for row in selection.start().row()..=selection.end().row() {
-        let (text, synthetic_prefix_width) = match viewport.layout.row_at(row)? {
-            TranscriptLayoutRow::Blank => (String::new(), 0),
+        let (text, synthetic_prefix_width, math) = match viewport.layout.row_at(row)? {
+            TranscriptLayoutRow::Blank => (String::new(), 0, None),
             TranscriptLayoutRow::Rendered(line) => {
-                (rendered_line_text(line), line.synthetic_prefix_width)
+                if line.is_math_spacer() {
+                    continue;
+                }
+                (
+                    rendered_line_text(line),
+                    line.synthetic_prefix_width,
+                    line.math.as_deref(),
+                )
             }
         };
         let text = trim_synthetic_right_padding(&text);
         let columns =
             selectable_columns_on_row(selection, row, text.width(), synthetic_prefix_width)?;
-        selected_rows.push(graphemes_in_columns(text, columns));
+        let runs = selected_equations(math, &columns);
+        selected_rows.push(crate::equations::copy_source(
+            graphemes_in_columns(text, columns),
+            &runs,
+        ));
     }
     Some(selected_rows.join("\n"))
 }
@@ -286,6 +309,20 @@ fn rendered_line_text(line: &crate::terminal_hyperlinks::HyperlinkLine) -> Strin
         .spans
         .iter()
         .map(|span| span.content.as_ref())
+        .collect()
+}
+
+fn selected_equations<'a>(
+    math: Option<&'a [crate::equations::MathRun]>,
+    columns: &Range<usize>,
+) -> Vec<&'a crate::equations::MathRun> {
+    math.into_iter()
+        .flatten()
+        .filter(|r| {
+            r.row == r.formula.above
+                && usize::from(r.x) < columns.end
+                && usize::from(r.x + r.formula.columns) > columns.start
+        })
         .collect()
 }
 
@@ -572,8 +609,17 @@ pub(super) fn render_transcript_line(
         width,
         cwd,
         selected,
-        /*inline_visualization_context*/ None,
+        TranscriptVisuals::default(),
     )
+}
+
+#[derive(Clone, Copy, Default)]
+pub(super) struct TranscriptVisuals<'a> {
+    pub(super) inline: Option<&'a crate::inline_visualization::InlineVisualizationContext>,
+    pub(super) math: Option<(
+        crate::equations::CellSize,
+        &'a std::cell::RefCell<crate::equations::Measurements>,
+    )>,
 }
 
 pub(super) fn render_transcript_line_with_visualizations(
@@ -583,7 +629,7 @@ pub(super) fn render_transcript_line_with_visualizations(
     width: u16,
     cwd: &std::path::Path,
     selected: bool,
-    inline_visualization_context: Option<&crate::inline_visualization::InlineVisualizationContext>,
+    visuals: TranscriptVisuals<'_>,
 ) -> Vec<HyperlinkLine> {
     if kind == TranscriptKind::Separator {
         return vec![HyperlinkLine::new(turn_separator_line(
@@ -630,18 +676,30 @@ pub(super) fn render_transcript_line_with_visualizations(
     let prefix_width = prefix.width();
     let body_width = usize::from(width).saturating_sub(prefix_width).max(1);
     let mut lines = if matches!(kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
-        let rendered = markdown::render_markdown_agent_with_styles(
-            text,
-            Some(body_width),
-            Some(cwd),
-            inline_visualization_context,
-            crate::markdown_render::ListSpacing::AfterMultiline,
-            markdown_styles(),
-        );
-        crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines(
-            &rendered,
-            crate::wrapping::RtOptions::new(body_width),
-        )
+        let render = |source: &str| {
+            let rendered = markdown::render_markdown_agent_with_styles(
+                source,
+                Some(body_width),
+                Some(cwd),
+                visuals.inline,
+                crate::markdown_render::ListSpacing::AfterMultiline,
+                markdown_styles(),
+            );
+            crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines(
+                &rendered,
+                crate::wrapping::RtOptions::new(body_width),
+            )
+        };
+        if let Some((cell, metrics)) = visuals.math {
+            let marked = metrics
+                .borrow_mut()
+                .mark(text, cell, body_width as u16, text_color);
+            marked
+                .expand(render(&marked.text))
+                .unwrap_or_else(|| render(text))
+        } else {
+            render(text)
+        }
     } else {
         // Imported prompts may end with a newline. The prompt block supplies its own margin.
         let text = if kind == TranscriptKind::User {

@@ -788,6 +788,15 @@ impl Tui {
         height: u16,
         draw_fn: impl FnOnce(&mut custom_terminal::Frame),
     ) -> Result<()> {
+        self.draw_with_graphics(height, draw_fn, || Ok(()))
+    }
+
+    pub(crate) fn draw_with_graphics(
+        &mut self,
+        height: u16,
+        draw_fn: impl FnOnce(&mut custom_terminal::Frame),
+        after_text: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
         // If we are resuming from ^Z, we need to prepare the resume action now so we can apply it
         // in the synchronized update.
         #[cfg(unix)]
@@ -848,7 +857,8 @@ impl Tui {
 
             terminal.draw(|frame| {
                 draw_fn(frame);
-            })
+            })?;
+            after_text()
         })?
     }
 

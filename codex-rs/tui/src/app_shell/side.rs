@@ -104,6 +104,7 @@ impl ShellState {
         child.voice = self.voice.for_new_session();
         child.service_tier_features = self.service_tier_features.clone();
         child.keybindings = self.keybindings.clone();
+        std::mem::swap(&mut child.graphics, &mut self.graphics);
         child.pets = self.pets.clone();
         child.status_surfaces = self.status_surfaces.clone();
         child.automatic_recap.enabled = self.automatic_recap.enabled;
@@ -162,7 +163,8 @@ impl ShellState {
             clippy::expect_used,
             reason = "The entry guard checks the parent and intervening operations preserve it."
         )]
-        let parent = self.side_parent.take().expect("side parent exists");
+        let mut parent = self.side_parent.take().expect("side parent exists");
+        std::mem::swap(&mut parent.graphics, &mut self.graphics);
         *self = *parent;
         self.status_surfaces = status_surfaces;
         if let Some((prompt, images)) = image_draft {
