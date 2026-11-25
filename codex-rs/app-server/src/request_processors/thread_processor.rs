@@ -56,6 +56,19 @@ const THREAD_LIST_MAX_EXCLUDED_IDS: usize = 100;
 const PAGINATED_FULL_HISTORY_DEPRECATION_SUMMARY: &str = "Full-history hydration is deprecated for paginated threads; use `excludeTurns: true`, then page with `thread/turns/list` and `thread/items/list`.";
 const PAGINATED_THREAD_READ_DEPRECATION_SUMMARY: &str = "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.";
 
+/// A detached, idle TUI chat should be available immediately to a separate Codex
+/// installation. Let the normal subscriber and turn lifecycle decide when it is idle.
+fn apply_tui_handoff_default(config: &mut Config, client_name: Option<&str>) {
+    if client_name == Some("codex-tui")
+        && !config
+            .config_layer_stack
+            .layers_high_to_low()
+            .any(|layer| layer.config.get("thread_unload_delay_secs").is_some())
+    {
+        config.thread_unload_delay = Duration::ZERO;
+    }
+}
+
 async fn stage_pending_thread_metadata(
     thread_manager: &ThreadManager,
     thread_store: &dyn ThreadStore,
@@ -1588,6 +1601,7 @@ impl ThreadRequestProcessor {
         if !selected_capability_roots.is_empty() {
             thread_extension_init.insert(selected_capability_roots);
         }
+        apply_tui_handoff_default(&mut config, app_server_client_name.as_deref());
         let mut start_options = StartThreadOptions::new(config);
         let reserved_thread_id = if start_options.config.ephemeral {
             None
@@ -4347,6 +4361,7 @@ impl ThreadRequestProcessor {
                 config.personality = settings.personality;
             }
         }
+        apply_tui_handoff_default(&mut config, app_server_client_name.as_deref());
         let response_history = thread_history.clone();
 
         match self
@@ -5634,11 +5649,12 @@ impl ThreadRequestProcessor {
             *options
         } else {
             // Derive a Config using the same logic as new conversation, honoring overrides if provided.
-            let config = self
+            let mut config = self
                 .config_manager
                 .load_for_cwd(request_overrides, typesafe_overrides, history_cwd)
                 .await
                 .map_err(|err| config_load_error(&err))?;
+            apply_tui_handoff_default(&mut config, app_server_client_name.as_deref());
             StartThreadOptions {
                 client_mcp_extensions,
                 ..StartThreadOptions::new(config)

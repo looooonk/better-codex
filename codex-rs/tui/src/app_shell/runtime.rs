@@ -17,6 +17,7 @@ use crate::app_exit::AppExitInfo;
 use crate::app_exit::ExitReason;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
+use crate::app_server_session::writer_handoff;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionSelection;
 use crate::token_usage::TokenUsage;
@@ -99,23 +100,47 @@ pub(crate) async fn run(
         session_selection,
         SessionSelection::Resume(_) | SessionSelection::Fork(_)
     );
-    let started = {
+    let mut writer_wait = app_server.writer_handoff.subscribe();
+    let mut tui_events = tui.event_stream();
+    let start_result = {
         let start = start_selected_session(&mut app_server, &config, session_selection);
         tokio::pin!(start);
         let mut tick = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut frame = 0usize;
         loop {
+            let waiting = writer_wait.borrow().clone();
             tokio::select! {
                 biased;
-                result = &mut start => break result?,
+                result = &mut start => break result,
+                _ = writer_wait.changed() => {}
+                event = tui_events.next(), if waiting.is_some() => {
+                    if (event.is_none() || matches!(event, Some(TuiEvent::Key(key)) if cancels_handoff(key)))
+                        && let Some(waiting) = &waiting {
+                        waiting.cancel();
+                    }
+                }
                 _ = tick.tick() => {
                     let height = tui.terminal.size()?.height;
-                    tui.draw(height, |f| super::start_logo::render_loading(f.area(), frame, f.buffer))?;
+                    let message = if waiting.is_some() { writer_handoff::WAIT_MESSAGE } else { "Loading session..." };
+                    tui.draw(height, |f| super::start_logo::render_loading(f.area(), frame, message, f.buffer))?;
                     if config.animations { frame = frame.wrapping_add(1); }
                 }
             }
         }
+    };
+    let started = match start_result {
+        Err(error) if error.is::<writer_handoff::Canceled>() => {
+            app_server.shutdown().await?;
+            return Ok(AppExitInfo {
+                token_usage: TokenUsage::default(),
+                thread_id: None,
+                resume_hint: None,
+                update_action: None,
+                exit_reason: ExitReason::UserRequested,
+            });
+        }
+        result => result?,
     };
     if let Some(worktree) = &worktree_runtime.startup {
         worktree.bind(started.session.thread_id)?;
@@ -211,7 +236,6 @@ pub(crate) async fn run(
     }
 
     let run_result: Result<ExitReason> = async {
-        let mut tui_events = tui.event_stream();
         let mut automatic_recap_poll = tokio::time::interval(Duration::from_secs(/*secs*/ 1));
         automatic_recap_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut agent_history_poll = tokio::time::interval(AGENT_HISTORY_POLL_INTERVAL);
@@ -266,6 +290,14 @@ pub(crate) async fn run(
             let user_input_auto_resolution_deadline =
                 shell.pending_user_input_auto_resolution_deadline();
             select! {
+                _ = writer_wait.changed() => {
+                    if writer_wait.borrow().is_some() {
+                        shell.status = writer_handoff::WAIT_MESSAGE.into();
+                    } else if shell.status == writer_handoff::WAIT_MESSAGE {
+                        shell.status = "resuming session".into();
+                    }
+                    tui.frame_requester().schedule_frame();
+                }
                 _ = automatic_recap_poll.tick() => {},
                 event = tui_events.next() => {
                     let Some(event) = event else {
@@ -275,6 +307,12 @@ pub(crate) async fn run(
                     let accepts_interaction = terminal_size_supported(size.width, size.height);
                     match event {
                         TuiEvent::Key(key) => {
+                            if cancels_handoff(key)
+                                && let Some(waiting) = writer_wait.borrow().as_ref()
+                            {
+                                waiting.cancel();
+                                continue;
+                            }
                             if !accepts_interaction {
                                 let exits_warning = key.kind == KeyEventKind::Press
                                     && (matches!(key.code, KeyCode::Esc)
@@ -592,6 +630,12 @@ pub(crate) async fn run(
         update_action: shell.pending_update_action,
         exit_reason,
     })
+}
+
+fn cancels_handoff(key: crossterm::event::KeyEvent) -> bool {
+    key.kind == KeyEventKind::Press
+        && (key.code == KeyCode::Esc
+            || key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL)
 }
 
 pub(super) async fn start_selected_session<S>(

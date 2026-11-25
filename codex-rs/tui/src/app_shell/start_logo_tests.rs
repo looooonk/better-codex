@@ -5,6 +5,22 @@ use pretty_assertions::assert_eq;
 use ratatui::style::Color;
 
 #[test]
+fn loading_screen_identifies_a_writer_handoff_and_its_cancel_key() {
+    let area = Rect::new(0, 0, 90, 3);
+    let mut buf = Buffer::empty(area);
+    render_loading(
+        area,
+        0,
+        crate::app_server_session::writer_handoff::WAIT_MESSAGE,
+        &mut buf,
+    );
+    let text = (0..area.width)
+        .map(|x| buf[(x, 1)].symbol())
+        .collect::<String>();
+    insta::assert_snapshot!(text.trim(), @"⠋ Waiting for another Codex session to release this chat. Esc cancels.");
+}
+
+#[test]
 fn centered_logo_yields_to_the_first_message() {
     let mut shell = ShellState::snapshot_fixture();
     shell.clear_visible_transcript();

@@ -5,6 +5,7 @@ use anyhow::Result;
 use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
 use app_test_support::create_mock_responses_server_repeating_assistant;
+use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ThreadClosedNotification;
 use codex_app_server_protocol::ThreadLoadedListParams;
@@ -22,6 +23,68 @@ use std::fs::OpenOptions;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::timeout;
+
+#[tokio::test]
+async fn tui_idle_unload_releases_the_last_subscription_by_default() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let home = TempDir::new()?;
+    MockResponsesConfig::new(&server.uri()).write(home.path())?;
+    let mut client = TestAppServer::builder()
+        .with_codex_home(home.path())
+        .build()
+        .await?;
+    client
+        .initialize_with_client_info(ClientInfo {
+            name: "codex-tui".into(),
+            title: None,
+            version: "1".into(),
+        })
+        .await?;
+    let started = client.start_thread(ThreadStartParams::default()).await?;
+    let thread_id = started.thread.id;
+    client
+        .start_turn_and_wait_for_completion(TurnStartParams {
+            thread_id: thread_id.clone(),
+            input: vec![UserInput::Text {
+                text: "persist this chat".into(),
+                text_elements: Vec::new(),
+            }],
+            ..Default::default()
+        })
+        .await?;
+    unsubscribe_and_wait_for_close(&mut client, &thread_id).await?;
+    let resumed: ThreadResumeResponse = client
+        .request(|request_id| ClientRequest::ThreadResume {
+            request_id,
+            params: ThreadResumeParams {
+                thread_id: thread_id.clone(),
+                ..Default::default()
+            },
+        })
+        .await?;
+    assert_eq!(resumed.thread.id, thread_id);
+    unsubscribe_and_wait_for_close(&mut client, &thread_id).await?;
+    Ok(())
+}
+
+async fn unsubscribe_and_wait_for_close(client: &mut TestAppServer, thread_id: &str) -> Result<()> {
+    let unsubscribed: ThreadUnsubscribeResponse = client
+        .request(|request_id| ClientRequest::ThreadUnsubscribe {
+            request_id,
+            params: ThreadUnsubscribeParams {
+                thread_id: thread_id.to_string(),
+            },
+        })
+        .await?;
+    assert_eq!(unsubscribed.status, ThreadUnsubscribeStatus::Unsubscribed);
+    let closed: ThreadClosedNotification = timeout(
+        Duration::from_secs(10),
+        client.read_notification("thread/closed"),
+    )
+    .await??;
+    assert_eq!(closed.thread_id, thread_id);
+    Ok(())
+}
 
 #[tokio::test]
 async fn idle_unload_finishes_while_writer_coordination_is_locked() -> Result<()> {

@@ -25,6 +25,7 @@ mod lifecycle_tests;
 mod provider_selection;
 mod timeline;
 mod web_search;
+pub(crate) mod writer_handoff;
 
 pub(crate) use agent_history::AgentHistorySnapshot;
 pub(crate) use agent_history::AgentHistoryTask;
@@ -193,6 +194,7 @@ pub(crate) struct AppServerBootstrap {
 }
 
 pub(crate) struct AppServerSession {
+    pub(crate) writer_handoff: writer_handoff::WriterHandoff,
     deferred_events: std::collections::VecDeque<AppServerEvent>,
     client: AppServerClient,
     next_request_id: i64,
@@ -257,6 +259,7 @@ impl AppServerSession {
             thread_params_mode
         };
         Self {
+            writer_handoff: Default::default(),
             client,
             deferred_events: Default::default(),
             next_request_id: 1,
@@ -580,6 +583,7 @@ impl AppServerSession {
             self.session_config_with_effective_service_tier(&config)
         };
         background::resume_thread(background::BackgroundThreadResume {
+            writer_handoff: self.writer_handoff.clone(),
             project: None,
             request_handle: self.request_handle(),
             config,
@@ -1376,6 +1380,12 @@ fn config_request_overrides_from_config(
         if is_launch(key) {
             overrides.insert(key.to_string(), serde_json::json!(effective[key]));
         }
+    }
+    if thread_params_mode == ThreadParamsMode::Embedded && is_launch("thread_unload_delay_secs") {
+        overrides.insert(
+            "thread_unload_delay_secs".into(),
+            serde_json::json!(config.thread_unload_delay.as_secs()),
+        );
     }
     if is_launch("features.concurrent_reasoning_summaries") {
         overrides

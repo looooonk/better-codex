@@ -2,6 +2,32 @@ use codex_app_server_protocol::JSONRPCErrorError;
 use codex_thread_store::ThreadStoreError;
 use pretty_assertions::assert_eq;
 
+#[tokio::test]
+async fn tui_handoff_preserves_explicit_unload_delays_and_other_clients() -> anyhow::Result<()> {
+    use codex_config::LoaderOverrides;
+    use codex_core::config::ConfigBuilder;
+    use std::time::Duration;
+
+    let home = tempfile::tempdir()?;
+    for (setting, client, seconds) in [
+        ("", "codex-tui", 0),
+        ("thread_unload_delay_secs = 60", "codex-tui", 60),
+        ("thread_unload_delay_secs = 1800", "codex-tui", 1800),
+        ("", "another-client", 60),
+    ] {
+        std::fs::write(home.path().join("config.toml"), setting)?;
+        let mut config = ConfigBuilder::default()
+            .codex_home(home.path().to_owned())
+            .fallback_cwd(Some(home.path().to_owned()))
+            .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
+            .build()
+            .await?;
+        super::apply_tui_handoff_default(&mut config, Some(client));
+        assert_eq!(config.thread_unload_delay, Duration::from_secs(seconds));
+    }
+    Ok(())
+}
+
 #[test]
 fn storage_failure_classification_does_not_change_mutation_error_policy() {
     for error in [

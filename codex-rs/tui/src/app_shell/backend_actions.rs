@@ -412,6 +412,10 @@ impl ShellState {
                 Ok(started) => {
                     self.complete_session_switch(started, app_server).await;
                 }
+                Err(err) if err.is::<crate::app_server_session::writer_handoff::Canceled>() => {
+                    self.status = "ready".into();
+                    self.show_hint("Chat switch canceled.");
+                }
                 Err(err) => {
                     self.report_resume_error(thread_id, &err);
                 }

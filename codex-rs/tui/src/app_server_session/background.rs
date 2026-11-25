@@ -52,6 +52,7 @@ impl AppServerSession {
             self.session_config_with_effective_service_tier(&config)
         };
         let request = BackgroundThreadResume {
+            writer_handoff: self.writer_handoff.clone(),
             project,
             request_handle,
             config,
@@ -171,6 +172,7 @@ where
 }
 
 pub(super) struct BackgroundThreadResume {
+    pub(super) writer_handoff: writer_handoff::WriterHandoff,
     pub(super) project: Option<codex_app_server_protocol::Project>,
     pub(super) request_handle: AppServerRequestHandle,
     pub(super) config: Config,
@@ -186,6 +188,7 @@ pub(super) async fn resume_thread(
     request: BackgroundThreadResume,
 ) -> Result<AppServerStartedThread> {
     let BackgroundThreadResume {
+        writer_handoff,
         project,
         request_handle,
         config,
@@ -216,10 +219,24 @@ pub(super) async fn resume_thread(
         params.runtime_workspace_roots = Some(project.roots.into_iter().map(|r| r.path).collect());
     }
     params.exclude_turns = thread_params_mode != ThreadParamsMode::Cloud;
-    let mut response: ThreadResumeResponse = request_handle
-        .request_typed(ClientRequest::ThreadResume { request_id, params })
-        .await
-        .map_err(|err| bootstrap_request_error("thread/resume failed in TUI", err))?;
+    let mut first_request_id = Some(request_id);
+    let mut send = || {
+        request_handle.request_typed(ClientRequest::ThreadResume {
+            request_id: first_request_id.take().unwrap_or_else(|| {
+                RequestId::String(format!("app-shell-resume-{}", Uuid::new_v4()))
+            }),
+            params: params.clone(),
+        })
+    };
+    let mut response: ThreadResumeResponse = if thread_params_mode == ThreadParamsMode::Embedded {
+        writer_handoff
+            .resume(config.codex_home.as_path(), thread_id, send)
+            .await?
+    } else {
+        send()
+            .await
+            .map_err(|err| bootstrap_request_error("thread/resume failed in TUI", err))?
+    };
     if thread_params_mode != ThreadParamsMode::Cloud {
         response.thread.turns = read_thread_history(request_handle.clone(), thread_id)
             .await?

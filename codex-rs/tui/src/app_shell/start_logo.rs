@@ -53,7 +53,12 @@ pub(super) fn render(
         area.width = overlay.x.saturating_sub(area.x);
     }
     if shell.has_pending_backend_action(super::backend_actions::ActionGroup::SessionSwitch) {
-        render_loading(area, shell.chrome_animation_frame, buf);
+        let message = if shell.status == crate::app_server_session::writer_handoff::WAIT_MESSAGE {
+            crate::app_server_session::writer_handoff::WAIT_MESSAGE
+        } else {
+            "Loading session..."
+        };
+        render_loading(area, shell.chrome_animation_frame, message, buf);
         return;
     }
     let (rows, width): (&[&str], u16) = if area.width >= 18 && area.height >= 9 {
@@ -105,22 +110,27 @@ pub(super) fn render(
     }
 }
 
-pub(super) fn render_loading(area: Rect, frame: usize, buf: &mut Buffer) {
+pub(super) fn render_loading(area: Rect, frame: usize, message: &str, buf: &mut Buffer) {
+    use ratatui::text::Line;
     use ratatui::widgets::Paragraph;
     use ratatui::widgets::Widget;
     const DOTS: [char; 8] = ['⠋', '⠙', '⠸', '⢰', '⣠', '⣄', '⡆', '⠇'];
     let spinner = DOTS[frame % DOTS.len()];
-    Paragraph::new(format!("{spinner} Loading session..."))
-        .centered()
-        .render(
-            Rect::new(
-                area.x,
-                area.y + area.height.saturating_sub(1) / 2,
-                area.width,
-                area.height.min(1),
-            ),
-            buf,
-        );
+    let label = format!("{spinner} {message}");
+    let lines: Vec<_> = textwrap::wrap(&label, usize::from(area.width.max(1)))
+        .into_iter()
+        .map(Line::from)
+        .collect();
+    let height = area.height.min(lines.len() as u16);
+    Paragraph::new(lines).centered().render(
+        Rect::new(
+            area.x,
+            area.y + area.height.saturating_sub(height) / 2,
+            area.width,
+            height,
+        ),
+        buf,
+    );
 }
 
 #[cfg(test)]
