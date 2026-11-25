@@ -248,36 +248,28 @@ impl ShellState {
         session_cwd: Option<&std::path::Path>,
         uses_remote_workspace: bool,
     ) -> Result<Config> {
-        let mode = effective_resume_cwd_mode(
-            config.tui_resume_cwd,
-            self.resume_cwd_runtime.explicit_cwd.as_deref(),
-        );
-        if self.resume_cwd_runtime.uses_remote_workspace_or_environment
-            && self.resume_cwd_runtime.explicit_cwd.is_none()
-            && matches!(mode, Some(ResumeCwdMode::Current))
-        {
-            return Err(eyre!(
+        let runtime = &self.resume_cwd_runtime;
+        let Some(mode) =
+            effective_resume_cwd_mode(config.tui_resume_cwd, runtime.explicit_cwd.as_deref())
+        else {
+            return Ok(config.clone());
+        };
+        let current_cwd =
+            if mode == ResumeCwdMode::Current && runtime.uses_remote_workspace_or_environment {
+                runtime.explicit_cwd.as_deref().ok_or_else(|| eyre!(
                 "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace"
-            ));
-        }
-        if uses_remote_workspace || mode.is_none() {
+            ))?
+            } else {
+                runtime.launch_cwd.as_path()
+            };
+        if uses_remote_workspace {
             return Ok(config.clone());
         }
-
         let cwd = match mode {
-            Some(ResumeCwdMode::Current)
-                if self.resume_cwd_runtime.uses_remote_workspace_or_environment =>
-            {
-                self.resume_cwd_runtime
-                    .explicit_cwd
-                    .as_deref()
-                    .expect("remote current mode validated above")
-            }
-            Some(ResumeCwdMode::Current) => self.resume_cwd_runtime.launch_cwd.as_path(),
-            Some(ResumeCwdMode::Session) => session_cwd.ok_or_else(|| {
+            ResumeCwdMode::Current => current_cwd,
+            ResumeCwdMode::Session => session_cwd.ok_or_else(|| {
                 eyre!("failed to determine the working directory recorded for the selected session")
             })?,
-            None => unreachable!("unset modes return before choosing a working directory"),
         };
         let cwd = AbsolutePathBuf::from_absolute_path(cwd)
             .wrap_err("selected working directory is not absolute")?;
