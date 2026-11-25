@@ -1,0 +1,10 @@
+---
+source: tui/src/app_shell/project_hub_tests.rs
+expression: "crate::test_support::buffer_style_grid(&strip)"
+---
+style grid 47x1:
+00000000001111111111111111111111111111111111222
+legend:
+0 (10 cells): Style::new().fg(Color::Rgb(180, 142, 240)).bg(Color::Rgb(22, 22, 30)).underline_color(Color::Reset).bold()
+1 (34 cells): Style::new().fg(Color::Rgb(192, 202, 245)).bg(Color::Rgb(22, 22, 30)).underline_color(Color::Reset)
+2 (3 cells): Style::new().fg(Color::Rgb(86, 95, 137)).bg(Color::Rgb(65, 72, 104)).underline_color(Color::Reset).reversed()

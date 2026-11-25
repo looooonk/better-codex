@@ -222,7 +222,13 @@ fn composer_row(
         let start = range.start + offset;
         let local_range = start..start + grapheme.len();
         let display_range = source_start + local_range.start..source_start + local_range.end;
-        let style = composer_grapheme_style(markdown.at(display_range.start), &local_range, &display_range, command_range, selection);
+        let style = composer_grapheme_style(
+            markdown.at(display_range.start),
+            &local_range,
+            &display_range,
+            command_range,
+            selection,
+        );
         if let Some(previous_style) = current_style
             && previous_style != style
         {

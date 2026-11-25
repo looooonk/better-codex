@@ -138,7 +138,17 @@ pub(crate) fn palette() -> ThemePalette {
 #[path = "app_theme_tests.rs"]
 mod tests;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Deserialize,
+    serde::Serialize,
+    strum_macros::EnumIter,
+)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum TuiAppTheme {
     #[default]

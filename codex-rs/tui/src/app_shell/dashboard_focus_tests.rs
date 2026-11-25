@@ -110,7 +110,10 @@ async fn settings_rows_apply_in_place_and_remain_reachable_on_a_short_terminal()
     let buf = render_shell_buffer(&shell, wide);
     let row = row_containing(&buf, wide, "Theme: Tokyo Night").unwrap();
     let x = row_needle_x(&buf, wide, row, "Theme: Tokyo Night").unwrap();
-    shell.handle_mouse_click(wide, Position::new(x, row), &config, &mut backend).await.unwrap();
+    shell
+        .handle_mouse_click(wide, Position::new(x, row), &config, &mut backend)
+        .await
+        .unwrap();
     insta::assert_snapshot!("settings_theme_menu", render_shell(&shell, wide));
     let buf = render_shell_buffer(&shell, wide);
     let row = row_containing(&buf, wide, "Gruvbox Dark").unwrap();

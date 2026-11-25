@@ -74,10 +74,17 @@ fn empty_active_chat_survives_catalog_refresh_until_its_first_message() {
         let area = Rect::new(0, 0, 116, 36);
         let buf = render_shell_buffer(&shell, area);
         let rows: Vec<_> = (0..area.height)
-            .filter_map(|y| row_needle_x(&buf, area, y, "Untitled chat").map(|x| buf[(x,y)].bg))
+            .filter_map(|y| row_needle_x(&buf, area, y, "Untitled chat").map(|x| buf[(x, y)].bg))
             .collect();
-        assert_eq!(rows, vec![design::palette::border(); 1 + usize::from(project.is_some())]);
-        shell.session_list.replace_threads(vec![thread_fixture(shell.thread_id, Some("First message"), "")]);
+        assert_eq!(
+            rows,
+            vec![design::palette::border(); 1 + usize::from(project.is_some())]
+        );
+        shell.session_list.replace_threads(vec![thread_fixture(
+            shell.thread_id,
+            Some("First message"),
+            "",
+        )]);
         assert_eq!(shell.session_list.row_count(), 1);
         assert_eq!(shell.session_list.selected_title(), Some("First message"));
         shell.clear_new_session();
@@ -289,10 +296,12 @@ async fn project_and_chat_buttons_have_hover_targets_separate_from_the_row() {
                 for x in name..strip.area.right() {
                     strip[(x, y)] = buf[(x, y)].clone();
                 }
-                insta::assert_snapshot!(
-                    "project_more_hover",
-                    crate::test_support::buffer_style_grid(&strip)
-                );
+                let snapshot = if crossterm::style::Colored::ansi_color_disabled_memoized() {
+                    "project_more_hover_without_color"
+                } else {
+                    "project_more_hover"
+                };
+                insta::assert_snapshot!(snapshot, crate::test_support::buffer_style_grid(&strip));
             }
             shell
                 .handle_mouse_click(area, Position::new(dots, y), &config, &mut backend)

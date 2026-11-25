@@ -147,7 +147,8 @@ impl<T> SelectorState<T> {
     }
 
     pub(super) fn settings_menu_height(&self) -> Option<u16> {
-        matches!(self.presentation, Presentation::Menu(None)).then(|| 3 + self.options.len().clamp(1, 12) as u16)
+        matches!(self.presentation, Presentation::Menu(None))
+            .then(|| 3 + self.options.len().clamp(1, 12) as u16)
     }
 
     pub(super) fn composer_control(&self) -> Option<ComposerControl> {

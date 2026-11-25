@@ -1,5 +1,8 @@
 //! Style source bytes, including delimiters, without changing the editable text.
-use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+use pulldown_cmark::Event;
+use pulldown_cmark::Parser;
+use pulldown_cmark::Tag;
+use pulldown_cmark::TagEnd;
 use ratatui::style::Style;
 
 pub(super) struct SourceStyles {
@@ -12,9 +15,9 @@ impl SourceStyles {
         let mut changes = Vec::new();
         if source.contains(['*', '_', '`', '~']) {
             let styles = super::super::design::markdown_styles();
-            let mut stack = vec![Style::new()];
+            let mut stack = Vec::<Style>::new();
             for (event, range) in Parser::new(source).into_offset_iter() {
-                let parent = *stack.last().expect("base style");
+                let parent = stack.last().copied().unwrap_or_default();
                 match event {
                     Event::Start(tag @ (Tag::Strong | Tag::Emphasis | Tag::CodeBlock(_))) => {
                         let style = parent.patch(match tag {
@@ -27,7 +30,7 @@ impl SourceStyles {
                     }
                     Event::End(TagEnd::Strong | TagEnd::Emphasis | TagEnd::CodeBlock) => {
                         stack.pop();
-                        changes.push((range.end, *stack.last().expect("base style")));
+                        changes.push((range.end, stack.last().copied().unwrap_or_default()));
                     }
                     Event::Code(_) => {
                         changes.push((range.start, parent.patch(styles.code)));
@@ -37,7 +40,10 @@ impl SourceStyles {
                 }
             }
         }
-        Self { changes: changes.into_iter().peekable(), current: Style::new() }
+        Self {
+            changes: changes.into_iter().peekable(),
+            current: Style::new(),
+        }
     }
 
     pub(super) fn at(&mut self, offset: usize) -> Style {

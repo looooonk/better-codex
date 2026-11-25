@@ -16,8 +16,8 @@ use std::cell::Cell;
 
 mod background;
 mod controller;
-mod persistence;
 mod menu;
+mod persistence;
 
 pub(super) use background::SettingsUpdate;
 pub(super) use persistence::persist_settings_update;
@@ -122,7 +122,6 @@ impl ShellState {
         if let Err(err) = result {
             self.settings
                 .set_error(format!("Could not save the equation preference: {err}"));
-
         }
         self.transcript_render_cache.get_mut().clear();
     }
@@ -320,7 +319,9 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
             "Syntax theme: {} ▾",
             shell.tui_theme.as_deref().unwrap_or("default")
         ),
-        SettingsAction::GraphicalMath => choice("Render LaTeX as images", shell.graphics.borrow().enabled()),
+        SettingsAction::GraphicalMath => {
+            choice("Render LaTeX as images", shell.graphics.borrow().enabled())
+        }
         SettingsAction::Animations => choice("Animations", shell.animations),
         SettingsAction::Tooltips => choice("Tooltips", shell.show_tooltips),
         SettingsAction::McpServers => format!("MCP servers: {} ▾", shell.mcp_inventory.label()),

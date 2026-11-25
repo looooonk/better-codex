@@ -202,8 +202,14 @@ impl ProjectHub {
                     if !expanded {
                         continue;
                     }
-                    let new_chat = self.new_chat.as_ref()
-                        .filter(|(project, chat)| project == &p.id && group.pages.len() <= 1 && !group.chats.iter().any(|listed| listed.id == chat.id))
+                    let new_chat = self
+                        .new_chat
+                        .as_ref()
+                        .filter(|(project, chat)| {
+                            project == &p.id
+                                && group.pages.len() <= 1
+                                && !group.chats.iter().any(|listed| listed.id == chat.id)
+                        })
                         .map(|(_, chat)| chat);
                     for chat in new_chat.into_iter().chain(&group.chats) {
                         add(

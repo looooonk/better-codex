@@ -18,7 +18,11 @@ pub(super) struct PluginInventorySummary {
 
 impl McpInventorySummary {
     pub(super) fn from_response(response: &ListMcpServerStatusResponse) -> Self {
-        Self { loaded: true, servers: response.data.len(), ..Self::default() }
+        Self {
+            loaded: true,
+            servers: response.data.len(),
+            ..Self::default()
+        }
     }
 
     pub(super) fn from_error(error: impl Into<String>) -> Self {
@@ -36,7 +40,11 @@ impl McpInventorySummary {
         if !self.loaded {
             return "not loaded".to_string();
         }
-        let noun = if self.servers == 1 { "server" } else { "servers" };
+        let noun = if self.servers == 1 {
+            "server"
+        } else {
+            "servers"
+        };
         format!("{} {noun}", format_usize(self.servers))
     }
 }
@@ -45,7 +53,12 @@ impl PluginInventorySummary {
     pub(super) fn from_response(response: &PluginListResponse) -> Self {
         Self {
             loaded: true,
-            installed: response.marketplaces.iter().flat_map(|m| &m.plugins).filter(|p| p.installed).count(),
+            installed: response
+                .marketplaces
+                .iter()
+                .flat_map(|m| &m.plugins)
+                .filter(|p| p.installed)
+                .count(),
             ..Self::default()
         }
     }

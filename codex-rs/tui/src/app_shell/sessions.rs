@@ -9,7 +9,8 @@ use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_protocol::ThreadId;
-use ratatui::style::{Style, Styled};
+use ratatui::style::Style;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::cell::Cell;
@@ -574,7 +575,10 @@ impl SessionListState {
 
     fn apply_search_filter(&mut self) {
         if let Some(chat) = &self.new_chat
-            && self.all_rows.iter().any(|row| row.thread_id == chat.thread_id)
+            && self
+                .all_rows
+                .iter()
+                .any(|row| row.thread_id == chat.thread_id)
         {
             self.new_chat = None;
         }
@@ -582,9 +586,15 @@ impl SessionListState {
         if query.is_empty() {
             self.rows.clone_from(&self.all_rows);
         } else {
-            self.rows = self.all_rows.iter().filter(|row| row.matches_search(query)).cloned().collect();
+            self.rows = self
+                .all_rows
+                .iter()
+                .filter(|row| row.matches_search(query))
+                .cloned()
+                .collect();
         }
-        if !self.show_archived && let Some(chat) = &self.new_chat
+        if !self.show_archived
+            && let Some(chat) = &self.new_chat
             && (query.is_empty() || chat.matches_search(query))
         {
             self.rows.insert(0, chat.clone());
@@ -635,8 +645,20 @@ impl SessionListState {
 }
 
 impl SessionRow {
-    pub(super) fn new_chat(thread_id: ThreadId, title: String, cwd: PathBuf, project_id: Option<String>) -> Self {
-        Self { thread_id, title, preview: String::new(), cwd, project_id, external_writer: false }
+    pub(super) fn new_chat(
+        thread_id: ThreadId,
+        title: String,
+        cwd: PathBuf,
+        project_id: Option<String>,
+    ) -> Self {
+        Self {
+            thread_id,
+            title,
+            preview: String::new(),
+            cwd,
+            project_id,
+            external_writer: false,
+        }
     }
 
     fn from_thread(thread: Thread) -> Option<Self> {

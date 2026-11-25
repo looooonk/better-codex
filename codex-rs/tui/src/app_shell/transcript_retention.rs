@@ -13,14 +13,16 @@ impl ShellState {
             return;
         }
         let mut start = 0;
-        let mut visible = len - self.tool_groups().map(|group| group.rows.len() - 1).sum::<usize>();
+        let mut visible = len
+            - self
+                .tool_groups()
+                .map(|group| group.rows.len() - 1)
+                .sum::<usize>();
         let mut groups = self.tool_groups().peekable();
         while visible > MAX_TRANSCRIPT_LINES {
-            start = if groups.peek().is_some_and(|group| group.rows.start == start) {
-                groups.next().expect("peeked tool group").rows.end
-            } else {
-                start + 1
-            };
+            start = groups
+                .next_if(|group| group.rows.start == start)
+                .map_or(start + 1, |group| group.rows.end);
             visible -= 1;
         }
         drop(groups);
@@ -40,7 +42,9 @@ impl ShellState {
 
         // A storage limit can cut through a group. Evict complete calls and carry the
         // disclosure state forward when the remaining calls still belong to that group.
-        let boundary = self.tool_groups().find(|group| group.rows.contains(&start))
+        let boundary = self
+            .tool_groups()
+            .find(|group| group.rows.contains(&start))
             .map(|group| (group.rows.end, group.expanded));
         if let Some((end, expanded)) = boundary {
             while start < end && self.transcript[start].tool_action().is_none() {

@@ -50,7 +50,11 @@ impl<T> SelectorState<T> {
         (width, MENU_CHROME + rows.clamp(1, MAX_VISIBLE_ROWS))
     }
 
-    pub(super) fn menu_rows(&self, panel: Rect, control: Option<ComposerControl>) -> Vec<(usize, Rect)> {
+    pub(super) fn menu_rows(
+        &self,
+        panel: Rect,
+        control: Option<ComposerControl>,
+    ) -> Vec<(usize, Rect)> {
         let capacity = panel.height.saturating_sub(MENU_CHROME);
         if capacity == 0 || self.options.is_empty() {
             return Vec::new();
@@ -180,7 +184,11 @@ impl<T> SelectorState<T> {
     }
 }
 
-fn option_height<T>(option: &SelectorOption<T>, control: Option<ComposerControl>, width: u16) -> u16 {
+fn option_height<T>(
+    option: &SelectorOption<T>,
+    control: Option<ComposerControl>,
+    width: u16,
+) -> u16 {
     if control == Some(ComposerControl::Permissions) {
         let lines = textwrap::wrap(&option.detail, usize::from(width.saturating_sub(4)).max(1));
         1u16.saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX))
