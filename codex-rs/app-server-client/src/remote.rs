@@ -10,6 +10,8 @@ callers such as the TUI can switch between them without changing their
 higher-level session logic.
 */
 
+mod shared_settings_prompts;
+
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::Error as IoError;
@@ -157,6 +159,7 @@ enum RemoteClientCommand {
 
 #[derive(Default)]
 struct RemoteServerMetadata {
+    private_settings: bool,
     server_version: Option<String>,
     codex_home: Option<String>,
     platform_family: Option<String>,
@@ -173,6 +176,7 @@ pub struct RemoteAppServerClient {
 
 #[derive(Clone)]
 pub struct RemoteAppServerRequestHandle {
+    private_settings: bool,
     command_tx: mpsc::Sender<RemoteClientCommand>,
 }
 
@@ -225,6 +229,10 @@ impl RemoteAppServerClient {
         }
     }
 
+    pub fn supports_private_settings(&self) -> bool {
+        self.metadata.private_settings
+    }
+
     pub fn server_version(&self) -> Option<&str> {
         self.metadata.server_version.as_deref()
     }
@@ -252,7 +260,7 @@ impl RemoteAppServerClient {
     {
         let mut stream =
             RemoteWebSocket::from_handshake(stream, REMOTE_APP_SERVER_MAX_WEBSOCKET_MESSAGE_SIZE)?;
-        let (pending_events, metadata) = initialize_remote_connection(
+        let (mut pending_events, metadata) = initialize_remote_connection(
             &mut stream,
             &endpoint,
             initialize_params,
@@ -260,6 +268,13 @@ impl RemoteAppServerClient {
         )
         .await?;
 
+        let mut shared_prompts = (!metadata.private_settings)
+            .then(shared_settings_prompts::SharedSettingsPrompts::default);
+        if let Some(prompts) = &mut shared_prompts {
+            for event in &mut pending_events {
+                prompts.observe(event);
+            }
+        }
         let (command_tx, mut command_rx) = mpsc::channel::<RemoteClientCommand>(channel_capacity);
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AppServerEvent>();
         let worker_handle = tokio::spawn(async move {
@@ -324,6 +339,27 @@ impl RemoteAppServerClient {
                                 result,
                                 response_tx,
                             } => {
+                                if let Some(prompts) = &mut shared_prompts
+                                    && let Err(error) = prompts.resolve(&request_id, &result)
+                                {
+                                    // Reply handles are single use. Close the server-side prompt
+                                    // as well, so a prohibited free-text response cannot strand a turn.
+                                    prompts.dismiss(&request_id);
+                                    let rejected = write_jsonrpc_message(
+                                        &mut stream,
+                                        JSONRPCMessage::Error(JSONRPCError {
+                                            id: request_id,
+                                            error: JSONRPCErrorError {
+                                                code: -32602,
+                                                message: error.to_string(),
+                                                data: None,
+                                            },
+                                        }),
+                                        &endpoint,
+                                    ).await;
+                                    let _ = response_tx.send(rejected.and(Err(error)));
+                                    continue;
+                                }
                                 let result = write_jsonrpc_message(
                                     &mut stream,
                                     JSONRPCMessage::Response(JSONRPCResponse {
@@ -340,6 +376,9 @@ impl RemoteAppServerClient {
                                 error,
                                 response_tx,
                             } => {
+                                if let Some(prompts) = &mut shared_prompts {
+                                    prompts.dismiss(&request_id);
+                                }
                                 let result = write_jsonrpc_message(
                                     &mut stream,
                                     JSONRPCMessage::Error(JSONRPCError {
@@ -381,26 +420,26 @@ impl RemoteAppServerClient {
                                         }
                                     }
                                     Ok(JSONRPCMessage::Notification(notification)) => {
-                                        if let Some(event) =
-                                            app_server_event_from_notification(notification)
-                                            && let Err(err) = deliver_event(
-                                                &event_tx,
-                                                event,
-                                            )
-                                            {
+                                        if let Some(mut event) = app_server_event_from_notification(notification) {
+                                            if let Some(prompts) = &mut shared_prompts {
+                                                prompts.observe(&mut event);
+                                            }
+                                            if let Err(err) = deliver_event(&event_tx, event) {
                                                 warn!(%err, "failed to deliver remote app-server event");
                                                 break;
                                             }
+                                        }
                                     }
                                     Ok(JSONRPCMessage::Request(request)) => {
                                         let request_id = request.id.clone();
                                         let method = request.method.clone();
                                         match ServerRequest::try_from(request) {
                                             Ok(request) => {
-                                                if let Err(err) = deliver_event(
-                                                    &event_tx,
-                                                    AppServerEvent::ServerRequest(Box::new(request)),
-                                                )
+                                                let mut event = AppServerEvent::ServerRequest(Box::new(request));
+                                                if let Some(prompts) = &mut shared_prompts {
+                                                    prompts.observe(&mut event);
+                                                }
+                                                if let Err(err) = deliver_event(&event_tx, event)
                                                 {
                                                     warn!(%err, "failed to deliver remote app-server server request");
                                                     break;
@@ -535,6 +574,7 @@ impl RemoteAppServerClient {
 
     pub fn request_handle(&self) -> RemoteAppServerRequestHandle {
         RemoteAppServerRequestHandle {
+            private_settings: self.metadata.private_settings,
             command_tx: self.command_tx.clone(),
         }
     }
@@ -691,6 +731,39 @@ impl RemoteAppServerRequestHandle {
     }
 
     pub async fn request_json_rpc(&self, request: JSONRPCRequest) -> IoResult<RequestResult> {
+        let writes_settings = match request.method.as_str() {
+            // Bedrock sign-in selects and configures a model provider.
+            "account/login/start" => matches!(
+                request
+                    .params
+                    .as_ref()
+                    .and_then(|params| params.get("type"))
+                    .and_then(serde_json::Value::as_str),
+                Some("amazonBedrock" | "amazonBedrockAccessKeys")
+            ),
+            "config/value/write"
+            | "config/batchWrite"
+            | "modelProvider/config/write"
+            | "modelProvider/default/set"
+            | "experimentalFeature/enablement/set"
+            | "skills/config/write"
+            | "plugin/install"
+            | "plugin/uninstall"
+            | "marketplace/add"
+            | "marketplace/remove"
+            | "marketplace/upgrade"
+            | "account/logout"
+            | "account/bedrock/setup"
+            | "account/gcp/setup"
+            | "externalAgentConfig/import" => true,
+            _ => false,
+        };
+        if !self.private_settings && writes_settings {
+            return Err(IoError::new(
+                ErrorKind::Unsupported,
+                "This server saves settings to the standard Codex configuration. Connect to an updated Better Codex server to save changes.",
+            ));
+        }
         let (response_tx, response_rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::Request {
@@ -884,6 +957,9 @@ where
                     })?;
                     match message {
                         JSONRPCMessage::Response(response) if response.id == initialize_request_id => {
+                            metadata.private_settings = response.result.get("userAgent")
+                                .and_then(serde_json::Value::as_str)
+                                .is_some_and(|agent| agent.split_ascii_whitespace().any(|token| token == "better-codex-private-config/1"));
                             metadata.server_version = response
                                 .result
                                 .get("userAgent")

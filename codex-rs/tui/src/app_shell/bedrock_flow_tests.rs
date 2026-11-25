@@ -121,7 +121,9 @@ async fn native_bedrock_requests_retry_credentials_and_require_govcloud_acknowle
                     continue;
                 };
                 let result = match request.method.as_str() {
-                    "initialize" => json!({"userAgent": "bedrock-test"}),
+                    "initialize" => {
+                        json!({"userAgent": "bedrock-test better-codex-private-config/1"})
+                    }
                     "account/bedrock/discover" => {
                         json!({"profiles": [], "environmentCredentials": []})
                     }

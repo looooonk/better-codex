@@ -212,7 +212,7 @@ impl InitializeRequestProcessor {
         }
 
         let user_agent = format!(
-            "{} better-codex/{}",
+            "{} better-codex-private-config/1 better-codex/{}",
             get_codex_user_agent(),
             env!("CARGO_PKG_VERSION")
         );

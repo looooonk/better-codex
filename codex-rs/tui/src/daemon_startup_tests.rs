@@ -90,6 +90,7 @@ async fn daemon_compatibility_respects_policy_and_recovers_from_broken_servers()
         "config deleted",
         "unsupported RPC",
         "old protocol",
+        "shared settings",
     ] {
         let overrides = codex_utils_cli::CliConfigOverrides {
             raw_overrides: vec![if scenario == "missing feature" {
@@ -120,7 +121,7 @@ async fn daemon_compatibility_respects_policy_and_recovers_from_broken_servers()
                 };
                 let response = match request.method.as_str() {
                     "initialize" => json!({"id": request.id, "result": {
-                        "userAgent": format!("codex_cli_rs/{}", if scenario == "old protocol" { "0.1.0" } else { codex_build_info::CODEX_BACKEND_COMPAT_VERSION })
+                        "userAgent": format!("codex_cli_rs/{} {}", if scenario == "old protocol" { "0.1.0" } else { codex_build_info::CODEX_BACKEND_COMPAT_VERSION }, if scenario == "shared settings" { "" } else { "better-codex-private-config/1" })
                     }}),
                     "config/read" => json!({"id": request.id, "result": {"config": {}, "layers": [{
                         "name": {"type": "legacyManagedConfigTomlFromFile"},
@@ -167,6 +168,7 @@ async fn daemon_compatibility_respects_policy_and_recovers_from_broken_servers()
                     warning.contains("Experimental feature request failed"),
                     "{warning}"
                 ),
+                "shared settings" => assert!(warning.contains("shared Codex settings")),
                 "old protocol" => assert!(warning.contains("protocol 0.1.0 differs"), "{warning}"),
                 "missing feature" => assert!(
                     warning.contains("future_feature to be enabled"),

@@ -212,6 +212,11 @@ pub(super) async fn check(
                     codex_build_info::CODEX_BACKEND_COMPAT_VERSION,
                 ));
             }
+            if let AppServerClient::Remote(remote) = &client
+                && !remote.supports_private_settings()
+            {
+                return Err("background server uses shared Codex settings".to_owned());
+            }
             // Both legacy managed config and current requirements override CLI flags.
             let response: serde_json::Value = client
                 .request_handle()

@@ -1489,6 +1489,17 @@ mod tests {
             .await
             .expect("remote client should connect");
 
+        let write_error = client
+            .request_handle()
+            .request_json_rpc(
+                serde_json::from_value(serde_json::json!({
+                    "id": 2, "method": "config/batchWrite", "params": {"edits": []}
+                }))
+                .unwrap(),
+            )
+            .await
+            .expect_err("upstream server must not receive config writes");
+        assert_eq!(write_error.kind(), std::io::ErrorKind::Unsupported);
         assert_eq!(client.server_version(), Some("9.8.7-test"));
         assert_eq!(client.codex_home(), Some("/server/.codex"));
         let client = AppServerClient::Remote(client);

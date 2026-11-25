@@ -178,7 +178,9 @@ async fn experimental_feature_writes_use_server_defaults_and_refresh_configured_
                     continue;
                 }
                 let result = match request.method.as_str() {
-                    "initialize" => json!({"userAgent": "experimental-test"}),
+                    "initialize" => {
+                        json!({"userAgent": "experimental-test better-codex-private-config/1"})
+                    }
                     "experimentalFeature/list" => {
                         json!({"data": [
                             {"name": "daemon_auto_start", "stage": "beta", "displayName": null, "description": null, "announcement": null, "enabled": !wrote || scenario == "overridden", "defaultEnabled": false},

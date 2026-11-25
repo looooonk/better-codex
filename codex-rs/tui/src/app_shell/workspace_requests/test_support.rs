@@ -24,7 +24,7 @@ pub(super) async fn scripted_server(
                 continue;
             };
             let result = if request.method == "initialize" {
-                json!({"userAgent":"parity-test"})
+                json!({"userAgent":"parity-test better-codex-private-config/1"})
             } else {
                 let (method, response) = responses.next().expect("unexpected request");
                 assert_eq!(request.method, method);

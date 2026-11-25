@@ -870,6 +870,14 @@ response summarizes the saved configuration.
 Saving does not select a default, authenticate, or contact the provider. Use setup
 RPCs for authentication and selection. Saving the provider used by `model/list`
 invalidates its catalog for the next access. Existing threads keep their configuration.
+Better Codex reads the standard user config until the first edit to that file.
+`config/value/write` and `config/batchWrite` return the private file they saved
+in `filePath`. For the base layer this is `$CODEX_HOME/better-codex.toml`, and
+for a named profile it is `$CODEX_HOME/<name>.better-codex.toml`. Clients
+can use `config/read` to refresh the layer origin and version after a save.
+The server advertises this behavior with the `better-codex-private-config/1`
+token in the initialization response's `userAgent`.
+
 Successful `config/value/write` and `config/batchWrite` changes to the default provider,
 provider definitions, model catalog file, or API-key model discovery setting also refresh
 the catalog on its next access. This does not change existing threads' provider routes.
