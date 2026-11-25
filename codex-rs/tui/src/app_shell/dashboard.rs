@@ -170,7 +170,13 @@ fn dashboard_panel(
                     .projects
                     .rows(content_width)
                     .into_iter()
-                    .map(|r| r.line)
+                    .map(|row| {
+                        if matches!(row.action, Some(super::project_hub::Action::Open(_, id)) if id == shell.thread_id) {
+                            super::sessions::highlight_active_chat(row.line)
+                        } else {
+                            row.line
+                        }
+                    })
                     .collect(),
             );
             panel.show_title = false;

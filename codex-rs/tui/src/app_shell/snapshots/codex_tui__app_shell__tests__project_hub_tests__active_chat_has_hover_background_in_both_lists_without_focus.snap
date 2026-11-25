@@ -1,0 +1,17 @@
+---
+source: tui/src/app_shell/project_hub_tests.rs
+assertion_line: 63
+expression: highlighted
+---
+[
+    Rgb(
+        65,
+        72,
+        104,
+    ),
+    Rgb(
+        65,
+        72,
+        104,
+    ),
+]

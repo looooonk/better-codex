@@ -2548,6 +2548,7 @@ fn session_rows_use_display_width_for_wide_characters() {
         width,
         /*visible*/ 10,
         /*focused*/ true,
+        shell.thread_id,
         &shell.projects.failed_resumes,
     );
 

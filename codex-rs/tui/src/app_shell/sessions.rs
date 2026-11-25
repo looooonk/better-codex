@@ -506,6 +506,7 @@ impl SessionListState {
         width: usize,
         visible: usize,
         focused: bool,
+        active: ThreadId,
         failed_resumes: &HashSet<ThreadId>,
     ) -> Vec<Line<'static>> {
         self.visible_rows.set(visible);
@@ -519,13 +520,18 @@ impl SessionListState {
             .skip(top)
             .take(visible)
             .map(|(index, row)| {
-                row_line(
+                let line = row_line(
                     row,
                     focused && index == self.selected,
                     !self.show_archived,
                     width,
                     row.external_writer || failed_resumes.contains(&row.thread_id),
-                )
+                );
+                if active == row.thread_id {
+                    highlight_active_chat(line)
+                } else {
+                    line
+                }
             })
             .collect()
     }
@@ -641,6 +647,15 @@ impl SessionRow {
     fn matches_search(&self, query: &str) -> bool {
         self.title.contains(query) || self.preview.contains(query)
     }
+}
+
+/// The trailing overflow button has a separate hover target.
+pub(super) fn highlight_active_chat(mut line: Line<'static>) -> Line<'static> {
+    let title_spans = line.spans.len().saturating_sub(1);
+    for span in &mut line.spans[..title_spans] {
+        span.style = span.style.bg(palette::border());
+    }
+    line
 }
 
 fn row_line(

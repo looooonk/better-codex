@@ -45,6 +45,24 @@ fn project_shell() -> (ShellState, ThreadId) {
     (shell, thread)
 }
 
+#[test]
+fn active_chat_has_hover_background_in_both_lists_without_focus() {
+    let (mut shell, id) = project_shell();
+    shell.thread_id = id;
+    shell.session_list.focused = false;
+    shell.projects.expanded.insert("research".into());
+    let area = Rect::new(0, 0, 116, 36);
+    let buf = render_shell_buffer(&shell, area);
+    let mut highlighted = Vec::new();
+    for y in 0..area.height {
+        if let Some(x) = row_needle_x(&buf, area, y, "Earlier experiment") {
+            highlighted.push(buf[(x, y)].bg);
+        }
+    }
+    assert_eq!(highlighted, vec![design::palette::border(); 2]);
+    insta::assert_debug_snapshot!(highlighted);
+}
+
 #[tokio::test]
 async fn project_details_and_move_menu_share_pointer_and_keyboard_rows() {
     let (mut shell, thread) = project_shell();
