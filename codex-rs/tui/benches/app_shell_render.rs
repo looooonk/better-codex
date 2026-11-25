@@ -38,3 +38,10 @@ fn scroll_during_active_tool_output(bencher: Bencher) {
     divan::black_box(fixture.render());
     bencher.bench_local(|| divan::black_box(fixture.append_tool_output_scroll_and_render()));
 }
+
+#[divan::bench(args = [1, 10])]
+fn folded_tool_history_scroll(bencher: Bencher, calls_per_turn: usize) {
+    let mut fixture = codex_tui::app_shell_bench_support::folded_tool_history_fixture(calls_per_turn);
+    divan::black_box(fixture.render());
+    bencher.bench_local(|| divan::black_box(fixture.scroll_and_render()));
+}

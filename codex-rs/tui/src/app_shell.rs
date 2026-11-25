@@ -2697,6 +2697,21 @@ pub mod bench_support {
         }
     }
 
+    pub fn folded_tool_history_fixture(calls_per_turn: usize) -> RenderFixture {
+        let mut shell = bench_fixture();
+        shell.clear_visible_transcript();
+        for turn in 0..64 {
+            shell.push_user(format!("Inspect workspace {turn}"));
+            for call in 0..calls_per_turn {
+                let id = format!("{turn}-{call}");
+                shell.push_tool_with_status_for_item(&id, "exec pwd", ToolBlockStatus::Success, Some(tool_groups::ToolAction::Command));
+                shell.push_output_with_status_for_item(&id, "/workspace", ToolBlockStatus::Success);
+            }
+            shell.push_assistant("Done.");
+        }
+        RenderFixture { shell, next_tool_output_line: 0 }
+    }
+
     pub fn long_streaming_turn_fixture() -> RenderFixture {
         let mut shell = bench_fixture();
         shell.transcript.clear();
