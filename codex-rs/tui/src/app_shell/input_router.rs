@@ -478,6 +478,17 @@ impl ShellState {
             self.copy_selected_transcript_with(copy_fn);
             return Ok(false);
         }
+        if key.modifiers.contains(KeyModifiers::SHIFT)
+            && (contexts.contains(KeymapContext::Composer)
+                || matches!(
+                    self.active_input_route(),
+                    Some(ActiveInputRoute::RewindEditing)
+                ))
+            && self.extend_composer_selection(key, composer_navigation_layout)
+        {
+            self.slash_command_popup.reset();
+            return Ok(false);
+        }
         if let Some(exit) = self
             .handle_active_input_route(key, config, app_server)
             .await?

@@ -2,6 +2,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use itertools::Itertools;
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -76,6 +77,13 @@ impl EditableText {
 
     pub(crate) fn clear_selection(&mut self) {
         self.selection_anchor = None;
+    }
+
+    /// Move the active end using ordinary caret navigation while keeping the original anchor.
+    pub(crate) fn extend_selection_with(&mut self, move_caret: impl FnOnce(&mut Self)) {
+        let anchor = self.selection_anchor.take().unwrap_or(self.cursor);
+        move_caret(self);
+        self.selection_anchor = (anchor != self.cursor).then_some(anchor);
     }
 
     pub(crate) fn text_with_cursor(&self) -> String {
@@ -353,11 +361,11 @@ impl EditableText {
 
     fn move_word_right(&mut self) {
         self.clear_selection();
-        self.cursor = self
+        let target = self
             .word_ranges()
-            .into_iter()
             .find_map(|range| (range.end > self.cursor).then_some(range.end))
             .unwrap_or(self.text.len());
+        self.cursor = target;
     }
 
     fn move_to_line_start(&mut self) {
@@ -386,26 +394,23 @@ impl EditableText {
         }
 
         self.word_ranges()
-            .into_iter()
             .take_while(|range| range.start < self.cursor)
             .last()
             .map(|range| range.start)
             .unwrap_or(0)
     }
 
-    fn word_ranges(&self) -> Vec<Range<usize>> {
-        let mut ranges = Vec::<Range<usize>>::new();
-        for (start, word) in self.text.unicode_word_indices() {
-            let end = start + word.len();
-            if let Some(previous) = ranges.last_mut()
-                && previous.end == start
-            {
-                previous.end = end;
-            } else {
-                ranges.push(start..end);
-            }
-        }
-        ranges
+    fn word_ranges(&self) -> impl Iterator<Item = Range<usize>> + '_ {
+        self.text
+            .unicode_word_indices()
+            .map(|(start, word)| start..start + word.len())
+            .coalesce(|left, right| {
+                if left.end == right.start {
+                    Ok(left.start..right.end)
+                } else {
+                    Err((left, right))
+                }
+            })
     }
 
     fn line_start(&self) -> usize {
@@ -449,6 +454,9 @@ impl EditableText {
     }
 
     fn normalized_boundary_forward(&self, cursor: usize) -> usize {
+        if cursor >= self.text.len() {
+            return self.text.len();
+        }
         self.text
             .grapheme_indices(true)
             .map(|(index, _)| index)

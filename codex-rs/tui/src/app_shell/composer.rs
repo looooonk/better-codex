@@ -287,6 +287,9 @@ mod queue;
 #[path = "composer_history.rs"]
 mod history;
 
+#[path = "composer_keyboard_selection.rs"]
+mod keyboard_selection;
+
 impl super::ShellState {
     pub(super) fn report_composer_insert(&mut self, result: ComposerInsertResult) {
         if let ComposerInsertResult::TooLarge { attempted_bytes } = result {

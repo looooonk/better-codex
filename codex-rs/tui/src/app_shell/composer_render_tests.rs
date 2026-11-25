@@ -414,3 +414,32 @@ fn markdown_styles_cover_the_source_delimiters_across_wraps() {
             .join("\n")
     );
 }
+
+#[test]
+fn a_selected_newline_has_a_cell_on_each_logical_line() {
+    let text = "ab\n\nc";
+    let lines = wrapped_composer_lines_with_selection(
+        text,
+        /*is_empty*/ false,
+        text.len(),
+        /*width*/ 12,
+        Some(2..4),
+    );
+    let highlights = lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| {
+                    if span.style.bg == text_selection_style().bg {
+                        "^".repeat(span.width())
+                    } else {
+                        span.content.to_string()
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(highlights, @"> ab^\n  ^\n  c");
+}

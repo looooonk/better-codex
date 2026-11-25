@@ -11,6 +11,9 @@ mod dashboard_focus;
 #[path = "app_shell/keybinding_dispatch_tests.rs"]
 mod keybinding_dispatch;
 
+#[path = "app_shell/composer_keyboard_selection_tests.rs"]
+mod composer_keyboard_selection;
+
 #[path = "app_shell/windows_key_sequence_tests.rs"]
 mod windows_key_sequence;
 

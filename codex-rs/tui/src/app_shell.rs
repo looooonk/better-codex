@@ -505,6 +505,7 @@ struct ShellState {
     pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
     composer: ComposerState,
+    composer_layout: RefCell<composer_layout::ComposerLayout>,
     slash_command_popup: SlashCommandPopupState,
     rewind: rewind::RewindState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
@@ -675,6 +676,7 @@ impl ShellState {
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
+            composer_layout: Default::default(),
             composer: ComposerState::default(),
             slash_command_popup: SlashCommandPopupState::default(),
             rewind: rewind::RewindState::default(),
@@ -2390,6 +2392,7 @@ impl ShellState {
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
+            composer_layout: Default::default(),
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Summarize the new shell architecture");
@@ -2726,6 +2729,7 @@ pub mod bench_support {
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
+            composer_layout: Default::default(),
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Benchmark the app shell render path");

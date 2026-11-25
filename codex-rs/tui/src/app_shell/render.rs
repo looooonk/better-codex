@@ -1,8 +1,8 @@
 use super::ShellState;
 use super::composer_layout::composer_body;
-use super::composer_render::composer_cursor_position;
-use super::composer_render::composer_visual_cursor_line;
-use super::composer_render::wrapped_composer_lines_with_selection;
+use super::composer_layout::composer_viewport;
+use super::composer_render::composer_lines;
+use super::composer_render::viewport_cursor_position;
 use super::composer_toolbar::ComposerControl;
 use super::composer_toolbar::ComposerToolbar;
 use super::dashboard_view;
@@ -193,7 +193,10 @@ impl ShellView<'_> {
 
         let input = self.layout(area)?.input;
         let composer = self.shell.composer.display();
-        composer_cursor_position(input, composer.text(), composer.cursor())
+        let body = composer_body(input);
+        let mut cache = self.shell.composer_layout.borrow_mut();
+        let layout = cache.for_draft(composer.text(), usize::from(body.width));
+        viewport_cursor_position(&composer_viewport(body, layout.cursor(composer.cursor()))?)
     }
 
     pub(super) fn input_area(&self, area: Rect) -> Rect {
@@ -506,30 +509,24 @@ impl ShellView<'_> {
                 );
         }
         let body = composer_body(area);
-        let visible_height = usize::from(body.height);
         let composer = self.shell.composer.display();
-        let mut lines = wrapped_composer_lines_with_selection(
-            composer.text(),
-            self.shell.composer.is_empty(),
-            composer.cursor(),
-            usize::from(body.width).max(1),
-            composer.selection_range(),
-        );
-        if visible_height > 0 && lines.len() > visible_height {
-            let max_start = lines.len().saturating_sub(visible_height);
-            let cursor_line = composer_visual_cursor_line(
+        let mut cache = self.shell.composer_layout.borrow_mut();
+        let wrap = cache.for_draft(composer.text(), usize::from(body.width));
+        if let Some(viewport) = composer_viewport(body, wrap.cursor(composer.cursor())) {
+            let end = viewport
+                .cursor
+                .line_count
+                .min(viewport.visible_start + viewport.visible_height);
+            let lines = composer_lines(
                 composer.text(),
-                composer.cursor(),
-                usize::from(body.width).max(1),
-            )
-            .unwrap_or_default();
-            let start = cursor_line
-                .saturating_add(1)
-                .saturating_sub(visible_height)
-                .min(max_start);
-            lines = lines.into_iter().skip(start).take(visible_height).collect();
+                self.shell.composer.is_empty(),
+                wrap,
+                composer.selection_range(),
+                viewport.visible_start..end,
+            );
+            Paragraph::new(lines).render(body, buf);
         }
-        Paragraph::new(lines).render(body, buf);
+        drop(cache);
         ComposerToolbar::new(self.shell, area).render(self.base_hover_position(), buf);
     }
 

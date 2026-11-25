@@ -1,5 +1,4 @@
 use super::ShellState;
-use super::composer_render::wrapped_composer_lines;
 use super::design::pane_content_rect;
 use super::input_request_layout::request_panel_visual_line_count;
 use super::input_request_view::approval_lines;
@@ -229,16 +228,10 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
     }
 
     let composer = shell.composer.display();
-    let composer_line_count = u16::try_from(
-        wrapped_composer_lines(
-            composer.text(),
-            shell.composer.is_empty(),
-            composer.cursor(),
-            usize::from(body_width).max(1),
-        )
-        .len(),
-    )
-    .unwrap_or(u16::MAX);
+    let mut cache = shell.composer_layout.borrow_mut();
+    let wrap = cache.for_draft(composer.text(), usize::from(body_width));
+    let composer_line_count =
+        u16::try_from(wrap.cursor(composer.cursor()).line_count).unwrap_or(u16::MAX);
     let desired_height = composer_line_count
         .saturating_add(2 + super::composer_toolbar::toolbar_rows(content))
         .clamp(INPUT_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);

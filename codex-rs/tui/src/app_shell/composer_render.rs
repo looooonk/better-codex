@@ -2,11 +2,10 @@
 mod markdown;
 
 use super::LocalSlashCommand;
+use super::composer_layout::ComposerLayout;
 use super::composer_layout::ComposerViewport;
-use super::composer_layout::composer_layout;
+use super::composer_layout::composer_body;
 use super::composer_layout::composer_viewport;
-use super::composer_layout::composer_visual_cursor;
-use super::composer_layout::composer_visual_row_range;
 use super::design::palette;
 use super::design::text_selection_style;
 use super::shell_command::ShellCommand;
@@ -23,6 +22,7 @@ use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(test)]
 pub(super) fn wrapped_composer_lines(
     text: &str,
     is_empty: bool,
@@ -32,6 +32,7 @@ pub(super) fn wrapped_composer_lines(
     wrapped_composer_lines_with_selection(text, is_empty, cursor, width, /*selection*/ None)
 }
 
+#[cfg(test)]
 pub(super) fn wrapped_composer_lines_with_selection(
     text: &str,
     is_empty: bool,
@@ -39,80 +40,84 @@ pub(super) fn wrapped_composer_lines_with_selection(
     width: usize,
     selection: Option<Range<usize>>,
 ) -> Vec<Line<'static>> {
-    let width = width.max(/*other*/ 1);
+    let layout = ComposerLayout::new(text, width);
+    let lines = layout.cursor(cursor).line_count;
+    composer_lines(text, is_empty, &layout, selection, 0..lines)
+}
+
+pub(super) fn composer_lines(
+    text: &str,
+    is_empty: bool,
+    layout: &ComposerLayout,
+    selection: Option<Range<usize>>,
+    visible: Range<usize>,
+) -> Vec<Line<'static>> {
     let initial_indent = Line::from("> ".fg(palette::focus()));
     let subsequent_indent = Line::from("  ".fg(palette::muted()));
-    let mut wrapped_lines = Vec::new();
     if is_empty {
         let placeholder = "Type a message".fg(palette::muted()).into();
-        let options = RtOptions::new(width)
+        let options = RtOptions::new(layout.width)
             .initial_indent(initial_indent)
             .subsequent_indent(subsequent_indent);
-        push_owned_lines(&word_wrap_line(&placeholder, options), &mut wrapped_lines);
-        return wrapped_lines;
+        let mut lines = Vec::new();
+        push_owned_lines(&word_wrap_line(&placeholder, options), &mut lines);
+        return lines;
     }
 
-    let command_range = composer_command_range(text);
+    let command = composer_command_range(text);
     let mut markdown = markdown::SourceStyles::new(text);
-    let Some(layout) = composer_layout(text, cursor, width) else {
-        return wrapped_lines;
-    };
-    for (logical_index, (logical_line, line_layout)) in
-        text.split('\n').zip(layout.lines).enumerate()
-    {
-        if logical_line.is_empty() {
-            wrapped_lines.push(if logical_index == 0 {
-                initial_indent.clone()
-            } else {
-                Line::default()
-            });
-            continue;
-        }
-        let command_range = if logical_index == 0 {
-            command_range.as_ref()
-        } else {
-            None
-        };
-        for (row_index, range) in line_layout.rows.into_iter().enumerate() {
-            let indent = if logical_index == 0 && row_index == 0 {
+    visible
+        .map(|i| {
+            let Some(range) = layout.rows.get(i) else {
+                // The caret wraps to a fresh row at an exact-width end of draft.
+                return Line::default();
+            };
+            let newline_selected = text.as_bytes().get(range.end) == Some(&b'\n')
+                && selection
+                    .as_ref()
+                    .is_some_and(|selected| selected.contains(&range.end));
+            if i != 0 && range.is_empty() && !newline_selected {
+                return Line::default();
+            }
+            let indent = if i == 0 {
                 initial_indent.clone()
             } else {
                 subsequent_indent.clone()
             };
-            wrapped_lines.push(composer_row(
-                logical_line,
-                line_layout.source_start,
-                range,
-                command_range,
+            let mut row = composer_row(
+                text,
+                range.clone(),
+                command.as_ref(),
                 selection.as_ref(),
                 &mut markdown,
                 indent,
-            ));
-        }
-    }
-    wrapped_lines.resize_with(layout.cursor.line_count, Line::default);
-    wrapped_lines
+            );
+            if newline_selected {
+                row.spans.push(Span::styled(" ", text_selection_style()));
+            }
+            row
+        })
+        .collect()
 }
 
+#[cfg(test)]
 pub(super) fn composer_visual_cursor_line(
     text: &str,
     cursor: usize,
     width: usize,
 ) -> Option<usize> {
-    composer_visual_cursor(text, cursor, width).map(|cursor| cursor.line)
+    Some(ComposerLayout::new(text, width).cursor(cursor).line)
 }
 
-pub(super) fn composer_cursor_position(
-    input_area: Rect,
-    text: &str,
-    cursor: usize,
-) -> Option<Position> {
-    let viewport = composer_viewport(input_area, text, cursor)?;
-    let y = viewport
-        .layout
-        .cursor
-        .line
-        .checked_sub(viewport.visible_start)?;
+#[cfg(test)]
+pub(super) fn composer_cursor_position(input: Rect, text: &str, cursor: usize) -> Option<Position> {
+    let body = composer_body(input);
+    let layout = ComposerLayout::new(text, usize::from(body.width));
+    viewport_cursor_position(&composer_viewport(body, layout.cursor(cursor))?)
+}
+
+pub(super) fn viewport_cursor_position(viewport: &ComposerViewport) -> Option<Position> {
+    let y = viewport.cursor.line.checked_sub(viewport.visible_start)?;
     if y >= viewport.visible_height {
         return None;
     }
@@ -121,7 +126,7 @@ pub(super) fn composer_cursor_position(
         x: viewport
             .body
             .x
-            .saturating_add(u16::try_from(viewport.layout.cursor.column).unwrap_or(u16::MAX)),
+            .saturating_add(u16::try_from(viewport.cursor.column).unwrap_or(u16::MAX)),
         y: viewport
             .body
             .y
@@ -153,11 +158,13 @@ pub(super) fn composer_text_hit_inside(
     cursor: usize,
     position: Position,
 ) -> Option<ComposerTextHit> {
-    let viewport = composer_viewport(input_area, text, cursor)?;
+    let body = composer_body(input_area);
+    let layout = ComposerLayout::new(text, usize::from(body.width));
+    let viewport = composer_viewport(body, layout.cursor(cursor))?;
     if !viewport.body.contains(position) {
         return None;
     }
-    composer_text_hit(&viewport, text, position)
+    composer_text_hit(&viewport, &layout, text, position)
 }
 
 /// Resolve a position to the closest hit in the cursor-following visible composer viewport.
@@ -167,7 +174,9 @@ pub(super) fn composer_text_hit_clamped_to_visible_viewport(
     cursor: usize,
     position: Position,
 ) -> Option<ComposerTextHit> {
-    let viewport = composer_viewport(input_area, text, cursor)?;
+    let body = composer_body(input_area);
+    let layout = ComposerLayout::new(text, usize::from(body.width));
+    let viewport = composer_viewport(body, layout.cursor(cursor))?;
     let position = Position::new(
         position.x.clamp(
             viewport.body.x,
@@ -184,7 +193,7 @@ pub(super) fn composer_text_hit_clamped_to_visible_viewport(
                 .saturating_add(viewport.body.height.saturating_sub(1)),
         ),
     );
-    composer_text_hit(&viewport, text, position)
+    composer_text_hit(&viewport, &layout, text, position)
 }
 
 fn composer_command_range(text: &str) -> Option<Range<usize>> {
@@ -207,8 +216,7 @@ fn composer_command_range(text: &str) -> Option<Range<usize>> {
 }
 
 fn composer_row(
-    logical_line: &str,
-    source_start: usize,
+    text: &str,
     range: Range<usize>,
     command_range: Option<&Range<usize>>,
     selection: Option<&Range<usize>>,
@@ -218,13 +226,11 @@ fn composer_row(
     let mut spans = row.spans;
     let mut current_text = String::new();
     let mut current_style = None;
-    for (offset, grapheme) in logical_line[range.clone()].grapheme_indices(true) {
+    for (offset, grapheme) in text[range.clone()].grapheme_indices(true) {
         let start = range.start + offset;
-        let local_range = start..start + grapheme.len();
-        let display_range = source_start + local_range.start..source_start + local_range.end;
+        let display_range = start..start + grapheme.len();
         let style = composer_grapheme_style(
             markdown.at(display_range.start),
-            &local_range,
             &display_range,
             command_range,
             selection,
@@ -249,12 +255,11 @@ fn composer_row(
 
 fn composer_grapheme_style(
     mut style: Style,
-    local_range: &Range<usize>,
     display_range: &Range<usize>,
     command_range: Option<&Range<usize>>,
     selection: Option<&Range<usize>>,
 ) -> Style {
-    if command_range.is_some_and(|command| ranges_overlap(local_range, command)) {
+    if command_range.is_some_and(|command| ranges_overlap(display_range, command)) {
         style = style.fg(palette::focus()).bold();
     }
     if selection.is_some_and(|selection| ranges_overlap(display_range, selection)) {
@@ -269,11 +274,11 @@ fn ranges_overlap(left: &Range<usize>, right: &Range<usize>) -> bool {
 
 fn composer_text_hit(
     viewport: &ComposerViewport,
+    layout: &ComposerLayout,
     text: &str,
     position: Position,
 ) -> Option<ComposerTextHit> {
     let visible_count = viewport
-        .layout
         .cursor
         .line_count
         .saturating_sub(viewport.visible_start)
@@ -281,13 +286,13 @@ fn composer_text_hit(
     let row_offset = usize::from(position.y.saturating_sub(viewport.body.y))
         .min(visible_count.saturating_sub(1));
     let visual_row = viewport.visible_start.saturating_add(row_offset);
-    let row_range = composer_visual_row_range(&viewport.layout, visual_row)?;
+    let row_range = layout.rows.get(visual_row)?.clone();
     let column = usize::from(position.x.saturating_sub(viewport.body.x));
-    if column < viewport.layout.indent_width {
+    if column < layout.indent_width {
         return Some(composer_caret_hit(row_range.start));
     }
 
-    let content_column = column.saturating_sub(viewport.layout.indent_width);
+    let content_column = column.saturating_sub(layout.indent_width);
     let mut grapheme_column = 0usize;
     for (offset, grapheme) in text[row_range.clone()].grapheme_indices(true) {
         let width = UnicodeWidthStr::width(grapheme);

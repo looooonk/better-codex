@@ -115,6 +115,11 @@ at that line and column. Press Escape to return to the conversation.
 | **Realtime voice**        | Talk with an agent through the isolated native voice helper; control microphone and playback from the workspace. |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
+In the message pane, hold Shift and press Left or Right to select a character.
+Add Option on macOS or Ctrl on Linux to select a word. Shift+Cmd+Left/Right
+selects to the start or end of the draft on macOS. Ctrl+Shift+Home/End works
+on either platform. Typing or pasting replaces the selection.
+
 Consecutive tool calls share a row in the conversation. Click the row to show or hide
 the original calls and their output. From the keyboard, press Alt+Up to select the
 transcript, Tab to move to a tool group, and Space to toggle it.

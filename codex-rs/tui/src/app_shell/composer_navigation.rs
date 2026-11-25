@@ -2,7 +2,6 @@ use super::ShellState;
 use super::composer_layout::ComposerVerticalDirection;
 use super::composer_layout::ComposerVerticalTarget;
 use super::composer_layout::composer_body;
-use super::composer_layout::composer_vertical_target;
 use super::render::ShellView;
 use ratatui::layout::Rect;
 
@@ -39,7 +38,7 @@ impl ShellState {
         }
     }
 
-    fn composer_vertical_target(
+    pub(super) fn composer_vertical_target(
         &self,
         area: Rect,
         direction: ComposerVerticalDirection,
@@ -50,12 +49,10 @@ impl ShellState {
             return ComposerVerticalTarget::Boundary;
         }
         let display = self.composer.display();
-        composer_vertical_target(
-            display.text(),
-            display.cursor(),
-            usize::from(body.width),
-            direction,
-        )
+        self.composer_layout
+            .borrow_mut()
+            .for_draft(display.text(), usize::from(body.width))
+            .vertical_target(display.cursor(), direction)
     }
 }
 

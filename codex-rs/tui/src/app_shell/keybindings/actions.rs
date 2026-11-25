@@ -90,8 +90,8 @@ pub(super) fn defaults(id: KeymapActionId) -> Vec<KeyBinding> {
         (Editor, "insert_newline") => {
             vec![shift(Enter), alt(Enter), ctrl(Char('j')), ctrl(Char('m'))]
         }
-        (Editor, "move_left") => vec![plain(Left), shift(Left)],
-        (Editor, "move_right") => vec![plain(Right), shift(Right)],
+        (Editor, "move_left") => vec![plain(Left)],
+        (Editor, "move_right") => vec![plain(Right)],
         (Editor, "move_word_left") => vec![alt(Left), ctrl(Left), alt(Char('b'))],
         (Editor, "move_word_right") => vec![alt(Right), ctrl(Right), alt(Char('f'))],
         (Editor, "move_line_start") => vec![

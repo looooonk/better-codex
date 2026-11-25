@@ -29,15 +29,55 @@ impl Fragment for ComposerFragment {
     }
 }
 
-pub(super) struct ComposerLogicalLineLayout {
-    pub(super) source_start: usize,
+/// Geometry shared by sizing, painting, cursor movement and hit testing.
+#[derive(Default)]
+pub(super) struct ComposerLayout {
+    text: String,
+    pub(super) width: usize,
     pub(super) rows: Vec<Range<usize>>,
+    pub(super) indent_width: usize,
 }
 
-pub(super) struct ComposerLayout {
-    pub(super) lines: Vec<ComposerLogicalLineLayout>,
-    pub(super) cursor: ComposerVisualCursor,
-    pub(super) indent_width: usize,
+impl ComposerLayout {
+    pub(super) fn new(text: &str, width: usize) -> Self {
+        let width = width.max(1);
+        let content_width = width.saturating_sub(COMPOSER_INDENT_WIDTH).max(1);
+        let mut rows = Vec::new();
+        let mut start = 0;
+        for line in text.split('\n') {
+            wrap_logical_line(line, content_width, start, &mut rows);
+            start += line.len() + 1;
+        }
+        Self {
+            text: text.to_owned(),
+            width,
+            rows,
+            indent_width: COMPOSER_INDENT_WIDTH.min(width.saturating_sub(1)),
+        }
+    }
+
+    pub(super) fn for_draft(&mut self, text: &str, width: usize) -> &Self {
+        if self.width != width.max(1) || self.text != text {
+            *self = Self::new(text, width);
+        }
+        self
+    }
+
+    pub(super) fn cursor(&self, offset: usize) -> ComposerVisualCursor {
+        let offset = offset.min(self.text.len());
+        let row = self
+            .rows
+            .partition_point(|range| range.start <= offset)
+            .saturating_sub(1);
+        let columns = self.text[self.rows[row].start..offset].width();
+        let content_width = self.width.saturating_sub(self.indent_width).max(1);
+        let line = row + columns / content_width;
+        ComposerVisualCursor {
+            line,
+            column: self.indent_width + columns % content_width,
+            line_count: self.rows.len().max(line + 1),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,73 +101,9 @@ pub(super) enum ComposerVerticalTarget {
 
 pub(super) struct ComposerViewport {
     pub(super) body: Rect,
-    pub(super) layout: ComposerLayout,
+    pub(super) cursor: ComposerVisualCursor,
     pub(super) visible_start: usize,
     pub(super) visible_height: usize,
-}
-
-pub(super) fn composer_layout(text: &str, cursor: usize, width: usize) -> Option<ComposerLayout> {
-    let cursor = cursor.min(text.len());
-    let line_start = text[..cursor]
-        .rfind('\n')
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    let logical_cursor_line = text[..line_start].chars().filter(|ch| *ch == '\n').count();
-    let cursor_in_logical_line = cursor.saturating_sub(line_start);
-    let width = width.max(/*other*/ 1);
-    let content_width = width.saturating_sub(COMPOSER_INDENT_WIDTH).max(/*other*/ 1);
-    let indent_width = COMPOSER_INDENT_WIDTH.min(width.saturating_sub(1));
-    let mut visual_line = 0usize;
-    let mut target = None;
-    let mut lines = Vec::new();
-    let mut source_start = 0usize;
-
-    for (index, logical_line) in text.split('\n').enumerate() {
-        let layout = composer_logical_line_layout(logical_line, content_width, source_start);
-        if index == logical_cursor_line {
-            let logical_cursor = cursor_in_logical_line.min(logical_line.len());
-            let range_index = layout
-                .rows
-                .partition_point(|range| range.start <= logical_cursor)
-                .saturating_sub(1);
-            let range_start = layout
-                .rows
-                .get(range_index)
-                .map(|range| range.start)
-                .unwrap_or(0);
-            let display_columns =
-                UnicodeWidthStr::width(&logical_line[range_start..logical_cursor]);
-            target = Some((
-                visual_line
-                    .saturating_add(range_index)
-                    .saturating_add(display_columns / content_width),
-                indent_width.saturating_add(display_columns % content_width),
-            ));
-        }
-        visual_line = visual_line.saturating_add(layout.rows.len().max(1));
-        lines.push(layout);
-        source_start = source_start
-            .saturating_add(logical_line.len())
-            .saturating_add(1);
-    }
-
-    target.map(|(line, column)| ComposerLayout {
-        lines,
-        cursor: ComposerVisualCursor {
-            line,
-            column,
-            line_count: visual_line.max(line.saturating_add(1)),
-        },
-        indent_width,
-    })
-}
-
-pub(super) fn composer_visual_cursor(
-    text: &str,
-    cursor: usize,
-    width: usize,
-) -> Option<ComposerVisualCursor> {
-    composer_layout(text, cursor, width).map(|layout| layout.cursor)
 }
 
 pub(super) fn composer_body(input: Rect) -> Rect {
@@ -139,86 +115,51 @@ pub(super) fn composer_body(input: Rect) -> Rect {
 }
 
 pub(super) fn composer_viewport(
-    input_area: Rect,
-    text: &str,
-    cursor: usize,
+    body: Rect,
+    cursor: ComposerVisualCursor,
 ) -> Option<ComposerViewport> {
-    let body = composer_body(input_area);
     if body.width == 0 || body.height == 0 {
         return None;
     }
-
-    let layout = composer_layout(text, cursor, usize::from(body.width))?;
     let visible_height = usize::from(body.height);
-    let visible_start = composer_visible_start(layout.cursor, visible_height);
+    let visible_start = composer_visible_start(cursor, visible_height);
     Some(ComposerViewport {
         body,
-        layout,
+        cursor,
         visible_start,
         visible_height,
     })
 }
 
-pub(super) fn composer_vertical_target(
-    text: &str,
-    cursor: usize,
-    width: usize,
-    direction: ComposerVerticalDirection,
-) -> ComposerVerticalTarget {
-    let Some(layout) = composer_layout(text, cursor, width) else {
-        return ComposerVerticalTarget::Boundary;
-    };
-    let target_row = match direction {
-        ComposerVerticalDirection::Up => layout.cursor.line.checked_sub(1),
-        ComposerVerticalDirection::Down => layout
-            .cursor
-            .line
-            .checked_add(1)
-            .filter(|row| *row < layout.cursor.line_count),
-    };
-    let Some(row_range) = target_row.and_then(|row| composer_visual_row_range(&layout, row)) else {
-        return ComposerVerticalTarget::Boundary;
-    };
-    let target_column = layout.cursor.column.saturating_sub(layout.indent_width);
-    ComposerVerticalTarget::Cursor(byte_for_display_column(text, row_range, target_column))
-}
-
-pub(super) fn composer_visual_row_range(
-    layout: &ComposerLayout,
-    row: usize,
-) -> Option<Range<usize>> {
-    let mut row_start = 0usize;
-    for line in &layout.lines {
-        let row_count = line.rows.len().max(1);
-        let row_end = row_start.saturating_add(row_count);
-        if row < row_end {
-            let range = line
-                .rows
-                .get(row.saturating_sub(row_start))
-                .cloned()
-                .unwrap_or(0..0);
-            return Some(
-                line.source_start.saturating_add(range.start)
-                    ..line.source_start.saturating_add(range.end),
-            );
-        }
-        row_start = row_end;
+impl ComposerLayout {
+    pub(super) fn vertical_target(
+        &self,
+        offset: usize,
+        direction: ComposerVerticalDirection,
+    ) -> ComposerVerticalTarget {
+        let cursor = self.cursor(offset);
+        let row = match direction {
+            ComposerVerticalDirection::Up => cursor.line.checked_sub(1),
+            ComposerVerticalDirection::Down => cursor.line.checked_add(1),
+        };
+        let Some(range) = row.and_then(|i| self.rows.get(i)) else {
+            return ComposerVerticalTarget::Boundary;
+        };
+        let column = cursor.column.saturating_sub(self.indent_width);
+        ComposerVerticalTarget::Cursor(byte_for_display_column(&self.text, range.clone(), column))
     }
-    None
 }
 
-fn composer_logical_line_layout(
+fn wrap_logical_line(
     logical_line: &str,
     content_width: usize,
-    source_start: usize,
-) -> ComposerLogicalLineLayout {
+    start: usize,
+    rows: &mut Vec<Range<usize>>,
+) {
     if logical_line.is_empty() {
-        return ComposerLogicalLineLayout {
-            source_start,
-            rows: std::iter::once(0..0).collect(),
-        };
+        rows.push(start..start);
+        return;
     }
-
     let mut fragments = Vec::new();
     let words = split_words(
         textwrap::WordSeparator::new().find_words(logical_line),
@@ -227,10 +168,11 @@ fn composer_logical_line_layout(
     for word in words {
         if !word.word.is_empty() {
             let word_range = source_range(logical_line, word.word);
-            if UnicodeWidthStr::width(word.word) <= content_width {
+            let word_width = word.word.width();
+            if word_width <= content_width {
                 fragments.push(ComposerFragment {
                     range: word_range,
-                    width: UnicodeWidthStr::width(word.word),
+                    width: word_width,
                 });
             } else {
                 let mut chunk_start = word_range.start;
@@ -269,11 +211,13 @@ fn composer_logical_line_layout(
     }
 
     // Standard wrapping drops separator whitespace, but editable spaces need cells.
-    let rows = textwrap::wrap_algorithms::wrap_first_fit(&fragments, &[content_width as f64])
-        .into_iter()
-        .filter_map(|line| Some(line.first()?.range.start..line.last()?.range.end))
-        .collect();
-    ComposerLogicalLineLayout { source_start, rows }
+    rows.extend(
+        textwrap::wrap_algorithms::wrap_first_fit(&fragments, &[content_width as f64])
+            .into_iter()
+            .filter_map(|line| {
+                Some(start + line.first()?.range.start..start + line.last()?.range.end)
+            }),
+    );
 }
 
 fn source_range(source: &str, fragment: &str) -> Range<usize> {
