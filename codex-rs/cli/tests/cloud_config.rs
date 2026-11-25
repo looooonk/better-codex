@@ -578,9 +578,10 @@ async fn startup_config_sign_out_reloads_policy_without_starting_runtime() -> Re
         .await?;
         assert_eq!(value["configRequirements"], baseline["configRequirements"]);
         assert_eq!(std::fs::read_dir(sqlite_home.path())?.count(), 0);
-        let user_config: toml::Value = toml::from_str(&std::fs::read_to_string(
-            fixture.codex_home.path().join("config.toml"),
-        )?)?;
+        let inherited = fixture.codex_home.path().join("config.toml");
+        assert_eq!(std::fs::read_to_string(&inherited)?, fixture.user_config);
+        let active = codex_config::user_config_file::read_path(&inherited);
+        let user_config: toml::Value = toml::from_str(&std::fs::read_to_string(active)?)?;
         assert!(user_config.get("model_provider").is_none());
         let status = fixture.command(&["login", "status"])?.output().await?;
         assert!(!status.status.success());

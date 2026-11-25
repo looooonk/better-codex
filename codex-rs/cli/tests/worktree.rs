@@ -497,6 +497,7 @@ trust_level = "trusted"
         let session = spawned.session;
         let mut stdout = spawned.stdout_rx;
         let mut output = String::new();
+        let mut screen = vt100::Parser::new(40, 120, 0);
         let mut queries = TerminalQueries::default();
         let observed = tokio::time::timeout(Duration::from_secs(/*secs*/ 45), async {
             loop {
@@ -520,6 +521,7 @@ trust_level = "trusted"
                     }
                     bytes = stdout.recv() => {
                         let bytes = bytes.context("TUI exited before model request")?;
+                        screen.process(&bytes);
                         let text = String::from_utf8_lossy(&bytes);
                         output.push_str(&text);
                         if auth_failure && output.contains("API key login is required") && output.contains("Do not use --force.") {
@@ -561,6 +563,7 @@ trust_level = "trusted"
                     tokio::select! {
                         bytes = stdout.recv() => {
                             let bytes = bytes.context("TUI exited before rename confirmation")?;
+                            screen.process(&bytes);
                             output.push_str(&String::from_utf8_lossy(&bytes));
                             let replies = queries.feed(&bytes);
                             if !replies.is_empty() { session.writer_sender().send(replies).await?; }
@@ -586,11 +589,12 @@ trust_level = "trusted"
                 "daemon updates require a connection"
             };
             tokio::time::timeout(Duration::from_secs(/*secs*/ 10), async {
-                while !output.contains(expected) {
+                while !screen.screen().contents().contains(expected) {
                     let bytes = stdout
                         .recv()
                         .await
                         .context("TUI exited before daemon status")?;
+                    screen.process(&bytes);
                     output.push_str(&String::from_utf8_lossy(&bytes));
                     let replies = queries.feed(&bytes);
                     if !replies.is_empty() {
@@ -600,7 +604,7 @@ trust_level = "trusted"
                 Ok::<_, anyhow::Error>(())
             })
             .await
-            .with_context(|| format!("daemon status timed out: {output}"))??;
+            .with_context(|| format!("daemon status timed out: {}", screen.screen().contents()))??;
         }
         if analytics {
             for reason in ["turn_start", "resize"] {

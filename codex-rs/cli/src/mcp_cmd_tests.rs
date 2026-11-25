@@ -163,7 +163,8 @@ async fn application_network_mcp_add_denies_initial_oauth_discovery_before_conne
         super::run_add(&config, http_add_args(&url)),
     )
     .await??;
-    let saved: toml::Value = toml::from_str(&std::fs::read_to_string(home.join("config.toml"))?)?;
+    let active = codex_config::user_config_file::read_path(&home.join("config.toml"));
+    let saved: toml::Value = toml::from_str(&std::fs::read_to_string(active)?)?;
     assert_eq!(
         saved["mcp_servers"]["policy-probe"]["url"].as_str(),
         Some(url.as_str())

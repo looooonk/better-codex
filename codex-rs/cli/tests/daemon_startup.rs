@@ -221,13 +221,13 @@ async fn daemon_startup(command: &str) -> Result<()> {
             };
         let expected = if command == "start" {
             // Wait for the command composer, since the startup header appears sooner.
-            steps.push_back(("Typeamessage,Shift+Enterfornewline", b"/daemon"));
+            steps.push_back(("Typeamessage", b"/daemon"));
             steps.push_back((">/daemon", b"\r"));
             "Connectedtothelocalbackgroundserver."
         } else if command == "agents-no-daemon" {
             args.extend(["agents".into(), "--no-daemon".into()]);
             steps.push_back(("Noloadedagents.Pressntostartasession.", b"n"));
-            steps.push_back(("Typeamessage,Shift+Enterfornewline", b"/daemon"));
+            steps.push_back(("Typeamessage", b"/daemon"));
             steps.push_back((">/daemon", b"\r"));
             "daemonupdatesrequire"
         } else if elevated_launch || command == "restrictive-job" && elevated {
@@ -235,14 +235,14 @@ async fn daemon_startup(command: &str) -> Result<()> {
                 args.push(action.into());
                 steps.push_back(("Nosessionsyet", b"\x1b"));
             }
-            steps.push_back(("Typeamessage,Shift+Enterfornewline", b"\x14"));
+            steps.push_back(("Typeamessage", b"\x14"));
             "Runningasadministrator:sharedbackgroundserverdisabled."
         } else if command == "restrictive-job" {
-            steps.push_back(("Typeamessage,Shift+Enterfornewline", b"\x14"));
+            steps.push_back(("Typeamessage", b"\x14"));
             "Runningwithoutthesharedbackgroundserver:thisWindowslauncher"
         } else if mismatch {
             args.extend(["--disable".into(), "api_key_model_discovery".into()]);
-            steps.push_back(("Typeamessage,Shift+Enterfornewline", b"/daemon"));
+            steps.push_back(("Typeamessage", b"/daemon"));
             steps.push_back((">/daemon", b"\r"));
             "daemonupdatesrequire"
         } else if bedrock_onboarding {
@@ -250,7 +250,7 @@ async fn daemon_startup(command: &str) -> Result<()> {
         } else {
             args.extend([command.into(), "--strict-config".into()]);
             steps.push_back(("Nosessionsyet", b"\x1b"));
-            steps.push_back(("Typeamessage,Shift+Enterfornewline", b"\x14"));
+            steps.push_back(("Typeamessage", b"\x14"));
             if elevated {
                 "Runningasadministrator:sharedbackgroundserverdisabled."
             } else {
