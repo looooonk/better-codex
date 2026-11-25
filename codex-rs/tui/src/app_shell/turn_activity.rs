@@ -20,9 +20,9 @@ impl ShellState {
         visible_from: usize,
         buf: &mut Buffer,
     ) {
-        let Some(rate) = self.active_turn_tps() else {
+        if self.active_turn_id.is_none() {
             return;
-        };
+        }
         let Some(row) = activity_row
             .checked_sub(visible_from)
             .and_then(|offset| body.rows().nth(offset))
@@ -48,13 +48,13 @@ impl ShellState {
                 status => status,
             }
         };
-        render_activity(status, rate, elapsed, area, buf);
+        render_activity(status, self.active_turn_tps(), elapsed, area, buf);
     }
 }
 
 fn render_activity(
     status: &str,
-    rate: u64,
+    rate: Option<u64>,
     elapsed: Option<Duration>,
     area: Rect,
     buf: &mut Buffer,
@@ -68,7 +68,10 @@ fn render_activity(
         .map(|ch| ch.to_uppercase().to_string())
         .unwrap_or_default();
     let label = Line::from(format!("{first}{}...", chars.as_str()));
-    let suffix = format!(" · {rate} tok/s");
+    let suffix = rate.map_or_else(
+        || " · — tok/s".to_owned(),
+        |rate| format!(" · {rate} tok/s"),
+    );
     let label_budget = usize::from(area.width).saturating_sub(suffix.chars().count());
     let label_width = label.width();
     let dots = label_width - 3..label_width.min(label_budget);

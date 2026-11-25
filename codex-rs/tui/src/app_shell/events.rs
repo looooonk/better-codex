@@ -70,7 +70,7 @@ impl ShellState {
         self.drain_agent_history_updates();
         match event {
             AppServerEvent::Lagged { skipped } => {
-                self.output_rate.invalidate_turn_wait();
+                self.output_rate.invalidate_timing();
                 let refreshed_reverted_session = self.handle_reverted_thread_lag(app_server).await;
                 tracing::debug!(skipped, "skipped best-effort backend events");
                 self.diff_store.mark_history_truncated();
@@ -166,7 +166,7 @@ impl ShellState {
                 }
             }
             AppServerEvent::Disconnected { message } => {
-                self.output_rate.invalidate_turn_wait();
+                self.output_rate.invalidate_timing();
                 self.recap = super::recap::RecapState::default();
                 self.disconnect_voice();
                 self.status = "disconnected".to_string();
@@ -274,12 +274,18 @@ impl ShellState {
                             completed.turn.completed_at,
                         )
                         .or_else(|| self.turn_started_at.map(|started| started.elapsed()));
-                        let tool_wait = self.output_rate.total_tool_wait(std::time::Instant::now());
+                        let model_time =
+                            self.turn_outputs
+                                .get(&completed.turn.id)
+                                .and_then(|output| {
+                                    self.output_rate
+                                        .model_time(std::time::Instant::now(), *output)
+                                });
                         self.push_turn_separator(
                             &completed.turn.id,
                             &completed.turn.status,
                             duration,
-                            tool_wait,
+                            model_time,
                         );
                         self.clear_active_turn();
                         self.request_thread_usage_refresh();
@@ -300,8 +306,8 @@ impl ShellState {
                     use codex_app_server_protocol::TurnModelActivity;
                     let now = std::time::Instant::now();
                     match update.activity {
-                        TurnModelActivity::Generating => self.output_rate.resume(now),
-                        TurnModelActivity::WaitingForTool => self.output_rate.pause(now),
+                        TurnModelActivity::Generating => self.output_rate.begin_request(now),
+                        TurnModelActivity::WaitingForTool => self.output_rate.end_request(now),
                         TurnModelActivity::ToolInput { estimated_tokens } => {
                             self.output_rate.add_tokens(now, estimated_tokens)
                         }
@@ -313,6 +319,16 @@ impl ShellState {
             }
             ServerNotification::ThreadTokenUsageUpdated(usage) => {
                 if usage.thread_id == self.thread_id.to_string() {
+                    // Rate-limit and hydration events can replay the same usage.
+                    if self.active_turn_id.as_deref() == Some(&usage.turn_id)
+                        && usage.token_usage.total.output_tokens > self.token_usage.output_tokens
+                        && usage.token_usage.last.output_tokens > 0
+                    {
+                        self.output_rate.record_usage(
+                            std::time::Instant::now(),
+                            usage.token_usage.last.output_tokens,
+                        );
+                    }
                     self.apply_token_usage(usage.token_usage);
                 }
             }
@@ -435,6 +451,11 @@ impl ShellState {
                     }
                     self.mark_thread_revert_hydration_stale();
                     self.mark_retry_recovered(&started.turn_id);
+                    if matches!(&started.item.payload, ThreadItemPayload::Reasoning { .. })
+                        && self.active_turn_id.as_ref() == Some(&started.turn_id)
+                    {
+                        self.output_rate.begin_reasoning();
+                    }
                     if let ThreadItemPayload::ContextCompaction { id } = &started.item.payload
                         && self.active_turn_id.as_ref() == Some(&started.turn_id)
                     {

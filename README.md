@@ -132,11 +132,13 @@ own fonts. Equations that exceed its supported syntax or size use the text view.
 The setting is local to Better Codex, and sessions retain their original Markdown.
 
 During a turn, the activity line beneath the latest output shows the estimated token rate
-over the last three seconds of model activity.
-With the Better Codex backend, it holds during tool waits. The turn divider shows total
-elapsed time and divides reported output tokens (including reasoning) by the time
-outside those waits. Use `better-codex --no-daemon` to run the bundled backend.
-Turns without reported usage or a complete wait measurement show elapsed time alone.
+from recent output packets. With the Better Codex backend, it holds the last estimate
+during tool execution and while waiting for the next request to stream. For responses
+without a measurable stream, the provider's output count supplies a rate at completion.
+The turn divider shows total elapsed time and divides reported output tokens (including
+reasoning) by the combined duration of the observed model requests, including request
+latency. Turns without reported usage or reliable timing show elapsed time alone.
+Use `better-codex --no-daemon` to run the bundled backend.
 
 <table>
   <tr>

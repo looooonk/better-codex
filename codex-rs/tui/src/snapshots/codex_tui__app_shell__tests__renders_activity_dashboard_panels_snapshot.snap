@@ -14,7 +14,7 @@ expression: "render_shell(&shell, area)"
                                                                       │
    The new shell owns the fullscreen surface.                         │▎◆ WORKSPACE
                                                                       │▎profile managed
-        Thinking... · 0 tok/s                                         │▎cwd /workspace/better-codex
+        Thinking... · — tok/s                                         │▎cwd /workspace/better-codex
                                                                       │▎files restricted, net restricted
                                                                       │▎roots none selected
                                                                       │

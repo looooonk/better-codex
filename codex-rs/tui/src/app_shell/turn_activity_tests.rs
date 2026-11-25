@@ -8,7 +8,7 @@ fn white_highlight_moves_right_across_gray_activity_and_rate() {
     );
     let frame = |elapsed| {
         let mut buf = Buffer::empty(area);
-        render_activity("thinking", /*rate*/ 32, elapsed, area, &mut buf);
+        render_activity("thinking", Some(32), elapsed, area, &mut buf);
         buf
     };
     let static_text = frame(None);

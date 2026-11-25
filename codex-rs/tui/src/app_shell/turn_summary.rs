@@ -4,7 +4,7 @@ use super::TranscriptLine;
 use codex_utils_elapsed::format_duration;
 use std::time::Duration;
 
-mod wait_cache;
+mod timing_cache;
 
 pub(super) fn turn_duration(
     duration_ms: Option<i64>,
@@ -26,22 +26,21 @@ impl ShellState {
         turn_id: &str,
         status: &codex_app_server_protocol::TurnStatus,
         duration: Option<Duration>,
-        observed_wait: Option<Duration>,
+        observed_model_time: Option<Duration>,
     ) {
         let output = self.turn_outputs.remove(turn_id);
         let label = duration
             .map(|duration| {
                 let time = format_duration(duration);
                 if let Some(output) = output.filter(|tokens| *tokens >= 0)
-                    && let Some(wait) = wait_cache::tool_wait(
+                    && let Some(active) = timing_cache::model_time(
                         (!self.ephemeral).then_some(self.codex_home.as_path()),
                         self.thread_id,
                         turn_id,
                         duration,
                         output,
-                        observed_wait,
+                        observed_model_time,
                     )
-                    && let Some(active) = duration.checked_sub(wait)
                     && !active.is_zero()
                 {
                     let rate = output as f64 / active.as_secs_f64();

@@ -1318,7 +1318,7 @@ fn renders_live_activity_below_the_conversation() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("Thinking... · 0 tok/s"));
+    assert!(rendered.contains("Thinking... · — tok/s"));
     insta::assert_snapshot!(rendered);
 }
 
@@ -6504,8 +6504,10 @@ fn turn_completion_adds_one_separator_snapshot() {
         },
     ));
     let resume = Instant::now();
-    shell.output_rate.pause(resume - Duration::from_millis(500));
-    shell.output_rate.resume(resume);
+    shell
+        .output_rate
+        .begin_request(resume - Duration::from_millis(500));
+    shell.output_rate.end_request(resume);
     shell.handle_notification(ServerNotification::AgentMessageDelta(
         codex_app_server_protocol::AgentMessageDeltaNotification {
             thread_id: shell.thread_id.to_string(),

@@ -107,7 +107,7 @@ impl ShellState {
                     );
                     self.finish_pending_tool_calls(&status);
                     self.push_turn_separator(
-                        &turn_id, &status, duration, /*observed_wait*/ None,
+                        &turn_id, &status, duration, /*observed_model_time*/ None,
                     );
                 }
             }

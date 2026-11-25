@@ -33,7 +33,7 @@ impl ShellState {
     pub(super) fn active_turn_tps(&self) -> Option<u64> {
         self.active_turn_id
             .as_ref()
-            .map(|_| self.output_rate.tokens_per_second(Instant::now()))
+            .and_then(|_| self.output_rate.tokens_per_second())
     }
 }
 

@@ -1,4 +1,4 @@
-//! Native rollouts record usage and elapsed time, but not the model's tool-wait intervals.
+//! Native rollouts record usage and elapsed time, but not per-request generation time.
 //! Keep our measurement separate so opening a saved turn only reads session data.
 use codex_protocol::ThreadId;
 use codex_utils_path::write_atomically;
@@ -15,19 +15,23 @@ use std::time::Duration;
 struct Measurement {
     elapsed: Duration,
     output_tokens: i64,
-    tool_wait: Duration,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_time: Option<Duration>,
+    // Older clients cached only the interval spent waiting for tools.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_wait: Option<Duration>,
 }
 
-pub(super) fn tool_wait(
+pub(super) fn model_time(
     codex_home: Option<&Path>,
     thread_id: ThreadId,
     turn_id: &str,
     elapsed: Duration,
     output_tokens: i64,
-    observed_wait: Option<Duration>,
+    observed_model_time: Option<Duration>,
 ) -> Option<Duration> {
     let Some(codex_home) = codex_home else {
-        return observed_wait;
+        return observed_model_time.map(|time| time.min(elapsed));
     };
     // Remote servers can use arbitrary turn IDs. Keep them out of filesystem paths.
     let key = Sha256::digest(turn_id.as_bytes());
@@ -36,21 +40,28 @@ pub(super) fn tool_wait(
         .join("turn-timings")
         .join(thread_id.to_string())
         .join(format!("{key:x}.json"));
-    if let Some(tool_wait) = observed_wait {
+    if let Some(model_time) = observed_model_time {
+        let model_time = model_time.min(elapsed);
         let measurement = Measurement {
             elapsed,
             output_tokens,
-            tool_wait,
+            model_time: Some(model_time),
+            tool_wait: None,
         };
         if let Ok(json) = serde_json::to_string(&measurement)
             && let Err(error) = write_atomically(&path, &json)
         {
             tracing::debug!(%error, "could not cache turn timing");
         }
-        return Some(tool_wait);
+        return Some(model_time);
     }
 
     // A recovered or replayed turn can retain its ID but have a different terminal result.
     let cached: Measurement = serde_json::from_reader(File::open(path).ok()?.take(512)).ok()?;
-    (cached.elapsed == elapsed && cached.output_tokens == output_tokens).then_some(cached.tool_wait)
+    if cached.elapsed != elapsed || cached.output_tokens != output_tokens {
+        return None;
+    }
+    cached
+        .model_time
+        .or_else(|| elapsed.checked_sub(cached.tool_wait?))
 }
