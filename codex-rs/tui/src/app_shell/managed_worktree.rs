@@ -51,7 +51,7 @@ impl ShellState {
             "new" => WorktreeMode::New,
             "fork" => WorktreeMode::Fork,
             _ => {
-                self.push_system("Usage: /worktree new (fresh conversation) or /worktree fork (preserve conversation)");
+                self.show_hint("Usage: /worktree new (fresh conversation) or /worktree fork (preserve conversation)");
                 return Ok(());
             }
         };
@@ -94,7 +94,7 @@ impl ShellState {
                 loader.prepare(&source, source_cwd).await
             })),
         });
-        self.push_system("Creating managed worktree");
+
         Ok(())
     }
 
@@ -257,7 +257,6 @@ impl ShellState {
                 }
                 *config = prepared.config.clone();
                 self.complete_session_switch(started, app_server).await;
-                self.push_system(format!("Working in {}", prepared.checkout.cwd.display()));
             }
         }
         true

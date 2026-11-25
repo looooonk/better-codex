@@ -4,7 +4,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
                               │
                               │  Sessions   │  Status  │  Agents  │  Settings
-           3. Render dashboard│━━━━━━━━━━━━━───────────────────────────────────
+   Started a fullscreen app sh│━━━━━━━━━━━━━───────────────────────────────────
                               │ Projects
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ QUEUED  2                                                           │

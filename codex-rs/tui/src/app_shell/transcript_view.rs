@@ -366,11 +366,8 @@ fn transcript_card_hit_at(
                 TranscriptKind::System
                 | TranscriptKind::User
                 | TranscriptKind::Assistant
-                | TranscriptKind::Plan
                 | TranscriptKind::Tool
                 | TranscriptKind::Separator
-                | TranscriptKind::Status
-                | TranscriptKind::Audit
                 | TranscriptKind::Error => return None,
             }
         }
@@ -423,14 +420,7 @@ struct TranscriptViewport {
 
 fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
     let previous_anchor = shell.transcript_viewport_anchor.borrow().clone();
-    let previous_scroll = if shell.transcript_scroll == 0 {
-        0
-    } else {
-        shell
-            .transcript_effective_scroll
-            .get()
-            .unwrap_or(shell.transcript_scroll)
-    };
+    let previous_scroll = shell.effective_transcript_scroll();
     let inner = pane_content_rect(area);
     let left = 2.min(inner.width.saturating_sub(1));
     let top = 1.min(inner.height.saturating_sub(1));
@@ -647,23 +637,20 @@ pub(super) fn render_transcript_line_with_visualizations(
     }
 
     let text_color = match kind {
-        TranscriptKind::System
-        | TranscriptKind::Output
-        | TranscriptKind::Separator
-        | TranscriptKind::Status => palette::muted(),
-        TranscriptKind::Diff | TranscriptKind::Plan => palette::success(),
+        TranscriptKind::System | TranscriptKind::Output | TranscriptKind::Separator => {
+            palette::muted()
+        }
+        TranscriptKind::Diff => palette::success(),
         TranscriptKind::Error => palette::error(),
-        TranscriptKind::Assistant
-        | TranscriptKind::User
-        | TranscriptKind::Audit
-        | TranscriptKind::Tool => palette::text(),
+        TranscriptKind::Assistant | TranscriptKind::User | TranscriptKind::Tool => palette::text(),
     };
     let prefix = match kind {
         TranscriptKind::User => "> ".bold(),
-        TranscriptKind::Assistant => Span::default(),
+        TranscriptKind::Assistant | TranscriptKind::System => Span::default(),
+        TranscriptKind::Error => "⚠ ".fg(palette::error()).bold(),
         _ => {
             let marker = if selected { "▶" } else { "▎" };
-            let color = if matches!(kind, TranscriptKind::Tool | TranscriptKind::Audit) {
+            let color = if matches!(kind, TranscriptKind::Tool) {
                 palette::cyan()
             } else {
                 text_color
@@ -675,7 +662,7 @@ pub(super) fn render_transcript_line_with_visualizations(
     };
     let prefix_width = prefix.width();
     let body_width = usize::from(width).saturating_sub(prefix_width).max(1);
-    let mut lines = if matches!(kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
+    let mut lines = if matches!(kind, TranscriptKind::Assistant) {
         let render = |source: &str| {
             let rendered = markdown::render_markdown_agent_with_styles(
                 source,

@@ -188,7 +188,7 @@ async fn renders_aggregated_backend_lag_snapshot() {
     shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
     shell.diff_store.clear();
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell.dashboard_visible = false;
     shell.push_user("Run just test -p codex-tui.");
     let mut backend = RecordingBackend::default();
@@ -274,7 +274,10 @@ fn remote_thread_status_updates_the_active_shell() {
 #[test]
 fn replacing_with_an_active_session_restores_its_turn_lifecycle() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.transcript_scroll = 1;
+    shell.push_system("Prior history\n".repeat(20));
+    let area = Rect::new(0, 0, 60, 12);
+    let _ = render_shell(&shell, area);
+    shell.scroll_transcript_up(1);
     let _ = render_shell(
         &shell,
         Rect::new(
@@ -346,12 +349,7 @@ fn interrupted_turn_history_keeps_the_prompt_and_marks_the_interruption() {
     assert!(shell.transcript.iter().any(|line| {
         line.kind == TranscriptKind::User && line.text == "Keep this interrupted prompt"
     }));
-    assert!(
-        shell
-            .transcript
-            .iter()
-            .any(|line| { line.kind == TranscriptKind::Status && line.text == "turn interrupted" })
-    );
+    assert!(shell.transcript.iter().any(|line| line.kind == TranscriptKind::Separator && line.text.contains("Interrupted")));
     shell.dashboard_visible = false;
     insta::assert_snapshot!(
         "interrupted_turn_history",
@@ -411,7 +409,7 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell.push_user("reverted-away prompt");
     shell.push_assistant("reverted-away response");
     shell.streaming_assistant = "reverted-away stream".to_string();
@@ -589,11 +587,11 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
         error: TurnError {
             misalignment: None,
 
-            message: "live retry detail survives".to_string(),
+            message: "live failure detail survives".to_string(),
             codex_error_info: None,
             additional_details: None,
         },
-        will_retry: true,
+        will_retry: false,
         thread_id: thread_id.to_string(),
         turn_id: "current-turn".to_string(),
     }));
@@ -611,7 +609,7 @@ async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
     assert!(transcript.contains(&"retained prompt"));
     assert!(transcript.contains(&"retained response"));
     assert!(transcript.contains(&"mcp progress: live mcp progress survives"));
-    assert!(transcript.contains(&"live retry detail survives"));
+    assert!(transcript.contains(&"live failure detail survives"));
     let command_output = shell
         .transcript
         .iter()
@@ -1144,10 +1142,7 @@ async fn oversized_prompt_is_not_submitted() {
         composer::MAX_COMPOSER_BYTES + 1
     );
     let expected = composer::input_too_large_message(composer::MAX_COMPOSER_BYTES + 1);
-    assert_eq!(
-        shell.transcript.back().map(|line| line.text.as_str()),
-        Some(expected.as_str())
-    );
+    assert_eq!(shell.input_hint.as_deref(), Some(expected.as_str()));
 }
 
 #[test]
@@ -1285,10 +1280,10 @@ fn renders_scrolled_session_list_snapshot() {
 #[test]
 fn renders_scrolled_transcript_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.push_status("first checkpoint");
-    shell.push_status("second checkpoint");
-    shell.push_status("third checkpoint");
-    shell.push_status("fourth checkpoint");
+    shell.push_system("first checkpoint");
+    shell.push_system("second checkpoint");
+    shell.push_system("third checkpoint");
+    shell.push_system("fourth checkpoint");
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
     );
@@ -1480,7 +1475,7 @@ fn renders_recovered_retry_status_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell.active_turn_id = Some("turn-active".to_string());
     shell.chrome_animation_frame = 2;
     shell.handle_notification(retrying_error(&shell, "turn-active"));
@@ -1842,24 +1837,6 @@ fn renders_model_runtime_details_snapshot() {
 }
 
 #[test]
-fn renders_model_availability_nux_snapshot() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.streaming_assistant.clear();
-    shell.push_system(
-        "Our most capable model yet. GPT-5.6 Sol can tackle complex code changes, dig into research, produce polished documents, and take on your most ambitious work. Sol is highly capable at lower reasoning efforts—try starting lower, then turn it up for harder jobs.",
-    );
-    assert_eq!(
-        shell.transcript.back().map(|line| line.kind),
-        Some(TranscriptKind::System)
-    );
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
-    );
-
-    insta::assert_snapshot!(render_shell(&shell, area));
-}
-
-#[test]
 fn renders_settings_pages_validation_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
@@ -2068,10 +2045,6 @@ fn renders_markdown_transcript_snapshot() {
         | code | done |\n\
         | table | done |",
     );
-    shell.push_plan(
-        "1. Keep transcript rendering width-aware.\n\
-        2. Leave selection and copy mode for the next slice.",
-    );
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 28,
     );
@@ -2085,7 +2058,7 @@ fn wraps_long_code_lines_in_conversation_snapshot() {
     shell.dashboard_visible = false;
     shell.transcript.clear();
     shell.composer.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell.push_assistant(
         "Run this command:\n\n\
         ```sh\n\
@@ -3151,8 +3124,8 @@ async fn command_palette_starts_context_compaction_in_background() {
         vec![RecordedBackendCall::Compact(shell.thread_id)]
     );
     assert_eq!(
-        shell.transcript.back().unwrap().text,
-        "context compaction started"
+        shell.input_hint.as_deref(),
+        Some("context compaction started")
     );
 }
 
@@ -3244,11 +3217,9 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     assert!(shell.session_list.focused);
     assert!(!shell.settings.focused);
     assert!(shell.session_list.selected_is_current(session_id));
-    assert!(
-        shell.transcript.iter().any(|line| {
-            line.kind == TranscriptKind::Status && line.text == "press r to resume selected session"
-        }),
-        "resume action should leave a keyboard hint"
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("press r to resume selected session")
     );
 
     shell.dashboard_visible = false;
@@ -3265,11 +3236,9 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     assert!(shell.dashboard_visible);
     assert_eq!(shell.dashboard_scroll.get(), 0);
     assert!(shell.session_list.focused);
-    assert!(
-        shell.transcript.iter().any(|line| {
-            line.kind == TranscriptKind::Status && line.text == "press f to fork selected session"
-        }),
-        "fork action should leave a keyboard hint"
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("press f to fork selected session")
     );
     assert_eq!(
         backend.calls(),
@@ -3439,11 +3408,8 @@ async fn approval_transcript_title_is_bounded_without_truncating_the_popup_snaps
         .expect("approval request should open");
 
     assert_eq!(
-        shell.transcript,
-        std::collections::VecDeque::from([TranscriptLine::new(
-            TranscriptKind::Status,
-            "approval requested: Run command: printf first\nprintf second\nprintf third...",
-        )])
+        shell.input_hint.as_deref(),
+        Some("approval requested: Run command: printf first\nprintf second\nprintf third...")
     );
     assert_eq!(
         shell
@@ -3492,11 +3458,10 @@ async fn approval_transcript_title_is_bounded_without_truncating_the_popup_snaps
         .await
         .expect("approval request should queue");
     assert_eq!(
-        queued_shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "interactive request queued: Run command: printf first\nprintf second\nprintf third...",
-        ))
+        queued_shell.input_hint.as_deref(),
+        Some(
+            "interactive request queued: Run command: printf first\nprintf second\nprintf third..."
+        )
     );
 }
 
@@ -3639,21 +3604,7 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
     assert!(shell.pending_elicitation.is_none());
     assert!(shell.pending_user_input.is_none());
     assert_eq!(backend.calls(), Vec::new());
-    assert_eq!(
-        shell
-            .transcript
-            .iter()
-            .map(|line| (line.kind, line.text.as_str()))
-            .collect::<Vec<_>>(),
-        vec![
-            (TranscriptKind::Status, "request resolved"),
-            (
-                TranscriptKind::Status,
-                "elicitation requested: MCP github: URL request",
-            ),
-            (TranscriptKind::Status, "request resolved"),
-        ]
-    );
+    assert!(shell.transcript.is_empty());
     insta::assert_snapshot!(
         "resolved_interactive_request_messages",
         render_shell(
@@ -3774,10 +3725,10 @@ async fn external_agent_import_starts_selected_items_and_reports_completion() {
 
     assert_eq!(shell.pending_external_agent_import, None);
     assert!(
-        shell.transcript.iter().any(|line| {
-            line.kind == TranscriptKind::Status && line.text.contains("Claude Code import started")
-        }),
-        "started import should be reported"
+        shell
+            .transcript
+            .back()
+            .is_some_and(|line| line.text.contains("Claude Code import started"))
     );
     shell
         .handle_app_server_event(
@@ -3792,10 +3743,10 @@ async fn external_agent_import_starts_selected_items_and_reports_completion() {
         .expect("completion notification should be handled");
 
     assert!(
-        shell.transcript.iter().any(|line| {
-            line.kind == TranscriptKind::Status && line.text.contains("Claude Code import finished")
-        }),
-        "completed import should be reported"
+        shell
+            .transcript
+            .back()
+            .is_some_and(|line| line.text.contains("Claude Code import finished"))
     );
     assert_eq!(
         backend.calls(),
@@ -3870,14 +3821,12 @@ fn select_command_palette_action(shell: &mut ShellState, action: CommandPaletteA
 fn command_palette_clear_resets_visible_transcript() {
     let mut shell = ShellState::snapshot_fixture();
     shell.streaming_assistant = "streaming".to_string();
-    shell.streaming_plan = "plan".to_string();
     shell.select_latest_transcript_item();
 
     shell.clear_visible_transcript();
 
     assert!(shell.transcript.is_empty());
     assert_eq!(shell.streaming_assistant, "");
-    assert_eq!(shell.streaming_plan, "");
     assert_eq!(shell.transcript_scroll, 0);
     assert_eq!(shell.transcript_selection, None);
 }
@@ -3888,7 +3837,6 @@ async fn partial_clear_slash_command_completes_and_runs_without_submitting_turn(
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     shell.streaming_assistant = "streaming".to_string();
-    shell.streaming_plan = "plan".to_string();
     shell.composer.set_text("/cl");
 
     shell
@@ -3902,7 +3850,6 @@ async fn partial_clear_slash_command_completes_and_runs_without_submitting_turn(
 
     assert!(shell.transcript.is_empty());
     assert_eq!(shell.streaming_assistant, "");
-    assert_eq!(shell.streaming_plan, "");
     assert_eq!(shell.composer.text(), "");
     assert_eq!(shell.transcript_scroll, 0);
     assert_eq!(shell.transcript_selection, None);
@@ -4199,11 +4146,8 @@ async fn shell_operator_remains_interactive_while_command_is_running() {
     assert_eq!(shell.composer.text(), "! second-task");
     assert!(shell.block_session_switch_if_busy());
     assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "finish or cancel the shell command before switching sessions",
-        ))
+        shell.input_hint.as_deref(),
+        Some("finish or cancel the shell command before switching sessions")
     );
 
     shell
@@ -4312,12 +4256,12 @@ async fn goal_slash_command_sets_and_shows_thread_goal() {
     assert!(backend.calls().contains(&RecordedBackendCall::GoalGet {
         thread_id: shell.thread_id,
     }));
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Status
-            && line
-                .text
-                .contains("goal active. Objective: Ship the standalone shell")
-    }));
+    assert!(
+        shell
+            .input_hint
+            .as_deref()
+            .is_some_and(|s| s.contains("goal active. Objective: Ship the standalone shell"))
+    );
     assert!(
         !backend
             .calls()
@@ -4397,13 +4341,7 @@ async fn login_slash_command_submits_masked_api_key_and_returns_to_session() {
         .expect("successful login should return to the session");
     assert!(!should_exit);
     assert!(shell.pending_account_auth.is_none());
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "signed in successfully",
-        ))
-    );
+    assert_eq!(shell.input_hint.as_deref(), Some("signed in successfully"));
 }
 
 #[tokio::test]
@@ -4488,11 +4426,8 @@ async fn logout_slash_command_stays_in_session_and_allows_login() {
     assert!(!should_exit);
     assert_eq!(backend.calls(), vec![RecordedBackendCall::Logout]);
     assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "logged out; run /login to sign in again",
-        ))
+        shell.input_hint.as_deref(),
+        Some("logged out; run /login to sign in again")
     );
 
     shell.composer.set_text("/login");
@@ -4598,12 +4533,7 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
         ]
     );
     assert_eq!(shell.active_goal, None);
-    assert!(
-        shell
-            .transcript
-            .iter()
-            .any(|line| line.kind == TranscriptKind::Status && line.text == "goal cleared")
-    );
+    assert_eq!(shell.input_hint.as_deref(), Some("goal cleared"));
 }
 
 #[test]
@@ -5901,11 +5831,8 @@ async fn response_copy_shortcuts_route_requested_ordinals() {
             .expect("response copy shortcut should be routed");
 
         assert_eq!(
-            (copied.as_deref(), shell.transcript.back()),
-            (
-                Some(expected),
-                Some(&TranscriptLine::new(TranscriptKind::Status, status))
-            )
+            (copied.as_deref(), shell.input_hint.as_deref()),
+            (Some(expected), Some(status))
         );
     }
 }
@@ -5941,11 +5868,8 @@ async fn control_o_routes_selection_then_falls_back_to_latest_response() {
             .expect("Ctrl+O should be routed");
 
         assert_eq!(
-            (copied.as_deref(), shell.transcript.back()),
-            (
-                Some(expected),
-                Some(&TranscriptLine::new(TranscriptKind::Status, status))
-            )
+            (copied.as_deref(), shell.input_hint.as_deref()),
+            (Some(expected), Some(status))
         );
     }
 }
@@ -6034,7 +5958,7 @@ fn completed_agent_message_reconciles_a_mismatched_stream_by_item_id() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     let thread_id = shell.thread_id.to_string();
 
     shell.handle_notification(ServerNotification::AgentMessageDelta(
@@ -6105,50 +6029,6 @@ fn completed_agent_message_reconciles_a_mismatched_stream_by_item_id() {
 }
 
 #[test]
-fn completed_plan_reconciles_a_mismatched_stream_by_item_id() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.transcript.clear();
-    shell.clear_streaming_transcript();
-    let thread_id = shell.thread_id.to_string();
-
-    shell.handle_notification(ServerNotification::PlanDelta(
-        codex_app_server_protocol::PlanDeltaNotification {
-            thread_id: thread_id.clone(),
-            turn_id: "turn-1".to_string(),
-            item_id: "plan-1".to_string(),
-            delta: "A provisional plan".to_string(),
-        },
-    ));
-    shell.handle_notification(ServerNotification::ItemCompleted(
-        ItemCompletedNotification {
-            thread_id,
-            turn_id: "turn-1".to_string(),
-            completed_at_ms: 1,
-            item: ThreadItem::untimed(ThreadItemPayload::Plan {
-                id: "plan-1".to_string(),
-                text: "The authoritative plan".to_string(),
-            }),
-        },
-    ));
-
-    assert_eq!(
-        (
-            shell.transcript.iter().cloned().collect::<Vec<_>>(),
-            shell.streaming_plan.as_str(),
-            shell.streaming_plan_item_id.as_deref(),
-        ),
-        (
-            vec![
-                TranscriptLine::new(TranscriptKind::Plan, "The authoritative plan")
-                    .item_id("plan-1")
-            ],
-            "",
-            None,
-        )
-    );
-}
-
-#[test]
 fn completed_reasoning_hides_empty_generated_summary_parts() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -6166,36 +6046,6 @@ fn completed_reasoning_hides_empty_generated_summary_parts() {
     );
 
     assert_eq!(shell.transcript, VecDeque::new());
-}
-
-#[test]
-fn completed_reasoning_uses_summary_without_interleaving_raw_content() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.transcript.clear();
-
-    shell.ingest_completed_item(
-        ThreadItem::untimed(ThreadItemPayload::Reasoning {
-            id: "reasoning-1".to_string(),
-            summary: vec![
-                "**Plan**\n\ndone".to_string(),
-                "**Checking tests**\n\n<!-- -->".to_string(),
-            ],
-            content: vec![
-                "raw reasoning one".to_string(),
-                "raw reasoning two".to_string(),
-            ],
-        }),
-        CompletedItemOrigin::Live,
-    );
-
-    assert_eq!(
-        shell.transcript,
-        VecDeque::from([TranscriptLine::new(
-            TranscriptKind::Status,
-            "reasoning: done",
-        )])
-    );
-    insta::assert_snapshot!(shell.transcript[0].text, @"reasoning: done");
 }
 
 #[test]
@@ -6470,10 +6320,10 @@ async fn safety_buffering_retry_waits_for_pending_queued_adds() {
         backend.calls().as_slice(),
         [RecordedBackendCall::QueueAdd { prompt, .. }] if prompt == "first queued"
     ));
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Status
-            && line.text == "wait for queued message changes to finish before retrying"
-    }));
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("wait for queued message changes to finish before retrying")
+    );
 
     gate.add_permits(/*n*/ 2);
     complete_backend_actions(&mut shell, &backend).await;
@@ -7118,7 +6968,7 @@ async fn transcript_card_click_waits_for_release_while_drag_selects_text() {
     let mut clicked = ShellState::snapshot_fixture();
     clicked.dashboard_visible = false;
     clicked.transcript.clear();
-    clicked.clear_streaming_transcript();
+    clicked.clear_streaming_assistant();
     clicked.push_output_with_status("compile output", ToolBlockStatus::Running);
     let mut backend = RecordingBackend::default();
     let clicked_position = area
@@ -7150,7 +7000,7 @@ async fn transcript_card_click_waits_for_release_while_drag_selects_text() {
     let mut dragged = ShellState::snapshot_fixture();
     dragged.dashboard_visible = false;
     dragged.transcript.clear();
-    dragged.clear_streaming_transcript();
+    dragged.clear_streaming_assistant();
     dragged.push_output_with_status("compile output", ToolBlockStatus::Running);
     dragged
         .handle_mouse_selection_down(area, clicked_position, &config, &mut backend)
@@ -7168,7 +7018,7 @@ async fn transcript_card_click_waits_for_release_while_drag_selects_text() {
     let mut released_elsewhere = ShellState::snapshot_fixture();
     released_elsewhere.dashboard_visible = false;
     released_elsewhere.transcript.clear();
-    released_elsewhere.clear_streaming_transcript();
+    released_elsewhere.clear_streaming_assistant();
     released_elsewhere.push_output_with_status("compile output", ToolBlockStatus::Running);
     released_elsewhere
         .handle_mouse_selection_down(area, clicked_position, &config, &mut backend)
@@ -7442,7 +7292,7 @@ fn dashboard_overlay_takes_pointer_precedence_over_transcript_cards() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell.push_output_with_status("compile output", ToolBlockStatus::Running);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
@@ -7914,7 +7764,7 @@ fn bio_policy_error_renders_dedicated_safety_notice() {
     }));
 
     assert_eq!(shell.transcript.len(), 1);
-    assert_eq!(shell.transcript[0].kind, TranscriptKind::Status);
+    assert_eq!(shell.transcript[0].kind, TranscriptKind::Error);
     assert_eq!(shell.active_turn_id, None);
     insta::assert_snapshot!(shell.transcript[0].text, @r"
 This content can't be shown
@@ -8272,13 +8122,7 @@ async fn approval_keys_take_priority_over_transcript_selection_without_writing_a
         backend.calls(),
         vec![RecordedBackendCall::Resolve(RequestId::Integer(41))]
     );
-    assert_eq!(
-        shell.transcript,
-        std::collections::VecDeque::from([TranscriptLine::new(
-            TranscriptKind::Status,
-            "approval requested: Run command: cargo test -p codex-tui",
-        )])
-    );
+    assert!(shell.transcript.is_empty());
 }
 
 #[test]
@@ -8293,8 +8137,8 @@ fn approval_explain_keeps_request_pending_and_writes_audit() {
     assert_eq!(
         shell.transcript.back(),
         Some(&TranscriptLine::new(
-            TranscriptKind::Audit,
-            "approval explained: Run command: cargo test -p codex-tui - Reason: Needs network access - Working directory: /workspace/better-codex",
+            TranscriptKind::System,
+            "Run command: cargo test -p codex-tui - Reason: Needs network access - Working directory: /workspace/better-codex",
         ))
     );
 }
@@ -8409,18 +8253,6 @@ fn long_mcp_elicitation_keeps_destination_visible_snapshot() {
 }
 
 #[test]
-fn renders_decision_audit_snapshot() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.push_decision_audit("elicitation", "declined", "MCP github: URL request");
-    shell.push_decision_audit("tool input", "submitted", "Tool input: environment");
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 31,
-    );
-
-    insta::assert_snapshot!(render_shell(&shell, area));
-}
-
-#[test]
 fn renders_file_change_detail_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.push_diff(file_change_detail(&sample_file_changes()));
@@ -8519,7 +8351,6 @@ fn renders_activity_dashboard_panels_snapshot() {
         .expect("approval request should be valid");
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
     shell.active_turn_id = Some("turn-background-1234567890".to_string());
-    shell.streaming_plan = "1. Route activity into dashboard panels".to_string();
     shell.workspace_status_refresh_due = true;
     shell.subagent_activity = VecDeque::from([
         ToolActivity {
@@ -10975,7 +10806,7 @@ async fn live_opening_user_message_is_rendered_once_with_rewind_anchor() {
         .and_then(|line| line.item_id.clone())
         .expect("optimistic user message should have a client id");
     assert!(client_user_message_id.starts_with("better-codex-turn-"));
-    shell.push_status("skills budget loaded");
+    shell.push_system("skills budget loaded");
     let opening_item = ThreadItem::untimed(ThreadItemPayload::UserMessage {
         id: "opening-user".to_string(),
         client_id: Some(client_user_message_id.clone()),
@@ -11022,7 +10853,7 @@ async fn steered_message_is_rendered_once() {
     shell.active_turn_id = Some("turn-active".to_string());
     shell.dashboard_visible = false;
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
 
     shell
         .steer_active_turn(&mut backend, prompt.to_string())
@@ -12262,13 +12093,13 @@ async fn app_theme_selection_applies_only_after_local_persistence_succeeds() {
         .unwrap();
     assert_eq!(
         (shell.dashboard_route, shell.settings.selected_action()),
-        (
-            DashboardRoute::Settings,
-            SettingsAction::AppTheme
-        )
+        (DashboardRoute::Settings, SettingsAction::AppTheme)
     );
 
-    shell.activate_selected_setting(&mut backend.clone()).await.unwrap();
+    shell
+        .activate_selected_setting(&mut backend.clone())
+        .await
+        .unwrap();
     for key in [KeyCode::Down, KeyCode::Enter] {
         shell
             .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
@@ -12306,14 +12137,14 @@ async fn failed_app_theme_write_keeps_the_previous_theme_and_shows_the_error() {
         .unwrap();
     assert_eq!(
         (shell.dashboard_route, shell.settings.selected_action()),
-        (
-            DashboardRoute::Settings,
-            SettingsAction::AppTheme
-        )
+        (DashboardRoute::Settings, SettingsAction::AppTheme)
     );
     backend.fail_next_action("config write rejected");
 
-    shell.activate_selected_setting(&mut backend.clone()).await.unwrap();
+    shell
+        .activate_selected_setting(&mut backend.clone())
+        .await
+        .unwrap();
     for key in [KeyCode::Down, KeyCode::Enter] {
         shell
             .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
@@ -13256,13 +13087,6 @@ async fn user_input_auto_resolves_only_after_its_deadline() {
                 "answers": {}
             }),
         )]
-    );
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Audit,
-            "tool input auto-resolved: Tool input: tool-input-1",
-        ))
     );
 }
 
@@ -14298,10 +14122,10 @@ async fn new_session_is_blocked_during_an_active_turn() {
     assert!(!should_exit);
     assert_eq!(shell.thread_id, initial_id);
     assert_eq!(backend.calls(), Vec::new());
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Status
-            && line.text == "finish or interrupt the active turn before switching sessions"
-    }));
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("finish or interrupt the active turn before switching sessions")
+    );
 }
 
 #[tokio::test]
@@ -15446,10 +15270,10 @@ async fn session_switch_waits_for_the_active_turn_to_finish() {
         .expect("blocked session switch should remain interactive");
 
     assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Status
-            && line.text == "finish or interrupt the active turn before switching sessions"
-    }));
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("finish or interrupt the active turn before switching sessions")
+    );
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
@@ -15481,10 +15305,10 @@ async fn session_switch_waits_for_pending_agent_input() {
         .expect("blocked session switch should remain interactive");
 
     assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Status
-            && line.text == "resolve the pending request before switching sessions"
-    }));
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("resolve the pending request before switching sessions")
+    );
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
@@ -15517,10 +15341,10 @@ async fn session_switch_preserves_nonempty_composer_draft() {
 
     assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
     assert_eq!(shell.composer.text(), draft);
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Status
-            && line.text == "send or clear the message draft before switching sessions"
-    }));
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("send or clear the message draft before switching sessions")
+    );
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
@@ -15565,10 +15389,10 @@ async fn session_switch_preserves_an_empty_unsaved_queued_edit() {
     assert_eq!(shell.composer.text(), "");
     assert_eq!(shell.composer.queued_edit_position(), Some((1, 1)));
     assert_eq!(queued_message_texts(&shell), vec!["keep me"]);
-    assert!(shell.transcript.iter().any(|line| {
-        line.kind == TranscriptKind::Status
-            && line.text == "finish the queued message edit before switching sessions"
-    }));
+    assert_eq!(
+        shell.input_hint.as_deref(),
+        Some("finish the queued message edit before switching sessions")
+    );
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::ThreadList {
@@ -15851,10 +15675,7 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
             },
         ]
     );
-    assert_eq!(
-        shell.mcp_inventory.label(),
-        "2 servers"
-    );
+    assert_eq!(shell.mcp_inventory.label(), "2 servers");
     assert_eq!(shell.plugin_inventory.label(), "1 installed");
     let rendered = render_shell(
         &shell,
@@ -15863,8 +15684,7 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
         ),
     );
     assert!(
-        rendered.contains("MCP servers: 2 servers")
-            && rendered.contains("Plugins: 1 installed"),
+        rendered.contains("MCP servers: 2 servers") && rendered.contains("Plugins: 1 installed"),
         "settings should render native integration summaries:\n{rendered}"
     );
 }
@@ -16208,7 +16028,10 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         .await
         .expect("theme edit should start");
     for key in [KeyCode::End, KeyCode::Enter] {
-        shell.handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend).await.unwrap();
+        shell
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend)
+            .await
+            .unwrap();
     }
     for ch in "missing-theme".chars() {
         shell
@@ -16561,7 +16384,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
-    shell.streaming_plan.clear();
     shell.active_turn_id = None;
     let mut backend = RecordingBackend::default();
 

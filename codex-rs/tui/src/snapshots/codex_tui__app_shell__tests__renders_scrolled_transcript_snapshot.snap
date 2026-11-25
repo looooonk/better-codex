@@ -4,13 +4,13 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   ▎ PLAN  1. Build shell                       │ │━━━━━━━━━━━━━───────────────────────────────────
-           2. Wire transcript                   │ │
-           3. Render dashboard                  ┃ │ Projects
-                                                ┃ │ No projects
-      ▸ Edited files                            ┃ │
-   ▎ STATUS  first checkpoint                   │ │ Recents
-   ▎ STATUS  second checkpoint                  │ │ + New session  Ctrl+N
+                                                │ │━━━━━━━━━━━━━───────────────────────────────────
+                                                ┃ │
+   Started a fullscreen app shell backed by     ┃ │ Projects
+   app-server turns.                            ┃ │ No projects
+                                                ┃ │
+      ▸ Edited files                            │ │ Recents
+   first checkpoint                             │ │ + New session  Ctrl+N
                                                   │ loading sessions
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

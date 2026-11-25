@@ -45,7 +45,7 @@ impl ShellState {
                     }) =>
                 {
                     Box::pin(parent.handle_app_server_event(app_server, event)).await?;
-                    self.push_status("Main conversation needs input. Use /side return to respond.");
+                    self.show_hint("Main conversation needs input. Use /side return to respond.");
                     return Ok(());
                 }
                 AppServerEvent::Disconnected { message } => {
@@ -72,7 +72,7 @@ impl ShellState {
             AppServerEvent::Lagged { skipped } => {
                 self.output_rate.invalidate_turn_wait();
                 let refreshed_reverted_session = self.handle_reverted_thread_lag(app_server).await;
-                self.push_system(format!("skipped {skipped} best-effort backend events"));
+                tracing::debug!(skipped, "skipped best-effort backend events");
                 self.diff_store.mark_history_truncated();
                 self.refresh_open_diff_view();
                 self.mark_workspace_status_refresh_due();
@@ -208,10 +208,7 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
-                    if self.push_streaming_plan_delta(&delta.item_id, &delta.delta) {
-                        self.graphics.get_mut().stream_delta(&delta.delta);
-                        self.record_streamed_output(&delta.turn_id, &delta.delta);
-                    }
+                    self.record_streamed_output(&delta.turn_id, &delta.delta);
                 }
             }
             ServerNotification::ReasoningSummaryTextDelta(delta) => {
@@ -259,7 +256,6 @@ impl ShellState {
                     let completed_active_turn =
                         self.active_turn_id.as_deref() == Some(completed.turn.id.as_str());
                     let turn_ended = !matches!(&completed.turn.status, TurnStatus::InProgress);
-                    self.finish_streaming_plan();
                     self.finish_streaming_assistant();
                     self.clear_safety_buffering_for_turn_completion(&completed.turn.id);
 
@@ -279,7 +275,12 @@ impl ShellState {
                         )
                         .or_else(|| self.turn_started_at.map(|started| started.elapsed()));
                         let tool_wait = self.output_rate.total_tool_wait(std::time::Instant::now());
-                        self.push_turn_separator(&completed.turn.id, duration, tool_wait);
+                        self.push_turn_separator(
+                            &completed.turn.id,
+                            &completed.turn.status,
+                            duration,
+                            tool_wait,
+                        );
                         self.clear_active_turn();
                         self.request_thread_usage_refresh();
                     }
@@ -353,7 +354,8 @@ impl ShellState {
                 .handle_remote_thread_lifecycle(&closed.thread_id, RemoteThreadLifecycle::Closed),
             ServerNotification::ThreadProjectUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string()
-                    && (self.projects.new_chat.is_some() || self.session_list.waiting_for_new_chat())
+                    && (self.projects.new_chat.is_some()
+                        || self.session_list.waiting_for_new_chat())
                 {
                     self.show_new_session(updated.project_id);
                 }
@@ -624,16 +626,13 @@ impl ShellState {
                 }
             }
             ServerNotification::ServerRequestResolved(resolved) => {
-                if resolved.thread_id == self.thread_id.to_string()
+                if (resolved.thread_id == self.thread_id.to_string()
                     || self.is_active_agent_thread(&resolved.thread_id)
-                    || self.has_interactive_request(&resolved.request_id)
-                {
-                    self.push_status("request resolved");
-                    if self.remove_interactive_request(&resolved.request_id)
+                    || self.has_interactive_request(&resolved.request_id))
+                    && self.remove_interactive_request(&resolved.request_id)
                         == super::InteractiveRequestRemoval::Active
-                    {
-                        self.activate_next_interactive_request();
-                    }
+                {
+                    self.activate_next_interactive_request();
                 }
             }
             ServerNotification::CommandExecOutputDelta(delta) => {
@@ -653,14 +652,11 @@ impl ShellState {
                     if !error.will_retry && self.active_turn_id.as_ref() == Some(&error.turn_id) {
                         self.compaction_item_id = None;
                     }
-                    let handled_safety_error =
-                        !error.will_retry && self.handle_safety_access_error(&error.error.message);
-                    if !handled_safety_error {
-                        self.status = if error.will_retry {
-                            "retrying".to_string()
-                        } else {
-                            "error".to_string()
-                        };
+                    if error.will_retry {
+                        self.status = "retrying".into();
+                        tracing::debug!(message = %error.error.message, "retrying turn");
+                    } else if !self.handle_safety_access_error(&error.error.message) {
+                        self.status = "error".into();
                         self.push_error(error.error.message);
                     }
                 } else if self.prepare_active_agent_thread(&error.thread_id) {
@@ -700,14 +696,9 @@ impl ShellState {
             ServerNotification::ModelRerouted(rerouted) => {
                 if rerouted.thread_id == self.thread_id.to_string() {
                     self.model = rerouted.to_model;
-                    self.push_status("model rerouted");
                 }
             }
-            ServerNotification::ModelVerification(verification) => {
-                if verification.thread_id == self.thread_id.to_string() {
-                    self.push_status("model verification updated");
-                }
-            }
+            ServerNotification::ModelVerification(_) => {}
             ServerNotification::AccountRateLimitsUpdated(updated) => {
                 self.apply_rate_limit_update(updated.rate_limits);
             }
@@ -746,12 +737,12 @@ impl ShellState {
             ServerNotification::AuthRecoveryStarted(recovery)
             | ServerNotification::AuthRecoveryCompleted(recovery) => {
                 if recovery.thread_id == self.thread_id.to_string() {
-                    self.push_status(recovery.message);
+                    self.show_hint(recovery.message);
                 }
             }
             ServerNotification::StrictReviewRequired(review) => {
                 if review.thread_id == self.thread_id.to_string() {
-                    self.push_status("Waiting for required review".to_string());
+                    self.show_hint("Waiting for required review".to_string());
                 }
             }
             ServerNotification::EnvironmentConnected(_)

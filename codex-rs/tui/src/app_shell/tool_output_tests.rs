@@ -342,7 +342,7 @@ fn live_popup_survives_transcript_row_eviction() {
     shell.push_output_with_status_for_item("exec-1", "first line", ToolBlockStatus::Running);
     assert!(shell.open_tool_output_at(/*transcript_index*/ 0));
     for index in 0..=super::super::MAX_TRANSCRIPT_LINES {
-        shell.push_status(format!("unrelated status {index}"));
+        shell.push_system(format!("unrelated status {index}"));
     }
     assert!(
         !shell
@@ -379,7 +379,7 @@ fn completion_preserves_open_output_after_transcript_row_eviction() {
     );
     assert!(shell.open_tool_output_at(/*transcript_index*/ 0));
     for index in 0..=super::super::MAX_TRANSCRIPT_LINES {
-        shell.push_status(format!("unrelated status {index}"));
+        shell.push_system(format!("unrelated status {index}"));
     }
 
     shell.push_output_with_status_for_item("exec-1", "first line", ToolBlockStatus::Success);

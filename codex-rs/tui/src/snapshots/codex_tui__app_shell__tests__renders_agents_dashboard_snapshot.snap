@@ -9,13 +9,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
                                                               │▎◆ AGENTS
                                                               │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
    Started a fullscreen app shell backed by app-server turns. │▎  × 1 failed
-   ▎ PLAN  1. Build shell                                     │▎  ● running  Hypatia
-           2. Wire transcript                                 │▎    └ ✓ completed  Picasso
-           3. Render dashboard                                │▎  ! interrupted  Turing
-                                                              │▎›   └ × errored  Socrates
-      ▸ Edited files                                          │▎Inspector  Socrates  × errored
+                                                              │▎  ● running  Hypatia
+      ▸ Edited files                                          │▎    └ ✓ completed  Picasso
+                                                              │▎  ! interrupted  Turing
+   The new shell owns the fullscreen surface.                 │▎›   └ × errored  Socrates
+                                                              │▎Inspector  Socrates  × errored
                                                               │▎Model  gpt-5-codex
-   The new shell owns the fullscreen surface.                 │▎Reasoning  high
+                                                              │▎Reasoning  high
                                                               │▎Path  /root/testing/failure
                                                               │▎Task  Review the new TUI flow and visual
                                                               │▎      hierarchy.

@@ -173,7 +173,7 @@ impl ShellState {
             return Ok(());
         }
 
-        self.push_status("checking for Claude Code setup");
+        self.show_hint("checking for Claude Code setup");
         let cwd = PathBuf::from(&self.cwd);
         match app_server
             .external_agent_config_detect(ExternalAgentConfigDetectParams {
@@ -187,12 +187,12 @@ impl ShellState {
             .await
         {
             Ok(response) if response.items.is_empty() => {
-                self.push_status(EXTERNAL_AGENT_CONFIG_MIGRATION_NO_ITEMS_MESSAGE);
+                self.show_hint(EXTERNAL_AGENT_CONFIG_MIGRATION_NO_ITEMS_MESSAGE);
             }
             Ok(response) => {
                 self.pending_external_agent_import =
                     Some(ExternalAgentImportState::new(response.items));
-                self.push_status("review Claude Code setup before importing");
+                self.show_hint("review Claude Code setup before importing");
             }
             Err(err) => {
                 self.push_error(format!("Could not check for Claude Code setup: {err}"));
@@ -215,7 +215,7 @@ impl ShellState {
         match key.code {
             KeyCode::Esc => {
                 self.pending_external_agent_import = None;
-                self.push_status("Claude Code import cancelled");
+                self.show_hint("Claude Code import cancelled");
                 Ok(true)
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -283,9 +283,13 @@ impl ShellState {
     }
 
     fn push_plain_status_lines(&mut self, lines: Vec<Line<'static>>) {
-        for line in lines {
-            self.push_status(line_to_plain_text(&line));
-        }
+        self.push_system(
+            lines
+                .iter()
+                .map(line_to_plain_text)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
     }
 }
 

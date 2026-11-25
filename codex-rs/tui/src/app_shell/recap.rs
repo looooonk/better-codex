@@ -166,7 +166,7 @@ impl ShellState {
     ) -> Result<()> {
         if args == "cancel" {
             self.recap = RecapState::default();
-            self.push_status("Recap cancelled");
+            self.show_hint("Recap cancelled");
             return Ok(());
         }
         if matches!(args, "on" | "off") {
@@ -188,7 +188,7 @@ impl ShellState {
             return Ok(());
         }
         if !args.is_empty() {
-            self.push_error("Usage: /recap [cancel|on|off]");
+            self.show_hint("Usage: /recap [cancel|on|off]");
             return Ok(());
         }
         self.start_recap(config, app_server, RecapTrigger::Manual)
@@ -201,19 +201,19 @@ impl ShellState {
         trigger: RecapTrigger,
     ) -> Result<()> {
         if self.recap.has_work() {
-            self.push_status("A recap is already being generated");
+            self.show_hint("A recap is already being generated");
             return Ok(());
         }
         if self.active_turn_id.is_some()
             || self.has_pending_backend_action(super::backend_actions::ActionGroup::TurnStart)
         {
-            self.push_status("Wait for the current turn to finish before generating a recap");
+            self.show_hint("Wait for the current turn to finish before generating a recap");
             return Ok(());
         }
         let history = history::recap_history(&self.transcript);
         if history.is_empty() {
             if trigger == RecapTrigger::Manual {
-                self.push_status("There is no conversation history to recap");
+                self.show_hint("There is no conversation history to recap");
             }
             return Ok(());
         }
@@ -258,7 +258,7 @@ impl ShellState {
             stage: Some(stage),
         }));
         if trigger == RecapTrigger::Manual {
-            self.push_status("Generating recap");
+            self.show_hint("Generating recap");
         }
         Ok(())
     }
@@ -321,7 +321,7 @@ impl ShellState {
                 Ok(recap) => {
                     self.automatic_recap.mark_recapped();
                     self.push_system(recap.into_message());
-                    self.push_status("Recap ready");
+                    self.show_hint("Recap ready");
                 }
                 Err(error) => {
                     if request.trigger == RecapTrigger::Automatic {
@@ -332,7 +332,7 @@ impl ShellState {
                 }
             },
             Ok(_) if request.trigger == RecapTrigger::Manual => {
-                self.push_status("Conversation changed; request a new recap")
+                self.show_hint("Conversation changed; request a new recap")
             }
             Ok(_) => {}
             Err(error) if fresh => {

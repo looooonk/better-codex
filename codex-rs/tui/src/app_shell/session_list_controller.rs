@@ -242,7 +242,7 @@ impl ShellState {
                     return Ok(());
                 };
                 if name.is_empty() {
-                    self.push_error("session name cannot be empty");
+                    self.session_list.set_error("session name cannot be empty");
                     return Ok(());
                 }
                 let request = app_server.thread_set_name_in_background(thread_id, name.clone());
@@ -308,7 +308,7 @@ impl ShellState {
                 if thread_id == self.thread_id {
                     self.thread_name = Some(name.clone());
                 }
-                self.push_status(format!("renamed session {name}"));
+                self.show_hint(format!("renamed session {name}"));
             }
             Err(err) => self.report_action_error("failed to rename session", err),
         }
@@ -319,7 +319,7 @@ impl ShellState {
         S: AppShellBackend,
     {
         let Some(thread_id) = self.session_list.selected_thread_id() else {
-            self.push_status("no session selected");
+            self.show_hint("no session selected");
             return;
         };
         self.resume_session(config, app_server, thread_id).await;
@@ -333,7 +333,7 @@ impl ShellState {
             return Ok(());
         }
         let Some(thread_id) = self.session_list.selected_thread_id() else {
-            self.push_status("no session selected");
+            self.show_hint("no session selected");
             return Ok(());
         };
         let session_cwd = self.session_list.cwd_for_thread(thread_id).cloned();
@@ -381,7 +381,7 @@ impl ShellState {
         } else {
             return false;
         };
-        self.push_status(message);
+        self.show_hint(message);
         true
     }
 
@@ -390,11 +390,11 @@ impl ShellState {
         S: AppShellBackend,
     {
         let Some(thread_id) = self.session_list.selected_thread_id() else {
-            self.push_status("no session selected");
+            self.show_hint("no session selected");
             return Ok(());
         };
         if self.session_list.selected_is_current(self.thread_id) {
-            self.push_error("cannot archive the active session");
+            self.show_hint("cannot archive the active session");
             return Ok(());
         }
         app_server.thread_archive(thread_id).await?;
@@ -404,7 +404,7 @@ impl ShellState {
             .remove_selected()
             .map(|row| row.thread_id.to_string())
             .unwrap_or_else(|| thread_id.to_string());
-        self.push_status(format!("archived session {title}"));
+        self.show_hint(format!("archived session {title}"));
         Ok(())
     }
 
@@ -413,13 +413,13 @@ impl ShellState {
         S: AppShellBackend,
     {
         let Some(thread_id) = self.session_list.selected_thread_id() else {
-            self.push_status("no session selected");
+            self.show_hint("no session selected");
             return Ok(());
         };
         app_server.thread_unarchive(thread_id).await?;
         self.invalidate_session_list_refresh();
         self.session_list.remove_selected();
-        self.push_status(format!("unarchived session {thread_id}"));
+        self.show_hint(format!("unarchived session {thread_id}"));
         Ok(())
     }
 
@@ -428,14 +428,29 @@ impl ShellState {
         if self.ephemeral {
             return;
         }
-        let title = self.thread_name.clone().unwrap_or_else(|| "Untitled chat".into());
+        let title = self
+            .thread_name
+            .clone()
+            .unwrap_or_else(|| "Untitled chat".into());
         let cwd = std::path::PathBuf::from(&self.cwd);
-        self.session_list.set_new_chat(Some(super::sessions::SessionRow::new_chat(
-            self.thread_id, title.clone(), cwd.clone(), project_id.clone(),
-        )));
-        self.projects.new_chat = project_id.map(|id| (id, super::project_hub::Chat {
-            id: self.thread_id, title, cwd, external_writer: false,
-        }));
+        self.session_list
+            .set_new_chat(Some(super::sessions::SessionRow::new_chat(
+                self.thread_id,
+                title.clone(),
+                cwd.clone(),
+                project_id.clone(),
+            )));
+        self.projects.new_chat = project_id.map(|id| {
+            (
+                id,
+                super::project_hub::Chat {
+                    id: self.thread_id,
+                    title,
+                    cwd,
+                    external_writer: false,
+                },
+            )
+        });
     }
 
     pub(super) fn clear_new_session(&mut self) {
@@ -484,6 +499,7 @@ impl ShellState {
         self.collaboration_mode = session.collaboration_mode;
         self.personality = session.personality;
         self.clear_text_selections();
+        self.input_hint = None;
         self.transcript.clear();
         self.transcript_scroll = 0;
         self.transcript_scroll_max.set(0);
@@ -493,7 +509,7 @@ impl ShellState {
         self.dashboard_scroll.set(0);
         self.transcript_selection = None;
         self.transcript_render_cache.get_mut().clear();
-        self.clear_streaming_transcript();
+        self.clear_streaming_assistant();
         self.plan_explanation = None;
         self.plan_steps.clear();
         self.record_active_goal(None);

@@ -61,9 +61,9 @@ impl TranscriptRenderCache {
             }
         }
         if let Some(index) = self
-                .layouts
-                .iter()
-                .position(|cached| cached.reusable && cached.matches(shell, width, cwd))
+            .layouts
+            .iter()
+            .position(|cached| cached.reusable && cached.matches(shell, width, cwd))
             && let Some(cached) = self.layouts.remove(index)
         {
             let layout = Arc::clone(&cached.layout);
@@ -71,21 +71,18 @@ impl TranscriptRenderCache {
             return layout;
         }
 
-        let has_visualizations = shell
-            .transcript
-            .iter()
-            .any(|item| crate::inline_visualization::contains_inline_visualization(&item.text))
-            || crate::inline_visualization::contains_inline_visualization(
-                &shell.streaming_assistant,
-            )
-            || crate::inline_visualization::contains_inline_visualization(&shell.streaming_plan);
+        let has_visualizations = shell.transcript.iter().any(|item| {
+            item.kind == TranscriptKind::Assistant
+                && crate::inline_visualization::contains_inline_visualization(&item.text)
+        }) || crate::inline_visualization::contains_inline_visualization(
+            &shell.streaming_assistant,
+        );
         let visualization_context = has_visualizations
             .then(|| self.visualizations.context(shell))
             .flatten();
         let mut previous_items = std::mem::take(&mut self.items);
         let mut current_items = HashMap::with_capacity(
-            shell.transcript.len()
-                + usize::from(!shell.streaming_plan.is_empty())
+            shell.transcript.len().min(super::MAX_TRANSCRIPT_LINES)
                 + usize::from(!shell.streaming_assistant.is_empty()),
         );
         let mut chunks = Vec::new();
@@ -165,30 +162,6 @@ impl TranscriptRenderCache {
             );
         }
 
-        if !shell.streaming_plan.is_empty() {
-            push_cached_chunk(
-                &mut chunks,
-                &mut previous_kind,
-                &mut previous_items,
-                &mut current_items,
-                CachedSource {
-                    transcript_index: None,
-                    revision: shell.streaming_plan_revision,
-                    anchor_source: shell.streaming_plan_item_id.as_ref().map_or(
-                        TranscriptAnchorSource::StreamingPlan,
-                        |item_id| TranscriptAnchorSource::Item {
-                            kind: TranscriptKind::Plan,
-                            item_id: item_id.clone(),
-                        },
-                    ),
-                    kind: TranscriptKind::Plan,
-                    text: &shell.streaming_plan,
-                    tool_status: None,
-                    selected: false,
-                },
-                context,
-            );
-        }
         if !shell.streaming_assistant.is_empty() {
             push_cached_chunk(
                 &mut chunks,
@@ -262,7 +235,6 @@ fn render_revisions(shell: &ShellState) -> impl Iterator<Item = u64> + '_ {
         .transcript
         .iter()
         .map(|item| item.render_revision)
-        .chain((!shell.streaming_plan.is_empty()).then_some(shell.streaming_plan_revision))
         .chain(
             (!shell.streaming_assistant.is_empty()).then_some(shell.streaming_assistant_revision),
         )
@@ -327,9 +299,6 @@ fn should_separate_transcript_item(
     ) {
         return true;
     }
-    if previous_kind == TranscriptKind::Audit || current_kind == TranscriptKind::Audit {
-        return true;
-    }
     if previous_kind == TranscriptKind::System {
         return false;
     }
@@ -361,7 +330,8 @@ impl CachedTranscriptItem {
             visuals,
         } = context;
         let selected = source.selected;
-        if !crate::inline_visualization::contains_inline_visualization(source.text)
+        if (source.kind != TranscriptKind::Assistant
+            || !crate::inline_visualization::contains_inline_visualization(source.text))
             && let Some(index) = self.variants.iter().position(|variant| {
                 variant.width == width
                     && variant.indent == indent
@@ -445,7 +415,6 @@ pub(super) enum TranscriptAnchorSource {
         item_id: String,
     },
     Revision(u64),
-    StreamingPlan,
     StreamingAssistant,
 }
 

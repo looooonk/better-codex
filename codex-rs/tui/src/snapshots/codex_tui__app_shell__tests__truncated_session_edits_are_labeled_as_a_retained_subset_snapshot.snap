@@ -10,13 +10,13 @@ expression: rendered
                                                   │▎completed exec just test -p codex-tui
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │▎◆ EDITS
-   ▎ PLAN  1. Build shell                         │▎1 files +1 -1
-           2. Wire transcript                     │▎retained subset; totals may be incomplete
-           3. Render dashboard                    │
-                                                  │▎◆ WORKSPACE
-      ▸ Edited files                              │▎profile managed
+                                                  │▎1 files +1 -1
+      ▸ Edited files                              │▎retained subset; totals may be incomplete
+                                                  │
+   The new shell owns the fullscreen surface.     │▎◆ WORKSPACE
+                                                  │▎profile managed
                                                   │▎cwd /workspace/better-codex
-   The new shell owns the fullscreen surface.     │▎files restricted, net restricted
+                                                  │▎files restricted, net restricted
                                                   │▎roots none selected
                                                   │
                                                   │▎◆ TOKENS

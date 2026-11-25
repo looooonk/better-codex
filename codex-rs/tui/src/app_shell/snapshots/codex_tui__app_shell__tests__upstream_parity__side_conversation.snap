@@ -4,8 +4,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
 
 
-   ▎ SYSTEM  Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to
-             go back.
+   Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.
+
 
 
 

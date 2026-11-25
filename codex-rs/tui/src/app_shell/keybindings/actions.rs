@@ -189,7 +189,7 @@ impl ShellState {
                         crate::app_shell::backend_actions::ActionGroup::TurnStart,
                     )
                 {
-                    self.push_status(
+                    self.show_hint(
                         "Fast mode can be changed when it is enabled and the conversation is idle",
                     );
                     return Ok(());
@@ -200,7 +200,7 @@ impl ShellState {
                     .find(|model| model.model == self.model)
                     .is_some_and(codex_protocol::openai_models::ModelPreset::supports_fast_mode)
                 {
-                    self.push_status("Fast mode is unavailable for the current model");
+                    self.show_hint("Fast mode is unavailable for the current model");
                     return Ok(());
                 }
                 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;

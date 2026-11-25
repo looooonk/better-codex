@@ -10,13 +10,13 @@ expression: "render_shell(&shell, area)"
                                                   │▎status active
    Started a fullscreen app shell backed by app-  │▎Complete the unchecked dashboard progress item
    server turns.                                  │▎1m | 12,345/50,000 tokens
-   ▎ PLAN  1. Build shell                         │
-           2. Wire transcript                     │▎◆ TOOLS
-           3. Render dashboard                    │▎completed exec just test -p codex-tui
                                                   │
-      ▸ Edited files                              │▎◆ EDITS
-                                                  │▎3 files +128 -24
+      ▸ Edited files                              │▎◆ TOOLS
+                                                  │▎completed exec just test -p codex-tui
    The new shell owns the fullscreen surface.     │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
+                                                  │
                                                   │▎◆ WORKSPACE
                                                   │▎profile managed
                                                   │▎cwd /workspace/better-codex

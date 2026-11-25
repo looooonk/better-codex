@@ -64,7 +64,9 @@ impl ShellState {
                         .clone()
                 });
                 if let Some((_, chat)) = &self.projects.new_chat
-                    && groups.iter().any(|group| group.chats.iter().any(|listed| listed.id == chat.id))
+                    && groups
+                        .iter()
+                        .any(|group| group.chats.iter().any(|listed| listed.id == chat.id))
                 {
                     self.projects.new_chat = None;
                 }
@@ -167,7 +169,10 @@ impl ShellState {
                             },
                         })
                         .await?;
-                    if thread == self.thread_id && (self.projects.new_chat.is_some() || self.session_list.waiting_for_new_chat()) {
+                    if thread == self.thread_id
+                        && (self.projects.new_chat.is_some()
+                            || self.session_list.waiting_for_new_chat())
+                    {
                         self.show_new_session(project.as_ref().map(|p| p.id.clone()));
                     }
                     self.project_menu(HubView::Browse);
@@ -198,7 +203,7 @@ impl ShellState {
                         self.reset_workspace_git_status();
                         self.mark_workspace_status_refresh_due();
                     }
-                    self.push_status(project.map_or_else(
+                    self.show_hint(project.map_or_else(
                         || "Removed chat from project".into(),
                         |p| format!("Moved chat to {}", p.name),
                     ));

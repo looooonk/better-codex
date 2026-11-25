@@ -10,16 +10,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. Wire transcript                     │ loading sessions
-           3. ╭──────────────────────────────────────────────────────────────────────╮
-              │◆ CLAUDE CODE IMPORT                                                  │
-      ▸ Edited│Review Claude Code setup  Settings 1, Skills 1                        │
-   ▎ STATUS  c│                                                                      │
-   ▎ STATUS  r│> [x] Settings (settings.json -> config.toml) - home                  │
-             i│      Import settings from Claude Code                                │
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ loading sessions
+              ╭──────────────────────────────────────────────────────────────────────╮
+   The new she│◆ CLAUDE CODE IMPORT                                                  │
+              │Review Claude Code setup  Settings 1, Skills 1                        │
+              │                                                                      │
+              │> [x] Settings (settings.json -> config.toml) - home                  │
+              │      Import settings from Claude Code                                │
               │  [x] Skills - better-codex                                           │
-   The new she│      1 skill: review                                                 │
+              │      1 skill: review                                                 │
               │                                                                      │
               │↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
               │                                                                      │
@@ -28,7 +28,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
                                                   │
                                                   │
                                                   │
-╭────────────────────────────────────────────────╮│
+╭ review Claude Code setup before importing ─────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││

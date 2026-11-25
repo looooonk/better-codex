@@ -10,13 +10,13 @@ expression: "render_shell(&shell, area)"
                                                   │▎completed exec just test -p codex-tui
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │▎◆ EDITS
-   ▎ PLAN  1. Build shell                         │▎3 files +128 -24
-           2. Wire transcript                     │
-           3. Render dashboard                    │▎◆ WORKSPACE
-                                                  │▎changes 13 paths
-      ▸ Edited files                              │▎  staged 4
+                                                  │▎3 files +128 -24
+      ▸ Edited files                              │
+                                                  │▎◆ WORKSPACE
+   The new shell owns the fullscreen surface.     │▎changes 13 paths
+                                                  │▎  staged 4
                                                   │▎  unstaged 5
-   The new shell owns the fullscreen surface.     │▎  conflicted 1
+                                                  │▎  conflicted 1
                                                   │▎  untracked 3
                                                   │▎branch feature/app-shell-dashboard
                                                   │▎profile managed

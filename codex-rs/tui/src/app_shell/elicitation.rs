@@ -307,7 +307,7 @@ impl ShellState {
                 self.composer
                     .set_text(next.default_answer().unwrap_or_default());
                 self.pending_elicitation = Some(next);
-                self.push_decision_audit("elicitation", "field answered", &title);
+                self.record_decision("elicitation", "field answered", &title);
                 return Ok(());
             }
             let request_id = next.request_id();
@@ -379,7 +379,7 @@ impl ShellState {
             ElicitationChoice::Decline => "declined",
             ElicitationChoice::Cancel => "cancelled",
         };
-        self.push_decision_audit("elicitation", decision, &title);
+        self.record_decision("elicitation", decision, &title);
         if removal == InteractiveRequestRemoval::Active {
             self.activate_next_interactive_request();
         }

@@ -9,13 +9,13 @@ expression: initial
                                                                   │ Projects
                                                                   │ › Research                                   …
    Started a fullscreen app shell backed by app-server turns.     │
-   ▎ PLAN  1. Build shell                                         │ Recents
-           2. Wire transcript                                     │ + New session  Ctrl+N
-           3. Render dashboard                                    │   Earlier experiment                         …
-                                                                  │   Loose notes                                …
-      ▸ Edited files                                              │
+                                                                  │ Recents
+      ▸ Edited files                                              │ + New session  Ctrl+N
+                                                                  │   Earlier experiment                         …
+   The new shell owns the fullscreen surface.                     │   Loose notes                                …
                                                                   │
-   The new shell owns the fullscreen surface.                     │
+                                                                  │
+                                                                  │
                                                                   │
                                                                   │
                                                                   │

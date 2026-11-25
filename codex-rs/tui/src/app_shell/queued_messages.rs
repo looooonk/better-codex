@@ -347,15 +347,15 @@ impl ShellState {
                     self.queue_state.hydration_failures.saturating_add(1);
                 if self.queue_state.hydration_failures < MAX_HYDRATION_FAILURES {
                     self.queue_state.hydration_due = true;
-                    self.push_status("retrying queued message refresh");
+                    self.show_hint("retrying queued message refresh");
                 } else if self.queue_state.recovery_required() {
                     self.queue_state.hydration_failures = 0;
                     self.queue_state.hydration_due = true;
                     self.queue_state.hydration_retry_delayed = true;
-                    self.push_status("waiting to retry queued message refresh");
+                    self.show_hint("waiting to retry queued message refresh");
                 } else {
                     self.queue_state.hydration_failures = 0;
-                    self.push_status("failed to refresh queued messages");
+                    self.show_hint("failed to refresh queued messages");
                 }
             }
         }
@@ -394,7 +394,7 @@ impl ShellState {
                         self.cancel_pending_queue_mutations();
                         self.queue_state.reconciliation_required = true;
                         self.queue_state.hydration_due = true;
-                        self.push_status("queued message changed; refreshing");
+                        self.show_hint("queued message changed; refreshing");
                     }
                     QueueRpcResponse::Reordered => {}
                     QueueRpcResponse::Started(turn) => {
@@ -482,7 +482,7 @@ impl ShellState {
             self.cancel_pending_queue_mutations();
             self.queue_state.reconciliation_required = true;
             self.queue_state.hydration_due = true;
-            self.push_status("queued message changed; refreshing");
+            self.show_hint("queued message changed; refreshing");
             self.maybe_start_queue_hydration(app_server);
             return;
         };

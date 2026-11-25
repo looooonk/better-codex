@@ -113,11 +113,11 @@ impl ShellState {
         if let Some(parent) = self.side_parent.as_mut() {
             parent.keybindings = self.keybindings.clone();
         }
-        self.push_status(if overridden {
-            format!("Saved {name}, but a higher-priority configuration layer overrides it")
-        } else {
-            format!("Saved {name}: {value}")
-        });
+        if overridden {
+            self.show_hint(format!(
+                "A higher-priority configuration layer overrides {name}"
+            ));
+        }
         Ok(())
     }
 }

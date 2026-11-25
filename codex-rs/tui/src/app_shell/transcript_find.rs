@@ -28,7 +28,6 @@ impl ShellState {
             .transcript
             .iter()
             .rev()
-            .take(super::MAX_TRANSCRIPT_LINES)
             .filter_map(|line| {
                 let text = &line.text[..line
                     .text
@@ -38,13 +37,11 @@ impl ShellState {
                 }
                 let role = match line.kind {
                     TranscriptKind::User => "You",
-                    TranscriptKind::Assistant | TranscriptKind::Plan => "Assistant",
+                    TranscriptKind::Assistant => "Assistant",
                     TranscriptKind::Tool | TranscriptKind::Output | TranscriptKind::Diff => {
                         "Activity"
                     }
-                    TranscriptKind::System | TranscriptKind::Status | TranscriptKind::Audit => {
-                        "System"
-                    }
+                    TranscriptKind::System => "System",
                     TranscriptKind::Separator => return None,
                     TranscriptKind::Error => "Error",
                 };
@@ -129,7 +126,7 @@ impl ShellState {
             .iter()
             .position(|line| line.render_revision == revision)
         else {
-            self.push_status(
+            self.show_hint(
                 "That result changed or left the retained conversation. Search again with /find.",
             );
             return;
@@ -143,6 +140,6 @@ impl ShellState {
         self.transcript_selection_needs_reveal.set(true);
         self.projects.error = None;
         self.dashboard_visible = false;
-        self.push_status("Search result selected; Esc returns to your draft");
+        self.show_hint("Search result selected; Esc returns to your draft");
     }
 }

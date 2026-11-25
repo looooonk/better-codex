@@ -9,18 +9,18 @@ expression: rendered
 
 
    Started a fullscreen app shell backed by app-server turns.
-   ▎ PLAN  1. Build shell
-           2. Wire transcript
-           3. Render dashboard
 
       ▸ Edited files
-   ▎ STATUS  wait for the workspace action or session transition before saving settings
 
    The new shell owns the fullscreen surface.
 
 
 
-╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+
+
+
+
+╭ wait for the workspace action or session transition before saving settings ────────────────────────────────╮
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │

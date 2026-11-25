@@ -4,9 +4,9 @@ expression: rendered
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-           2. Wire transcript                   │ │━━━━━━━━━━━━━───────────────────────────────────
-           3. Render dashboard                  │ │
-                                                │ │ Projects
+   Started a fullscreen app shell backed by     │ │━━━━━━━━━━━━━───────────────────────────────────
+   app-server turns.                            │ │
+                                                ┃ │ Projects
       ▸ Edited files                            ┃ │ No projects
                                                 ┃ │
    The new shell owns the fullscreen surface.   ┃ │ Recents

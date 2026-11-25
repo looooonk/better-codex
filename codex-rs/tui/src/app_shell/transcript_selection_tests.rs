@@ -90,7 +90,7 @@ fn evicting_the_selected_item_clears_selection() {
     shell.transcript_selection = Some(0);
 
     for index in 0..MAX_TRANSCRIPT_LINES {
-        shell.push_status(format!("later status {index}"));
+        shell.push_system(format!("later status {index}"));
     }
 
     assert_eq!(shell.transcript_selection, None);

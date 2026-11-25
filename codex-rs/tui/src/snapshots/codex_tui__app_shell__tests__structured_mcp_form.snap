@@ -4,13 +4,13 @@ expression: "render_shell(&shell, area)"
 ---
 
 
-   ▎ PLAN  1. Build shell                                 │
-           2. Wire transcript                             │
-           3. Render dashboard                            │
+   > Create a divergent standalone TUI.                   ┃
+                                                          ┃
+                                                          ┃
+   Started a fullscreen app shell backed by app-server    ┃
+   turns.                                                 ┃
                                                           ┃
       ▸ Edited files                                      ┃
-   ▎ STATUS  elicitation requested: MCP deployments:      ┃
-             form request                                 ┃
                                                           ┃
    The new shell owns the fullscreen surface.             ┃
 

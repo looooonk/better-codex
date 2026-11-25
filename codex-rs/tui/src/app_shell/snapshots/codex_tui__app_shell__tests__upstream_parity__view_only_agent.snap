@@ -4,27 +4,27 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   ▎ ERROR  This agent does not accept direct     │━━━━━━━━━━━━━───────────────────────────────────
-            messages. Send instructions through   │
-            its parent conversation.              │ Projects
+                                                  │━━━━━━━━━━━━━───────────────────────────────────
+                                                  │
+                                                  │ Projects
                                                   │ No projects
-                                                  │
-                                                  │ Recents
-                                                  │ + New session  Ctrl+N
-                                                  │ loading sessions
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+                   ⢀⣠⣴⠶⠿⠛⠛⠿⠶⣦⣄⡀                   │
+                 ⢀⣴⠟⠋        ⠙⠻⣦⡀                 │ Recents
+                ⢀⣾⠋ ⣠⡀         ⠙⣷⡀                │ + New session  Ctrl+N
+                ⣼⡇  ⠈⠛⢶⣄        ⢸⣧                │ loading sessions
+                ⣿     ⣠⡿⠃        ⣿                │
+                ⢻⡇  ⢠⠾⠋  ⣤⣤⣤⣤⡄  ⢸⡟                │
+                ⠈⢿⣄            ⣠⡿⠁                │
+                 ⠈⠻⣦⣄        ⣠⣴⠟⠁                 │
+                   ⠈⠙⠻⠶⣶⣤⣤⣶⠶⠟⠋⠁                   │
                                                   │
                                                   │
                                                   │
                                                   │
                                                   │
-╭────────────────────────────────────────────────╮│
+                                                  │
+                                                  │
+╭ This agent does not accept direct messages. Sen╮│
 │> Type a message                                ││
 │                                                ││
 │                                                ││

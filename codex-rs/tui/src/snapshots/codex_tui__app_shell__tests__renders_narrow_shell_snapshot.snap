@@ -9,13 +9,13 @@ expression: "render_shell(&shell, area)"
                             │ No projects
                             │ Recents
    Started a fullscreen app │ + New session  Ctrl+N
-   ▎ PLAN  1. Build shell   │ loading sessions
-           2. Wire transcrip│
-           3. Render dashboa│
-                            │
+                            │ loading sessions
       ▸ Edited files        │
                             │
    The new shell owns the fu│
+                            │
+                            │
+                            │
                             │
                             │
                             │

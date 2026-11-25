@@ -4,13 +4,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,))"
 ---
 
 
-   > Keep this interrupted prompt                                             ┃
-                                                                              ┃
-                                                                              ┃
-   ▎ STATUS  turn interrupted                                                 ┃
-                                                                              ┃
-   ──────── Took 1.00s ────────────────────────────────────────────────────── ┃
-                                                                              ┃
+
+   > Keep this interrupted prompt
+
+
+   ──────── Interrupted · Took 1.00s ──────────────────────────────────────────
+
+
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │> Type a message                                                              │

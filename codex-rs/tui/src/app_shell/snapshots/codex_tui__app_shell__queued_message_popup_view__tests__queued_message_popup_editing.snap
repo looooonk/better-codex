@@ -4,15 +4,15 @@ expression: "render_shell(&shell, area)"
 ---
 
 
-                                                                            │
-   Started a fullscreen app shell backed by app-server turns.               │
-   ▎ PLAN  1. Build shell                                                   ┃
-           2. Wire transcript                                               ┃
-╭──────────────────────────────────────────────────────────────────────╮    ┃
-│◆ QUEUED  3                                                           │    ┃
-│   2  second queued message                                           │    ┃
-│▌  3  newest queued message continued                                 │    ┃
-│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder                │    ┃
+
+   > Create a divergent standalone TUI.
+
+
+╭──────────────────────────────────────────────────────────────────────╮
+│◆ QUEUED  3                                                           │
+│   2  second queued message                                           │
+│▌  3  newest queued message continued                                 │
+│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder                │
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭ EDIT 3/3 ──────────────────────────────────────────────────────────────────╮
 │> newest queued message                                                     │

@@ -4,11 +4,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   ▎ ERROR  Daybreak support for model gpt-5-     │━━━━━━━━━━━━━───────────────────────────────────
-            codex could not be confirmed by the   │
-            connected server. Use /daybreak to    │ Projects
-            turn it off, or choose a compatible   │ No projects
-            model and server.                     │
+   ⚠ Daybreak support for model gpt-5-codex could │━━━━━━━━━━━━━───────────────────────────────────
+     not be confirmed by the connected server.    │
+     Use /daybreak to turn it off, or choose a    │ Projects
+     compatible model and server.                 │ No projects
+                                                  │
                                                   │ Recents
                                                   │ + New session  Ctrl+N
                                                   │ loading sessions

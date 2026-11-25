@@ -22,7 +22,7 @@ impl ShellState {
             "on" => true,
             "off" => false,
             _ => {
-                self.push_error("Usage: /daybreak [on|off]");
+                self.show_hint("Usage: /daybreak [on|off]");
                 return;
             }
         };

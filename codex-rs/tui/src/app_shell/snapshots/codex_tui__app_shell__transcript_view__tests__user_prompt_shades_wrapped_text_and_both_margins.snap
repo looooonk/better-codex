@@ -15,8 +15,7 @@ expression: "rows.join(\"\\n\").trim_end()"
    >·One·more·thing.·····
    ······················
 
-   ▎ SYSTEM  Session
-             updated.
+   Session updated.
 
    ······················
    >·Last·detail.········

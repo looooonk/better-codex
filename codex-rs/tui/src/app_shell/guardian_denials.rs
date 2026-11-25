@@ -94,7 +94,7 @@ impl ShellState {
 
     pub(super) fn show_guardian_denials(&mut self) {
         if self.recent_guardian_denials.is_empty() {
-            self.push_status("No recent auto-review denials in this conversation.");
+            self.show_hint("No recent auto-review denials in this conversation.");
             return;
         }
         let mut lines = vec!["Recent auto-review denials".to_string()];

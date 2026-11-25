@@ -24,7 +24,6 @@ use codex_utils_path_uri::PathUri;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use uuid::Uuid;
@@ -173,25 +172,6 @@ pub(crate) fn build_model_migration_seen_edit(from_model: &str, to_model: &str) 
         key_path(&["notice", "model_migrations", from_model]),
         serde_json::json!(to_model),
     )
-}
-
-pub(crate) fn build_model_availability_nux_count_edits(
-    shown_count: &HashMap<String, u32>,
-) -> Vec<ConfigEdit> {
-    let mut entries: Vec<_> = shown_count.iter().collect();
-    entries.sort_unstable_by_key(|(model_slug, _)| *model_slug);
-
-    let mut edits = vec![clear_config_value(key_path(&[
-        "tui",
-        "model_availability_nux",
-    ]))];
-    for (model_slug, count) in entries {
-        edits.push(replace_config_value(
-            key_path(&["tui", "model_availability_nux", model_slug]),
-            serde_json::json!(count),
-        ));
-    }
-    edits
 }
 
 pub(crate) fn build_session_picker_view_edit(mode: SessionPickerViewMode) -> ConfigEdit {

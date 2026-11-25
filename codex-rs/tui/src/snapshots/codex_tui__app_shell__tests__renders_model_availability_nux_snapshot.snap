@@ -10,19 +10,19 @@ expression: "render_shell(&shell, area)"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. Wire transcript                     │ loading sessions
-           3. Render dashboard                    │
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ loading sessions
+   Our most capable model yet. GPT-5.6 Sol        │
+   can tackle complex code changes, dig into      │
+   research, produce polished documents, and      │
+   take on your most ambitious work. Sol is       │
+   highly capable at lower reasoning efforts—     │
+   try starting lower, then turn it up for harder │
+   jobs.                                          │
                                                   │
-      ▸ Edited files                              │
-   ▎ SYSTEM  Our most capable model yet. GPT-     │
-             5.6 Sol can tackle complex code      │
-             changes, dig into research, produce  │
-             polished documents, and take on your │
-             most ambitious work. Sol is highly   │
-             capable at lower reasoning efforts—  │
-             try starting lower, then turn it up  │
-             for harder jobs.                     │
+                                                  │
+                                                  │
+                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

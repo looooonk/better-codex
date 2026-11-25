@@ -334,11 +334,9 @@ impl ShellState {
                     self.selector = None;
                 }
                 self.terminal_clear_requested.set(true);
-                self.push_status(if applied {
-                    "display settings saved"
-                } else {
-                    "saved locally; a higher-priority setting controls the active display"
-                });
+                if !applied {
+                    self.show_hint("A higher-priority setting controls the active display");
+                }
             }
             Err(error) => self.report_action_error("failed to save display settings", error),
         }

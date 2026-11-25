@@ -9,15 +9,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │› ● ⓘ Ask for approval
                             │  ○ ⛨ Unless trusted
    Started a fullscreen app │  ○ ⚠ Full access
-   ▎ PLAN  1. Build shell   │
-           2. Wire transcrip│◆ APPEARANCE
-           3. Render dashboa│  ● Tokyo Night
-                            │  ○ Gruvbox Dark
-      ▸ Edited files        │  ○ Catppuccin Mocha
-                            │  ○ Monochrome
-   The new shell owns the fu│  Syntax theme: default
-                            │  Animations: on
-                            │  Tooltips: on
+                            │
+      ▸ Edited files        │◆ APPEARANCE
+                            │  Theme: Tokyo Night ▾
+   The new shell owns the fu│  Syntax theme: default ▾
+                            │  ● Animations
+                            │  ● Tooltips
+                            │
+                            │◆ EXPERIMENTAL
+                            │  ○ Render LaTeX as images
                             │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮

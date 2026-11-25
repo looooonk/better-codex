@@ -10,13 +10,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
                                                   │▎completed exec just test -p codex-tui
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │▎◆ EDITS
-   ▎ PLAN  1. Build shell                         │▎3 files +128 -24
-           2. Wire transcript                     │
-           3. Render dashboard                    │▎◆ WORKSPACE
-                                                  │▎profile :full (full access)
-      ▸ Edited files                              │▎cwd /workspace/locked
+                                                  │▎3 files +128 -24
+      ▸ Edited files                              │
+                                                  │▎◆ WORKSPACE
+   The new shell owns the fullscreen surface.     │▎profile :full (full access)
+                                                  │▎cwd /workspace/locked
                                                   │▎roots none selected
-   The new shell owns the fullscreen surface.     │
+                                                  │
                                                   │▎◆ TOKENS
                                                   │▎input 1k | output 240
                                                   │▎Context 100% left

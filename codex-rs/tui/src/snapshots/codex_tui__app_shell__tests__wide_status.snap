@@ -9,23 +9,23 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
                                                               │◆ PERMISSIONS
                                                               │› ● ⓘ Ask for approval
    Started a fullscreen app shell backed by app-server turns. │  ○ ⛨ Unless trusted
-   ▎ PLAN  1. Build shell                                     │  ○ ⚠ Full access
-           2. Wire transcript                                 │
-           3. Render dashboard                                │◆ APPEARANCE
-                                                              │  ● Tokyo Night
-      ▸ Edited files                                          │  ○ Gruvbox Dark
-                                                              │  ○ Catppuccin Mocha
-   The new shell owns the fullscreen surface.                 │  ○ Monochrome
-                                                              │  Syntax theme: default
-                                                              │  Animations: on
-                                                              │  Tooltips: on
+                                                              │  ○ ⚠ Full access
+      ▸ Edited files                                          │
+                                                              │◆ APPEARANCE
+   The new shell owns the fullscreen surface.                 │  Theme: Tokyo Night ▾
+                                                              │  Syntax theme: default ▾
+                                                              │  ● Animations
+                                                              │  ● Tooltips
                                                               │
                                                               │◆ EXPERIMENTAL
-                                                              │  Render LaTeX as images: off
+                                                              │  ○ Render LaTeX as images
                                                               │
                                                               │◆ INTEGRATIONS
-                                                              │  MCP servers: not loaded
-                                                              │  Plugins: not loaded
+                                                              │  MCP servers: not loaded ▾
+                                                              │  Plugins: not loaded ▾
+                                                              │
+                                                              │
+                                                              │
 ╭────────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                      ││
 │                                                            ││

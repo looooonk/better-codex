@@ -28,14 +28,12 @@ impl ShellState {
             if args.is_empty() || args == "return" {
                 self.return_from_side(app_server).await?;
             } else {
-                self.push_status(
-                    "A side conversation is already open. Use /side return to go back.",
-                );
+                self.show_hint("A side conversation is already open. Use /side return to go back.");
             }
             return Ok(());
         }
         if args == "return" {
-            self.push_status("You are already in the main conversation");
+            self.show_hint("You are already in the main conversation");
             return Ok(());
         }
         if self.reject_direct_input() || self.reject_unavailable_session_action() {
@@ -45,7 +43,7 @@ impl ShellState {
             || self.has_pending_backend_actions()
             || self.pending_shell_command.is_some()
         {
-            self.push_status(
+            self.show_hint(
                 "Wait for pending actions or stop voice before opening a side conversation",
             );
             return Ok(());
@@ -132,7 +130,7 @@ impl ShellState {
         if self.has_pending_backend_action(ActionGroup::TurnStart)
             || self.has_pending_backend_action(ActionGroup::TurnSteer)
         {
-            self.push_status(
+            self.show_hint(
                 "Wait for the side message to start before returning to the main conversation",
             );
             return Ok(());
@@ -140,11 +138,11 @@ impl ShellState {
         if self.has_pending_backend_action(ActionGroup::Workspace)
             || self.has_pending_backend_action(ActionGroup::Settings)
         {
-            self.push_status("Wait for the side workspace action to finish before returning to the main conversation");
+            self.show_hint("Wait for the side workspace action to finish before returning to the main conversation");
             return Ok(());
         }
         if self.pending_shell_command.is_some() {
-            self.push_status(
+            self.show_hint(
                 "Finish or cancel the side shell command before returning to the main conversation",
             );
             return Ok(());
@@ -172,7 +170,7 @@ impl ShellState {
             self.composer.restore_input_images(&images);
         }
         self.terminal_clear_requested.set(true);
-        self.push_status("returned to main conversation");
+        self.show_hint("returned to main conversation");
         app_server.unsubscribe_thread(thread_id).await?;
         Ok(())
     }

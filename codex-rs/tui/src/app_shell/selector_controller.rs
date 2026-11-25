@@ -193,7 +193,8 @@ impl ShellState {
             SelectorValue::SyntaxTheme(theme) => self.apply_theme_edit(theme, app_server),
             SelectorValue::EditSyntaxTheme => {
                 self.selector = None;
-                self.settings.start_theme_edit(self.tui_theme.clone().unwrap_or_default());
+                self.settings
+                    .start_theme_edit(self.tui_theme.clone().unwrap_or_default());
             }
             SelectorValue::Model(model) => self.apply_model(model, app_server),
             SelectorValue::ReasoningEffort(choice) => {
@@ -215,7 +216,7 @@ impl ShellState {
             SelectorValue::Keybinding(action) => {
                 self.selector = None;
                 self.composer.set_text(format!("/keymap {action} "));
-                self.push_status("Enter a key, two-key chord, JSON array, unbind, or default");
+                self.show_hint("Enter a key, two-key chord, JSON array, unbind, or default");
             }
         }
         Ok(())

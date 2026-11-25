@@ -62,7 +62,7 @@ impl ShellState {
         S: AppShellBackend,
     {
         let Some(thread_id) = self.session_list.selected_thread_id() else {
-            self.push_status("no session selected");
+            self.show_hint("no session selected");
             return;
         };
         if thread_id == self.thread_id && self.block_session_switch_if_busy() {
@@ -113,7 +113,7 @@ impl ShellState {
             }
             KeyCode::Esc | KeyCode::Char('n' | 'N') => {
                 self.pending_session_delete = None;
-                self.push_status("session deletion cancelled");
+                self.show_hint("session deletion cancelled");
             }
             _ => {}
         }
@@ -172,7 +172,7 @@ impl ShellState {
                         super::session_lifecycle::RemoteThreadLifecycle::Deleted,
                     );
                 }
-                self.push_status(format!("deleted session {thread_id}"));
+                self.show_hint(format!("deleted session {thread_id}"));
             }
             Err(err) => self.report_action_error("failed to delete session", err),
         }

@@ -4,10 +4,10 @@ expression: "render_shell(&permissions_shell, area)"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   app-server turns.                            │ │━━━━━━━━━━━━━───────────────────────────────────
-   ▎ PLAN  1. Build shell                       │ │
-           2. Wire transcript                   │ │ Projects
-           3. Render dashboard                  ┃ │ No projects
+                                                │ │━━━━━━━━━━━━━───────────────────────────────────
+                                                ┃ │
+   Started a fullscreen app shell backed by     ┃ │ Projects
+   app-server turns.                            ┃ │ No projects
                                                 ┃ │
       ▸ Edited files                            ┃ │ Recents
                                                 ┃ │ + New session  Ctrl+N

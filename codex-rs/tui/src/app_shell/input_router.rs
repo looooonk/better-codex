@@ -377,6 +377,7 @@ impl ShellState {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return Ok(false);
         }
+        self.input_hint = None;
         let contexts = self.keybinding_contexts();
         let fixed_exit = key_hint::ctrl(KeyCode::Char('c')).is_press(key)
             && (self.side_parent.is_some()
@@ -581,7 +582,7 @@ impl ShellState {
                 self.composer.edit_next_queued_message()
             };
             if !editing {
-                self.push_status("structured queued messages cannot be edited");
+                self.show_hint("structured queued messages cannot be edited");
             }
             self.sync_composer_queue_edits(app_server);
             return Ok(false);

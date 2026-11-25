@@ -43,7 +43,7 @@ impl ShellState {
                 self.warnings.0.pop_front();
             }
         }
-        self.push_status(message.lines().next().unwrap_or("warning"));
+        self.show_hint(message.lines().next().unwrap_or("warning"));
     }
 
     pub(super) fn run_diagnostic_command<S: AppShellBackend>(

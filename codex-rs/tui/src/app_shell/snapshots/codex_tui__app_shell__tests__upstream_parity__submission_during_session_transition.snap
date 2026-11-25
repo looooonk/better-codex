@@ -24,7 +24,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 
 
 
-╭ [1: draft.png] ──────────────────────────────────────────────────────────────────────────────────╮
+╭ wait for the session transition before sending a message  [1: draft.png] ────────────────────────╮
 │> Keep this draft                                                                                 │
 │                                                                                                  │
 │                                                                                                  │

@@ -16,7 +16,7 @@ use std::path::Path;
 fn shell() -> ShellState {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell
 }
 
@@ -319,7 +319,6 @@ fn a_turn_ending_without_an_item_result_closes_running_labels_in_live_output_and
         }
     }
 }
-
 
 #[test]
 fn collapsed_calls_keep_earlier_conversation_in_scrollback() {

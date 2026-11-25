@@ -107,7 +107,7 @@ impl ShellState {
         if self.can_accept_direct_input {
             return false;
         }
-        self.push_error("This agent does not accept direct messages. Send instructions through its parent conversation.");
+        self.show_hint("This agent does not accept direct messages. Send instructions through its parent conversation.");
         true
     }
 
@@ -115,11 +115,11 @@ impl ShellState {
         if self.has_pending_backend_action(ActionGroup::SessionSwitch)
             || self.has_pending_backend_action(ActionGroup::ConversationBranch)
         {
-            self.push_status("wait for the session transition before sending a message");
+            self.show_hint("wait for the session transition before sending a message");
             return true;
         }
         if self.is_thread_revert_hydrating() {
-            self.push_status("wait for the reverted session to refresh");
+            self.show_hint("wait for the reverted session to refresh");
             return true;
         }
         let Some(reason) = self.session_unavailable_reason else {
@@ -134,7 +134,6 @@ impl ShellState {
     fn mark_active_session_unavailable(&mut self, lifecycle: RemoteThreadLifecycle) {
         let reason = lifecycle.unavailable_reason();
         let was_available = self.session_unavailable_reason.replace(reason).is_none();
-        self.finish_streaming_plan();
         self.finish_streaming_assistant();
         self.clear_active_turn();
         self.clear_interactive_requests();
@@ -155,7 +154,7 @@ impl ShellState {
         if was_available {
             self.push_error(message);
         } else {
-            self.push_status(message);
+            self.show_hint(message);
         }
         self.status = lifecycle.status().to_string();
     }

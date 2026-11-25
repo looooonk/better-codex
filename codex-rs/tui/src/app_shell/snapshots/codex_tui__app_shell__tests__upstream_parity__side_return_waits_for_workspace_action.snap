@@ -4,8 +4,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
 ---
 
 
-   ▎ SYSTEM  Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.
-   ▎ STATUS  Wait for the side workspace action to finish before returning to the main conversation
+   Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.
 
 
 
@@ -20,7 +19,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
 
 
 
-╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+
+╭ Wait for the side workspace action to finish before returning to the main conversation ────────────────────╮
 │> Type a message                                                                                            │
 │                                                                                                            │
 │                                                                                                            │

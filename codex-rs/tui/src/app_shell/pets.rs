@@ -207,7 +207,7 @@ impl ShellState {
         let mut state = self.pets.lock();
         if state.pending.is_some() {
             drop(state);
-            self.push_status("pet selection is still loading");
+            self.show_hint("pet selection is still loading");
             return;
         }
         state.pending = Some(tokio::spawn(async move {
@@ -217,14 +217,14 @@ impl ShellState {
             Ok(PetUpdate::Catalog { thread_id, choices })
         }));
         drop(state);
-        self.push_status("loading terminal pets");
+        self.show_hint("loading terminal pets");
     }
 
     pub(super) fn select_pet(&mut self, id: String) {
         if self.has_pending_backend_action(super::backend_actions::ActionGroup::Settings)
             || self.pets.has_work()
         {
-            self.push_status(
+            self.show_hint(
                 "wait for the current presentation settings change before choosing a pet",
             );
             return;
@@ -245,7 +245,7 @@ impl ShellState {
         state.load(id, /*persist*/ true);
         drop(state);
         self.selector = None;
-        self.push_status("loading terminal pet");
+        self.show_hint("loading terminal pet");
     }
 
     pub(super) async fn poll_pets(&mut self) -> bool {
@@ -296,11 +296,11 @@ impl ShellState {
                 }
                 drop(state);
                 if overridden {
-                    self.push_status(format!(
+                    self.show_hint(format!(
                         "Pet preference saved; a higher-priority setting keeps {id} active"
                     ));
                 } else {
-                    self.push_status(if id == crate::pets::DISABLED_PET_ID {
+                    self.show_hint(if id == crate::pets::DISABLED_PET_ID {
                         "terminal pet hidden"
                     } else {
                         "terminal pet ready"

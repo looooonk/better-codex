@@ -83,7 +83,7 @@ impl ShellState {
                 .as_ref()
                 .map(|anchor| (line.text.clone(), anchor.clone()))
         }) else {
-            self.push_status("select an opening text-only user prompt to branch from");
+            self.show_hint("select an opening text-only user prompt to branch from");
             return;
         };
         let blocker = if self.session_unavailable_reason.is_some() {
@@ -108,7 +108,7 @@ impl ShellState {
             None
         };
         if let Some(message) = blocker {
-            self.push_status(message);
+            self.show_hint(message);
             return;
         }
 
@@ -136,7 +136,7 @@ impl ShellState {
         S: AppShellBackend,
     {
         if self.rewind.is_forking() {
-            self.push_status("wait for the conversation branch to finish");
+            self.show_hint("wait for the conversation branch to finish");
             return false;
         }
         if key.code == KeyCode::Esc && key.modifiers == KeyModifiers::NONE {
@@ -210,12 +210,12 @@ impl ShellState {
             return;
         }
         if self.active_turn_id.is_some() {
-            self.push_status("finish or interrupt the active turn before branching");
+            self.show_hint("finish or interrupt the active turn before branching");
             return;
         }
         let prompt = self.composer.submission_text();
         if prompt.trim().is_empty() {
-            self.push_status("enter a prompt for the new conversation branch");
+            self.show_hint("enter a prompt for the new conversation branch");
             return;
         }
         if self.reject_oversized_composer() {
@@ -266,7 +266,7 @@ impl ShellState {
         match result {
             Ok(started) => {
                 self.complete_session_switch(started, app_server).await;
-                self.push_status(format!(
+                self.show_hint(format!(
                     "branched from {}; source session unchanged; working tree not reverted",
                     point.source_thread_id
                 ));

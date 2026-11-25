@@ -4,15 +4,15 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 ---
 
 
-   ▎ STATUS  Vim input cancelled
-
    The new shell owns the fullscreen surface.
 
 
 
 
 
-╭──────────────────────────────────────────────────────────────────────────────╮
+
+
+╭ Vim input cancelled ─────────────────────────────────────────────────────────╮
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
@@ -21,15 +21,15 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 ---
 
 
-   ▎ STATUS  Vim input cancelled
-   ▎ STATUS  Vim input was empty
-
    The new shell owns the fullscreen surface.
 
 
 
 
-╭──────────────────────────────────────────────────────────────────────────────╮
+
+
+
+╭ Vim input was empty ─────────────────────────────────────────────────────────╮
 │> Keep this composer draft.                                                   │
 │                                                                              │
 │                                                                              │
@@ -38,11 +38,11 @@ expression: "rendered_outcomes.join(\"\\n---\\n\")"
 ---
 
 
-   ▎ STATUS  Vim input cancelled
-   ▎ STATUS  Vim input was empty
-   ▎ ERROR  failed to open Vim input: editor unavailable
+   ⚠ failed to open Vim input: editor unavailable
 
    The new shell owns the fullscreen surface.
+
+
 
 
 

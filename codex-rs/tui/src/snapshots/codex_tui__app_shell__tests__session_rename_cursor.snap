@@ -10,13 +10,13 @@ expression: "render_shell(&rename, Rect::new(0, 0, 100, 28,))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. Wire transcript                     │ rename* …tsegmentsegmentsegmentsegmentsegment ▏
-           3. Render dashboard                    │ › alpha segmentsegmentsegmentsegmentsegment… …
-                                                  │
-      ▸ Edited files                              │
-                                                  │
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ rename* …tsegmentsegmentsegmentsegmentsegment ▏
+                                                  │ › alpha segmentsegmentsegmentsegmentsegment… …
    The new shell owns the fullscreen surface.     │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

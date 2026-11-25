@@ -78,20 +78,8 @@ async fn vim_is_an_exact_local_command_and_never_reaches_the_backend() {
     ));
     shell.request_vim_input();
     assert_eq!(
-        (
-            shell.take_vim_input_request(),
-            shell
-                .transcript
-                .back()
-                .map(|line| (line.kind, line.text.as_str())),
-        ),
-        (
-            None,
-            Some((
-                TranscriptKind::Status,
-                "wait for the pending session switch to finish",
-            )),
-        )
+        (shell.take_vim_input_request(), shell.input_hint.as_deref(),),
+        (None, Some("wait for the pending session switch to finish"),)
     );
 }
 
@@ -149,18 +137,12 @@ async fn ordinary_vim_exit_returns_the_edited_draft() {
     assert_eq!(
         (
             shell.composer.text(),
-            shell
-                .transcript
-                .back()
-                .map(|line| (line.kind, line.text.as_str())),
+            shell.input_hint.as_deref(),
             backend.calls()
         ),
         (
             switched_draft,
-            Some((
-                TranscriptKind::Status,
-                "session changed; Vim input returned without sending",
-            )),
+            Some("session changed; Vim input returned without sending"),
             Vec::new(),
         )
     );
@@ -372,18 +354,12 @@ async fn oversized_vim_submission_returns_to_the_composer() {
     assert_eq!(
         (
             shell.composer.text(),
-            shell
-                .transcript
-                .back()
-                .map(|line| (line.kind, line.text.as_str())),
+            shell.input_hint.as_deref(),
             backend.calls(),
         ),
         (
             expected_draft.as_str(),
-            Some((
-                TranscriptKind::Status,
-                "Vim input exceeds the 10000-byte submission limit; returned it to the composer",
-            )),
+            Some("Vim input exceeds the 10000-byte submission limit; returned it to the composer"),
             Vec::new(),
         )
     );
@@ -486,20 +462,14 @@ async fn no_send_vim_outcomes_preserve_the_existing_draft() {
     let mut rendered_outcomes = Vec::new();
 
     for (result, expected_line) in [
-        (
-            Ok(VimInputOutcome::Cancelled),
-            (TranscriptKind::Status, "Vim input cancelled"),
-        ),
+        (Ok(VimInputOutcome::Cancelled), "Vim input cancelled"),
         (
             Ok(VimInputOutcome::Submit(" \n ".to_string())),
-            (TranscriptKind::Status, "Vim input was empty"),
+            "Vim input was empty",
         ),
         (
             Err(color_eyre::eyre::eyre!("editor unavailable")),
-            (
-                TranscriptKind::Error,
-                "failed to open Vim input: editor unavailable",
-            ),
+            "failed to open Vim input: editor unavailable",
         ),
     ] {
         shell
@@ -510,9 +480,9 @@ async fn no_send_vim_outcomes_preserve_the_existing_draft() {
             (
                 shell.composer.text(),
                 shell
-                    .transcript
-                    .back()
-                    .map(|line| (line.kind, line.text.as_str())),
+                    .input_hint
+                    .as_deref()
+                    .or_else(|| shell.transcript.back().map(|l| l.text.as_str())),
                 backend.calls(),
             ),
             (existing_draft, Some(expected_line), Vec::new())

@@ -163,7 +163,6 @@ mod slash_commands;
 mod source_preview;
 mod start_logo;
 mod startup;
-mod startup_availability_nux;
 mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
@@ -379,13 +378,10 @@ enum TranscriptKind {
     System,
     User,
     Assistant,
-    Plan,
     Tool,
     Diff,
     Output,
     Separator,
-    Status,
-    Audit,
     Error,
 }
 
@@ -409,13 +405,10 @@ impl TranscriptKind {
             Self::System => "system",
             Self::User => "you",
             Self::Assistant => "codex",
-            Self::Plan => "plan",
             Self::Tool => "tool",
             Self::Diff => "edited",
             Self::Output => "output",
             Self::Separator => "",
-            Self::Status => "status",
-            Self::Audit => "audit",
             Self::Error => "error",
         }
     }
@@ -476,6 +469,7 @@ struct ShellState {
     service_tier: Option<String>,
     collaboration_mode: Option<Box<codex_protocol::config_types::CollaborationMode>>,
     personality: Option<codex_protocol::config_types::Personality>,
+    input_hint: Option<String>,
     transcript: VecDeque<TranscriptLine>,
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
@@ -544,9 +538,6 @@ struct ShellState {
     streaming_assistant: String,
     streaming_assistant_item_id: Option<String>,
     streaming_assistant_revision: u64,
-    streaming_plan: String,
-    streaming_plan_item_id: Option<String>,
-    streaming_plan_revision: u64,
     plan_explanation: Option<String>,
     plan_steps: Vec<TurnPlanStep>,
     active_goal: Option<ThreadGoal>,
@@ -649,6 +640,7 @@ impl ShellState {
             service_tier: session.service_tier,
             collaboration_mode: session.collaboration_mode,
             personality: session.personality,
+            input_hint: None,
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
@@ -716,9 +708,6 @@ impl ShellState {
             streaming_assistant: String::new(),
             streaming_assistant_item_id: None,
             streaming_assistant_revision: next_transcript_render_revision(),
-            streaming_plan: String::new(),
-            streaming_plan_item_id: None,
-            streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: None,
             plan_steps: Vec::new(),
             active_goal: None,
@@ -795,12 +784,14 @@ impl ShellState {
             if let Some(error) = turn.error {
                 self.push_error(error.message);
             }
-            if turn.status == TurnStatus::Interrupted {
-                self.push_status("turn interrupted");
-            }
             if turn.status != TurnStatus::InProgress {
                 self.finish_pending_tool_calls(&turn.status);
-                self.push_turn_separator(&turn_id, duration, /*observed_wait*/ None);
+                self.push_turn_separator(
+                    &turn_id,
+                    &turn.status,
+                    duration,
+                    /*observed_wait*/ None,
+                );
             }
         }
     }
@@ -1060,9 +1051,6 @@ impl ShellState {
     }
 
     fn effective_transcript_scroll(&self) -> usize {
-        if self.transcript_scroll == 0 {
-            return 0;
-        }
         self.transcript_effective_scroll
             .get()
             .unwrap_or(self.transcript_scroll)
@@ -1078,7 +1066,7 @@ impl ShellState {
         self.clear_text_selections();
         self.transcript.clear();
         self.transcript_render_cache.get_mut().clear();
-        self.clear_streaming_transcript();
+        self.clear_streaming_assistant();
         self.transcript_scroll = 0;
         self.clear_transcript_viewport_anchor();
         self.transcript_selection = None;
@@ -1090,7 +1078,7 @@ impl ShellState {
         }
 
         self.exit_confirmation_pending = true;
-        self.push_status("press Esc or Ctrl+C again to exit");
+        self.show_hint("press Esc or Ctrl+C again to exit");
         false
     }
 
@@ -1140,7 +1128,7 @@ impl ShellState {
             }
             LocalSlashCommand::Login => {
                 if account_change_blocked {
-                    self.push_status("finish active work before logging in");
+                    self.show_hint("finish active work before logging in");
                 } else {
                     let login_methods = if app_server.uses_remote_workspace() {
                         LoginMethodAvailability::connected_workspace()
@@ -1153,12 +1141,12 @@ impl ShellState {
             }
             LocalSlashCommand::Logout => {
                 if account_change_blocked {
-                    self.push_status("finish active work before logging out");
+                    self.show_hint("finish active work before logging out");
                     LocalSlashCommandOutcome::Continue
                 } else {
                     match app_server.logout_account().await {
                         Ok(()) => {
-                            self.push_status("logged out; run /login to sign in again");
+                            self.show_hint("logged out; run /login to sign in again");
                             LocalSlashCommandOutcome::Continue
                         }
                         Err(err) => {
@@ -1195,7 +1183,7 @@ impl ShellState {
                     .await;
             }
             GoalSlashCommand::Edit => {
-                self.push_status("use /goal <objective> to edit the current goal objective");
+                self.show_hint("use /goal <objective> to edit the current goal objective");
             }
         }
     }
@@ -1208,12 +1196,12 @@ impl ShellState {
             Ok(response) => {
                 self.record_active_goal(response.goal);
                 match &self.active_goal {
-                    Some(goal) => self.push_status(format!(
+                    Some(goal) => self.show_hint(format!(
                         "goal {}. {}",
                         goal_status_label(goal.status),
                         goal_usage_summary(goal)
                     )),
-                    None => self.push_status(format!("no goal is currently set. {GOAL_USAGE}")),
+                    None => self.show_hint(format!("no goal is currently set. {GOAL_USAGE}")),
                 }
             }
             Err(err) => self.push_error(format!("failed to read goal: {err}")),
@@ -1236,7 +1224,7 @@ impl ShellState {
             Ok(response) => {
                 let objective = response.goal.objective.clone();
                 self.record_active_goal(Some(response.goal));
-                self.push_status(format!("goal set: {objective}"));
+                self.show_hint(format!("goal set: {objective}"));
             }
             Err(err) => self.push_error(format!("failed to set goal: {err}")),
         }
@@ -1250,9 +1238,9 @@ impl ShellState {
             Ok(response) => {
                 self.record_active_goal(None);
                 if response.cleared {
-                    self.push_status("goal cleared");
+                    self.show_hint("goal cleared");
                 } else {
-                    self.push_status("no goal is currently set");
+                    self.show_hint("no goal is currently set");
                 }
             }
             Err(err) => self.push_error(format!("failed to clear goal: {err}")),
@@ -1278,7 +1266,7 @@ impl ShellState {
         {
             Ok(response) => {
                 self.record_active_goal(Some(response.goal));
-                self.push_status(format!("goal {action}"));
+                self.show_hint(format!("goal {action}"));
             }
             Err(err) => self.push_error(format!("failed to update goal: {err}")),
         }
@@ -1305,7 +1293,7 @@ impl ShellState {
             return;
         }
         if self.active_turn_id.is_some() {
-            self.push_system("wait for the current turn to finish before sending another message");
+            self.show_hint("wait for the current turn to finish before sending another message");
             return;
         }
 
@@ -1376,7 +1364,7 @@ impl ShellState {
                 .item_id(params.client_user_message_id.clone()),
         );
         self.status = "thinking".to_string();
-        self.clear_streaming_transcript();
+        self.clear_streaming_assistant();
         self.composer.remember_submission(&prompt);
         self.record_active_turn_started(response.turn.id.clone());
         self.record_safety_buffering_turn(response.turn.id, params);
@@ -1390,7 +1378,7 @@ impl ShellState {
         S: AppShellBackend,
     {
         let Some(turn_id) = self.active_turn_id.clone() else {
-            self.push_status("no active turn to interrupt");
+            self.show_hint("no active turn to interrupt");
             return Ok(());
         };
         app_server
@@ -1398,7 +1386,7 @@ impl ShellState {
             .await
             .wrap_err("failed to interrupt active turn")?;
         self.status = "interrupted".to_string();
-        self.push_decision_audit("turn", "interrupted", &turn_id);
+        self.record_decision("turn", "interrupted", &turn_id);
         Ok(())
     }
 
@@ -1534,7 +1522,7 @@ impl ShellState {
         };
         let edit_prompt = pending.edit_prompt().to_string();
         let Some(denial_index) = pending.denial_index() else {
-            self.push_error("this approval request cannot be denied for editing");
+            self.show_hint("this approval request cannot be denied for editing");
             return Ok(());
         };
         self.resolve_pending_approval(app_server, denial_index, Some(edit_prompt))
@@ -1544,7 +1532,7 @@ impl ShellState {
         let Some(pending) = self.pending_approval.as_ref() else {
             return;
         };
-        self.push_decision_audit("approval", "explained", &pending.explanation());
+        self.push_system(pending.explanation());
     }
 
     fn seed_composer_with_edit_prompt(&mut self, edit_prompt: String) {
@@ -1653,7 +1641,7 @@ impl ShellState {
         S: AppShellBackend,
     {
         if self.has_pending_backend_action(ActionGroup::UserInput) {
-            self.push_status("tool input is already being resolved");
+            self.show_hint("tool input is already being resolved");
             return Ok(());
         }
         let answer = self.composer.submission_text();
@@ -1666,7 +1654,7 @@ impl ShellState {
             Ok(UserInputAdvance::Next) => {
                 self.pending_user_input = Some(next_pending);
                 self.composer.clear();
-                self.push_decision_audit("tool input", "answered", &title);
+                self.record_decision("tool input", "answered", &title);
             }
             Ok(UserInputAdvance::Complete { request_id, result }) => {
                 let completed_request_id = request_id.clone();
@@ -1675,7 +1663,7 @@ impl ShellState {
                     .await
                     .wrap_err("failed to resolve app-server tool input request")?;
                 let removal = self.remove_interactive_request(&completed_request_id);
-                self.push_decision_audit("tool input", "submitted", &title);
+                self.record_decision("tool input", "submitted", &title);
                 if removal == InteractiveRequestRemoval::Active {
                     self.activate_next_interactive_request();
                 }
@@ -1702,21 +1690,6 @@ impl ShellState {
         }
     }
 
-    fn finish_streaming_plan(&mut self) {
-        if self.streaming_plan.trim().is_empty() {
-            self.clear_streaming_plan();
-            return;
-        }
-        let plan = std::mem::take(&mut self.streaming_plan);
-        let item_id = self.streaming_plan_item_id.take();
-        self.streaming_plan_revision = next_transcript_render_revision();
-        if let Some(item_id) = item_id {
-            self.push_plan_for_item(item_id, plan);
-        } else {
-            self.push_plan(plan);
-        }
-    }
-
     fn push_streaming_assistant_delta(&mut self, item_id: &str, delta: &str) -> bool {
         if delta.is_empty() {
             return false;
@@ -1740,29 +1713,6 @@ impl ShellState {
         true
     }
 
-    fn push_streaming_plan_delta(&mut self, item_id: &str, delta: &str) -> bool {
-        if delta.is_empty() {
-            return false;
-        }
-        if self.transcript.iter().rev().any(|item| {
-            item.kind == TranscriptKind::Plan && item.item_id.as_deref() == Some(item_id)
-        }) {
-            return false;
-        }
-        if self
-            .streaming_plan_item_id
-            .as_deref()
-            .is_some_and(|streaming_item_id| streaming_item_id != item_id)
-        {
-            self.clear_streaming_plan();
-        }
-        self.streaming_plan_item_id
-            .get_or_insert_with(|| item_id.to_string());
-        self.streaming_plan.push_str(delta);
-        self.streaming_plan_revision = next_transcript_render_revision();
-        true
-    }
-
     fn clear_streaming_assistant(&mut self) {
         if self.streaming_assistant.is_empty() && self.streaming_assistant_item_id.is_none() {
             return;
@@ -1770,20 +1720,6 @@ impl ShellState {
         self.streaming_assistant.clear();
         self.streaming_assistant_item_id = None;
         self.streaming_assistant_revision = next_transcript_render_revision();
-    }
-
-    fn clear_streaming_plan(&mut self) {
-        if self.streaming_plan.is_empty() && self.streaming_plan_item_id.is_none() {
-            return;
-        }
-        self.streaming_plan.clear();
-        self.streaming_plan_item_id = None;
-        self.streaming_plan_revision = next_transcript_render_revision();
-    }
-
-    fn clear_streaming_transcript(&mut self) {
-        self.clear_streaming_assistant();
-        self.clear_streaming_plan();
     }
 
     fn ingest_completed_item(&mut self, item: ThreadItem, origin: CompletedItemOrigin) {
@@ -1838,18 +1774,6 @@ impl ShellState {
                     }
                 }
             }
-            ThreadItemPayload::Reasoning { .. } | ThreadItemPayload::HookPrompt { .. }
-                if origin != CompletedItemOrigin::Live => {}
-            ThreadItemPayload::HookPrompt { fragments, .. } => {
-                let text = fragments
-                    .into_iter()
-                    .map(|fragment| fragment.text)
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if !text.is_empty() {
-                    self.push_status(format!("hook prompt: {text}"));
-                }
-            }
             ThreadItemPayload::AgentMessage {
                 id,
                 text,
@@ -1883,29 +1807,6 @@ impl ShellState {
                 );
                 if let Some(text) = tool_payload::function_output(&output) {
                     self.push_output_with_status_for_item(id, text, ToolBlockStatus::Success);
-                }
-            }
-            ThreadItemPayload::Plan { id, text, .. } => {
-                if self.streaming_plan_item_id.as_deref() == Some(id.as_str())
-                    || (self.streaming_plan_item_id.is_none() && self.streaming_plan == text)
-                {
-                    self.clear_streaming_plan();
-                }
-                if !text.is_empty() {
-                    self.push_plan_for_item(id, text);
-                }
-            }
-            ThreadItemPayload::Reasoning {
-                summary, content, ..
-            } => {
-                let text = if summary.is_empty() {
-                    content.join("\n\n")
-                } else {
-                    crate::reasoning_summary::split_reasoning_summary_parts(&summary).1
-                };
-                let text = text.trim();
-                if !text.is_empty() {
-                    self.push_status(format!("reasoning: {text}"));
                 }
             }
             ThreadItemPayload::CommandExecution {
@@ -2102,15 +2003,12 @@ impl ShellState {
                     self.push_output_with_status_for_item(item.id, output, tool_status);
                 }
             }
-            ThreadItemPayload::EnteredReviewMode { review, .. } => {
-                self.push_status(format!("entered review mode: {review}"));
-            }
-            ThreadItemPayload::ExitedReviewMode { review, .. } => {
-                self.push_status(format!("exited review mode: {review}"));
-            }
-            ThreadItemPayload::ContextCompaction { .. } => {
-                self.push_status("context compacted");
-            }
+            ThreadItemPayload::Plan { .. }
+            | ThreadItemPayload::Reasoning { .. }
+            | ThreadItemPayload::HookPrompt { .. }
+            | ThreadItemPayload::EnteredReviewMode { .. }
+            | ThreadItemPayload::ExitedReviewMode { .. }
+            | ThreadItemPayload::ContextCompaction { .. } => {}
         }
     }
 
@@ -2158,14 +2056,6 @@ impl ShellState {
 
     fn push_assistant_for_item(&mut self, item_id: String, text: impl Into<String>) {
         self.upsert_line(TranscriptLine::new(TranscriptKind::Assistant, text).item_id(item_id));
-    }
-
-    fn push_plan(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Plan, text));
-    }
-
-    fn push_plan_for_item(&mut self, item_id: String, text: impl Into<String>) {
-        self.upsert_line(TranscriptLine::new(TranscriptKind::Plan, text).item_id(item_id));
     }
 
     fn push_tool_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
@@ -2318,18 +2208,26 @@ impl ShellState {
         }
     }
 
-    fn push_status(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Status, text));
+    fn show_hint(&mut self, text: impl Into<String>) {
+        self.input_hint = Some(text.into());
     }
 
-    fn push_decision_audit(&mut self, category: &str, decision: &str, title: &str) {
-        self.push_line(TranscriptLine::new(
-            TranscriptKind::Audit,
-            format!("{category} {decision}: {title}"),
-        ));
+    fn record_decision(&mut self, category: &str, decision: &str, title: &str) {
+        tracing::debug!(category, decision, title, "request resolved");
     }
 
     fn push_error(&mut self, text: impl Into<String>) {
+        self.input_hint = None;
+        let mut text = text.into();
+        if text.trim_start().starts_with('{')
+            && let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&text)
+            && let Some(message) = envelope
+                .pointer("/error/message")
+                .and_then(|value| value.as_str())
+            && !message.trim().is_empty()
+        {
+            text = message.to_owned();
+        }
         self.push_line(TranscriptLine::new(TranscriptKind::Error, text));
     }
 
@@ -2370,11 +2268,8 @@ impl ShellState {
                 TranscriptKind::System
                 | TranscriptKind::User
                 | TranscriptKind::Assistant
-                | TranscriptKind::Plan
                 | TranscriptKind::Diff
-                | TranscriptKind::Separator
-                | TranscriptKind::Status
-                | TranscriptKind::Audit => None,
+                | TranscriptKind::Separator => None,
             };
             if let Some(insert_at) = insert_at {
                 self.clear_transcript_text_selection();
@@ -2452,6 +2347,7 @@ impl ShellState {
             service_tier: None,
             collaboration_mode: None,
             personality: None,
+            input_hint: None,
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
@@ -2531,9 +2427,6 @@ impl ShellState {
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_assistant_item_id: None,
             streaming_assistant_revision: next_transcript_render_revision(),
-            streaming_plan: String::new(),
-            streaming_plan_item_id: None,
-            streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: Some("Build the standalone shell in slices.".to_string()),
             plan_steps: vec![
                 TurnPlanStep {
@@ -2600,7 +2493,6 @@ impl ShellState {
         };
         shell.push_user("Create a divergent standalone TUI.");
         shell.push_assistant("Started a fullscreen app shell backed by app-server turns.");
-        shell.push_plan("1. Build shell\n2. Wire transcript\n3. Render dashboard");
         shell.push_tool_with_status_for_item(
             "tool-1",
             "exec just test -p codex-tui",
@@ -2704,12 +2596,20 @@ pub mod bench_support {
             shell.push_user(format!("Inspect workspace {turn}"));
             for call in 0..calls_per_turn {
                 let id = format!("{turn}-{call}");
-                shell.push_tool_with_status_for_item(&id, "exec pwd", ToolBlockStatus::Success, Some(tool_groups::ToolAction::Command));
+                shell.push_tool_with_status_for_item(
+                    &id,
+                    "exec pwd",
+                    ToolBlockStatus::Success,
+                    Some(tool_groups::ToolAction::Command),
+                );
                 shell.push_output_with_status_for_item(&id, "/workspace", ToolBlockStatus::Success);
             }
             shell.push_assistant("Done.");
         }
-        RenderFixture { shell, next_tool_output_line: 0 }
+        RenderFixture {
+            shell,
+            next_tool_output_line: 0,
+        }
     }
 
     pub fn long_streaming_turn_fixture() -> RenderFixture {
@@ -2783,6 +2683,7 @@ pub mod bench_support {
             service_tier: None,
             collaboration_mode: None,
             personality: None,
+            input_hint: None,
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
@@ -2862,9 +2763,6 @@ pub mod bench_support {
             streaming_assistant: String::new(),
             streaming_assistant_item_id: None,
             streaming_assistant_revision: next_transcript_render_revision(),
-            streaming_plan: String::new(),
-            streaming_plan_item_id: None,
-            streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: Some("Keep render performance bounded.".to_string()),
             plan_steps: vec![
                 TurnPlanStep {

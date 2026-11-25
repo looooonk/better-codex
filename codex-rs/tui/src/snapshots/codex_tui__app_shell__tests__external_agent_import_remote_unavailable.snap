@@ -10,16 +10,16 @@ expression: "render_shell(&remote_shell, Rect::new(0, 0, 100, 28,))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. Wire transcript                     │ loading sessions
-           3. Render dashboard                    │
-                                                  │
-      ▸ Edited files                              │
-   ▎ ERROR  Import from Claude Code is            │
-            unavailable in remote sessions. Start │
-            Better Codex locally and run /import. │
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ loading sessions
+   ⚠ Import from Claude Code is unavailable in    │
+     remote sessions. Start Better Codex locally  │
+     and run /import.                             │
                                                   │
    The new shell owns the fullscreen surface.     │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

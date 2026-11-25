@@ -4,21 +4,21 @@ expression: text
 ---
 
 
-                                                                                                  │
-                                                                                                  ┃
-   Started a fullscreen app shell backed by app-server turns.                                     ┃
-   ▎ PLAN  1. Build shell                                                                         ┃
-           2. Wire transcript                                                                     ┃
-           3. Render dashboard                                                                    ┃
-                                                                                                  ┃
-      ▸ Edited files                                                                              ┃
-   ▎ STATUS  Project configuration ignored                                                        ┃
-   ▎ SYSTEM  Project configuration ignored                                                        ┃
-             /workspace/.codex/config.toml                                                        ┃
-             Trust this workspace to load its settings.                                           ┃
-   The new shell owns the fullscreen surface.                                                     ┃
 
-╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+   > Create a divergent standalone TUI.
+
+
+   Started a fullscreen app shell backed by app-server turns.
+
+      ▸ Edited files
+   Project configuration ignored
+   /workspace/.codex/config.toml
+   Trust this workspace to load its settings.
+   The new shell owns the fullscreen surface.
+
+
+
+╭ Project configuration ignored ───────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │

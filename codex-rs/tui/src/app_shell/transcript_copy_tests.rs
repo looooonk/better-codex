@@ -1,6 +1,5 @@
 use super::*;
 use crate::app_shell::ToolBlockStatus;
-use crate::app_shell::TranscriptLine;
 use crossterm::event::KeyEventKind;
 use pretty_assertions::assert_eq;
 
@@ -24,13 +23,10 @@ fn copies_requested_response_as_markdown() {
     );
 
     assert_eq!(
-        (copied, shell.transcript.back()),
+        (copied, shell.input_hint.as_deref()),
         (
             Some("## Middle\n\n```rust\nfn main() {}\n```".to_string()),
-            Some(&TranscriptLine::new(
-                TranscriptKind::Status,
-                "copied 2nd latest Codex response"
-            ))
+            Some("copied 2nd latest Codex response")
         )
     );
 }
@@ -47,11 +43,8 @@ fn reports_when_requested_response_is_unavailable() {
     );
 
     assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Error,
-            "No 3rd latest Codex response to copy"
-        ))
+        shell.input_hint.as_deref(),
+        Some("No 3rd latest Codex response to copy")
     );
 }
 
@@ -66,11 +59,8 @@ fn reports_when_latest_response_is_unavailable() {
     );
 
     assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Error,
-            "No Codex response to copy"
-        ))
+        shell.input_hint.as_deref(),
+        Some("No Codex response to copy")
     );
 }
 
@@ -86,11 +76,8 @@ fn reports_clipboard_failure_for_requested_response() {
     });
 
     assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Error,
-            "Copy failed: clipboard offline"
-        ))
+        shell.input_hint.as_deref(),
+        Some("Copy failed: clipboard offline")
     );
 }
 
@@ -102,13 +89,7 @@ fn invalid_copy_request_reports_usage() {
         panic!("clipboard should not be called")
     });
 
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Error,
-            "Usage: /copy [1-9]"
-        ))
-    );
+    assert_eq!(shell.input_hint.as_deref(), Some("Usage: /copy [1-9]"));
 }
 
 #[test]
@@ -147,13 +128,10 @@ fn copies_selected_transcript_item() {
     });
 
     assert_eq!(
-        (copied, shell.transcript.back()),
+        (copied, shell.input_hint.as_deref()),
         (
             Some("Create a divergent standalone TUI.".to_string()),
-            Some(&TranscriptLine::new(
-                TranscriptKind::Status,
-                "copied you transcript item"
-            ))
+            Some("copied you transcript item")
         )
     );
 }
@@ -169,13 +147,10 @@ fn copies_latest_assistant_without_selection() {
     });
 
     assert_eq!(
-        (copied, shell.transcript.back()),
+        (copied, shell.input_hint.as_deref()),
         (
             Some("Started a fullscreen app shell backed by app-server turns.".to_string()),
-            Some(&TranscriptLine::new(
-                TranscriptKind::Status,
-                "copied latest Codex response"
-            ))
+            Some("copied latest Codex response")
         )
     );
 }

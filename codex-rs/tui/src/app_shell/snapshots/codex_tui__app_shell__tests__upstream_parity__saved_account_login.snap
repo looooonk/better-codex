@@ -10,13 +10,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. ╭──────────────────────────────────────────────────────────────────────╮
-           3. │◆ ACCOUNT LOGIN                                                       │
-              │Finish signing in with ChatGPT in your browser.                       │
-      ▸ Edited│                                                                      │
+                                                  │ + New session  Ctrl+N
+      ▸ Edited╭──────────────────────────────────────────────────────────────────────╮
+              │◆ ACCOUNT LOGIN                                                       │
+   The new she│Finish signing in with ChatGPT in your browser.                       │
+              │                                                                      │
               │https://auth.example.test/workspace                                   │
-   The new she│                                                                      │
+              │                                                                      │
               │Enter open link   Esc cancel                                          │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

@@ -126,8 +126,7 @@ impl ShellState {
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 if command == WorkspaceCommand::Theme {
-                    self.settings
-                        .focus_action(SettingsAction::AppTheme);
+                    self.settings.focus_action(SettingsAction::AppTheme);
                 }
                 self.settings.reveal_selection.set(true);
                 return Ok(());
@@ -160,7 +159,7 @@ impl ShellState {
             }
             WorkspaceCommand::Diff => {
                 if !self.open_session_diff_view() {
-                    self.push_status("no session changes to review");
+                    self.show_hint("no session changes to review");
                 }
                 return Ok(());
             }
@@ -225,7 +224,7 @@ impl ShellState {
         if matches!(request, WorkspaceRequest::Review(_))
             && (self.active_turn_id.is_some() || self.has_pending_backend_actions())
         {
-            self.push_status("finish active work before starting a review");
+            self.show_hint("finish active work before starting a review");
             return Ok(());
         }
         let thread_id = self.thread_id;
@@ -417,7 +416,6 @@ impl ShellState {
                 match models {
                     Ok(models) => {
                         self.available_models = models;
-                        self.push_system("Available models refreshed; usage will refresh shortly.");
                     }
                     Err(error) => self.push_error(format!(
                         "Model refresh failed: {error}. Use /account refresh to retry."
@@ -435,7 +433,7 @@ impl ShellState {
             Ok(WorkspaceResponse::Preset(input)) => {
                 if self.composer.is_empty() {
                     self.composer.set_text(input);
-                    self.push_status("preset loaded; press Enter to send");
+                    self.show_hint("preset loaded; press Enter to send");
                 } else {
                     self.push_system(format!("Preset ready; your draft was kept:\n{input}"));
                 }
@@ -452,25 +450,19 @@ impl ShellState {
                 if !enabled {
                     self.recap.cancel_automatic();
                 }
-                let status = if enabled { "on" } else { "off" };
-                self.push_system(format!(
-                    "Automatic recaps {status}. Manual /recap remains available."
-                ));
             }
             Ok(WorkspaceResponse::Daybreak {
                 enabled,
                 default_error,
             }) => {
                 self.daybreak_enabled = enabled;
-                let status = if enabled { "on" } else { "off" };
-                self.push_system(format!("Daybreak {status}. Applies to new turns."));
                 if let Some(error) = default_error {
                     self.push_error(format!("Daybreak was updated for this conversation, but the default could not be saved: {error}"));
                 }
             }
             Ok(WorkspaceResponse::Notice(message)) => self.push_system(message),
             Ok(WorkspaceResponse::Mode(mode)) => {
-                self.push_status(format!("{} mode enabled", mode.mode.display_name()));
+                self.show_hint(format!("{} mode enabled", mode.mode.display_name()));
             }
             Err(error) => self.report_action_error("workspace action failed", error),
         }

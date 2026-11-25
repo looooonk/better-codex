@@ -260,7 +260,7 @@ impl ShellState {
                 || self.has_pending_backend_action(ActionGroup::SessionSwitch)
                 || self.has_pending_backend_action(ActionGroup::ConversationBranch))
         {
-            self.push_status(
+            self.show_hint(
                 "wait for settings or the session transition before running workspace commands",
             );
             return false;
@@ -269,7 +269,7 @@ impl ShellState {
             self.status = description.to_string();
             true
         } else {
-            self.push_status(format!("{description} is already in progress"));
+            self.show_hint(format!("{description} is already in progress"));
             false
         }
     }
@@ -465,7 +465,7 @@ impl ShellState {
                 }
             }
             BackendActionResult::Compaction { result } => match result {
-                Ok(()) => self.push_status("context compaction started"),
+                Ok(()) => self.show_hint("context compaction started"),
                 Err(err) => self.report_action_error("failed to start context compaction", err),
             },
             BackendActionResult::ConversationFork {
@@ -484,7 +484,7 @@ impl ShellState {
                 Ok(()) => {
                     let removal = self.remove_interactive_request(&request_id);
                     if removal == super::InteractiveRequestRemoval::Active {
-                        self.push_decision_audit("tool input", "auto-resolved", &title);
+                        self.record_decision("tool input", "auto-resolved", &title);
                         self.activate_next_interactive_request();
                     }
                 }

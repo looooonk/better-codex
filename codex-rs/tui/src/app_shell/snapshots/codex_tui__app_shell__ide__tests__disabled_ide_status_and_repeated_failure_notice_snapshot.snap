@@ -9,18 +9,18 @@ expression: rendered
 
 
    Started a fullscreen app shell backed by app-server turns.
-   ▎ PLAN  1. Build shell
-           2. Wire transcript
-           3. Render dashboard
 
       ▸ Edited files
-   ▎ SYSTEM  IDE context is off.
-   ▎ SYSTEM  IDE context was skipped for this message. Open this project in VS Code or Cursor with the Codex
-             extension active.
+   IDE context was skipped for this message. Open this project in VS Code or Cursor with the Codex extension
+   active.
    The new shell owns the fullscreen surface.
 
 
-╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+
+
+
+
+╭ IDE context is off. ───────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                                      │
 │                                                                                                            │
 │                                                                                                            │

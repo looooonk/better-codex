@@ -10,13 +10,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                      │   2 ○ global.open_transcript                                     │
    Started a fullscre│       unbound - select to change                                 │
    turns.            │   3 ○ global.find_transcript                                     │
-   ▎ PLAN  1. Build s│       unbound - select to change                                 │
-           2. Wire tr│   4 ○ global.focus_activity                                      │
-           3. Render │       unbound - select to change                                 │
-                     │   5 ○ global.open_external_editor                                │
-      ▸ Edited files │       unbound - select to change                                 │
+                     │       unbound - select to change                                 │
+      ▸ Edited files │   4 ○ global.focus_activity                                      │
+                     │       unbound - select to change                                 │
+   The new shell owns│   5 ○ global.open_external_editor                                │
+                     │       unbound - select to change                                 │
                      │   6 ○ global.copy                                                │
-   The new shell owns│       ⌃o - select to change                                      │
+                     │       ⌃o - select to change                                      │
                      │   7 ○ global.clear_terminal                                      │
                      │       unbound - select to change                                 │
                      │   8 ○ global.toggle_fast_mode                                    │

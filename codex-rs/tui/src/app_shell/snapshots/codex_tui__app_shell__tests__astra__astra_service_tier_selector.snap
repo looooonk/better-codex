@@ -10,13 +10,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. Wire transcript                     │ loading sessions
-           3. Render dashboard                    │
-                                                  │
-      ▸ Edited files                              │
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ loading sessions
                                                   │
    The new shell owns the fullscreen surface.     │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

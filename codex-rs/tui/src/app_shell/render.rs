@@ -135,7 +135,13 @@ impl ShellView<'_> {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
         }
         if let Some((panel, title, lines)) = self.management_menu(area) {
-            super::modal_view::render_settings_menu(panel, title, lines, self.shell.pointer_position, buf);
+            super::modal_view::render_settings_menu(
+                panel,
+                title,
+                lines,
+                self.shell.pointer_position,
+                buf,
+            );
         }
         if let Some(lines) = self.shell.safety_buffering_modal_lines() {
             render_modal(area, "Safety review", lines, buf);
@@ -255,7 +261,9 @@ impl ShellView<'_> {
     }
 
     fn settings_menu_area(&self, screen: Rect, width: u16, height: u16) -> Rect {
-        let anchor = self.layout(screen).and_then(|layout| layout.dashboard)
+        let anchor = self
+            .layout(screen)
+            .and_then(|layout| layout.dashboard)
             .and_then(|placement| dashboard_view::selected_setting_area(self.shell, placement))
             .unwrap_or_else(|| Rect::new(screen.x, screen.y, screen.width, 1));
         let width = width.min(screen.width);
@@ -270,12 +278,21 @@ impl ShellView<'_> {
         }
     }
 
-    pub(super) fn management_menu(&self, screen: Rect) -> Option<(Rect, &'static str, Vec<Line<'static>>)> {
+    pub(super) fn management_menu(
+        &self,
+        screen: Rect,
+    ) -> Option<(Rect, &'static str, Vec<Line<'static>>)> {
         let width = 54.min(screen.width);
         let (title, lines) = if let Some(mcp) = &self.shell.pending_mcp_management {
-            ("MCP servers", mcp.lines_for_width(usize::from(width.saturating_sub(2))))
+            (
+                "MCP servers",
+                mcp.lines_for_width(usize::from(width.saturating_sub(2))),
+            )
         } else {
-            ("Plugins", self.shell.pending_plugin_management.as_ref()?.lines())
+            (
+                "Plugins",
+                self.shell.pending_plugin_management.as_ref()?.lines(),
+            )
         };
         let height = super::modal_view::settings_menu_height(&lines, width);
         Some((self.settings_menu_area(screen, width, height), title, lines))
@@ -476,6 +493,9 @@ impl ShellView<'_> {
         }
         if self.shell.composer.has_images() {
             hints.push(self.shell.composer.image_summary());
+        }
+        if let Some(hint) = &self.shell.input_hint {
+            hints.insert(0, hint.clone());
         }
         if !hints.is_empty() {
             Paragraph::new(format!(" {} ", hints.join("  ")))

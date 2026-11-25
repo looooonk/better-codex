@@ -36,7 +36,7 @@ fn active_or_queued_work_prevents_daemon_updates() {
         shell.run_daemon_command("update latest");
         assert_eq!(shell.pending_update_action, None);
         assert_eq!(
-            shell.transcript.back().map(|line| line.text.as_str()),
+            shell.input_hint.as_deref(),
             Some("finish active work before updating the background server"),
         );
     }
@@ -49,14 +49,14 @@ fn unavailable_daemon_and_invalid_commands_do_not_schedule_updates() {
     shell.run_daemon_command("update latest");
     assert_eq!(shell.pending_update_action, None);
     assert_eq!(
-        shell.transcript.back().map(|line| line.text.as_str()),
+        shell.input_hint.as_deref(),
         Some("daemon updates require a connection to the local background server"),
     );
     shell.resume_cwd_runtime.daemon_update_available = true;
     shell.run_daemon_command("update unexpected");
     assert_eq!(shell.pending_update_action, None);
     assert_eq!(
-        shell.transcript.back().map(|line| line.text.as_str()),
+        shell.input_hint.as_deref(),
         Some("usage: /daemon [status|update latest|update from-cli]"),
     );
 }

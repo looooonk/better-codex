@@ -246,14 +246,7 @@ async fn fast_shortcut_uses_model_capabilities_and_restores_default_tier() {
     )];
     shell.handle_key(key, &config, &mut backend).await.unwrap();
     assert!(backend.calls().is_empty());
-    assert!(
-        shell
-            .transcript
-            .back()
-            .unwrap()
-            .text
-            .contains("unavailable")
-    );
+    assert!(shell.input_hint.as_deref().unwrap().contains("unavailable"));
     shell.available_models = vec![model_preset_fixture(
         &shell.model,
         true,
@@ -337,10 +330,9 @@ fn find_caps_query_and_results_and_rejects_a_stale_match() {
     assert_eq!(shell.transcript_selection, None);
     assert!(
         shell
-            .transcript
-            .back()
+            .input_hint
+            .as_deref()
             .unwrap()
-            .text
             .contains("changed or left")
     );
 }

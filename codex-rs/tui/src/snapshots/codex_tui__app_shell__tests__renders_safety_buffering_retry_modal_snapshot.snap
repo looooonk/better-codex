@@ -10,17 +10,17 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
               ╭──────────────────────────────────────────────────────────────────────╮
    Started a f│◆ SAFETY REVIEW                                                       │
    server turn│Our systems are thinking a bit more about this request before         │
-   ▎ PLAN  1. │responding.                                                           │
-           2. │                                                                      │
-           3. │Hang tight or retry with a faster model for a quicker response, though│
-              │it may be less capable of handling complex requests.                  │
+              │responding.                                                           │
       ▸ Edited│                                                                      │
+              │Hang tight or retry with a faster model for a quicker response, though│
+              │it may be less capable of handling complex requests.                  │
+   > Explain t│                                                                      │
               │> Retry with a faster model                                           │
               │  Dismiss and keep waiting                                            │
-   > Explain t│  Learn more                                                          │
+        Waitin│  Learn more                                                          │
               │                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
-        Waitin│close when the response is ready.                                     │
+              │close when the response is ready.                                     │
               │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

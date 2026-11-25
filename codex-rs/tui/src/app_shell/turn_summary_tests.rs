@@ -106,15 +106,24 @@ fn partial_history_and_zero_duration_omit_unknown_rate() {
     let mut shell = ShellState::snapshot_fixture();
     shell.push_turn_separator(
         "partial",
+        &codex_app_server_protocol::TurnStatus::Completed,
         Some(Duration::from_secs(2)),
         /*observed_wait*/ None,
     );
     assert_eq!(shell.transcript.back().unwrap().text, "Took 2.00s");
     shell.turn_outputs.insert("zero".into(), 100);
-    shell.push_turn_separator("zero", Some(Duration::ZERO), /*observed_wait*/ None);
+    shell.push_turn_separator(
+        "zero",
+        &codex_app_server_protocol::TurnStatus::Completed,
+        Some(Duration::ZERO),
+        /*observed_wait*/ None,
+    );
     assert_eq!(shell.transcript.back().unwrap().text, "Took 0ms");
     shell.push_turn_separator(
-        "unknown", /*duration*/ None, /*observed_wait*/ None,
+        "unknown",
+        &codex_app_server_protocol::TurnStatus::Completed,
+        /*duration*/ None,
+        /*observed_wait*/ None,
     );
     assert_eq!(shell.transcript.back().unwrap().text, "");
 }
@@ -128,6 +137,7 @@ fn ephemeral_turn_has_a_live_rate_without_leaving_timing_files() {
     shell.turn_outputs.insert("turn".into(), 400);
     shell.push_turn_separator(
         "turn",
+        &codex_app_server_protocol::TurnStatus::Completed,
         Some(Duration::from_secs(20)),
         Some(Duration::from_secs(12)),
     );
@@ -145,15 +155,30 @@ fn mismatched_terminal_usage_and_zero_active_time_omit_the_rate() {
     shell.codex_home = home.path().to_owned();
     let duration = Some(Duration::from_secs(3));
     shell.turn_outputs.insert("turn".into(), 60);
-    shell.push_turn_separator("turn", duration, Some(Duration::from_secs(1)));
+    shell.push_turn_separator(
+        "turn",
+        &codex_app_server_protocol::TurnStatus::Completed,
+        duration,
+        Some(Duration::from_secs(1)),
+    );
     assert_eq!(
         shell.transcript.back().unwrap().text,
         "Took 3.00s · 30.0 tok/s"
     );
     shell.turn_outputs.insert("turn".into(), 70);
-    shell.push_turn_separator("turn", duration, /*observed_wait*/ None);
+    shell.push_turn_separator(
+        "turn",
+        &codex_app_server_protocol::TurnStatus::Completed,
+        duration,
+        /*observed_wait*/ None,
+    );
     assert_eq!(shell.transcript.back().unwrap().text, "Took 3.00s");
     shell.turn_outputs.insert("turn".into(), 70);
-    shell.push_turn_separator("turn", duration, duration);
+    shell.push_turn_separator(
+        "turn",
+        &codex_app_server_protocol::TurnStatus::Completed,
+        duration,
+        duration,
+    );
     assert_eq!(shell.transcript.back().unwrap().text, "Took 3.00s");
 }

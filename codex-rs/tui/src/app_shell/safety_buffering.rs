@@ -370,11 +370,11 @@ impl ShellState {
             return;
         }
         if self.composer.queued_edit_position().is_some() {
-            self.push_status("save the queued message edit before retrying");
+            self.show_hint("save the queued message edit before retrying");
             return;
         }
         if self.has_pending_queue_mutation() {
-            self.push_status("wait for queued message changes to finish before retrying");
+            self.show_hint("wait for queued message changes to finish before retrying");
             return;
         }
         if let Err(err) = app_server
@@ -503,7 +503,7 @@ impl ShellState {
         self.clear_interactive_requests();
         self.status = "blocked".to_string();
         self.push_line(TranscriptLine::new(
-            TranscriptKind::Status,
+            TranscriptKind::Error,
             SAFETY_ACCESS_NOTICE,
         ));
         true

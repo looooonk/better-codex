@@ -299,7 +299,7 @@ impl ShellState {
             AccountAuthMode::Success => {
                 if matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
                     self.pending_account_auth = None;
-                    self.push_status("signed in successfully");
+                    self.show_hint("signed in successfully");
                 }
             }
         }

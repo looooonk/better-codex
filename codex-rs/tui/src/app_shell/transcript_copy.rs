@@ -102,7 +102,7 @@ impl ShellState {
     ) {
         match request {
             CopyResponseRequest::Response(ordinal) => self.copy_response_with(ordinal, copy_fn),
-            CopyResponseRequest::Invalid => self.push_error("Usage: /copy [1-9]"),
+            CopyResponseRequest::Invalid => self.show_hint("Usage: /copy [1-9]"),
         }
     }
 
@@ -113,9 +113,9 @@ impl ShellState {
     ) {
         let Some(text) = self.response_copy_text(ordinal).map(str::to_owned) else {
             if ordinal == ResponseOrdinal::LATEST {
-                self.push_error("No Codex response to copy");
+                self.show_hint("No Codex response to copy");
             } else {
-                self.push_error(format!("No {} Codex response to copy", ordinal.label()));
+                self.show_hint(format!("No {} Codex response to copy", ordinal.label()));
             }
             return;
         };
@@ -179,9 +179,9 @@ impl ShellState {
         match copy_fn(text) {
             Ok(lease) => {
                 self.clipboard_lease = lease;
-                self.push_status(success_message);
+                self.show_hint(success_message);
             }
-            Err(error) => self.push_error(format!("Copy failed: {error}")),
+            Err(error) => self.show_hint(format!("Copy failed: {error}")),
         }
     }
 }

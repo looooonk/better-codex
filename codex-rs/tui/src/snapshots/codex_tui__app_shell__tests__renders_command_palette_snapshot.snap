@@ -10,13 +10,13 @@ expression: "render_shell(&shell, area)"
                                                   │ No projects
    Started a f╭──────────────────────────────────────────────────────────────────────╮
    server turn│◆ ACTIONS  Ctrl+P                                                     │
-   ▎ PLAN  1. │                                                                      │
-           2. │▌ New session  Start an empty session in the c...                     │
-           3. │  Copy transcript item                                                │
-              │  Clear visible transcript                                            │
-      ▸ Edited│  Select latest transcript item                                       │
+              │                                                                      │
+      ▸ Edited│▌ New session  Start an empty session in the c...                     │
+              │  Copy transcript item                                                │
+   The new she│  Clear visible transcript                                            │
+              │  Select latest transcript item                                       │
               │  Jump transcript to top                                              │
-   The new she│  Jump transcript to bottom                                           │
+              │  Jump transcript to bottom                                           │
               │  Interrupt active turn                                               │
               │  Switch model                                                        │
               │  Change permissions                                                  │

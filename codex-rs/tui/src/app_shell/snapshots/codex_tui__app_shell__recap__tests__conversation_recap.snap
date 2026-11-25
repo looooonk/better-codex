@@ -4,12 +4,12 @@ expression: screen
 ---
 
 
-   ▎ SYSTEM  Recap
+   Recap
 
-             The updated interface supports the current model catalog and keeps existing
-             conversations available. Validation is still running.
+   The updated interface supports the current model catalog and keeps existing conversations
+   available. Validation is still running.
 
-             Next: Review the remaining test failures before publishing.
+   Next: Review the remaining test failures before publishing.
    The new shell owns the fullscreen surface.
 
 

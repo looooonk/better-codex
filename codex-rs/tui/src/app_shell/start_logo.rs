@@ -34,7 +34,6 @@ impl ShellState {
     pub(super) fn shows_start_logo(&self) -> bool {
         self.transcript.is_empty()
             && self.streaming_assistant.is_empty()
-            && self.streaming_plan.is_empty()
             && self.active_turn_id.is_none()
     }
 

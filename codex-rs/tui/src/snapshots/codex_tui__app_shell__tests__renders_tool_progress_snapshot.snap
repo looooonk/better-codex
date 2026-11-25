@@ -4,25 +4,25 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   > Create a divergent standalone TUI.         ┃ │━━━━━━━━━━━━━───────────────────────────────────
-                                                ┃ │
-                                                ┃ │ Projects
-   Started a fullscreen app shell backed by     ┃ │ No projects
-   app-server turns.                            ┃ │
-   ▎ PLAN  1. Build shell                       ┃ │ Recents
-           2. Wire transcript                   ┃ │ + New session  Ctrl+N
-           3. Render dashboard                  ┃ │ loading sessions
-                                                ┃ │
-      ⌄ Calling search/index...                 ┃ │
-                                                ┃ │
-        ▌ tool exec just test -p codex-tui      ┃ │
-                                                ┃ │
-        ▌ edited 3 files +128 -24               ┃ │
-                                                ┃ │
-        ▌ tool mcp progress: indexed 42 files   ┃ │
-        ▌      preparing search results         ┃ │
-                                                ┃ │
-   The new shell owns the fullscreen surface.   ┃ │
+                                                  │━━━━━━━━━━━━━───────────────────────────────────
+   > Create a divergent standalone TUI.           │
+                                                  │ Projects
+                                                  │ No projects
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents
+                                                  │ + New session  Ctrl+N
+      ⌄ Calling search/index...                   │ loading sessions
+                                                  │
+        ▌ tool exec just test -p codex-tui        │
+                                                  │
+        ▌ edited 3 files +128 -24                 │
+                                                  │
+        ▌ tool mcp progress: indexed 42 files     │
+        ▌      preparing search results           │
+                                                  │
+   The new shell owns the fullscreen surface.     │
+                                                  │
+                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

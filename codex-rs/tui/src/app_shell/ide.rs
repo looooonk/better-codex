@@ -42,7 +42,7 @@ impl ShellState {
             "off" => self.ide.enabled = false,
             "status" => {}
             _ => {
-                self.push_error("usage: /ide [on|off|status]");
+                self.show_hint("usage: /ide [on|off|status]");
                 return;
             }
         }
@@ -52,7 +52,7 @@ impl ShellState {
             if self.status == "checking IDE connection" {
                 self.status = "ready".to_string();
             }
-            self.push_system("IDE context is off.");
+            self.show_hint("IDE context is off.");
             return;
         }
         let cwd = self.cwd.clone();
@@ -89,7 +89,7 @@ impl ShellState {
                 } else {
                     "Connected to your IDE."
                 };
-                self.push_system(format!("IDE context is on. {detail}"));
+                self.show_hint(format!("IDE context is on. {detail}"));
             }
             Err(error) => {
                 self.ide.enabled = false;
@@ -241,7 +241,7 @@ impl ShellState {
         if self.active_turn_id.as_deref() != Some(params.turn_id.as_str()) {
             self.composer.restore_failed_submission(&prompt);
             self.composer.restore_input_images(&params.items);
-            self.push_status("the active turn changed; your message was restored");
+            self.show_hint("the active turn changed; your message was restored");
             return;
         }
         self.apply_ide_result(result, &mut params.items);

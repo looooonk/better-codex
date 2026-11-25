@@ -290,7 +290,7 @@ mod history;
 impl super::ShellState {
     pub(super) fn report_composer_insert(&mut self, result: ComposerInsertResult) {
         if let ComposerInsertResult::TooLarge { attempted_bytes } = result {
-            self.push_error(input_too_large_message(attempted_bytes));
+            self.show_hint(input_too_large_message(attempted_bytes));
         }
     }
 
@@ -303,7 +303,7 @@ impl super::ShellState {
         if actual_bytes <= MAX_COMPOSER_BYTES {
             return false;
         }
-        self.push_error(input_too_large_message(actual_bytes));
+        self.show_hint(input_too_large_message(actual_bytes));
         true
     }
 }

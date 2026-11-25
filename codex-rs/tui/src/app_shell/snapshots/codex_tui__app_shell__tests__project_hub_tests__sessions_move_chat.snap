@@ -9,13 +9,13 @@ expression: "render_shell(&shell, area)"
                                                                   │ ‹  Cancel
                                                                   │ Move chat to
    Started a fullscreen app shell backed by app-server turns.     │ No project
-   ▎ PLAN  1. Build shell                                         │ Research
-           2. Wire transcript                                     │
-           3. Render dashboard                                    │ Recents
-                                                                  │ + New session  Ctrl+N
-      ▸ Edited files                                              │   Earlier experiment                         …
+                                                                  │ Research
+      ▸ Edited files                                              │
+                                                                  │ Recents
+   The new shell owns the fullscreen surface.                     │ + New session  Ctrl+N
+                                                                  │   Earlier experiment                         …
                                                                   │   Loose notes                                …
-   The new shell owns the fullscreen surface.                     │
+                                                                  │
                                                                   │
                                                                   │
                                                                   │

@@ -4,11 +4,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
 
 
-   ▎ STATUS  approval requested: Run command: printf first
-             printf second
-             printf third...
-
    The new shell owns the fullscreen surface.
+
+
+
+
 
 
 

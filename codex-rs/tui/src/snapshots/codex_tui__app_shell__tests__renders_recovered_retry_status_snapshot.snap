@@ -4,11 +4,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 16,),)"
 ---
 
 
-   ▎ ERROR  stream disconnected
-
    Recovered response.
 
         Thinking... · 3 tok/s
+
+
 
 
 

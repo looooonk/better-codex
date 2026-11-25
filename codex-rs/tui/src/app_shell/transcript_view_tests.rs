@@ -132,7 +132,7 @@ fn output_hit_testing_tracks_the_scrolled_render_viewport() {
 fn streaming_output_preserves_a_scrolled_viewport_anchor() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell.push_user("stream a long response");
     let initial_lines = (0..24)
         .map(|index| format!("streamed line {index}"))
@@ -173,23 +173,16 @@ fn streaming_output_preserves_a_scrolled_viewport_anchor() {
 #[test]
 fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
     let table = "| Left | Right |\n| --- | --- |\n| one two three four five six seven | red blue green white orange |\n";
-    for kind in [TranscriptKind::Assistant, TranscriptKind::Plan] {
+    {
         let mut shell = ShellState::snapshot_fixture();
         shell.transcript.clear();
-        shell.clear_streaming_transcript();
+        shell.clear_streaming_assistant();
         for index in 0..40 {
             shell.push_system(format!("history-{index}"));
         }
-        let push_delta = match kind {
-            TranscriptKind::Assistant => ShellState::push_streaming_assistant_delta,
-            TranscriptKind::Plan => ShellState::push_streaming_plan_delta,
-            _ => unreachable!(),
-        };
+        let push_delta = ShellState::push_streaming_assistant_delta;
         push_delta(&mut shell, "live-table", table);
-        let revisions = (
-            shell.streaming_assistant_revision,
-            shell.streaming_plan_revision,
-        );
+        let revisions = shell.streaming_assistant_revision;
         let screen = Rect::new(
             /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
         );
@@ -216,7 +209,7 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
             );
             let mut buffer = Buffer::empty(screen);
             render_transcript(&shell, area, /*hover_position*/ None, &mut buffer);
-            if kind == TranscriptKind::Assistant && width == 44 {
+            if width == 44 {
                 let painted = (area.y..area.bottom())
                     .map(|y| {
                         (area.x..area.right())
@@ -229,13 +222,7 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
                     .join("\n");
                 insta::assert_snapshot!("allocated_live_answer_table", painted);
             }
-            assert_eq!(
-                (
-                    shell.streaming_assistant_revision,
-                    shell.streaming_plan_revision
-                ),
-                revisions
-            );
+            assert_eq!(shell.streaming_assistant_revision, revisions);
         }
         assert!(separator_widths[0] > separator_widths[1]);
         assert_eq!(separator_widths[0], separator_widths[2]);
@@ -251,20 +238,11 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
                 .and_then(TranscriptLayoutRow::line)
                 .map(rendered_line_text)
                 .unwrap();
-            assert!(first.contains("history-8"), "{kind:?}: {first}");
-            assert_eq!(
-                (
-                    shell.streaming_assistant_revision,
-                    shell.streaming_plan_revision
-                ),
-                revisions
-            );
+            assert!(first.contains("history-8"), "{first}");
+            assert_eq!(shell.streaming_assistant_revision, revisions);
         }
         push_delta(&mut shell, "live-table", "| arrived | delta |\n");
-        let updated_revisions = (
-            shell.streaming_assistant_revision,
-            shell.streaming_plan_revision,
-        );
+        let updated_revisions = shell.streaming_assistant_revision;
         assert_ne!(updated_revisions, revisions);
         let narrow = Rect::new(/*x*/ 6, /*y*/ 0, /*width*/ 44, screen.height);
         let held = transcript_viewport(&shell, narrow);
@@ -274,14 +252,8 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
             .and_then(TranscriptLayoutRow::line)
             .map(rendered_line_text)
             .unwrap();
-        assert!(first.contains("history-8"), "{kind:?}: {first}");
-        assert_eq!(
-            (
-                shell.streaming_assistant_revision,
-                shell.streaming_plan_revision
-            ),
-            updated_revisions
-        );
+        assert!(first.contains("history-8"), "{first}");
+        assert_eq!(shell.streaming_assistant_revision, updated_revisions);
         shell.scroll_transcript_to_bottom();
         let latest = transcript_viewport(&shell, narrow);
         let visible = latest
@@ -291,7 +263,7 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
             .map(rendered_line_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(visible.matches("arrived").count(), 1, "{kind:?}: {visible}");
+        assert_eq!(visible.matches("arrived").count(), 1, "{visible}");
     }
 }
 
@@ -299,7 +271,7 @@ fn live_tables_reflow_at_allocated_width_without_changing_output_revisions() {
 fn resizing_keeps_the_selected_transcript_item_visible() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
-    shell.clear_streaming_transcript();
+    shell.clear_streaming_assistant();
     shell.push_system((0..40).map(|_| "context").collect::<Vec<_>>().join(" "));
     shell.push_user("selected prompt");
     for index in 0..12 {
@@ -992,4 +964,15 @@ fn equations_wrap_with_prose_and_survive_two_pane_widths() {
         snapshot.push_str("---\n");
     }
     insta::assert_snapshot!(snapshot);
+}
+
+#[test]
+fn server_error_envelope_displays_its_actionable_message() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.clear_visible_transcript();
+    shell.push_error(r#"{"status":400,"error":{"message":"Choose an available model."}}"#);
+    assert_eq!(
+        shell.transcript.back().unwrap().text,
+        "Choose an available model."
+    );
 }

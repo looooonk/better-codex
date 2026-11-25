@@ -9,13 +9,13 @@ expression: text
 
 
    Started a fullscreen app shell backed by app-server turns.
-   ▎ PLAN  1. Build shell
-           2. Wi╭ Mention a file ──────────────────────────────────────────────────╮
-           3. Re│ › 1 ○ src/main.rs                                                │
-                │       /workspace/project                                         │
-      ▸ Edited f│  wheel / j k  Enter select  Esc cancel  1/1                      │
+
+      ▸ Edited f╭ Mention a file ──────────────────────────────────────────────────╮
+                │ › 1 ○ src/main.rs                                                │
+   The new shell│       /workspace/project                                         │
+                │  wheel / j k  Enter select  Esc cancel  1/1                      │
                 ╰──────────────────────────────────────────────────────────────────╯
-   The new shell owns the fullscreen surface.
+
 
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮

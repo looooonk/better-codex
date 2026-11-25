@@ -45,6 +45,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        self.input_hint = None;
         self.exit_confirmation_pending = false;
         self.set_pointer_position(position);
         if self.diff_view.is_some() {
@@ -177,12 +178,24 @@ impl ShellState {
             let hit = modal_view::menu_hit(panel, position, &lines);
             let outside = (!panel.contains(position)).then_some(KeyCode::Esc);
             if let Some(state) = &mut self.pending_mcp_management {
-                if let Some(key) = outside.or_else(|| hit.and_then(|h| state.click_key_at(h.line, h.column))) {
-                    self.handle_mcp_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server).await?;
+                if let Some(key) =
+                    outside.or_else(|| hit.and_then(|h| state.click_key_at(h.line, h.column)))
+                {
+                    self.handle_mcp_management_key(
+                        KeyEvent::new(key, KeyModifiers::NONE),
+                        app_server,
+                    )
+                    .await?;
                 }
             } else if let Some(state) = &mut self.pending_plugin_management
-                && let Some(key) = outside.or_else(|| hit.and_then(|h| state.click_key_at(h.line, h.column))) {
-                self.handle_plugin_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server).await?;
+                && let Some(key) =
+                    outside.or_else(|| hit.and_then(|h| state.click_key_at(h.line, h.column)))
+            {
+                self.handle_plugin_management_key(
+                    KeyEvent::new(key, KeyModifiers::NONE),
+                    app_server,
+                )
+                .await?;
             }
             return Ok(());
         }
@@ -219,7 +232,7 @@ impl ShellState {
                 self.agents_focused = false;
                 self.clear_transcript_selection();
                 if !self.composer.edit_queued_message(index) {
-                    self.push_status("structured queued messages cannot be edited");
+                    self.show_hint("structured queued messages cannot be edited");
                 }
                 self.sync_composer_queue_edits(app_server);
                 return Ok(());
@@ -257,7 +270,7 @@ impl ShellState {
                 }
             };
             match webbrowser::open(&destination) {
-                Ok(()) => self.push_status("opened link in browser"),
+                Ok(()) => self.show_hint("opened link in browser"),
                 Err(error) => {
                     tracing::warn!(%destination, "failed to open transcript URL: {error}");
                     self.push_error(format!("Could not open link: {error}"));
@@ -446,11 +459,19 @@ impl ShellState {
         }
         if let Some((panel, _, _)) = (ShellView { shell: self }).management_menu(area) {
             if panel.contains(position) {
-                if let Some(state) = &mut self.pending_mcp_management && !state.editing() {
-                    match direction { MouseScrollDirection::Up => state.move_up(), MouseScrollDirection::Down => state.move_down() }
+                if let Some(state) = &mut self.pending_mcp_management
+                    && !state.editing()
+                {
+                    match direction {
+                        MouseScrollDirection::Up => state.move_up(),
+                        MouseScrollDirection::Down => state.move_down(),
+                    }
                 }
                 if let Some(state) = &mut self.pending_plugin_management {
-                    match direction { MouseScrollDirection::Up => state.move_up(), MouseScrollDirection::Down => state.move_down() }
+                    match direction {
+                        MouseScrollDirection::Up => state.move_up(),
+                        MouseScrollDirection::Down => state.move_down(),
+                    }
                 }
             }
             return false;

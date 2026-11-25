@@ -9,13 +9,13 @@ expression: rendered
                                        │ No projects
                                        │ Recents
    Started a fullscreen app shell backe│ + New session  Ctrl+N
-   ▎ PLAN  1. Build shell              │ loading sessions
-           2. Wire transcript          │
-           3. Render dashboard         │
-                                       │
+                                       │ loading sessions
       ▸ Edited files                   │
                                        │
    The new shell owns the fullscreen su│
+                                       │
+                                       │
+                                       │
                                        │
                                        │
                                        │

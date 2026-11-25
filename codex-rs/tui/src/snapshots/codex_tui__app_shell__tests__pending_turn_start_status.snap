@@ -9,14 +9,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 
 
    Started a fullscreen app shell backed by app-server turns.
-   ▎ PLAN  1. Build shell
-           2. Wire transcript
-           3. Render dashboard
 
       ▸ Edited files
-   ▎ STATUS  wait for the turn submission to finish
 
    The new shell owns the fullscreen surface.
+
+
+
+
 
 
 

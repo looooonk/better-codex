@@ -83,7 +83,7 @@ impl ShellState {
         if !self.has_pending_interactive_request() {
             self.activate_interactive_request(pending);
         } else if self.queued_interactive_requests.len() < MAX_QUEUED_INTERACTIVE_REQUESTS {
-            self.push_status(format!(
+            self.show_hint(format!(
                 "interactive request queued: {}",
                 pending.transcript_title()
             ));
@@ -197,7 +197,7 @@ impl ShellState {
                 self.pending_user_input = Some(pending);
             }
         }
-        self.push_status(status);
+        self.show_hint(status);
     }
 
     fn close_overlays_for_interactive_request(&mut self) {

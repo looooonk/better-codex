@@ -34,7 +34,7 @@ pub(super) async fn search(
 impl ShellState {
     pub(super) fn open_file_mentions(&mut self, files: Vec<FuzzyFileSearchResult>) {
         if files.is_empty() {
-            self.push_status("No matching files. Use /mention <search> to try another name.");
+            self.show_hint("No matching files. Use /mention <search> to try another name.");
             return;
         }
         let options = files

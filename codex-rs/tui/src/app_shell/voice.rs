@@ -83,7 +83,6 @@ impl ShellState {
         match command {
             "off" => {
                 self.stop_voice();
-                self.push_system("Voice stopping");
             }
             "mute" | "unmute" => {
                 let session = self
@@ -97,7 +96,7 @@ impl ShellState {
                         .set_microphone_muted(self.voice.muted)
                         .map_err(|error| eyre!(error.to_string()))?;
                 }
-                self.push_system(if self.voice.muted {
+                self.show_hint(if self.voice.muted {
                     "Voice microphone muted"
                 } else {
                     "Voice microphone unmuted"
@@ -105,7 +104,7 @@ impl ShellState {
             }
             "on" => {
                 if self.voice.session.is_some() {
-                    self.push_system(
+                    self.show_hint(
                         "A voice conversation is already active. Use /voice off to end it.",
                     );
                     return Ok(());
@@ -127,7 +126,6 @@ impl ShellState {
                 self.voice.connected = false;
                 self.voice.muted = false;
                 self.voice.stopping = false;
-                self.push_system("Voice connecting. Use /voice mute to mute the microphone or /voice off to end.");
             }
             command if command == "settings" || command.starts_with("settings ") => {
                 if self.voice.settings.is_some() {
@@ -147,7 +145,7 @@ impl ShellState {
                     client, path, devices, settings,
                 )));
             }
-            _ => self.push_system("Usage: /voice [on|off|mute|unmute|settings]"),
+            _ => self.show_hint("Usage: /voice [on|off|mute|unmute|settings]"),
         }
         Ok(())
     }
@@ -187,7 +185,6 @@ impl ShellState {
         }
         if connected {
             self.voice.connected = true;
-            self.push_system("Voice connected");
         }
         if stop_delayed {
             self.push_error("Voice capture has stopped; waiting for the server to close the conversation before restarting.");
@@ -198,7 +195,7 @@ impl ShellState {
             .take_if(|session| session.worker.is_finished())
         {
             match (&mut session.worker).await {
-                Ok(Ok(())) => self.push_system("Voice ended"),
+                Ok(Ok(())) => {}
                 Ok(Err(error)) => self.push_error(format!("Voice ended: {error}")),
                 Err(_) => self.push_error("Voice stopped unexpectedly"),
             }

@@ -55,9 +55,6 @@ impl ShellState {
         {
             self.diff_store.mark_history_truncated();
         }
-        if timeline.has_older {
-            self.push_system("Showing recent conversation history");
-        }
         let turns_by_id: HashMap<_, _> =
             turns.iter().map(|turn| (turn.id.as_str(), turn)).collect();
         let mut opening_turns = HashSet::new();
@@ -102,9 +99,6 @@ impl ShellState {
                     if let Some(error) = error {
                         self.push_error(error.message);
                     }
-                    if status == TurnStatus::Interrupted {
-                        self.push_status("turn interrupted");
-                    }
                     let turn = turns_by_id.get(turn_id.as_str()).copied();
                     let duration = super::turn_summary::turn_duration(
                         duration_ms.or_else(|| turn.and_then(|t| t.duration_ms)),
@@ -112,7 +106,9 @@ impl ShellState {
                         completed_at.or_else(|| turn.and_then(|t| t.completed_at)),
                     );
                     self.finish_pending_tool_calls(&status);
-                    self.push_turn_separator(&turn_id, duration, /*observed_wait*/ None);
+                    self.push_turn_separator(
+                        &turn_id, &status, duration, /*observed_wait*/ None,
+                    );
                 }
             }
         }
@@ -120,10 +116,7 @@ impl ShellState {
 
     pub(super) fn ingest_realtime_item(&mut self, item: ThreadRealtimeItem) {
         let (kind, text) = match item.content {
-            ThreadRealtimeItemContent::RealtimeSessionStarted => (
-                TranscriptKind::Status,
-                "Voice conversation started".to_string(),
-            ),
+            ThreadRealtimeItemContent::RealtimeSessionStarted => return,
             ThreadRealtimeItemContent::TranscriptSegment { role, text } => {
                 let kind = match role {
                     ThreadRealtimeTranscriptRole::User => TranscriptKind::User,
@@ -132,10 +125,7 @@ impl ShellState {
                 (kind, format!("Voice: {text}"))
             }
             ThreadRealtimeItemContent::RealtimeSessionClosed { outcome } => match outcome {
-                ThreadRealtimeSessionOutcome::Ended => (
-                    TranscriptKind::Status,
-                    "Voice conversation ended".to_string(),
-                ),
+                ThreadRealtimeSessionOutcome::Ended => return,
                 ThreadRealtimeSessionOutcome::Failed => (
                     TranscriptKind::Error,
                     "Voice conversation failed".to_string(),

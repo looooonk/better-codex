@@ -10,21 +10,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │ No projects
    Started a fullscreen app shell backed by app-server      │
    turns.                                                   │ Recents
-   ▎ PLAN  1. Build shell                                   │ + New session  Ctrl+N
-           2. Wire transcript                               │ loading sessions
-           3. Render dashboard                              │
-                                                            │
-      ▸ Edited files                                        │
-   ▎ STATUS  preset loaded; press Enter to send             │
-   ▎ SYSTEM  Preset ready; your draft was kept:             │
-             Another preset                                 │
+                                                            │ + New session  Ctrl+N
+      ▸ Edited files                                        │ loading sessions
+   Preset ready; your draft was kept:                       │
+   Another preset                                           │
    The new shell owns the fullscreen surface.               │
                                                             │
                                                             │
                                                             │
                                                             │
                                                             │
-╭──────────────────────────────────────────────────────────╮│
+                                                            │
+                                                            │
+                                                            │
+                                                            │
+╭ preset loaded; press Enter to send ──────────────────────╮│
 │> Review changes                                          ││
 │                                                          ││
 │                                                          ││

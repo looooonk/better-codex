@@ -259,7 +259,7 @@ impl ShellState {
             return Ok(());
         };
         if !entry.enabled {
-            self.push_status(format!("{}: {}", entry.title, entry.detail));
+            self.show_hint(format!("{}: {}", entry.title, entry.detail));
             return Ok(());
         }
         let Some(action) = palette.selected_action(&entries) else {
@@ -281,7 +281,7 @@ impl ShellState {
             .into_iter()
             .any(|entry| entry.action == action && entry.enabled);
         if !enabled {
-            self.push_status("finish active work before running this command");
+            self.show_hint("finish active work before running this command");
             return Ok(());
         }
         match action {
@@ -317,7 +317,7 @@ impl ShellState {
                 self.settings.focused = false;
                 self.session_list.focused = true;
                 self.start_session_list_refresh(app_server);
-                self.push_status("press r to resume selected session");
+                self.show_hint("press r to resume selected session");
             }
             CommandPaletteAction::ForkThread => {
                 self.dashboard_visible = true;
@@ -326,7 +326,7 @@ impl ShellState {
                 self.settings.focused = false;
                 self.session_list.focused = true;
                 self.start_session_list_refresh(app_server);
-                self.push_status("press f to fork selected session");
+                self.show_hint("press f to fork selected session");
             }
             CommandPaletteAction::ImportExternalAgentConfig => {
                 self.start_external_agent_import_review(app_server).await?;

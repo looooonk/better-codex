@@ -31,7 +31,8 @@ impl ShellState {
         self.dashboard_visible = true;
         self.set_dashboard_route(super::DashboardRoute::Settings);
         self.settings.focused = true;
-        self.settings.focus_action(super::settings::SettingsAction::Plugins);
+        self.settings
+            .focus_action(super::settings::SettingsAction::Plugins);
         self.pending_plugin_management = Some(state);
     }
 
@@ -104,7 +105,7 @@ impl ShellState {
             return Ok(());
         };
         let Some(params) = entry.install_params() else {
-            self.push_status("selected plugin cannot be installed or updated");
+            self.show_hint("selected plugin cannot be installed or updated");
             return Ok(());
         };
         let plugin_name = entry.display_name();
@@ -127,7 +128,7 @@ impl ShellState {
             return Ok(());
         };
         if !entry.can_toggle() {
-            self.push_status("selected plugin cannot be enabled or disabled");
+            self.show_hint("selected plugin cannot be enabled or disabled");
             return Ok(());
         }
         let enabled = !entry.plugin.enabled;
@@ -150,7 +151,7 @@ impl ShellState {
             return Ok(());
         };
         let Some(plugin_id) = entry.uninstall_plugin_id() else {
-            self.push_status("selected plugin cannot be uninstalled");
+            self.show_hint("selected plugin cannot be uninstalled");
             return Ok(());
         };
         app_server

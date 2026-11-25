@@ -34,7 +34,8 @@ impl ShellState {
         self.dashboard_visible = true;
         self.set_dashboard_route(super::DashboardRoute::Settings);
         self.settings.focused = true;
-        self.settings.focus_action(super::settings::SettingsAction::McpServers);
+        self.settings
+            .focus_action(super::settings::SettingsAction::McpServers);
         self.pending_mcp_management = Some(state);
     }
 
@@ -158,7 +159,7 @@ impl ShellState {
             server.auth_status,
             McpAuthStatus::NotLoggedIn | McpAuthStatus::OAuth
         ) {
-            self.push_status("selected mcp server does not support oauth login");
+            self.show_hint("selected mcp server does not support oauth login");
             return Ok(());
         }
         let response = app_server
@@ -222,7 +223,7 @@ impl ShellState {
             .as_ref()
             .and_then(McpManagementState::parsed_edit)
         else {
-            self.push_error("mcp edit must be: name {\"url\":\"https://...\"}");
+            self.show_hint("mcp edit must be: name {\"url\":\"https://...\"}");
             return Ok(());
         };
         app_server
@@ -274,9 +275,13 @@ impl McpManagementState {
         }
         let mut lines = vec![
             vec![
-                format!("{}/{}", (self.selected + 1).min(self.servers.len()), self.servers.len())
-                    .fg(palette::cyan())
-                    .bold(),
+                format!(
+                    "{}/{}",
+                    (self.selected + 1).min(self.servers.len()),
+                    self.servers.len()
+                )
+                .fg(palette::cyan())
+                .bold(),
                 " mcp servers".into(),
                 "  ↑↓ / j k navigate".dim(),
             ]

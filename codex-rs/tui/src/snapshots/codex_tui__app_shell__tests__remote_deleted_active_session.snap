@@ -10,15 +10,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. Build shell                         │ + New session  Ctrl+N
-           2. Wire transcript                     │ › remaining                                  …
-           3. Render dashboard                    │
-                                                  │
-      ▸ Edited files                              │
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ › remaining                                  …
                                                   │
    The new shell owns the fullscreen surface.     │
-   ▎ ERROR  active session was deleted remotely;  │
-            choose or start another session       │
+   ⚠ active session was deleted remotely; choose  │
+     or start another session                     │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

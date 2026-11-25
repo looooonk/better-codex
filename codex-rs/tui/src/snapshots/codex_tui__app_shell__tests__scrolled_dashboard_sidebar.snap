@@ -4,9 +4,9 @@ expression: after
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   ▎ PLAN  1. Build shell                       │ │──────────────━━━━━━━━━━────────────────────────
-           2. Wire transcript                   │ │▎◆ EDITS
-           3. Render dashboard                  │ │▎3 files +128 -24
+                                                │ │──────────────━━━━━━━━━━────────────────────────
+   Started a fullscreen app shell backed by     │ │▎◆ EDITS
+   app-server turns.                            ┃ │▎3 files +128 -24
                                                 ┃ │
       ▸ Edited files                            ┃ │▎◆ WORKSPACE
                                                 ┃ │▎profile managed

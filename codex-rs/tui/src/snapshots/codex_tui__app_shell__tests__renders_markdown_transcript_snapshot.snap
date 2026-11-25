@@ -19,9 +19,9 @@ expression: "render_shell(&shell, area)"
     code     done                                             │
    ───────  ────────                                          │
     table    done                                             │
-   ▎ PLAN  1. Keep transcript rendering width-aware.          │
-           2. Leave selection and copy mode for the next      │
-              slice.                                          │
+                                                              │
+                                                              │
+                                                              │
                                                               │
                                                               │
 ╭────────────────────────────────────────────────────────────╮│

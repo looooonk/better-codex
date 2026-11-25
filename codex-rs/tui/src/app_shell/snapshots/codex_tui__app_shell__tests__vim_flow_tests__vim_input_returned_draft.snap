@@ -4,15 +4,15 @@ expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
 ---
 
 
-   ▎ STATUS  Vim input returned to composer
-
    The new shell owns the fullscreen surface.
 
 
 
 
 
-╭──────────────────────────────────────────────────────────────────────────────╮
+
+
+╭ Vim input returned to composer ──────────────────────────────────────────────╮
 │> Explain this change:                                                        │
 │                                                                              │
 │  - preserve spacing                                                          │

@@ -4,12 +4,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-   ▎ STATUS  request resolved                     │━━━━━━━━━━━━━───────────────────────────────────
-   ▎ STATUS  elicitation requested: MCP github:   │
-             URL request                          │ Projects
-   ▎ STATUS  request resolved                     │ No projects
+   The new shell owns the fullscreen surface.     │━━━━━━━━━━━━━───────────────────────────────────
                                                   │
-   The new shell owns the fullscreen surface.     │ Recents
+                                                  │ Projects
+                                                  │ No projects
+                                                  │
+                                                  │ Recents
                                                   │ + New session  Ctrl+N
                                                   │ loading sessions
                                                   │
@@ -24,7 +24,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │
                                                   │
-╭────────────────────────────────────────────────╮│
+╭ elicitation requested: MCP github: URL request ╮│
 │> Type a message                                ││
 │                                                ││
 │                                                ││

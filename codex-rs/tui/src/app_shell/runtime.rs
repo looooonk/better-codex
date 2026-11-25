@@ -11,7 +11,6 @@ use super::backend_actions::TurnSubmission;
 use super::local_app_theme;
 use super::render::draw_shell;
 use super::shell_layout::terminal_size_supported;
-use super::startup_availability_nux;
 use super::startup_model_migration;
 use super::vim_input;
 use crate::app_exit::AppExitInfo;
@@ -92,12 +91,6 @@ pub(crate) async fn run(
         .model
         .clone()
         .unwrap_or_else(|| bootstrap.default_model.clone());
-    let availability_nux = startup_availability_nux::prepare(
-        app_server.request_handle(),
-        &mut config,
-        &bootstrap.available_models,
-    )
-    .await;
     let workspace_command_runner = Arc::new(AppServerWorkspaceCommandRunner::new(
         app_server.request_handle(),
     ));
@@ -183,9 +176,6 @@ pub(crate) async fn run(
     shell.install_agent_history(agent_threads, agent_history_task);
     for error in tui.take_startup_errors() {
         shell.push_error(error);
-    }
-    if let Some(message) = availability_nux {
-        shell.push_system(message);
     }
     // Paint the restored conversation and start accepting input before secondary dashboard data
     // completes. These lookups can cross a remote app-server boundary, so their results are

@@ -9,13 +9,13 @@ expression: "render_shell(&shell, area)"
                                                                                                          │◆ PERMISSIONS
                                                                                                          │  ● ⓘ Ask for approval
    Started a fullscreen app shell backed by app-server turns.                                            │  ○ ⛨ Unless trusted
-   ▎ PLAN  1. Build shell                                                                                │  ○ ⚠ Full access
-           2. Wire transcript                                                                            │
-           3. Render dashboard                                                                           │◆ APPEARANCE
-                                                                                                         │  Theme: Tokyo Night ▾
-      ▸ Edited files                                                                                     │  Syntax theme: default ▾
+                                                                                                         │  ○ ⚠ Full access
+      ▸ Edited files                                                                                     │
+                                                                                                         │◆ APPEARANCE
+   The new shell owns the fullscreen surface.                                                            │  Theme: Tokyo Night ▾
+                                                                                                         │  Syntax theme: default ▾
                                                                                                          │  ● Animations
-   The new shell owns the fullscreen surface.                                                            │› ● Tooltips
+                                                                                                         │› ● Tooltips
                                                                                                          │
                                                                                                          │◆ EXPERIMENTAL
                                                                                                          │  ○ Render LaTeX as images

@@ -4,11 +4,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
 
 
-   ▎ STATUS  approval requested: Run command: cargo test -p codex-tui
-   ▎ STATUS  interactive request queued: Tool input: tool-input-1
-   ▎ STATUS  interactive request queued: MCP github: URL request
-
    The new shell owns the fullscreen surface.
+
+
+
+
 
 
 

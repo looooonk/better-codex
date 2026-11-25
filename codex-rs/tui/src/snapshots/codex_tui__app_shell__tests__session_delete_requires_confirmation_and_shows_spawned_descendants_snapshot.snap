@@ -10,13 +10,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-   ▎ PLAN  1. ╭──────────────────────────────────────────────────────────────────────╮
-           2. │◆ DELETE SESSION                                                      │           …
-           3. │Delete session: Delete this investigation                             │
-              │Session ID: 01900000-0000-7000-8000-000000000511                      │
-      ▸ Edited│2 spawned descendants will also be deleted.                           │
+              ╭──────────────────────────────────────────────────────────────────────╮
+      ▸ Edited│◆ DELETE SESSION                                                      │           …
+              │Delete session: Delete this investigation                             │
+   The new she│Session ID: 01900000-0000-7000-8000-000000000511                      │
+              │2 spawned descendants will also be deleted.                           │
               │This permanently deletes all persisted history in that subtree.       │
-   The new she│                                                                      │
+              │                                                                      │
               │> Delete permanently Enter/y                                          │
               │  Cancel Esc/n                                                        │
               │                                                                      │

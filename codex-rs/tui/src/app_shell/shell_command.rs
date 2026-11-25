@@ -41,17 +41,17 @@ impl ShellCommand {
 impl ShellState {
     pub(super) fn start_shell_command(&mut self, command: ShellCommand, prompt: String) {
         if self.pending_shell_command.is_some() {
-            self.push_error("another shell command is already running");
+            self.show_hint("another shell command is already running");
             return;
         }
         self.composer.remember_submission(&prompt);
         self.composer.clear_text();
         if command.is_empty() {
-            self.push_error("shell command cannot be empty");
+            self.show_hint("shell command cannot be empty");
             return;
         }
         let Some(runner) = self.workspace_command_runner.clone() else {
-            self.push_error("shell command runner is unavailable");
+            self.show_hint("shell command runner is unavailable");
             return;
         };
 

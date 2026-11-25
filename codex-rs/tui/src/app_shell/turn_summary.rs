@@ -24,6 +24,7 @@ impl ShellState {
     pub(super) fn push_turn_separator(
         &mut self,
         turn_id: &str,
+        status: &codex_app_server_protocol::TurnStatus,
         duration: Option<Duration>,
         observed_wait: Option<Duration>,
     ) {
@@ -50,6 +51,13 @@ impl ShellState {
                 }
             })
             .unwrap_or_default();
+        let label = match status {
+            codex_app_server_protocol::TurnStatus::Interrupted if label.is_empty() => {
+                "Interrupted".to_owned()
+            }
+            codex_app_server_protocol::TurnStatus::Interrupted => format!("Interrupted · {label}"),
+            _ => label,
+        };
         self.upsert_line(TranscriptLine::new(TranscriptKind::Separator, label).item_id(turn_id));
     }
 }

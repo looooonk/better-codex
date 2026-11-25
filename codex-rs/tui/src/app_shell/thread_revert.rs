@@ -44,9 +44,6 @@ impl ShellState {
         let streaming_assistant = std::mem::take(&mut self.streaming_assistant);
         let streaming_assistant_item_id = self.streaming_assistant_item_id.take();
         let streaming_assistant_revision = self.streaming_assistant_revision;
-        let streaming_plan = std::mem::take(&mut self.streaming_plan);
-        let streaming_plan_item_id = self.streaming_plan_item_id.take();
-        let streaming_plan_revision = self.streaming_plan_revision;
         let plan_explanation = self.plan_explanation.take();
         let plan_steps = std::mem::take(&mut self.plan_steps);
         let pending_prompt_submission = self.pending_prompt_submission.take();
@@ -69,9 +66,6 @@ impl ShellState {
         self.streaming_assistant = streaming_assistant;
         self.streaming_assistant_item_id = streaming_assistant_item_id;
         self.streaming_assistant_revision = streaming_assistant_revision;
-        self.streaming_plan = streaming_plan;
-        self.streaming_plan_item_id = streaming_plan_item_id;
-        self.streaming_plan_revision = streaming_plan_revision;
         self.plan_explanation = plan_explanation;
         self.plan_steps = plan_steps;
         self.pending_prompt_submission = pending_prompt_submission;
@@ -161,9 +155,6 @@ impl ShellState {
         let streaming_assistant = std::mem::take(&mut self.streaming_assistant);
         let streaming_assistant_item_id = self.streaming_assistant_item_id.take();
         let streaming_assistant_revision = self.streaming_assistant_revision;
-        let streaming_plan = std::mem::take(&mut self.streaming_plan);
-        let streaming_plan_item_id = self.streaming_plan_item_id.take();
-        let streaming_plan_revision = self.streaming_plan_revision;
         let plan_explanation = self.plan_explanation.take();
         let plan_steps = std::mem::take(&mut self.plan_steps);
         self.thread_name = thread.name;
@@ -172,7 +163,7 @@ impl ShellState {
         self.turn_outputs = live_turn_outputs;
         self.agent_activity = live_agent_activity;
         self.diff_store.set_display_root(thread.cwd.as_path());
-        self.push_system("session reverted");
+
         self.ingest_thread_history(thread.turns, timeline);
         for line in live_transcript {
             let already_hydrated = line.item_id.as_ref().is_some_and(|item_id| {
@@ -205,9 +196,6 @@ impl ShellState {
         self.streaming_assistant = streaming_assistant;
         self.streaming_assistant_item_id = streaming_assistant_item_id;
         self.streaming_assistant_revision = streaming_assistant_revision;
-        self.streaming_plan = streaming_plan;
-        self.streaming_plan_item_id = streaming_plan_item_id;
-        self.streaming_plan_revision = streaming_plan_revision;
         if plan_explanation.is_some() || !plan_steps.is_empty() {
             self.plan_explanation = plan_explanation;
             self.plan_steps = plan_steps;
@@ -237,7 +225,7 @@ impl ShellState {
         self.transcript_scroll_max.set(0);
         self.transcript_selection = None;
         self.transcript_render_cache.get_mut().clear();
-        self.clear_streaming_transcript();
+        self.clear_streaming_assistant();
         self.plan_explanation = None;
         self.plan_steps.clear();
         self.tool_activity.clear();

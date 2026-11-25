@@ -231,15 +231,15 @@ impl ShellState {
 
     pub(super) fn request_vim_input(&mut self) {
         if self.has_pending_backend_action(ActionGroup::SessionSwitch) {
-            self.push_status("wait for the pending session switch to finish");
+            self.show_hint("wait for the pending session switch to finish");
             return;
         }
         if self.pending_prompt_submission.is_some() {
-            self.push_status("wait for the pending Vim input to send");
+            self.show_hint("wait for the pending Vim input to send");
             return;
         }
         self.pending_vim_input = Some(VimInputRequest::empty(self.thread_id));
-        self.push_status("opening Vim input");
+        self.show_hint("opening Vim input");
     }
 
     pub(super) fn request_external_editor(&mut self) {
@@ -274,7 +274,7 @@ impl ShellState {
         match result {
             Ok(VimInputOutcome::Submit(text)) => {
                 if text.trim().is_empty() {
-                    self.push_status("Vim input was empty");
+                    self.show_hint("Vim input was empty");
                     return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 if self.reject_oversized_input(text.len()) {
@@ -297,14 +297,14 @@ impl ShellState {
                     if !composer_draft.is_empty() {
                         self.composer.restore_failed_submission(&composer_draft);
                     }
-                    self.push_status(format!(
+                    self.show_hint(format!(
                         "Vim input exceeds the {MAX_VIM_SUBMISSION_BYTES}-byte submission limit; returned it to the composer"
                     ));
                     return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 if self.has_pending_backend_action(ActionGroup::TurnStart) {
                     self.pending_prompt_submission = Some(text);
-                    self.push_status("Vim input will send after the pending turn starts");
+                    self.show_hint("Vim input will send after the pending turn starts");
                     return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 self.submit_prompt_preserving_draft(app_server, text)
@@ -320,13 +320,13 @@ impl ShellState {
                 if !composer_draft.is_empty() {
                     self.composer.restore_failed_submission(&composer_draft);
                 }
-                self.push_status(if session_changed {
+                self.show_hint(if session_changed {
                     "session changed; Vim input returned without sending"
                 } else {
                     "Vim input returned to composer"
                 });
             }
-            Ok(VimInputOutcome::Cancelled) => self.push_status("Vim input cancelled"),
+            Ok(VimInputOutcome::Cancelled) => self.show_hint("Vim input cancelled"),
             Err(err) => self.report_action_error("failed to open Vim input", err),
         }
         Ok(LocalSlashCommandOutcome::Continue)

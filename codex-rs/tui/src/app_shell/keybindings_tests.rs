@@ -165,7 +165,12 @@ async fn saved_keymap_reads_back_selected_profile_and_cli_precedence() {
         shell.keybindings.source.composer.submit,
         config.tui_keymap.composer.submit
     );
-    assert!(shell.transcript.back().unwrap().text.contains("overrides"));
+    assert!(
+        shell
+            .input_hint
+            .as_deref()
+            .is_some_and(|hint| hint.contains("overrides"))
+    );
     let saved: toml::Value =
         toml::from_str(&tokio::fs::read_to_string(selected.as_path()).await.unwrap()).unwrap();
     assert_eq!(

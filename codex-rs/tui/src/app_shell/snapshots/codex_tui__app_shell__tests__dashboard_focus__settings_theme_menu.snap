@@ -10,16 +10,16 @@ expression: "render_shell(&shell, wide)"
                                                             │  ● ⓘ Ask for approval
    Started a fullscreen app shell backed by app-server      │  ○ ⛨ Unless trusted
    turns.                                                   │  ○ ⚠ Full access
-   ▎ PLAN  1. Build shell                                   │
-           2. Wire transcript                               │◆ APPEARANCE
-           3. Render dashboard                              │› Theme: Tokyo Night ▾
-                                                            │╭──────────────────────────────╮
-      ▸ Edited files                                        ││ Theme                        │
-                                                            ││ Tokyo Night                ✓ │
-   The new shell owns the fullscreen surface.               ││ Gruvbox Dark                 │
-                                                            ││ Catppuccin Mocha             │
-                                                            ││ Monochrome                   │
-                                                            │╰──────────────────────────────╯
+                                                            │
+      ▸ Edited files                                        │◆ APPEARANCE
+                                                            │› Theme: Tokyo Night ▾
+   The new shell owns the fullscreen surface.               │╭──────────────────────────────────────╮
+                                                            ││ Theme                                │
+                                                            ││ Tokyo Night                        ✓ │
+                                                            ││ Gruvbox Dark                         │
+                                                            ││ Catppuccin Mocha                     │
+                                                            ││ Monochrome                           │
+                                                            │╰──────────────────────────────────────╯
                                                             │◆ INTEGRATIONS
                                                             │  MCP servers: not loaded ▾
                                                             │  Plugins: not loaded ▾

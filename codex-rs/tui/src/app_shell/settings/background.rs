@@ -60,7 +60,7 @@ impl ShellState {
             || self.has_pending_backend_action(ActionGroup::SessionSwitch)
             || self.has_pending_backend_action(ActionGroup::ConversationBranch)
         {
-            self.push_status(
+            self.show_hint(
                 "wait for the workspace action or session transition before saving settings",
             );
             return;
@@ -86,7 +86,7 @@ impl ShellState {
                 BackendActionResult::Settings { update, result }
             })
         {
-            self.push_status("settings update is already in progress");
+            self.show_hint("settings update is already in progress");
         } else if saving_effort {
             self.settings.effort_save = EffortSave::Saving;
         }
@@ -113,6 +113,7 @@ impl ShellState {
             tracing::warn!(%err, "failed to save settings");
             return;
         }
+        self.settings.feedback = None;
         match update.change {
             SettingsChange::Model {
                 model,
@@ -144,7 +145,12 @@ impl ShellState {
             SettingsChange::ApprovalPolicy(policy) => self.approval_policy = policy,
             SettingsChange::AppTheme(app_theme) => self.app_theme = app_theme,
             SettingsChange::Theme(theme) => {
-                crate::render::highlight::set_syntax_theme(crate::render::highlight::resolve_theme_with_override(theme.as_deref(), Some(&self.codex_home)));
+                crate::render::highlight::set_syntax_theme(
+                    crate::render::highlight::resolve_theme_with_override(
+                        theme.as_deref(),
+                        Some(&self.codex_home),
+                    ),
+                );
                 self.tui_theme = theme;
                 self.transcript_render_cache.get_mut().clear();
             }

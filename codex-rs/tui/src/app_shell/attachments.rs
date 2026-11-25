@@ -88,13 +88,13 @@ impl ShellState {
             return Ok(());
         };
         if self.composer.queued_edit_position().is_some() {
-            self.push_error("finish editing the queued message before attaching images");
+            self.show_hint("finish editing the queued message before attaching images");
             return Ok(());
         }
         let paths = paths.into_iter().map(PathBuf::from).collect();
         match self.attach_image_paths(paths).await {
-            Ok(()) => self.push_status(self.composer.image_summary()),
-            Err(error) => self.push_error(error.to_string()),
+            Ok(()) => self.show_hint(self.composer.image_summary()),
+            Err(error) => self.show_hint(error.to_string()),
         }
         Ok(())
     }
@@ -102,13 +102,13 @@ impl ShellState {
     pub(super) fn run_detach_command(&mut self, args: &str) -> Result<()> {
         if args.is_empty() || args == "all" {
             self.composer.clear_images();
-            self.push_status("images removed from draft");
+            self.show_hint("images removed from draft");
         } else if let Ok(index) = args.parse::<usize>() {
             if index == 0 || !self.composer.remove_image(index.saturating_sub(1)) {
-                self.push_error("image number is outside the attachment list");
+                self.show_hint("image number is outside the attachment list");
             }
         } else {
-            self.push_error("usage: /detach [number|all]");
+            self.show_hint("usage: /detach [number|all]");
         }
         Ok(())
     }
@@ -117,7 +117,7 @@ impl ShellState {
         if self.composer.queued_edit_position().is_some()
             || self.composer.image_count() >= MAX_IMAGES
         {
-            self.push_error(
+            self.show_hint(
                 "finish the queued edit or remove an attachment before pasting an image",
             );
             return;
@@ -131,14 +131,14 @@ impl ShellState {
             Ok(Ok(image))
                 if self.composer.image_bytes() + image.url.len() > MAX_ENCODED_IMAGES_BYTES =>
             {
-                self.push_error("images in one message must fit within 64 MiB after encoding");
+                self.show_hint("images in one message must fit within 64 MiB after encoding");
             }
             Ok(Ok(image)) => {
                 self.composer.attach_images(vec![image]);
-                self.push_status(self.composer.image_summary());
+                self.show_hint(self.composer.image_summary());
             }
-            Ok(Err(error)) => self.push_error(error.to_string()),
-            Err(error) => self.push_error(format!("clipboard image could not be read: {error}")),
+            Ok(Err(error)) => self.show_hint(error.to_string()),
+            Err(error) => self.show_hint(format!("clipboard image could not be read: {error}")),
         }
     }
 
@@ -146,7 +146,7 @@ impl ShellState {
         if self.composer.image_count() > MAX_IMAGES
             || self.composer.image_bytes() > MAX_ENCODED_IMAGES_BYTES
         {
-            self.push_error("draft images exceed the attachment limit; use /detach to remove images before sending");
+            self.show_hint("draft images exceed the attachment limit; use /detach to remove images before sending");
             return true;
         }
         if self.composer.has_images()
@@ -156,7 +156,7 @@ impl ShellState {
                 .find(|model| model.model == self.model)
                 .is_some_and(|model| !model.input_modalities.contains(&InputModality::Image))
         {
-            self.push_error("this model does not accept images; switch models or use /detach");
+            self.show_hint("this model does not accept images; switch models or use /detach");
             true
         } else {
             false
