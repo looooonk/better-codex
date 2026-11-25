@@ -63,6 +63,27 @@ fn active_chat_has_hover_background_in_both_lists_without_focus() {
     insta::assert_debug_snapshot!(highlighted);
 }
 
+#[test]
+fn empty_active_chat_survives_catalog_refresh_until_its_first_message() {
+    for project in [None, Some("research".to_owned())] {
+        let (mut shell, _) = project_shell();
+        shell.projects.expanded.insert("research".into());
+        shell.thread_name = None;
+        shell.show_new_session(project.clone());
+        shell.session_list.replace_threads(Vec::new());
+        let area = Rect::new(0, 0, 116, 36);
+        let buf = render_shell_buffer(&shell, area);
+        let rows: Vec<_> = (0..area.height)
+            .filter_map(|y| row_needle_x(&buf, area, y, "Untitled chat").map(|x| buf[(x,y)].bg))
+            .collect();
+        assert_eq!(rows, vec![design::palette::border(); 1 + usize::from(project.is_some())]);
+        shell.session_list.replace_threads(vec![thread_fixture(shell.thread_id, Some("First message"), "")]);
+        assert_eq!(shell.session_list.row_count(), 1);
+        assert_eq!(shell.session_list.selected_title(), Some("First message"));
+        shell.clear_new_session();
+    }
+}
+
 #[tokio::test]
 async fn project_details_and_move_menu_share_pointer_and_keyboard_rows() {
     let (mut shell, thread) = project_shell();

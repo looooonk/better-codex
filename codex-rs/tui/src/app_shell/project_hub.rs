@@ -76,6 +76,7 @@ impl Chat {
 #[derive(Default)]
 pub(super) struct ProjectHub {
     pub groups: Vec<Group>,
+    pub new_chat: Option<(String, Chat)>,
     pub expanded: HashSet<String>,
     pub failed_resumes: HashSet<ThreadId>,
     pub view: HubView,
@@ -201,7 +202,10 @@ impl ProjectHub {
                     if !expanded {
                         continue;
                     }
-                    for chat in &group.chats {
+                    let new_chat = self.new_chat.as_ref()
+                        .filter(|(project, chat)| project == &p.id && group.pages.len() <= 1 && !group.chats.iter().any(|listed| listed.id == chat.id))
+                        .map(|(_, chat)| chat);
+                    for chat in new_chat.into_iter().chain(&group.chats) {
                         add(
                             format!("    {}", chat.title),
                             if chat.external_writer || self.failed_resumes.contains(&chat.id) {

@@ -63,8 +63,10 @@ impl ShellState {
                 .or(Some(self.model_provider_id.as_str())),
             project,
         );
+        let project_id = project.map(|project| project.id.clone());
         self.start_backend_action(ActionGroup::SessionSwitch, "starting session", async move {
             BackendActionResult::SessionStart {
+                project_id,
                 result: request.await,
             }
         });

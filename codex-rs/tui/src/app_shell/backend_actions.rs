@@ -129,6 +129,7 @@ pub(super) enum BackendActionResult {
         result: Result<()>,
     },
     SessionStart {
+        project_id: Option<String>,
         result: Result<AppServerStartedThread>,
     },
     SessionProject {
@@ -375,11 +376,15 @@ impl ShellState {
                 submission,
                 result,
             } => self.complete_turn_start(app_server, params, prompt, submission, result),
-            BackendActionResult::SessionStart { result } => match result {
+            BackendActionResult::SessionStart { project_id, result } => match result {
                 Ok(started) => {
                     self.next_model_provider = None;
                     self.next_provider_model = None;
+                    if let Some(id) = &project_id {
+                        self.projects.requested_page = Some((id.clone(), vec![None]));
+                    }
                     self.complete_session_switch(started, app_server).await;
+                    self.show_new_session(project_id);
                     self.session_list.focused = false;
                     self.settings.focused = false;
                     self.agents_focused = false;

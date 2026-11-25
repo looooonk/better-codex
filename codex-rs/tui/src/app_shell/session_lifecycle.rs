@@ -99,6 +99,7 @@ impl ShellState {
         {
             return;
         }
+        self.clear_new_session();
         self.mark_active_session_unavailable(lifecycle);
     }
 

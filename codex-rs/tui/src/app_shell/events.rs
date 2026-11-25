@@ -94,6 +94,7 @@ impl ShellState {
                     ServerNotification::ProjectChanged(_)
                         | ServerNotification::ThreadProjectUpdated(_)
                         | ServerNotification::ThreadStarted(_)
+                        | ServerNotification::ThreadNameUpdated(_)
                         | ServerNotification::ThreadReverted(_)
                         | ServerNotification::ThreadArchived(_)
                         | ServerNotification::ThreadDeleted(_)
@@ -350,6 +351,13 @@ impl ShellState {
                 ),
             ServerNotification::ThreadClosed(closed) => self
                 .handle_remote_thread_lifecycle(&closed.thread_id, RemoteThreadLifecycle::Closed),
+            ServerNotification::ThreadProjectUpdated(updated) => {
+                if updated.thread_id == self.thread_id.to_string()
+                    && (self.projects.new_chat.is_some() || self.session_list.waiting_for_new_chat())
+                {
+                    self.show_new_session(updated.project_id);
+                }
+            }
             ServerNotification::ThreadNameUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.mark_thread_revert_hydration_stale();
@@ -755,7 +763,6 @@ impl ShellState {
             | ServerNotification::ProjectChanged(_)
             | ServerNotification::ThreadAttachmentUpdated(_)
             | ServerNotification::ThreadPredictionUpdated(_)
-            | ServerNotification::ThreadProjectUpdated(_)
             | ServerNotification::ThreadRealtimeItemCompleted(_)
             | ServerNotification::ThreadRealtimeItemStarted(_)
             | ServerNotification::ThreadRealtimeItemTranscriptDelta(_)

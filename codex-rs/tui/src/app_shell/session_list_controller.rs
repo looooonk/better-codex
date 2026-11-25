@@ -423,6 +423,26 @@ impl ShellState {
         Ok(())
     }
 
+    // Empty threads may not reach either server catalog until their first turn is persisted.
+    pub(super) fn show_new_session(&mut self, project_id: Option<String>) {
+        if self.ephemeral {
+            return;
+        }
+        let title = self.thread_name.clone().unwrap_or_else(|| "Untitled chat".into());
+        let cwd = std::path::PathBuf::from(&self.cwd);
+        self.session_list.set_new_chat(Some(super::sessions::SessionRow::new_chat(
+            self.thread_id, title.clone(), cwd.clone(), project_id.clone(),
+        )));
+        self.projects.new_chat = project_id.map(|id| (id, super::project_hub::Chat {
+            id: self.thread_id, title, cwd, external_writer: false,
+        }));
+    }
+
+    pub(super) fn clear_new_session(&mut self) {
+        self.session_list.set_new_chat(None);
+        self.projects.new_chat = None;
+    }
+
     pub(super) fn replace_started_session(&mut self, started: AppServerStartedThread) {
         self.stop_voice();
         self.terminal_clear_requested.set(true);
@@ -438,6 +458,7 @@ impl ShellState {
             agent_threads,
             agent_history_task,
         } = started;
+        self.clear_new_session();
         self.thread_id = session.thread_id;
         self.recent_guardian_denials.clear();
         self.recap = super::recap::RecapState::default();

@@ -63,6 +63,11 @@ impl ShellState {
                         .action
                         .clone()
                 });
+                if let Some((_, chat)) = &self.projects.new_chat
+                    && groups.iter().any(|group| group.chats.iter().any(|listed| listed.id == chat.id))
+                {
+                    self.projects.new_chat = None;
+                }
                 self.projects.groups = groups;
                 self.projects.load_error = None;
                 if let Some(action) = selected {
@@ -162,6 +167,9 @@ impl ShellState {
                             },
                         })
                         .await?;
+                    if thread == self.thread_id && (self.projects.new_chat.is_some() || self.session_list.waiting_for_new_chat()) {
+                        self.show_new_session(project.as_ref().map(|p| p.id.clone()));
+                    }
                     self.project_menu(HubView::Browse);
                     self.start_session_list_refresh(backend);
                     if thread == self.thread_id

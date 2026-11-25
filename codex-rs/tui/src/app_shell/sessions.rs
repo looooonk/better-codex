@@ -9,7 +9,7 @@ use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_protocol::ThreadId;
-use ratatui::style::Styled;
+use ratatui::style::{Style, Styled};
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::cell::Cell;
@@ -72,6 +72,7 @@ pub(super) enum SessionListHit {
 #[derive(Debug, Clone, Default)]
 pub(super) struct SessionListState {
     all_rows: Vec<SessionRow>,
+    new_chat: Option<SessionRow>,
     rows: Vec<SessionRow>,
     selected: usize,
     scroll_top: Cell<usize>,
@@ -132,6 +133,16 @@ impl SessionListState {
             parent_thread_id: None,
             ancestor_thread_id: None,
         }
+    }
+
+    pub(super) fn waiting_for_new_chat(&self) -> bool {
+        self.new_chat.is_some()
+    }
+
+    pub(super) fn set_new_chat(&mut self, row: Option<SessionRow>) {
+        self.new_chat = row;
+        self.apply_search_filter();
+        self.normalize_selection_and_scroll();
     }
 
     pub(super) fn replace_threads(&mut self, threads: Vec<Thread>) {
@@ -562,18 +573,22 @@ impl SessionListState {
     }
 
     fn apply_search_filter(&mut self) {
+        if let Some(chat) = &self.new_chat
+            && self.all_rows.iter().any(|row| row.thread_id == chat.thread_id)
+        {
+            self.new_chat = None;
+        }
         let query = self.search_query.text().trim();
         if query.is_empty() {
             self.rows.clone_from(&self.all_rows);
-            return;
+        } else {
+            self.rows = self.all_rows.iter().filter(|row| row.matches_search(query)).cloned().collect();
         }
-
-        self.rows = self
-            .all_rows
-            .iter()
-            .filter(|row| row.matches_search(query))
-            .cloned()
-            .collect();
+        if !self.show_archived && let Some(chat) = &self.new_chat
+            && (query.is_empty() || chat.matches_search(query))
+        {
+            self.rows.insert(0, chat.clone());
+        }
     }
 
     fn keep_selection_visible(&self) {
@@ -620,6 +635,10 @@ impl SessionListState {
 }
 
 impl SessionRow {
+    pub(super) fn new_chat(thread_id: ThreadId, title: String, cwd: PathBuf, project_id: Option<String>) -> Self {
+        Self { thread_id, title, preview: String::new(), cwd, project_id, external_writer: false }
+    }
+
     fn from_thread(thread: Thread) -> Option<Self> {
         let thread_id = ThreadId::from_string(&thread.id).ok()?;
         let title = thread
@@ -649,11 +668,20 @@ impl SessionRow {
     }
 }
 
+pub(super) fn row_highlight() -> Style {
+    let highlight = Style::new().bg(palette::border());
+    if crossterm::style::Colored::ansi_color_disabled_memoized() {
+        highlight.reversed()
+    } else {
+        highlight
+    }
+}
+
 /// The trailing overflow button has a separate hover target.
 pub(super) fn highlight_active_chat(mut line: Line<'static>) -> Line<'static> {
     let title_spans = line.spans.len().saturating_sub(1);
     for span in &mut line.spans[..title_spans] {
-        span.style = span.style.bg(palette::border());
+        span.style = span.style.patch(row_highlight());
     }
     line
 }

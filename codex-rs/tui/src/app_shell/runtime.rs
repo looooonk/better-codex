@@ -151,6 +151,9 @@ pub(crate) async fn run(
         },
         resume_cwd_runtime,
     );
+    if !restoring_session {
+        shell.show_new_session(None);
+    }
     if restoring_session || shell.model_provider_id != config.model_provider_id {
         shell.refresh_session_models(&app_server);
     }

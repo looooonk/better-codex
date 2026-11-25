@@ -393,7 +393,7 @@ fn render_hover(
             return;
         }
         let mut area = Rect::new(text_area.x, pointer.y, text_area.width, 1);
-        let row_hover = Style::new().bg(palette::border());
+        let row_hover = super::sessions::row_highlight();
         if more {
             let start = text_area.x + more_button_start(width) as u16;
             if pointer.x >= start {
