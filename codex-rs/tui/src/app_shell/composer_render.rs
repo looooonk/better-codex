@@ -1,3 +1,6 @@
+#[path = "composer_markdown.rs"]
+mod markdown;
+
 use super::LocalSlashCommand;
 use super::composer_layout::ComposerViewport;
 use super::composer_layout::composer_layout;
@@ -50,6 +53,7 @@ pub(super) fn wrapped_composer_lines_with_selection(
     }
 
     let command_range = composer_command_range(text);
+    let mut markdown = markdown::SourceStyles::new(text);
     let Some(layout) = composer_layout(text, cursor, width) else {
         return wrapped_lines;
     };
@@ -81,6 +85,7 @@ pub(super) fn wrapped_composer_lines_with_selection(
                 range,
                 command_range,
                 selection.as_ref(),
+                &mut markdown,
                 indent,
             ));
         }
@@ -207,6 +212,7 @@ fn composer_row(
     range: Range<usize>,
     command_range: Option<&Range<usize>>,
     selection: Option<&Range<usize>>,
+    markdown: &mut markdown::SourceStyles,
     mut row: Line<'static>,
 ) -> Line<'static> {
     let mut spans = row.spans;
@@ -216,7 +222,7 @@ fn composer_row(
         let start = range.start + offset;
         let local_range = start..start + grapheme.len();
         let display_range = source_start + local_range.start..source_start + local_range.end;
-        let style = composer_grapheme_style(&local_range, &display_range, command_range, selection);
+        let style = composer_grapheme_style(markdown.at(display_range.start), &local_range, &display_range, command_range, selection);
         if let Some(previous_style) = current_style
             && previous_style != style
         {
@@ -236,12 +242,12 @@ fn composer_row(
 }
 
 fn composer_grapheme_style(
+    mut style: Style,
     local_range: &Range<usize>,
     display_range: &Range<usize>,
     command_range: Option<&Range<usize>>,
     selection: Option<&Range<usize>>,
 ) -> Style {
-    let mut style = Style::new();
     if command_range.is_some_and(|command| ranges_overlap(local_range, command)) {
         style = style.fg(palette::focus()).bold();
     }

@@ -378,3 +378,17 @@ fn empty_or_collapsed_bodies_have_no_text_hits() {
         (None, None)
     );
 }
+
+
+#[test]
+fn markdown_styles_cover_the_source_delimiters_across_wraps() {
+    let text = "**bold *and italic*** then `界`";
+    let lines = wrapped_composer_lines(text, false, text.len(), 11);
+    let spans = lines.iter().flat_map(|line| line.spans.iter().skip(1)).collect::<Vec<_>>();
+    let original = spans.iter().map(|s| s.content.as_ref()).collect::<String>();
+    assert_eq!(original.replace(' ', ""), text.replace(' ', ""));
+    assert!(spans.iter().any(|s| s.content.starts_with("**bold") && s.style.add_modifier.contains(Modifier::BOLD)));
+    assert!(spans.iter().any(|s| s.content.contains("*and") && s.style.add_modifier.contains(Modifier::ITALIC | Modifier::BOLD)));
+    assert!(spans.iter().any(|s| s.content.contains('界') && s.style.fg == Some(palette::cyan())));
+    insta::assert_snapshot!(spans.iter().map(|s| format!("{} {:?}", s.content, s.style.add_modifier)).collect::<Vec<_>>().join("\n"));
+}

@@ -1,0 +1,12 @@
+---
+source: tui/src/app_shell/composer_render_tests.rs
+assertion_line: 393
+expression: "spans.iter().map(|s|\nformat!(\"{} {:?}\", s.content,\ns.style.add_modifier)).collect::<Vec<_>>().join(\"\\n\")"
+---
+**bold  BOLD
+*and  BOLD | ITALIC
+italic* BOLD | ITALIC
+** BOLD
+ then  NONE
+`界 NONE
+` NONE
