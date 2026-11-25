@@ -386,13 +386,13 @@ impl ShellState {
     pub(super) fn replace_open_tool_output(
         &mut self,
         item_id: &str,
-        output: ToolOutputBuffer,
+        output: &ToolOutputBuffer,
         status: ToolBlockStatus,
     ) {
         if let Some(state) = &mut self.tool_output
             && state.target.item_id == item_id
         {
-            state.replace_output(output, status);
+            state.replace_output(output.clone(), status);
         }
     }
 

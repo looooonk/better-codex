@@ -41,6 +41,7 @@ pub(super) struct TranscriptRenderCache {
     math_cell: Option<crate::equations::CellSize>,
     math_metrics: std::cell::RefCell<crate::equations::Measurements>,
     items: HashMap<u64, CachedTranscriptItem>,
+    revisions: Vec<u64>,
     layouts: VecDeque<CachedTranscriptLayout>,
     visualizations: super::inline_visualizations::VisualizationState,
 }
@@ -60,10 +61,17 @@ impl TranscriptRenderCache {
                 self.math_metrics = Default::default();
             }
         }
+        // All widths share one transcript. Drop obsolete layouts before allocating
+        // their replacements so long streaming replies do not retain previous revisions.
+        if !self.revisions.iter().copied().eq(render_revisions(shell)) {
+            self.layouts.clear();
+            self.revisions.clear();
+            self.revisions.extend(render_revisions(shell));
+        }
         if let Some(index) = self
             .layouts
             .iter()
-            .position(|cached| cached.reusable && cached.matches(shell, width, cwd))
+            .position(|cached| cached.matches(shell, width, cwd))
             && let Some(cached) = self.layouts.remove(index)
         {
             let layout = Arc::clone(&cached.layout);
@@ -71,12 +79,20 @@ impl TranscriptRenderCache {
             return layout;
         }
 
+        let mut has_visualization = |revision, text: &str| {
+            self.items
+                .entry(revision)
+                .or_insert_with(|| CachedTranscriptItem::new(TranscriptKind::Assistant, text))
+                .has_visualization
+        };
         let has_visualizations = shell.transcript.iter().any(|item| {
             item.kind == TranscriptKind::Assistant
-                && crate::inline_visualization::contains_inline_visualization(&item.text)
-        }) || crate::inline_visualization::contains_inline_visualization(
-            &shell.streaming_assistant,
-        );
+                && has_visualization(item.render_revision, &item.text)
+        }) || (!shell.streaming_assistant.is_empty()
+            && has_visualization(
+                shell.streaming_assistant_revision,
+                &shell.streaming_assistant,
+            ));
         let visualization_context = has_visualizations
             .then(|| self.visualizations.context(shell))
             .flatten();
@@ -189,13 +205,14 @@ impl TranscriptRenderCache {
 
         self.items = current_items;
         let layout = Arc::new(TranscriptLayout::new(chunks, previous_kind));
+        if has_visualizations {
+            return layout;
+        }
         self.layouts.push_back(CachedTranscriptLayout {
             width,
             cwd: cwd.to_path_buf(),
             selected: shell.transcript_selection,
             app_theme: shell.app_theme,
-            reusable: !has_visualizations,
-            revisions: render_revisions(shell).collect(),
             layout: Arc::clone(&layout),
         });
         while self.layouts.len() > MAX_LAYOUT_VARIANTS {
@@ -205,18 +222,17 @@ impl TranscriptRenderCache {
     }
 
     pub(super) fn clear(&mut self) {
+        self.revisions.clear();
         self.items.clear();
         self.layouts.clear();
     }
 }
 
 struct CachedTranscriptLayout {
-    reusable: bool,
     width: u16,
     cwd: PathBuf,
     selected: Option<usize>,
     app_theme: TuiAppTheme,
-    revisions: Vec<u64>,
     layout: Arc<TranscriptLayout>,
 }
 
@@ -226,7 +242,6 @@ impl CachedTranscriptLayout {
             && self.cwd == cwd
             && self.selected == shell.transcript_selection
             && self.app_theme == shell.app_theme
-            && self.revisions.iter().copied().eq(render_revisions(shell))
     }
 }
 
@@ -268,13 +283,15 @@ fn push_cached_chunk(
     context: CachedRenderContext<'_>,
 ) {
     let separator_before = should_separate_transcript_item(*previous_kind, source.kind);
-    let mut cached = previous_items.remove(&source.revision).unwrap_or_default();
+    let mut cached = previous_items
+        .remove(&source.revision)
+        .unwrap_or_else(|| CachedTranscriptItem::new(source.kind, source.text));
     let lines = cached.lines(&source, context);
     chunks.push(TranscriptChunk {
         target: source.transcript_index.map(TranscriptTarget::Item),
         indent: context.indent,
         revision: source.revision,
-        anchor_source: source.anchor_source.clone(),
+        anchor_source: source.anchor_source,
         separator_before,
         lines,
     });
@@ -311,12 +328,20 @@ fn should_separate_transcript_item(
     )
 }
 
-#[derive(Default)]
 struct CachedTranscriptItem {
+    has_visualization: bool,
     variants: VecDeque<CachedRenderVariant>,
 }
 
 impl CachedTranscriptItem {
+    fn new(kind: TranscriptKind, text: &str) -> Self {
+        Self {
+            has_visualization: kind == TranscriptKind::Assistant
+                && crate::inline_visualization::contains_inline_visualization(text),
+            variants: VecDeque::new(),
+        }
+    }
+
     fn lines(
         &mut self,
         source: &CachedSource<'_>,
@@ -330,16 +355,13 @@ impl CachedTranscriptItem {
             visuals,
         } = context;
         let selected = source.selected;
-        if (source.kind != TranscriptKind::Assistant
-            || !crate::inline_visualization::contains_inline_visualization(source.text))
-            && let Some(index) = self.variants.iter().position(|variant| {
-                variant.width == width
-                    && variant.indent == indent
-                    && variant.cwd.as_path() == cwd
-                    && variant.selected == selected
-                    && variant.app_theme == app_theme
-            })
-            && let Some(variant) = self.variants.remove(index)
+        if let Some(index) = self.variants.iter().position(|variant| {
+            variant.width == width
+                && variant.indent == indent
+                && variant.cwd.as_path() == cwd
+                && variant.selected == selected
+                && variant.app_theme == app_theme
+        }) && let Some(variant) = self.variants.remove(index)
         {
             let lines = Arc::clone(&variant.lines);
             self.variants.push_back(variant);
@@ -357,6 +379,9 @@ impl CachedTranscriptItem {
             visuals,
         );
         let lines = indent_lines(lines, indent);
+        if self.has_visualization {
+            return lines;
+        }
         self.variants.push_back(CachedRenderVariant {
             width,
             indent,

@@ -324,3 +324,17 @@ fn transcript_line_equality_ignores_render_revision() {
         crate::app_shell::TranscriptLine::new(TranscriptKind::Assistant, "same text")
     );
 }
+
+#[test]
+fn replacing_streamed_text_releases_layouts_at_all_widths() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.clear_visible_transcript();
+    shell.push_streaming_assistant_delta("reply", "First packet");
+    let mut cache = TranscriptRenderCache::default();
+    let cwd = PathBuf::from(&shell.cwd);
+    let old = [WIDTH, WIDTH - 2].map(|width| Arc::downgrade(&cache.layout(&shell, width, &cwd)));
+    assert!(old.iter().all(|layout| layout.upgrade().is_some()));
+    shell.push_streaming_assistant_delta("reply", " and another");
+    cache.layout(&shell, WIDTH, &cwd);
+    assert!(old.iter().all(|layout| layout.upgrade().is_none()));
+}

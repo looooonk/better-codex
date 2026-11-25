@@ -181,6 +181,7 @@ mod tool_output_view;
 mod tool_payload;
 mod transcript_copy;
 mod transcript_export;
+mod transcript_output;
 mod transcript_render;
 mod transcript_retention;
 mod transcript_selection;
@@ -254,17 +255,13 @@ pub(crate) use startup_login::LoginOnboardingOutcome;
 pub(crate) use startup_login::run_login_onboarding;
 use tool_output::ToolOutputBuffer;
 use tool_output::ToolOutputState;
+use transcript_output::TRANSCRIPT_OUTPUT_HIGH_WATER_LINES;
 use transcript_render::TranscriptRenderCache;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
 use workspace::WorkspaceGitStatus;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
-const TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS: usize = 8_000;
-const TRANSCRIPT_OUTPUT_HIGH_WATER_LINES: usize = 160;
-const TRANSCRIPT_OUTPUT_LOW_WATER_CHARS: usize = 6_000;
-const TRANSCRIPT_OUTPUT_LOW_WATER_LINES: usize = 120;
-const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ...\n";
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const BACKEND_ACTION_POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -301,21 +298,6 @@ impl TranscriptLine {
             full_text: None,
             tool_status: None,
             item_id: None,
-            rewind_anchor: None,
-            tool_action: None,
-            tool_group_expanded: false,
-            render_revision: next_transcript_render_revision(),
-        }
-    }
-
-    fn output(text: impl Into<ToolOutputBuffer>, status: ToolBlockStatus, item_id: String) -> Self {
-        let full_text = text.into();
-        Self {
-            kind: TranscriptKind::Output,
-            text: compact_output_for_transcript(full_text.to_string()),
-            full_text: Some(full_text),
-            tool_status: Some(status),
-            item_id: Some(item_id),
             rewind_anchor: None,
             tool_action: None,
             tool_group_expanded: false,
@@ -792,7 +774,7 @@ impl ShellState {
                     &turn_id,
                     &turn.status,
                     duration,
-                    /*observed_wait*/ None,
+                    /*observed_model_time*/ None,
                 );
             }
         }
@@ -2103,113 +2085,6 @@ impl ShellState {
         );
     }
 
-    #[cfg(test)]
-    fn push_output(&mut self, text: impl Into<String>) {
-        self.push_output_with_status(text, ToolBlockStatus::Running);
-    }
-
-    fn push_output_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
-        self.push_output_with_status_for_item(next_local_output_item_id(), text.into(), status);
-    }
-
-    fn push_output_with_status_for_item(
-        &mut self,
-        item_id: impl Into<String>,
-        text: impl Into<ToolOutputBuffer>,
-        status: ToolBlockStatus,
-    ) {
-        let item_id = item_id.into();
-        let text = text.into();
-        let existing_full_text = self
-            .transcript
-            .iter()
-            .rev()
-            .find(|existing| {
-                existing.kind == TranscriptKind::Output
-                    && existing.item_id.as_deref() == Some(&item_id)
-                    && matches!(
-                        existing.tool_status,
-                        Some(
-                            ToolBlockStatus::Running
-                                | ToolBlockStatus::Interrupted
-                                | ToolBlockStatus::Unconfirmed
-                        )
-                    )
-            })
-            .map(|existing| {
-                existing
-                    .full_text
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(|| existing.text.clone().into())
-            })
-            .or_else(|| {
-                self.tool_output
-                    .as_ref()
-                    // The title notification may already have settled the viewer's status while
-                    // its buffer still holds the streamed capture of an evicted transcript row.
-                    .filter(|output| output.target.item_id == item_id)
-                    .map(|output| output.output_buffer().clone())
-            });
-        let full_text = if status != ToolBlockStatus::Running {
-            existing_full_text
-                .filter(|existing| existing.len() > text.len())
-                .unwrap_or_else(|| text.clone())
-        } else {
-            text.clone()
-        };
-        self.replace_open_tool_output(&item_id, full_text.clone(), status);
-        let mut line = TranscriptLine::output(text, status, item_id);
-        line.full_text = Some(full_text);
-        self.upsert_line(line);
-    }
-
-    fn push_output_delta_with_status_for_item(
-        &mut self,
-        item_id: impl Into<String>,
-        delta: impl Into<String>,
-        status: ToolBlockStatus,
-    ) {
-        let item_id = item_id.into();
-        let delta = delta.into();
-        if delta.is_empty() {
-            return;
-        }
-
-        self.append_open_tool_output(&item_id, &delta, status);
-
-        if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
-            existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
-        }) {
-            let full_text = existing
-                .full_text
-                .get_or_insert_with(|| existing.text.clone().into());
-            full_text.append(&delta);
-            existing.text = compact_output_for_transcript(full_text.to_string());
-            existing.tool_status = Some(status);
-            existing.mark_render_changed();
-            self.trim_transcript();
-            return;
-        }
-
-        let output = self
-            .tool_output
-            .as_ref()
-            .filter(|output| output.target.item_id == item_id)
-            .map_or_else(|| delta.into(), |output| output.output_buffer().clone());
-        self.push_output_with_status_for_item(item_id, output, status);
-    }
-
-    fn update_output_status_for_item(&mut self, item_id: &str, status: ToolBlockStatus) {
-        self.update_open_tool_output_status(item_id, status);
-        if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
-            existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(item_id)
-        }) {
-            existing.tool_status = Some(status);
-            existing.mark_render_changed();
-        }
-    }
-
     fn show_hint(&mut self, text: impl Into<String>) {
         self.input_hint = Some(text.into());
     }
@@ -3029,54 +2904,6 @@ fn nonempty_output_text(text: String) -> Option<String> {
     } else {
         Some(text)
     }
-}
-
-fn compact_output_for_transcript(text: String) -> String {
-    let was_compacted = text.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX);
-    let source = if was_compacted {
-        &text[TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len()..]
-    } else {
-        text.as_str()
-    };
-    let needs_compaction = source
-        .chars()
-        .nth(TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS)
-        .is_some()
-        || source
-            .split(['\n', '\r'])
-            .nth(TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
-            .is_some();
-    if !needs_compaction {
-        return text;
-    }
-
-    let normalized = source.replace('\r', "\n");
-    let mut tail_lines = normalized
-        .lines()
-        .rev()
-        .take(TRANSCRIPT_OUTPUT_LOW_WATER_LINES)
-        .collect::<Vec<_>>();
-    tail_lines.reverse();
-    let mut compact = tail_lines.join("\n");
-    if compact
-        .chars()
-        .nth(TRANSCRIPT_OUTPUT_LOW_WATER_CHARS)
-        .is_some()
-    {
-        let mut tail_chars = compact
-            .chars()
-            .rev()
-            .take(TRANSCRIPT_OUTPUT_LOW_WATER_CHARS)
-            .collect::<Vec<_>>();
-        tail_chars.reverse();
-        compact = tail_chars.into_iter().collect();
-    }
-    let mut output = String::with_capacity(
-        TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len() + TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS,
-    );
-    output.push_str(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX);
-    output.push_str(compact.trim_start_matches('\n'));
-    output
 }
 
 fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
