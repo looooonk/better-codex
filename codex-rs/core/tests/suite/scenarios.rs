@@ -225,6 +225,9 @@ mod tools_namespace_budget;
 #[path = "scenarios_skill_catalog_dedup.rs"]
 mod skill_catalog_dedup;
 
+#[path = "scenarios_executor_skill_fixture.rs"]
+mod executor_skill_fixture;
+
 #[path = "scenarios_frozen_cloud_skills.rs"]
 mod frozen_cloud_skills;
 
@@ -354,9 +357,8 @@ fn configure_scenario_catalog(config: &mut Config) {
     config.cloud_skill_enabled = false;
 }
 
-fn configure_catalog_plugin_scenario(config: &mut Config) {
+fn configure_skill_scenario(config: &mut Config) {
     configure_scenario_catalog(config);
-    config.workspace_roots = vec![config.cwd.clone()];
     let stack = &config.config_layer_stack;
     let fixture_config = stack.effective_config();
     // Keep the fixture's plugin and App policy while avoiding discovery of the real
@@ -371,7 +373,7 @@ fn configure_catalog_plugin_scenario(config: &mut Config) {
         stack.requirements().clone(),
         stack.requirements_toml().clone(),
     )
-    .expect("isolated plugin scenario config")
+    .expect("isolated skill scenario config")
     .with_cloud_config_binding(stack.cloud_config_binding().cloned());
 }
 
@@ -1139,9 +1141,7 @@ async fn astra_kickoff_with_skills_plugins_and_remote_compaction() -> Result<()>
             .await?;
             Ok::<(), anyhow::Error>(())
         })
-        .with_config(|config| {
-            configure_scenario_catalog(config);
-        });
+        .with_config(configure_skill_scenario);
     let test = builder.build(&server).await?;
 
     for input in [
@@ -1264,7 +1264,7 @@ enabled = true
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_extensions(skills_extensions())
         .with_config(move |config| {
-            configure_scenario_catalog(config);
+            configure_skill_scenario(config);
             config
                 .features
                 .set_enabled(Feature::OmitSkillDescriptions, omit_descriptions)
@@ -1881,12 +1881,7 @@ async fn skill_read_recovers_omitted_installation_and_reads_selected_environment
         &mut extensions,
         SkillProviders::new()
             .with_cloud_provider(Arc::new(InstallationSkills(catalog)))
-            .with_executor_provider(Arc::new(
-                ExecutorSkillProvider::new_with_restriction_product(
-                    Arc::new(EnvironmentManager::default_for_tests()),
-                    /*restriction_product*/ None,
-                ),
-            )),
+            .with_executor_provider(executor_skill_fixture::empty_catalog()),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
             catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
@@ -1956,7 +1951,7 @@ async fn skill_read_recovers_omitted_installation_and_reads_selected_environment
         .with_exec_server_url("none")
         .with_extensions(Arc::new(extensions.build()))
         .with_config(|config| {
-            configure_scenario_catalog(config);
+            configure_skill_scenario(config);
             config.cloud_skill_enabled = true;
             config
                 .features
@@ -2760,7 +2755,7 @@ async fn astra_refreshes_plugin_tools_and_skills_in_an_existing_thread(
         .with_home(Arc::clone(&home))
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_extensions(skills_extensions())
-        .with_config(configure_scenario_catalog);
+        .with_config(configure_skill_scenario);
     let test = builder.build(&server).await?;
 
     test.submit_turn("Check whether the Notes plugin echo tool is available.")
@@ -2803,19 +2798,45 @@ async fn astra_refreshes_plugin_tools_and_skills_in_an_existing_thread(
     test.submit_text_turn("Use the Notes tool again to check that the kickoff is Friday.")
         .await?;
 
-    let snapshot_name = if simplified_selection_hints {
-        "astra_plugin_refresh_simplified_selection_hints_on"
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 7);
+    for (request, call_id, expected) in [
+        (&requests[1], "before-lookup", "[]"),
+        (&requests[3], "after-lookup", r#"["mcp__notes__echo"]"#),
+        (
+            &requests[4],
+            "first-echo-call",
+            "ECHOING: Mira owns the kickoff",
+        ),
+        (
+            &requests[6],
+            "second-echo-call",
+            "ECHOING: The kickoff is Friday",
+        ),
+    ] {
+        assert_eq!(
+            super::code_mode::custom_tool_output_last_non_empty_text(request, call_id).as_deref(),
+            Some(expected),
+            "{call_id}",
+        );
+    }
+    let before = requests[0].message_input_texts("developer").join("\n");
+    let after = requests[2].message_input_texts("developer").join("\n");
+    assert!(!before.contains("- notes:summarize:"));
+    assert!(after.contains("- mcp__notes:"));
+    // The automatic inventory is budgeted. An explicitly selected skill must
+    // reach the model even when it doesn't fit in that inventory.
+    assert!(requests[2].message_input_texts("user").iter().any(|text| {
+        text.contains("<name>notes:summarize</name>")
+            && text.contains("description: Summarize team notes")
+            && text.contains("State the owner and date from the notes.")
+    }));
+    let hint = if simplified_selection_hints {
+        "The user selected the `notes` plugin."
     } else {
-        "astra_plugin_refresh_simplified_selection_hints_off"
+        "MCP servers from this plugin available in this session: `notes`."
     };
-    insta::assert_snapshot!(
-        snapshot_name,
-        context_snapshot::format_request_history_snapshot(
-            "Astra checks for Notes, refreshes its installed plugin without restarting, and uses the new skill and Code Mode MCP tool across turns.",
-            &mock.requests(),
-            &ContextSnapshotOptions::default().include_request_settings(),
-        )
-    );
+    assert!(after.contains(hint));
     Ok(())
 }
 
@@ -3934,7 +3955,8 @@ async fn catalog_plugin_guidance_follows_model_and_survives_resume() -> Result<(
     let home = Arc::new(TempDir::new()?);
     write_scenario_capabilities(&home)?;
     let configure = |config: &mut Config| {
-        configure_catalog_plugin_scenario(config);
+        configure_skill_scenario(config);
+        config.workspace_roots = vec![config.cwd.clone()];
         let catalog = config.model_catalog.as_mut().unwrap();
         let base = catalog
             .models
@@ -4192,7 +4214,8 @@ async fn catalog_selected_plugin_wording_preserves_capability_policy(
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_extensions(skills_extensions())
         .with_config(move |config| {
-            configure_catalog_plugin_scenario(config);
+            configure_skill_scenario(config);
+            config.workspace_roots = vec![config.cwd.clone()];
             config.chatgpt_base_url = apps.chatgpt_base_url;
             config
                 .features
@@ -4387,7 +4410,8 @@ async fn catalog_selected_plugin_omission_bounds_runtime_capabilities() -> Resul
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_extensions(skills_extensions())
         .with_config(move |config| {
-            configure_catalog_plugin_scenario(config);
+            configure_skill_scenario(config);
+            config.workspace_roots = vec![config.cwd.clone()];
             config.chatgpt_base_url = apps.chatgpt_base_url;
             config.features.enable(Feature::Apps).unwrap();
             config

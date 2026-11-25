@@ -27,12 +27,7 @@ async fn frozen_cloud_skills_with_named_executor_request_history() -> Result<()>
         &mut extensions,
         SkillProviders::new()
             .with_cloud_provider(Arc::new(provider))
-            .with_executor_provider(Arc::new(
-                ExecutorSkillProvider::new_with_restriction_product(
-                    Arc::new(EnvironmentManager::default_for_tests()),
-                    /*restriction_product*/ None,
-                ),
-            )),
+            .with_executor_provider(executor_skill_fixture::empty_catalog()),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: true,
             omit_descriptions: false,
@@ -79,7 +74,7 @@ async fn frozen_cloud_skills_with_named_executor_request_history() -> Result<()>
         .with_exec_server_url("none")
         .with_extensions(Arc::new(extensions.build()))
         .with_config(|config| {
-            configure_scenario_catalog(config);
+            configure_skill_scenario(config);
             config.cloud_skill_enabled = true;
             config
                 .features

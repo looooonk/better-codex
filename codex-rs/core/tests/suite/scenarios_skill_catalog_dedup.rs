@@ -123,7 +123,7 @@ async fn cloud_preference_preserves_executor_aliases_and_description_budget(
                 .features
                 .set_enabled(Feature::OmitSkillDescriptions, omit_descriptions)
                 .expect("set omit_skill_descriptions feature");
-            super::configure_scenario_catalog(config);
+            super::configure_skill_scenario(config);
             config.cloud_skill_enabled = true;
             config
                 .features
@@ -186,7 +186,7 @@ async fn skill_catalog_deltas_survive_resume_and_rebuild_after_compaction() -> R
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
-    // Both skill roots include the home path, so its length affects the metadata budget.
+    // The skill-root alias includes the home path. Fix its byte length across machines.
     let temp_root = dunce::canonicalize(std::env::temp_dir())?;
     let home = Arc::new(
         tempfile::Builder::new()
@@ -230,7 +230,7 @@ async fn skill_catalog_deltas_survive_resume_and_rebuild_after_compaction() -> R
                 model.include_skills_usage_instructions = false;
             })
             .with_config(|config| {
-                super::configure_scenario_catalog(config);
+                super::configure_skill_scenario(config);
                 config.workspace_roots = vec![config.cwd.clone()];
                 config
                     .features
@@ -296,13 +296,8 @@ async fn skill_catalog_deltas_survive_resume_and_rebuild_after_compaction() -> R
 
     let limited = builder()
         .with_config(|config| {
-            super::configure_scenario_catalog(config);
-            config.workspace_roots = vec![config.cwd.clone()];
-            config
-                .features
-                .enable(Feature::SkillCatalogDeltas)
-                .expect("enable skill catalog deltas");
-            config.skill_max_context_tokens = NonZeroUsize::new(172);
+            // Only the first few fixture skills fit after rebuilding the catalog.
+            config.skill_max_context_tokens = NonZeroUsize::new(60);
         })
         .restart_with_auto_env(&server, &resumed)
         .await?;
