@@ -17,8 +17,9 @@ use codex_execpolicy::Policy;
 use codex_execpolicy::PolicyParser;
 use codex_execpolicy::RequirementsExecPolicy;
 use codex_execpolicy::RuleMatch;
-use codex_execpolicy::blocking_append_allow_prefix_rule;
-use codex_execpolicy::blocking_append_network_rule;
+use codex_execpolicy::allow_prefix_rule_line;
+use codex_execpolicy::network_rule_line;
+use codex_execpolicy::read_inherited_default_rules;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
@@ -43,6 +44,7 @@ use shlex::try_join as shlex_try_join;
 mod executable_identity;
 mod inheritance;
 mod model_policy;
+mod private_rules;
 
 pub(crate) use inheritance::InheritedExecPolicy;
 pub(crate) use model_policy::AllowPrefixRules;
@@ -501,11 +503,11 @@ impl ExecPolicyManager {
                         "exec policy update semaphore closed".to_string(),
                     ),
                 })?;
-        let policy_path = default_policy_path(codex_home);
+        let policy_path = private_rules::path(codex_home);
         spawn_blocking({
             let policy_path = policy_path.clone();
             let prefix = amendment.command.clone();
-            move || blocking_append_allow_prefix_rule(&policy_path, &prefix)
+            move || private_rules::append_line(&policy_path, &allow_prefix_rule_line(&prefix)?)
         })
         .await
         .map_err(|source| ExecPolicyUpdateError::JoinBlockingTask { source })?
@@ -554,20 +556,15 @@ impl ExecPolicyManager {
                         "exec policy update semaphore closed".to_string(),
                     ),
                 })?;
-        let policy_path = default_policy_path(codex_home);
+        let policy_path = private_rules::path(codex_home);
         let host = host.to_string();
         spawn_blocking({
             let policy_path = policy_path.clone();
             let host = host.clone();
             let justification = justification.clone();
             move || {
-                blocking_append_network_rule(
-                    &policy_path,
-                    &host,
-                    protocol,
-                    decision,
-                    justification.as_deref(),
-                )
+                let line = network_rule_line(&host, protocol, decision, justification.as_deref())?;
+                private_rules::append_line(&policy_path, &line)
             }
         })
         .await
@@ -685,59 +682,109 @@ pub(crate) async fn load_exec_policy_with_warning(
     }
 }
 
-async fn policy_files(stack: &ConfigLayerStack) -> Result<Vec<PathBuf>, ExecPolicyError> {
-    let folders = stack.layers_low_to_high().filter_map(|layer| {
+fn base_user_home(stack: &ConfigLayerStack) -> Option<&Path> {
+    if stack.ignore_user_and_project_exec_policy_rules() {
+        return None;
+    }
+    stack
+        .layers_low_to_high()
+        .find_map(|layer| match &layer.name {
+            ConfigLayerSource::User { file, .. } => file.as_path().parent(),
+            _ => None,
+        })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PolicySource {
+    PrivateUser,
+    StockUser,
+    Other,
+}
+
+#[derive(Debug)]
+struct PolicyFile {
+    path: PathBuf,
+    source: PolicySource,
+}
+
+async fn policy_files(stack: &ConfigLayerStack) -> Result<Vec<PolicyFile>, ExecPolicyError> {
+    let mut private_path = base_user_home(stack).map(private_rules::path);
+    let mut files = Vec::new();
+    // Disabled layers are omitted. Keep the private rules at user precedence,
+    // including when an additional named profile shares its config folder.
+    for layer in stack.layers_low_to_high() {
         if stack.ignore_user_and_project_exec_policy_rules()
             && matches!(
                 layer.name,
                 ConfigLayerSource::User { .. } | ConfigLayerSource::Project { .. }
             )
         {
-            None
-        } else {
-            layer.config_folder()
+            continue;
         }
-    });
-    // Disabled project layers already represent the trust decision, so hooks
-    // and exec-policy loading can reuse the normal trusted-layer view.
-    // Iterate the layers in increasing order of precedence, adding the *.rules
-    // from each layer, so that higher-precedence layers can override
-    // rules defined in lower-precedence ones.
-    let mut policy_paths = Vec::new();
-    for config_folder in folders {
-        let policy_dir = config_folder.join(RULES_DIR_NAME);
-        policy_paths.extend(collect_policy_files(&policy_dir).await?);
+        let source = if matches!(layer.name, ConfigLayerSource::User { .. }) {
+            if let Some(path) = private_path.take()
+                && private_rules::exists(&path).await.map_err(|source| {
+                    ExecPolicyError::ReadFile {
+                        path: path.clone(),
+                        source,
+                    }
+                })?
+            {
+                files.push(PolicyFile {
+                    path,
+                    source: PolicySource::PrivateUser,
+                });
+            }
+            PolicySource::StockUser
+        } else {
+            PolicySource::Other
+        };
+        if let Some(config_folder) = layer.config_folder() {
+            let paths = collect_policy_files(config_folder.join(RULES_DIR_NAME)).await?;
+            files.extend(paths.into_iter().map(|path| PolicyFile { path, source }));
+        }
     }
-    Ok(policy_paths)
+    Ok(files)
 }
 
 pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy, ExecPolicyError> {
-    let policy_paths = policy_files(config_stack).await?;
-    tracing::trace!(
-        policy_paths = ?policy_paths,
-        "loaded exec policies"
-    );
-
+    let files = policy_files(config_stack).await?;
+    tracing::trace!(?files, "loaded exec policies");
+    let inherited = base_user_home(config_stack)
+        .map(|home| (home, home.join(RULES_DIR_NAME).join(DEFAULT_POLICY_FILE)));
     let mut parser = PolicyParser::new();
-    for policy_path in &policy_paths {
-        let contents =
-            fs::read_to_string(policy_path)
-                .await
-                .map_err(|source| ExecPolicyError::ReadFile {
-                    path: policy_path.clone(),
-                    source,
-                })?;
-        let identifier = policy_path.to_string_lossy().to_string();
+    let mut private_denials = Vec::new();
+    for PolicyFile { path, source } in &files {
+        if *source == PolicySource::Other {
+            parser.network_rules_mut().append(&mut private_denials);
+        }
+        let contents = match &inherited {
+            Some((home, default)) if path == default => {
+                read_inherited_default_rules(home, path, BANNED_PREFIX_SUGGESTIONS).await
+            }
+            _ => fs::read_to_string(path).await,
+        }
+        .map_err(|source| ExecPolicyError::ReadFile {
+            path: path.clone(),
+            source,
+        })?;
+        let identifier = path.to_string_lossy().to_string();
+        let start = parser.network_rules_mut().len();
         parser
             .parse(&identifier, &contents)
             .map_err(|source| ExecPolicyError::ParsePolicy {
                 path: identifier,
                 source,
             })?;
+        if *source == PolicySource::PrivateUser {
+            private_denials =
+                private_rules::defer_effective_denials(parser.network_rules_mut(), start);
+        }
     }
+    parser.network_rules_mut().append(&mut private_denials);
 
     let policy = parser.build();
-    tracing::debug!("loaded rules from {} files", policy_paths.len());
+    tracing::debug!("loaded rules from {} files", files.len());
     tracing::trace!(rules = ?policy, "exec policy rules loaded");
 
     let Some(requirements_policy) = config_stack.requirements().exec_policy.as_deref() else {
@@ -899,10 +946,6 @@ fn profile_has_managed_filesystem_restrictions(permission_profile: &PermissionPr
             FileSystemSandboxKind::Restricted
         )
         && !file_system_sandbox_policy.has_full_disk_write_access()
-}
-
-pub(crate) fn default_policy_path(codex_home: &Path) -> PathBuf {
-    codex_home.join(RULES_DIR_NAME).join(DEFAULT_POLICY_FILE)
 }
 
 #[cfg(test)]

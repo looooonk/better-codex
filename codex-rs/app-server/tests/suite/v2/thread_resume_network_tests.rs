@@ -68,10 +68,9 @@ allow_local_binding = true
     let rules_dir = codex_home.path().join("rules");
     std::fs::create_dir_all(&rules_dir)?;
     let rules_path = rules_dir.join("default.rules");
-    std::fs::write(
-        &rules_path,
-        "network_rule(host=\"127.0.0.2\", protocol=\"http\", decision=\"allow\")\n",
-    )?;
+    let standard_rules =
+        "network_rule(host=\"127.0.0.2\", protocol=\"http\", decision=\"allow\")\n";
+    std::fs::write(&rules_path, standard_rules)?;
 
     let thread_id = {
         let mut app = TestAppServer::builder()
@@ -317,7 +316,8 @@ allow_local_binding = true
             "{call_id}: {output}"
         );
     }
-    let rules = std::fs::read_to_string(rules_path)?;
+    assert_eq!(std::fs::read_to_string(rules_path)?, standard_rules);
+    let rules = std::fs::read_to_string(codex_home.path().join("better-codex.exec-policy"))?;
     assert!(
         rules.contains("network_rule(host=\"127.0.0.3\", protocol=\"http\", decision=\"allow\""),
         "{rules}"

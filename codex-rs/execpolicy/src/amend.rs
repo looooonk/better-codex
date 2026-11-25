@@ -66,6 +66,10 @@ pub fn blocking_append_allow_prefix_rule(
     policy_path: &Path,
     prefix: &[String],
 ) -> Result<(), AmendError> {
+    append_rule_line(policy_path, &allow_prefix_rule_line(prefix)?)
+}
+
+pub fn allow_prefix_rule_line(prefix: &[String]) -> Result<String, AmendError> {
     if prefix.is_empty() {
         return Err(AmendError::EmptyPrefix);
     }
@@ -76,8 +80,9 @@ pub fn blocking_append_allow_prefix_rule(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| AmendError::SerializePrefix { source })?;
     let pattern = format!("[{}]", tokens.join(", "));
-    let rule = format!(r#"prefix_rule(pattern={pattern}, decision="allow")"#);
-    append_rule_line(policy_path, &rule)
+    Ok(format!(
+        r#"prefix_rule(pattern={pattern}, decision="allow")"#
+    ))
 }
 
 /// Note this function uses advisory file locking and performs blocking I/O, so it should be used
@@ -89,6 +94,18 @@ pub fn blocking_append_network_rule(
     decision: Decision,
     justification: Option<&str>,
 ) -> Result<(), AmendError> {
+    append_rule_line(
+        policy_path,
+        &network_rule_line(host, protocol, decision, justification)?,
+    )
+}
+
+pub fn network_rule_line(
+    host: &str,
+    protocol: NetworkRuleProtocol,
+    decision: Decision,
+    justification: Option<&str>,
+) -> Result<String, AmendError> {
     let host = normalize_network_rule_host(host)
         .map_err(|err| AmendError::InvalidNetworkRule(err.to_string()))?;
     if let Some(raw) = justification
@@ -125,8 +142,7 @@ pub fn blocking_append_network_rule(
             .map_err(|source| AmendError::SerializeNetworkRule { source })?;
         args.push(format!("justification={justification}"));
     }
-    let rule = format!("network_rule({})", args.join(", "));
-    append_rule_line(policy_path, &rule)
+    Ok(format!("network_rule({})", args.join(", ")))
 }
 
 fn append_rule_line(policy_path: &Path, rule: &str) -> Result<(), AmendError> {

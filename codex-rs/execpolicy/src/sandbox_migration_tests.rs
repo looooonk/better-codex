@@ -56,3 +56,17 @@ network_rule(host="api.github.com", protocol="https", decision="allow")
         post_migration_policy
     );
 }
+
+#[tokio::test]
+async fn inherited_legacy_exclusions_preserve_source_line_numbers() -> io::Result<()> {
+    let home = tempdir()?;
+    let path = home.path().join("default.rules");
+    let contents = "prefix_rule(pattern=[\"git\"], decision=\"allow\")\ninvalid()\n";
+    std::fs::write(&path, contents)?;
+    assert_eq!(
+        read_inherited_default_rules(home.path(), &path, &[&["git"]]).await?,
+        "\ninvalid()\n"
+    );
+    assert_eq!(std::fs::read_to_string(path)?, contents);
+    Ok(())
+}

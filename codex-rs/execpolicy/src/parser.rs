@@ -78,6 +78,11 @@ impl PolicyParser {
         Ok(())
     }
 
+    /// Network rules collected so far, in the order used for host decisions.
+    pub fn network_rules_mut(&mut self) -> &mut Vec<NetworkRule> {
+        &mut self.builder.get_mut().network_rules
+    }
+
     pub fn build(self) -> crate::policy::Policy {
         self.builder.into_inner().build()
     }

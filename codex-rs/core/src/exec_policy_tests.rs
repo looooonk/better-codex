@@ -1734,13 +1734,175 @@ async fn append_execpolicy_amendment_updates_policy_and_file() {
         }
     ));
 
-    let contents = fs::read_to_string(default_policy_path(codex_home.path()))
+    let contents = fs::read_to_string(private_rules::path(codex_home.path()))
         .expect("policy file should have been created");
     assert_eq!(
         contents,
         r#"prefix_rule(pattern=["echo", "hello"], decision="allow")
 "#
     );
+}
+
+#[tokio::test]
+async fn saved_approvals_reload_alongside_current_standard_rules() -> anyhow::Result<()> {
+    let (home, config) = test_config().await;
+    let standard = home.path().join("rules/default.rules");
+    fs::create_dir_all(standard.parent().expect("rules directory"))?;
+    let original = "prefix_rule(pattern=[\"git\"], decision=\"allow\")\n";
+    fs::write(&standard, original)?;
+    let stack = &config.config_layer_stack;
+    let manager = ExecPolicyManager::load(stack).await?;
+    manager
+        .append_amendment_and_update(
+            home.path(),
+            &ExecPolicyAmendment::from(vec!["foo".to_string()]),
+        )
+        .await?;
+    manager
+        .append_network_rule_and_update(
+            home.path(),
+            "example.com",
+            NetworkRuleProtocol::Https,
+            Decision::Allow,
+            /*justification*/ None,
+        )
+        .await?;
+
+    let reload = load_exec_policy(stack).await?;
+    assert_eq!(reload.get_allowed_prefixes(), vec![vec!["foo"]]);
+    assert_eq!(
+        reload.compiled_network_domains(),
+        (vec!["example.com".to_string()], vec![])
+    );
+    assert_eq!(fs::read_to_string(&standard)?, original);
+    let marker = home.path().join(".sandbox_migration");
+    assert!(!marker.exists());
+
+    // Standard Codex completed its migration and subsequently saved new rules.
+    fs::write(&marker, "v1\n")?;
+    let new_standard = format!(
+        "{original}network_rule(host=\"example.com\", protocol=\"https\", decision=\"deny\")\n"
+    );
+    fs::write(&standard, &new_standard)?;
+    let reload = load_exec_policy(stack).await?;
+    assert_eq!(
+        reload.get_allowed_prefixes(),
+        vec![vec!["foo"], vec!["git"]]
+    );
+    assert_eq!(
+        reload.compiled_network_domains(),
+        (vec![], vec!["example.com".to_string()])
+    );
+    assert_eq!(fs::read_to_string(standard)?, new_standard);
+    assert_eq!(fs::read_to_string(marker)?, "v1\n");
+
+    let ignored = stack
+        .clone()
+        .with_user_and_project_exec_policy_rules_ignored(
+            /*ignore_user_and_project_exec_policy_rules*/ true,
+        );
+    let reload = load_exec_policy(&ignored).await?;
+    assert!(reload.get_allowed_prefixes().is_empty());
+    assert!(reload.network_rules().is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn private_network_denials_survive_stock_grants_at_user_precedence() -> anyhow::Result<()> {
+    const HOST: &str = "example.com";
+    let (home, config) = test_config().await;
+    let standard = home.path().join("rules/default.rules");
+    fs::create_dir_all(standard.parent().expect("rules directory"))?;
+    let stock_allow = r#"network_rule(host="example.com", protocol="http", decision="allow")"#;
+    fs::write(&standard, stock_allow)?;
+
+    let stack = &config.config_layer_stack;
+    let manager = ExecPolicyManager::load(stack).await?;
+    let allowed = (vec![HOST.to_string()], vec![]);
+    let denied = (vec![], vec![HOST.to_string()]);
+    // The compiler applies decisions to the host across protocols. A repeated
+    // decision must also take effect after an intervening contradictory one.
+    for decision in [
+        Decision::Allow,
+        Decision::Forbidden,
+        Decision::Allow,
+        Decision::Forbidden,
+    ] {
+        manager
+            .append_network_rule_and_update(
+                home.path(),
+                HOST,
+                NetworkRuleProtocol::Https,
+                decision,
+                /*justification*/ None,
+            )
+            .await?;
+        let expected = if decision == Decision::Allow {
+            &allowed
+        } else {
+            &denied
+        };
+        assert_eq!(&manager.current().compiled_network_domains(), expected);
+        assert_eq!(
+            &load_exec_policy(stack).await?.compiled_network_domains(),
+            expected
+        );
+    }
+    assert_eq!(fs::read_to_string(&standard)?, stock_allow);
+
+    let project = tempdir()?;
+    fs::create_dir(project.path().join(RULES_DIR_NAME))?;
+    fs::write(project.path().join("rules/project.rules"), stock_allow)?;
+    let layers = vec![
+        ConfigLayerEntry::new(
+            ConfigLayerSource::User {
+                file: AbsolutePathBuf::from_absolute_path(home.path().join(CONFIG_TOML_FILE))?,
+                profile: None,
+            },
+            TomlValue::Table(Default::default()),
+        ),
+        ConfigLayerEntry::new(
+            ConfigLayerSource::Project {
+                dot_codex_folder: AbsolutePathBuf::from_absolute_path(project.path())?,
+            },
+            TomlValue::Table(Default::default()),
+        ),
+    ];
+    let with_project = ConfigLayerStack::new(
+        layers.clone(),
+        ConfigRequirements::default(),
+        ConfigRequirementsToml::default(),
+    )?;
+    assert_eq!(
+        load_exec_policy(&with_project)
+            .await?
+            .compiled_network_domains(),
+        allowed
+    );
+
+    let mut managed = Policy::empty();
+    managed.add_network_rule(
+        HOST,
+        NetworkRuleProtocol::Https,
+        Decision::Forbidden,
+        /*justification*/ None,
+    )?;
+    let requirements = ConfigRequirements {
+        exec_policy: Some(Sourced::new(
+            RequirementsExecPolicy::new(managed),
+            RequirementSource::Unknown,
+        )),
+        ..Default::default()
+    };
+    let with_managed =
+        ConfigLayerStack::new(layers, requirements, ConfigRequirementsToml::default())?;
+    assert_eq!(
+        load_exec_policy(&with_managed)
+            .await?
+            .compiled_network_domains(),
+        denied
+    );
+    Ok(())
 }
 
 #[tokio::test]

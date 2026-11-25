@@ -9,6 +9,23 @@ use tokio::io::AsyncWriteExt;
 
 const MIGRATION_MARKER_FILENAME: &str = ".sandbox_migration";
 
+/// Read standard Codex's rules with the same legacy exclusions as its one-time migration.
+/// Check the marker first so a concurrent migration cannot make stale rules appear current.
+pub async fn read_inherited_default_rules(
+    codex_home: &Path,
+    policy_path: &Path,
+    banned_prefixes: &[&[&str]],
+) -> io::Result<String> {
+    let migrated = tokio::fs::try_exists(codex_home.join(MIGRATION_MARKER_FILENAME)).await?;
+    let contents = tokio::fs::read_to_string(policy_path).await?;
+    if migrated {
+        Ok(contents)
+    } else {
+        // Keep source line numbers accurate when reporting parse errors in the shared file.
+        Ok(replace_banned_allow_rules(&contents, banned_prefixes, "\n"))
+    }
+}
+
 /// removes legacy allow rules that newer codex versions no longer offer.
 ///
 /// this migration is intentionally one-shot. once complete, a marker in `codex_home` prevents
@@ -53,7 +70,7 @@ async fn clean_rules_file(policy_path: &Path, banned_prefixes: &[&[&str]]) -> io
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(err) => return Err(err),
     };
-    if strip_banned_allow_rules(&contents, banned_prefixes) == contents {
+    if replace_banned_allow_rules(&contents, banned_prefixes, "") == contents {
         return Ok(());
     }
 
@@ -70,7 +87,7 @@ async fn clean_rules_file(policy_path: &Path, banned_prefixes: &[&[&str]]) -> io
 
     let mut contents = String::new();
     file.read_to_string(&mut contents).await?;
-    let retained = strip_banned_allow_rules(&contents, banned_prefixes);
+    let retained = replace_banned_allow_rules(&contents, banned_prefixes, "");
     if retained == contents {
         return Ok(());
     }
@@ -81,8 +98,11 @@ async fn clean_rules_file(policy_path: &Path, banned_prefixes: &[&[&str]]) -> io
     Ok(())
 }
 
-// returns the policy text without exact banned allow rules.
-fn strip_banned_allow_rules(contents: &str, banned_prefixes: &[&[&str]]) -> String {
+fn replace_banned_allow_rules(
+    contents: &str,
+    banned_prefixes: &[&[&str]],
+    replacement: &str,
+) -> String {
     let banned_prefixes = banned_prefixes
         .iter()
         .map(|prefix| {
@@ -94,7 +114,13 @@ fn strip_banned_allow_rules(contents: &str, banned_prefixes: &[&[&str]]) -> Stri
         .collect::<HashSet<_>>();
     contents
         .split_inclusive('\n')
-        .filter(|line| !should_remove_rule(line, &banned_prefixes))
+        .map(|line| {
+            if should_remove_rule(line, &banned_prefixes) {
+                replacement
+            } else {
+                line
+            }
+        })
         .collect()
 }
 

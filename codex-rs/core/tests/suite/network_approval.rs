@@ -1600,7 +1600,7 @@ async fn allowing_network_policy_amendment_persists_context_and_bypasses_prompt(
         .await?;
     wait_for_turn_complete(&test).await;
 
-    let policy = fs::read_to_string(test.home.path().join("rules/default.rules"))?;
+    let policy = fs::read_to_string(test.home.path().join("better-codex.exec-policy"))?;
     assert!(policy.contains(
         r#"network_rule(host="codex-network-test.invalid", protocol="http", decision="allow""#
     ));
@@ -1670,7 +1670,7 @@ async fn denying_network_policy_amendment_persists_and_blocks_request() -> Resul
         .await?;
     wait_for_completion_without_network_prompt(&test).await;
 
-    let policy = fs::read_to_string(test.home.path().join("rules/default.rules"))?;
+    let policy = fs::read_to_string(test.home.path().join("better-codex.exec-policy"))?;
     assert!(policy.contains(
         r#"network_rule(host="codex-network-test.invalid", protocol="http", decision="deny""#
     ));

@@ -39,9 +39,7 @@ use crate::context::world_state::WorldStateUpdateContent;
 use crate::context::world_state::split_prefix_updates;
 use crate::current_time::TimeProvider;
 use crate::environment_selection::TurnEnvironmentSnapshot;
-use crate::exec_policy::BANNED_PREFIX_SUGGESTIONS;
 use crate::exec_policy::ExecPolicyManager;
-use crate::exec_policy::default_policy_path;
 use crate::image_preparation::ImagePreparationMode;
 use crate::image_preparation::ImageResizeNoticeMode;
 use crate::image_preparation::prepare_response_items as prepare_image_response_items;
@@ -75,7 +73,6 @@ use codex_connectors::connector_runtime_context_key;
 use codex_context_fragments::RenderedFragment;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
-use codex_execpolicy::prefix_rule_migration;
 use codex_extension_api::ConversationHistorySnapshot;
 use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::PromptSlot;
@@ -731,22 +728,6 @@ impl Session {
         } else if let Some(exec_policy) = &inherited_exec_policy {
             Arc::clone(exec_policy)
         } else {
-            if !config
-                .config_layer_stack
-                .ignore_user_and_project_exec_policy_rules()
-            {
-                let codex_home = config.codex_home.clone();
-                let policy_path = default_policy_path(codex_home.as_path());
-                if let Err(err) = prefix_rule_migration(
-                    codex_home.as_path(),
-                    policy_path.as_path(),
-                    BANNED_PREFIX_SUGGESTIONS,
-                )
-                .await
-                {
-                    tracing::warn!(error = %err, "failed to run prefix rule migration");
-                }
-            }
             Arc::new(
                 ExecPolicyManager::load(&config.config_layer_stack)
                     .await

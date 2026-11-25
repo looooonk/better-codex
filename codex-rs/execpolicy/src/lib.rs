@@ -9,8 +9,10 @@ pub mod rule;
 mod sandbox_migration;
 
 pub use amend::AmendError;
+pub use amend::allow_prefix_rule_line;
 pub use amend::blocking_append_allow_prefix_rule;
 pub use amend::blocking_append_network_rule;
+pub use amend::network_rule_line;
 pub use decision::Decision;
 pub use error::Error;
 pub use error::ErrorLocation;
@@ -31,3 +33,4 @@ pub use rule::Rule;
 pub use rule::RuleMatch;
 pub use rule::RuleRef;
 pub use sandbox_migration::prefix_rule_migration;
+pub use sandbox_migration::read_inherited_default_rules;
