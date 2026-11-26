@@ -7,18 +7,18 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │────────────────────────────────────━━━━━━━━━━━━
    > Create a divergent stan│◆ PERMISSIONS
                             │› ● ⓘ Ask for approval
-                            │  ○ ⛨ Unless trusted
+                            │  ○ ⛨ Approve for me
    Started a fullscreen app │  ○ ⚠ Full access
-                            │
-      ▸ Edited files        │◆ APPEARANCE
-                            │  Theme: Tokyo Night ▾
-   The new shell owns the fu│  Syntax theme: default ▾
+                            │  ○ ◈ Read only
+      ▸ Edited files        │
+                            │◆ APPEARANCE
+   The new shell owns the fu│  Theme: Tokyo Night ▾
+                            │  Syntax theme: default ▾
                             │  ● Animations
                             │  ● Tooltips
                             │
                             │◆ EXPERIMENTAL
                             │  ○ Render LaTeX as images
-                            │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │

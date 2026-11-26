@@ -265,7 +265,12 @@ pub(super) async fn thread_settings_update(
     request_id: RequestId,
     params: ThreadSettingsUpdateParams,
 ) -> Result<()> {
+    let selects_permissions = params.permissions.is_some();
     if !supported.load(Ordering::Relaxed) {
+        color_eyre::eyre::ensure!(
+            !selects_permissions,
+            "server does not support changing permission profiles"
+        );
         return Ok(());
     }
     match request_handle
@@ -280,6 +285,10 @@ pub(super) async fn thread_settings_update(
             if is_thread_settings_update_unsupported(&source) =>
         {
             supported.store(false, Ordering::Relaxed);
+            color_eyre::eyre::ensure!(
+                !selects_permissions,
+                "server does not support changing permission profiles"
+            );
             Ok(())
         }
         Err(err) => Err(err).wrap_err("thread/settings/update failed in TUI"),

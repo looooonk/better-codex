@@ -28,5 +28,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
-│⚠ Full access▾      gpt-5.4▾ Default▾ ◷ Default▾││
+│⚙ Custom▾           gpt-5.4▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

@@ -8,12 +8,13 @@ expression: rendered
    > Create a divergent standalone TUI.                     │
                                                             │◆ PERMISSIONS
                                                             │  ● ⓘ Ask for approval
-   Started a fullscreen app shell backed by app-server      │  ○ ⛨ Unless trusted
+   Started a fullscreen app shell backed by app-server      │  ○ ⛨ Approve for me
    turns.                                                   │  ○ ⚠ Full access
-                                                            │
-      ▸ Edited files                                        │◆ APPEARANCE
-                                                            │  Theme: Tokyo Night ▾
-   The new shell owns the fullscreen surface.               │  Syntax theme: default ▾
+                                                            │  ○ ◈ Read only
+      ▸ Edited files                                        │
+                                                            │◆ APPEARANCE
+   The new shell owns the fullscreen surface.               │  Theme: Tokyo Night ▾
+                                                            │  Syntax theme: default ▾
                                                             │  ● Animations
                                                             │  ● Tooltips
                                                             │
@@ -23,7 +24,6 @@ expression: rendered
                                                             │◆ INTEGRATIONS
                                                             │  MCP servers: not loaded ▾
                                                             │  Plugins: not loaded ▾
-                                                            │
 ╭──────────────────────────────────────────────────────────╮│
 │> Type a message                                          ││
 │                                                          ││

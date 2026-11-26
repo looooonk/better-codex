@@ -1,13 +1,12 @@
 use super::DashboardRouteStep;
 use super::ShellState;
-use super::composer_toolbar::permission_caption;
 use super::design::palette;
 use super::design::selection_style;
+use super::permission_modes::PermissionMode;
 use super::selector::ReasoningEffortValue;
 use crate::app_theme::TuiAppTheme;
 use crate::text_input::EditableText;
 use crate::text_input::TextInputAction;
-use codex_app_server_protocol::AskForApproval;
 use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
@@ -43,7 +42,7 @@ pub(super) enum EffortSave {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsAction {
-    ApprovalPolicy(AskForApproval),
+    PermissionMode(PermissionMode),
     AppTheme,
     Theme,
     Animations,
@@ -55,7 +54,7 @@ pub(super) enum SettingsAction {
 
 impl Default for SettingsAction {
     fn default() -> Self {
-        Self::ApprovalPolicy(AskForApproval::OnRequest)
+        Self::PermissionMode(PermissionMode::Ask)
     }
 }
 
@@ -69,11 +68,10 @@ enum SettingRow {
 // Navigation, rendering, and hit testing use the same ordered rows.
 const ROWS: &[SettingRow] = &[
     SettingRow::Heading("Permissions"),
-    SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::OnRequest)),
-    SettingRow::Action(SettingsAction::ApprovalPolicy(
-        AskForApproval::UnlessTrusted,
-    )),
-    SettingRow::Action(SettingsAction::ApprovalPolicy(AskForApproval::Never)),
+    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::Ask)),
+    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::AutoReview)),
+    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::FullAccess)),
+    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::ReadOnly)),
     SettingRow::Spacer,
     SettingRow::Heading("Appearance"),
     SettingRow::Action(SettingsAction::AppTheme),
@@ -137,13 +135,8 @@ impl SettingsState {
                         "◆ ".fg(palette::focus()),
                         title.to_uppercase().fg(palette::muted()).bold(),
                     ];
-                    if title == "Permissions"
-                        && matches!(shell.approval_policy, AskForApproval::Granular { .. })
-                    {
-                        spans.push(
-                            format!("  {}", permission_caption(shell.approval_policy))
-                                .fg(palette::text()),
-                        );
+                    if title == "Permissions" && shell.permission_mode().is_none() {
+                        spans.push(format!("  {}", shell.permission_caption()).fg(palette::text()));
                     }
                     lines.push(spans.into());
                 }
@@ -311,8 +304,12 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
         format!("{mark} {label}")
     };
     let label = match action {
-        SettingsAction::ApprovalPolicy(policy) => {
-            choice(&permission_caption(policy), policy == shell.approval_policy)
+        SettingsAction::PermissionMode(mode) => {
+            let mut label = choice(mode.caption(), Some(mode) == shell.permission_mode());
+            if !shell.permission_modes.contains(&mode) {
+                label.push_str(" (unavailable)");
+            }
+            label
         }
         SettingsAction::AppTheme => format!("Theme: {} ▾", app_theme_label(shell.app_theme)),
         SettingsAction::Theme => format!(
@@ -329,7 +326,7 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
     };
     let color = if matches!(
         action,
-        SettingsAction::ApprovalPolicy(AskForApproval::Never)
+        SettingsAction::PermissionMode(PermissionMode::FullAccess)
     ) {
         palette::error()
     } else {
@@ -340,15 +337,6 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
         line.set_style(selection_style())
     } else {
         line
-    }
-}
-
-pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {
-    match policy {
-        AskForApproval::UnlessTrusted => "Unless trusted",
-        AskForApproval::OnRequest => "Ask for approval",
-        AskForApproval::Never => "Full access",
-        AskForApproval::Granular { .. } => "Granular",
     }
 }
 

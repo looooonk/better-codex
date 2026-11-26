@@ -175,6 +175,10 @@ pub(crate) async fn run(
     if restoring_session || shell.model_provider_id != config.model_provider_id {
         shell.refresh_session_models(&app_server);
     }
+    shell.permission_modes = super::permission_modes::PermissionMode::ALL
+        .into_iter()
+        .filter(|mode| mode.available(&config))
+        .collect();
     shell.service_tier_features = config.features.get().clone();
     let invalid_display_items = shell.status_surfaces.configure(&config);
     if !invalid_display_items.is_empty() {

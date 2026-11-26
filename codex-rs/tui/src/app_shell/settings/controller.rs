@@ -4,7 +4,9 @@ use super::super::backend::AppShellBackend;
 use super::super::is_unmodified_action_key;
 use super::super::is_unmodified_key_event;
 use super::super::is_unmodified_key_press;
+use super::super::permission_modes::PermissionMode;
 use super::super::selector::ReasoningEffortValue;
+use super::super::selector::SelectorState;
 use super::EffortSave;
 use super::SettingsAction;
 use super::background::SettingsChange;
@@ -15,7 +17,6 @@ use crate::config_update::clear_config_value;
 use crate::config_update::replace_config_value;
 use crate::render::highlight::validate_theme_name;
 use crate::text_input::text_input_action_from_key;
-use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -175,9 +176,7 @@ impl ShellState {
             SettingsAction::Theme => {
                 self.open_syntax_theme_menu();
             }
-            SettingsAction::ApprovalPolicy(policy) => {
-                self.apply_approval_policy(policy, app_server)?
-            }
+            SettingsAction::PermissionMode(mode) => self.select_permission_mode(mode, app_server),
             SettingsAction::GraphicalMath => self.toggle_graphical_math(),
             SettingsAction::Animations => {
                 let animations = !self.animations;
@@ -357,33 +356,44 @@ impl ShellState {
             .map(|preset| preset.default_reasoning_effort.clone())
     }
 
-    pub(in crate::app_shell) fn apply_approval_policy<S>(
+    pub(in crate::app_shell) fn select_permission_mode<S: AppShellBackend>(
         &mut self,
-        policy: AskForApproval,
-        app_server: &mut S,
-    ) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
-        let mut params = self.thread_settings_update_params(
-            /*model*/ None, /*effort*/ None, /*service_tier*/ None,
-        );
-        params.approval_policy = Some(policy);
+        mode: PermissionMode,
+        app_server: &S,
+    ) {
+        if !self.permission_modes.contains(&mode) {
+            self.settings
+                .set_error("Permission mode unavailable under the current configuration.");
+        } else if mode == PermissionMode::FullAccess {
+            let return_to = self
+                .selector
+                .as_ref()
+                .and_then(SelectorState::composer_control);
+            self.open_selector(SelectorState::confirm_full_access(return_to));
+        } else {
+            self.apply_permission_mode(mode, app_server);
+        }
+    }
+
+    pub(in crate::app_shell) fn apply_permission_mode<S: AppShellBackend>(
+        &mut self,
+        mode: PermissionMode,
+        app_server: &S,
+    ) {
+        let preset = mode.preset();
+        let params = ThreadSettingsUpdateParams {
+            thread_id: self.thread_id.to_string(),
+            permissions: Some(preset.active_permission_profile.id.clone()),
+            approval_policy: Some(preset.approval.into()),
+            approvals_reviewer: Some(mode.reviewer().into()),
+            ..Default::default()
+        };
         self.schedule_settings_update(
             app_server,
-            SettingsChange::ApprovalPolicy(policy),
-            if policy == AskForApproval::UnlessTrusted {
-                // Native config rejects this runtime-only approval policy.
-                Vec::new()
-            } else {
-                vec![replace_config_value(
-                    "approval_policy",
-                    serde_json::to_value(policy)?,
-                )]
-            },
+            SettingsChange::Permissions,
+            Vec::new(),
             Some(params),
         );
-        Ok(())
     }
 
     fn thread_settings_update_params(
@@ -394,7 +404,6 @@ impl ShellState {
     ) -> ThreadSettingsUpdateParams {
         ThreadSettingsUpdateParams {
             thread_id: self.thread_id.to_string(),
-            approval_policy: Some(self.approval_policy),
             model,
             service_tier,
             effort,

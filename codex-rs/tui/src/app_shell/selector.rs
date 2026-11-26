@@ -1,9 +1,8 @@
 use super::composer_toolbar::ComposerControl;
-use super::composer_toolbar::permission_caption;
 use super::composer_toolbar::service_tier_caption;
 use super::design::palette;
+use super::permission_modes::PermissionMode;
 use super::settings::reasoning_effort_label;
-use codex_app_server_protocol::AskForApproval;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
@@ -59,7 +58,9 @@ pub(super) enum SelectorValue {
     Model(String),
     ReasoningEffort(ReasoningEffortValue),
     ServiceTier(ServiceTierValue),
-    ApprovalPolicy(AskForApproval),
+    PermissionMode(PermissionMode),
+    ConfirmFullAccess,
+    CancelFullAccess(Option<ComposerControl>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -381,41 +382,41 @@ impl SelectorState<SelectorValue> {
         Self::new("Select service tier", options).anchored_menu(ComposerControl::ServiceTier)
     }
 
-    pub(super) fn approval_policies(current: AskForApproval) -> Self {
-        let mut policies = vec![
-            (
-                AskForApproval::OnRequest,
-                "Let Codex request approval when an action needs it.",
-            ),
-            (
-                AskForApproval::UnlessTrusted,
-                "Ask before commands that are not known to be safe.",
-            ),
-            (
-                AskForApproval::Never,
-                "Run without approval prompts within the active sandbox.",
-            ),
-        ];
-        if matches!(current, AskForApproval::Granular { .. }) {
-            policies.push((
-                current,
-                "Keep the current fine-grained approval configuration.",
-            ));
-        }
-        let options = policies
-            .into_iter()
-            .map(|(policy, detail)| {
+    pub(super) fn permissions(shell: &super::ShellState) -> Self {
+        let current = shell.permission_mode();
+        let options = shell
+            .permission_modes
+            .iter()
+            .map(|&mode| {
                 let mut option = SelectorOption::new(
-                    SelectorValue::ApprovalPolicy(policy),
-                    permission_caption(policy),
-                    detail,
+                    SelectorValue::PermissionMode(mode),
+                    mode.caption(),
+                    mode.description(),
                 )
-                .current(policy == current);
-                option.danger = policy == AskForApproval::Never;
+                .current(Some(mode) == current);
+                option.danger = mode == PermissionMode::FullAccess;
                 option
             })
             .collect();
-        Self::new("Select approval policy", options).anchored_menu(ComposerControl::Permissions)
+        Self::new("Select permissions", options).anchored_menu(ComposerControl::Permissions)
+    }
+
+    pub(super) fn confirm_full_access(return_to: Option<ComposerControl>) -> Self {
+        Self::new(
+            "Enable full access?",
+            vec![
+                SelectorOption::new(
+                    SelectorValue::ConfirmFullAccess,
+                    "Enable full access",
+                    "Allow unrestricted file and network access without approval.",
+                ),
+                SelectorOption::new(
+                    SelectorValue::CancelFullAccess(return_to),
+                    "Cancel",
+                    "Keep current permissions.",
+                ),
+            ],
+        )
     }
 }
 

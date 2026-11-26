@@ -130,6 +130,7 @@ mod modal_view;
 mod navigation;
 mod output_rate;
 mod paste;
+mod permission_modes;
 mod pets;
 mod plugin_management;
 mod pointer;
@@ -440,6 +441,7 @@ struct ShellState {
     thread_name: Option<String>,
     model: String,
     available_models: Vec<ModelPreset>,
+    permission_modes: Vec<permission_modes::PermissionMode>,
     service_tier_features: codex_features::Features,
     cwd: String,
     approval_policy: codex_app_server_protocol::AskForApproval,
@@ -612,6 +614,7 @@ impl ShellState {
             thread_name: session.thread_name,
             model,
             available_models,
+            permission_modes: permission_modes::PermissionMode::ALL.to_vec(),
             service_tier_features: codex_features::Features::with_defaults(),
             cwd: session.cwd.to_string_lossy().to_string(),
             approval_policy: session.approval_policy,
@@ -1303,8 +1306,6 @@ impl ShellState {
             client_user_message_id,
             items: self.composer.submission_items(&prompt),
             cwd: self.cwd.clone().into(),
-            approval_policy: self.approval_policy,
-            approvals_reviewer: self.approvals_reviewer,
             permissions_override: TurnPermissionsOverride::Preserve,
             workspace_roots: self.runtime_workspace_roots.clone(),
             model: self.model.clone(),
@@ -2213,11 +2214,12 @@ impl ShellState {
             thread_name: Some("stage-one".to_string()),
             model: "gpt-5-codex".to_string(),
             available_models: Vec::new(),
+            permission_modes: permission_modes::PermissionMode::ALL.to_vec(),
             service_tier_features: codex_features::Features::with_defaults(),
             cwd: "/workspace/better-codex".to_string(),
             approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
-            permission_profile: codex_protocol::models::PermissionProfile::default(),
+            permission_profile: codex_protocol::models::PermissionProfile::workspace_write(),
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
@@ -2550,11 +2552,12 @@ pub mod bench_support {
             thread_name: Some("bench".to_string()),
             model: "gpt-5-codex".to_string(),
             available_models: Vec::new(),
+            permission_modes: permission_modes::PermissionMode::ALL.to_vec(),
             service_tier_features: codex_features::Features::with_defaults(),
             cwd: "/workspace/better-codex".to_string(),
             approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
-            permission_profile: codex_protocol::models::PermissionProfile::default(),
+            permission_profile: codex_protocol::models::PermissionProfile::workspace_write(),
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,

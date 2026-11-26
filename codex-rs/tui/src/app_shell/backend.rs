@@ -11,7 +11,6 @@ use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
-use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigValueWriteParams;
@@ -54,7 +53,6 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
-use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
@@ -445,8 +443,6 @@ pub(super) struct AppShellTurnStart {
     pub(super) client_user_message_id: String,
     pub(super) items: Vec<UserInput>,
     pub(super) cwd: PathBuf,
-    pub(super) approval_policy: AskForApproval,
-    pub(super) approvals_reviewer: ApprovalsReviewer,
     pub(super) permissions_override: TurnPermissionsOverride,
     pub(super) workspace_roots: Vec<AbsolutePathBuf>,
     pub(super) model: String,

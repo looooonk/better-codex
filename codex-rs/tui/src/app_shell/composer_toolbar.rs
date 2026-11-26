@@ -1,9 +1,8 @@
 use super::ShellState;
 use super::design::palette;
 use super::design::pane_content_rect;
-use super::settings::approval_policy_label;
+use super::permission_modes::PermissionMode;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
-use codex_app_server_protocol::AskForApproval;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
 use ratatui::buffer::Buffer;
@@ -32,16 +31,6 @@ struct Button {
 
 pub(super) struct ComposerToolbar {
     buttons: [Button; 4],
-}
-
-pub(super) fn permission_caption(policy: AskForApproval) -> String {
-    let icon = match policy {
-        AskForApproval::OnRequest => "ⓘ",
-        AskForApproval::UnlessTrusted => "⛨",
-        AskForApproval::Never => "⚠",
-        AskForApproval::Granular { .. } => "⚙",
-    };
-    format!("{icon} {}", approval_policy_label(policy))
 }
 
 pub(super) fn service_tier_caption(id: Option<&str>, name: &str) -> String {
@@ -95,8 +84,8 @@ impl ComposerToolbar {
                 .unwrap_or(id),
         };
         let speed = service_tier_caption(service_tier, speed);
-        let permission = permission_caption(shell.approval_policy);
-        let permissions_color = if shell.approval_policy == AskForApproval::Never {
+        let permission = shell.permission_caption().to_string();
+        let permissions_color = if shell.permission_mode() == Some(PermissionMode::FullAccess) {
             palette::error()
         } else {
             palette::purple()

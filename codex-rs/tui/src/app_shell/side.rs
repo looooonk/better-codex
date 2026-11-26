@@ -100,6 +100,7 @@ impl ShellState {
             self.resume_cwd_runtime.clone(),
         );
         child.voice = self.voice.for_new_session();
+        child.permission_modes = self.permission_modes.clone();
         child.service_tier_features = self.service_tier_features.clone();
         child.keybindings = self.keybindings.clone();
         std::mem::swap(&mut child.graphics, &mut self.graphics);

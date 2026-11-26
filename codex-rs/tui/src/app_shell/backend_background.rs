@@ -147,8 +147,9 @@ pub(super) async fn start_turn(
                 environments: None,
                 cwd: Some(params.cwd),
                 runtime_workspace_roots: Some(params.workspace_roots),
-                approval_policy: Some(params.approval_policy),
-                approvals_reviewer: Some(params.approvals_reviewer.into()),
+                // Inherit the settings accepted by the thread, including remote updates.
+                approval_policy: None,
+                approvals_reviewer: None,
                 sandbox_policy,
                 permissions,
                 model: Some(params.model),

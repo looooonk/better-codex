@@ -141,7 +141,7 @@ pub(super) fn command_palette_entries(context: CommandPaletteContext) -> Vec<Com
         CommandPaletteEntry {
             action: CommandPaletteAction::ChangePermissions,
             title: "Change permissions",
-            detail: "Choose when Codex asks for approval",
+            detail: "Choose the sandbox and approval reviewer",
             enabled: true,
         },
         CommandPaletteEntry {

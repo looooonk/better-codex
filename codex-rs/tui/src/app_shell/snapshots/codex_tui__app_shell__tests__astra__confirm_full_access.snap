@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell/astra_tests.rs
+expression: "render_shell(&shell, area)"
+---
+                                                  │
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+                                                  │━━━━━━━━━━━━━───────────────────────────────────
+   > Create a divergent standalone TUI.           │
+                                                  │ Projects
+                                                  │ No projects
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ loading sessions
+                ╭ Enable full access? ─────────────────────────────────────────────╮
+   The new shell│ › 1 ○ Enable full access                                         │
+                │       Allow unrestricted file and network access without         │
+                │       approval.                                                  │
+                │   2 ○ Cancel                                                     │
+                │       Keep current permissions.                                  │
+                │  wheel / j k  Enter select  Esc cancel  1/2                      │
+                ╰──────────────────────────────────────────────────────────────────╯
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
+╰────────────────────────────────────────────────╯│

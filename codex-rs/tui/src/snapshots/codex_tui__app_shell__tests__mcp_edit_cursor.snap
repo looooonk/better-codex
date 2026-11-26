@@ -8,12 +8,13 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
    > Create a divergent standalone TUI.           │
                                                   │◆ PERMISSIONS
                                                   │  ● ⓘ Ask for approval
-   Started a fullscreen app shell backed by app-  │  ○ ⛨ Unless trusted
+   Started a fullscreen app shell backed by app-  │  ○ ⛨ Approve for me
    server turns.                                  │  ○ ⚠ Full access
-                                                  │
-      ▸ Edited files                          ╭────────────────────────────────────────────────────╮
-                                              │MCP servers                                         │
-   The new shell owns the fullscreen surface. │Add MCP server                                      │
+                                                  │  ○ ◈ Read only
+      ▸ Edited files                              │
+                                              ╭────────────────────────────────────────────────────╮
+   The new shell owns the fullscreen surface. │MCP servers                                         │
+                                              │Add MCP server                                      │
                                               │Format: name {"url":"https://..."} or name          │
                                               │{"command":"cmd","args":[]}                         │
                                               │                                                    │
@@ -23,7 +24,6 @@ expression: "render_shell(&mcp, Rect::new(0, 0, 100, 28,))"
                                               ╰────────────────────────────────────────────────────╯
                                                   │› MCP servers: not loaded ▾
                                                   │  Plugins: not loaded ▾
-                                                  │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││

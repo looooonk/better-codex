@@ -6,7 +6,6 @@ use super::super::selector::SelectorState;
 use super::super::selector::SelectorValue;
 use super::EffortSave;
 use crate::app_theme::TuiAppTheme;
-use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -29,7 +28,7 @@ pub(super) enum SettingsChange {
     },
     ServiceTier(Option<String>),
     ReasoningEffort(Option<ReasoningEffort>),
-    ApprovalPolicy(AskForApproval),
+    Permissions,
     AppTheme(TuiAppTheme),
     Theme(Option<String>),
     Animations(bool),
@@ -142,7 +141,9 @@ impl ShellState {
                     );
                 }
             }
-            SettingsChange::ApprovalPolicy(policy) => self.approval_policy = policy,
+            // The RPC acknowledges a queued change. ThreadSettingsUpdated carries the
+            // effective sandbox and reviewer, including server-enforced restrictions.
+            SettingsChange::Permissions => {}
             SettingsChange::AppTheme(app_theme) => self.app_theme = app_theme,
             SettingsChange::Theme(theme) => {
                 crate::render::highlight::set_syntax_theme(

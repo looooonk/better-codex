@@ -17,7 +17,7 @@ use ratatui::layout::Rect;
 impl ShellState {
     pub(super) fn open_composer_picker(&mut self, control: ComposerControl) {
         let selector = match control {
-            ComposerControl::Permissions => SelectorState::approval_policies(self.approval_policy),
+            ComposerControl::Permissions => SelectorState::permissions(self),
             ComposerControl::Model => SelectorState::models(&self.model, &self.available_models),
             ComposerControl::ReasoningEffort => return self.open_reasoning_selector(),
             ComposerControl::ServiceTier => {
@@ -209,9 +209,13 @@ impl ShellState {
             SelectorValue::ServiceTier(ServiceTierValue::Explicit(tier)) => {
                 self.apply_service_tier(Some(tier), app_server);
             }
-            SelectorValue::ApprovalPolicy(policy) => {
-                self.apply_approval_policy(policy, app_server)?;
-            }
+            SelectorValue::PermissionMode(mode) => self.select_permission_mode(mode, app_server),
+            SelectorValue::ConfirmFullAccess => self.apply_permission_mode(
+                super::permission_modes::PermissionMode::FullAccess,
+                app_server,
+            ),
+            SelectorValue::CancelFullAccess(Some(control)) => self.open_composer_picker(control),
+            SelectorValue::CancelFullAccess(None) => self.selector = None,
             SelectorValue::TranscriptMatch(revision) => self.select_transcript_match(revision),
             SelectorValue::Keybinding(action) => {
                 self.selector = None;

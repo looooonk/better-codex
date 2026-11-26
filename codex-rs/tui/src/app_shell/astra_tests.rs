@@ -27,7 +27,7 @@ fn composer_buttons_reflect_the_active_policy_speed_and_model_effort() {
             AskForApproval::UnlessTrusted,
             Some("fast"),
             None,
-            ["⛨ Unless trusted", "low", "↯ Fast"],
+            ["⚙ Custom", "low", "↯ Fast"],
         ),
         (
             AskForApproval::Never,
@@ -55,6 +55,11 @@ fn composer_buttons_reflect_the_active_policy_speed_and_model_effort() {
         ),
     ] {
         shell.approval_policy = policy;
+        shell.permission_profile = if policy == AskForApproval::Never {
+            codex_protocol::models::PermissionProfile::Disabled
+        } else {
+            codex_protocol::models::PermissionProfile::workspace_write()
+        };
         shell.service_tier = speed.map(str::to_owned);
         shell.reasoning_effort = effort;
         for width in [40, 50, 80] {
@@ -274,13 +279,29 @@ async fn composer_permissions_button_opens_the_policy_picker() {
     let full_access = text_color_for_row(&popup, panel, "Full access");
     assert_eq!(full_access, Some(design::palette::error()));
     press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('3')).await;
-    complete_backend_actions(&mut shell, &backend).await;
-    assert_eq!(shell.approval_policy, AskForApproval::Never);
-    let buffer = render_shell_buffer(&shell, area);
+    assert!(backend.calls().is_empty());
+    insta::assert_snapshot!("confirm_full_access", render_shell(&shell, area));
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('2')).await;
     assert_eq!(
-        text_color_for_row(&buffer, input, "⚠ Full access"),
-        full_access
+        shell
+            .selector
+            .as_ref()
+            .and_then(SelectorState::composer_control),
+        Some(composer_toolbar::ComposerControl::Permissions)
     );
+    assert!(backend.calls().is_empty());
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('3')).await;
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    complete_backend_actions(&mut shell, &backend).await;
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [RecordedBackendCall::ThreadSettingsUpdate {
+            approval_policy: AskForApproval::Never,
+            ..
+        }]
+    ));
+    // The acknowledged request takes effect when the server publishes the new settings.
+    assert_eq!(shell.approval_policy, AskForApproval::OnRequest);
 }
 
 #[tokio::test]

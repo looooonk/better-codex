@@ -8,11 +8,12 @@ expression: "render_shell(&shell, area)"
    > Create a divergent standalone TUI.                                                                  │
                                                                                                          │◆ PERMISSIONS
                                                                                                          │  ● ⓘ Ask for approval
-   Started a fullscreen app shell backed by app-server turns.                                            │  ○ ⛨ Unless trusted
+   Started a fullscreen app shell backed by app-server turns.                                            │  ○ ⛨ Approve for me
                                                                                                          │  ○ ⚠ Full access
-      ▸ Edited files                                                                                     │
-                                                                                                         │◆ APPEARANCE
-   The new shell owns the fullscreen surface.                                                            │  Theme: Tokyo Night ▾
+      ▸ Edited files                                                                                     │  ○ ◈ Read only
+                                                                                                         │
+   The new shell owns the fullscreen surface.                                                            │◆ APPEARANCE
+                                                                                                         │  Theme: Tokyo Night ▾
                                                                                                          │  Syntax theme: default ▾
                                                                                                          │  ● Animations
                                                                                                          │› ○ Tooltips
@@ -23,7 +24,6 @@ expression: "render_shell(&shell, area)"
                                                                                                          │◆ INTEGRATIONS
                                                                                                          │  MCP servers: not loaded ▾
                                                                                                          │  Plugins: not loaded ▾
-                                                                                                         │
 ╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                                                                 ││
 │                                                                                                       ││

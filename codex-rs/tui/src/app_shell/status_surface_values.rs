@@ -78,9 +78,7 @@ impl ShellState {
                     }
                     .into()
                 }),
-            StatusLineItem::ApprovalMode => {
-                super::settings::approval_policy_label(self.approval_policy).into()
-            }
+            StatusLineItem::ApprovalMode => self.permission_caption().into(),
             StatusLineItem::ContextRemaining => format!(
                 "Context {}% left",
                 100 - super::dashboard::context_used_percent(

@@ -12016,24 +12016,18 @@ async fn completed_approval_keeps_an_active_turn_running() {
 }
 
 #[tokio::test]
-async fn failed_settings_write_keeps_selector_and_previous_value() {
+async fn rejected_tier_update_restores_saved_tier() {
     let mut shell = ShellState::snapshot_fixture();
-    let previous_policy = shell.approval_policy;
     let backend = RecordingBackend::default();
-    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Permissions);
-    backend.fail_next_action("config write rejected");
-
-    shell
-        .handle_selector_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend.clone(),
-        )
-        .await
-        .expect("setting update should start");
+    let saved = HashMap::from([("service_tier".to_string(), serde_json::json!("flex"))]);
+    *backend.config_values.lock().unwrap() = saved.clone();
+    shell.service_tier = Some("flex".into());
+    backend.fail_next_thread_settings_update("thread update rejected");
+    shell.apply_service_tier(Some("priority".into()), &mut backend.clone());
     complete_backend_actions(&mut shell, &backend).await;
 
-    assert!(shell.selector.is_some());
-    assert_eq!(shell.approval_policy, previous_policy);
+    assert_eq!(shell.service_tier.as_deref(), Some("flex"));
+    assert_eq!(*backend.config_values.lock().unwrap(), saved);
     assert_eq!(shell.status, "action failed");
 }
 
@@ -12129,61 +12123,23 @@ async fn failed_app_theme_write_keeps_the_previous_theme_and_shows_the_error() {
 }
 
 #[tokio::test]
-async fn failed_thread_settings_update_restores_config_and_previous_value() {
+async fn rejected_permission_change_preserves_previous_mode() {
     let mut shell = ShellState::snapshot_fixture();
-    let previous_policy = shell.approval_policy;
+    let previous = shell.permission_mode();
     let backend = RecordingBackend::default();
-    backend
-        .config_values
-        .lock()
-        .expect("config values should lock")
-        .insert(
-            "approval_policy".to_string(),
-            serde_json::to_value(previous_policy).expect("approval policy should serialize"),
-        );
     shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Permissions);
     backend.fail_next_thread_settings_update("thread update rejected");
-
-    for key in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
-        shell
-            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
-            .await
-            .expect("setting update should start");
-    }
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE),
+            &mut backend.clone(),
+        )
+        .await
+        .unwrap();
     complete_backend_actions(&mut shell, &backend).await;
-
     assert!(shell.selector.is_some());
-    assert_eq!(shell.approval_policy, previous_policy);
+    assert_eq!(shell.permission_mode(), previous);
     assert_eq!(shell.status, "action failed");
-    assert_eq!(
-        *backend
-            .config_values
-            .lock()
-            .expect("config values should lock"),
-        HashMap::from([(
-            "approval_policy".to_string(),
-            serde_json::to_value(previous_policy).expect("approval policy should serialize"),
-        )])
-    );
-    assert_eq!(
-        backend.calls(),
-        vec![
-            RecordedBackendCall::ConfigWrite(vec![(
-                "approval_policy".to_string(),
-                serde_json::json!("never"),
-            )]),
-            RecordedBackendCall::ThreadSettingsUpdate {
-                model: None,
-                effort: None,
-                service_tier: None,
-                approval_policy: codex_app_server_protocol::AskForApproval::Never,
-            },
-            RecordedBackendCall::ConfigWrite(vec![(
-                "approval_policy".to_string(),
-                serde_json::to_value(previous_policy).expect("approval policy should serialize"),
-            )]),
-        ]
-    );
     insta::assert_snapshot!(render_shell(
         &shell,
         Rect::new(
@@ -15944,6 +15900,14 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             .await
             .unwrap();
     }
+    assert!(backend.calls().is_empty());
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .unwrap();
     complete_backend_actions(&mut shell, &backend).await;
     shell.settings.focus_action(SettingsAction::Animations);
     shell
@@ -15956,7 +15920,7 @@ async fn native_settings_pages_write_config_and_validate_edits() {
     complete_backend_actions(&mut shell, &backend).await;
 
     let calls = backend.calls();
-    assert!(calls.contains(&RecordedBackendCall::ConfigWrite(vec![(
+    assert!(!calls.contains(&RecordedBackendCall::ConfigWrite(vec![(
         "approval_policy".to_string(),
         serde_json::json!("never"),
     )])));
@@ -15970,10 +15934,6 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         "tui.animations".to_string(),
         serde_json::json!(false),
     )])));
-    assert_eq!(
-        shell.approval_policy,
-        codex_app_server_protocol::AskForApproval::Never
-    );
     assert!(!shell.animations);
 
     shell
@@ -18318,7 +18278,7 @@ fn started_thread(
             service_tier: None,
             approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
-            permission_profile: codex_protocol::models::PermissionProfile::default(),
+            permission_profile: codex_protocol::models::PermissionProfile::workspace_write(),
             active_permission_profile: None,
             cwd: test_absolute_path("workspace/better-codex"),
             runtime_workspace_roots: vec![test_absolute_path("workspace/better-codex")],

@@ -20,19 +20,21 @@ fn rollback_edits_restore_existing_values_and_clear_new_values() {
 }
 
 #[tokio::test]
-async fn native_untrusted_policy_is_session_only_and_keeps_saved_defaults() -> Result<()> {
+async fn native_permission_picker_applies_complete_modes_and_preserves_saved_defaults() -> Result<()>
+{
     use crate::app_shell::ShellState;
+    use crate::app_shell::permission_modes::PermissionMode;
     use crate::legacy_core::config::ConfigBuilder;
     use codex_app_server_client::AppServerEvent;
+    use codex_app_server_protocol::ApprovalsReviewer;
     use codex_app_server_protocol::AskForApproval;
+    use codex_app_server_protocol::SandboxPolicy;
     use codex_app_server_protocol::ServerNotification;
     use codex_config::LoaderOverrides;
-    use ratatui::buffer::Buffer;
-    use ratatui::layout::Rect;
 
     let home = tempfile::tempdir()?;
     let path = home.path().join("config.toml");
-    let saved = "approval_policy = \"on-request\"\n";
+    let saved = "approval_policy = \"on-request\"\nsandbox_mode = \"danger-full-access\"\n";
     tokio::fs::write(&path, saved).await?;
     let config = ConfigBuilder::default()
         .codex_home(home.path().to_path_buf())
@@ -45,61 +47,78 @@ async fn native_untrusted_policy_is_session_only_and_keeps_saved_defaults() -> R
     let mut shell = ShellState::snapshot_fixture();
     shell.thread_id = started.session.thread_id;
     shell.active_turn_id = None;
-    shell.apply_approval_policy(AskForApproval::UnlessTrusted, &mut app_server)?;
-    tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 10), async {
-        while shell.has_pending_backend_actions() {
-            shell.poll_backend_actions(&app_server).await;
-            tokio::task::yield_now().await;
-        }
-    })
-    .await?;
-    let applied = tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 10), async {
-        loop {
-            let event = app_server
-                .next_event()
-                .await
-                .expect("native app-server event stream");
-            if let AppServerEvent::ServerNotification(notification) = event
-                && let ServerNotification::ThreadSettingsUpdated(updated) = *notification
-                && updated.thread_id == shell.thread_id.to_string()
-            {
-                break updated.thread_settings.approval_policy;
-            }
-        }
-    })
-    .await?;
-    assert_eq!(
+    for (mode, profile, approval, reviewer) in [
         (
-            applied,
-            shell.approval_policy,
-            tokio::fs::read_to_string(&path).await?
+            PermissionMode::FullAccess,
+            ":danger-full-access",
+            AskForApproval::Never,
+            ApprovalsReviewer::User,
         ),
         (
-            AskForApproval::UnlessTrusted,
-            AskForApproval::UnlessTrusted,
-            saved.to_string()
-        )
-    );
-    shell.dashboard_visible = false;
-    shell.open_composer_picker(crate::app_shell::composer_toolbar::ComposerControl::Permissions);
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 110, /*height*/ 28,
-    );
-    let mut buffer = Buffer::empty(area);
-    crate::app_shell::render::ShellView { shell: &shell }.render(area, &mut buffer);
-    let rendered = buffer
-        .content
-        .chunks(usize::from(area.width))
-        .map(|row| {
-            row.iter()
-                .map(ratatui::buffer::Cell::symbol)
-                .collect::<String>()
-                .trim_end()
-                .to_string()
+            PermissionMode::Ask,
+            ":workspace",
+            AskForApproval::OnRequest,
+            ApprovalsReviewer::User,
+        ),
+        (
+            PermissionMode::AutoReview,
+            ":workspace",
+            AskForApproval::OnRequest,
+            ApprovalsReviewer::AutoReview,
+        ),
+        (
+            PermissionMode::ReadOnly,
+            ":read-only",
+            AskForApproval::OnRequest,
+            ApprovalsReviewer::User,
+        ),
+        (
+            PermissionMode::Ask,
+            ":workspace",
+            AskForApproval::OnRequest,
+            ApprovalsReviewer::User,
+        ),
+    ] {
+        shell.apply_permission_mode(mode, &app_server);
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while shell.has_pending_backend_actions() {
+                shell.poll_backend_actions(&app_server).await;
+                tokio::task::yield_now().await;
+            }
         })
-        .collect::<Vec<_>>()
-        .join("\n");
-    insta::assert_snapshot!("session_only_untrusted_policy", rendered);
+        .await?;
+        let settings = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                if let Some(AppServerEvent::ServerNotification(notification)) =
+                    app_server.next_event().await
+                    && let ServerNotification::ThreadSettingsUpdated(updated) = *notification
+                    && updated.thread_id == shell.thread_id.to_string()
+                {
+                    let settings = updated.thread_settings.clone();
+                    shell.handle_notification(ServerNotification::ThreadSettingsUpdated(updated));
+                    break settings;
+                }
+            }
+        })
+        .await?;
+        assert_eq!(shell.permission_mode(), Some(mode));
+        assert_eq!(settings.active_permission_profile.unwrap().id, profile);
+        assert_eq!(settings.approval_policy, approval);
+        assert_eq!(settings.approvals_reviewer, reviewer);
+        assert!(matches!(
+            (mode, settings.sandbox_policy),
+            (PermissionMode::FullAccess, SandboxPolicy::DangerFullAccess)
+                | (PermissionMode::ReadOnly, SandboxPolicy::ReadOnly { .. })
+                | (
+                    PermissionMode::Ask | PermissionMode::AutoReview,
+                    SandboxPolicy::WorkspaceWrite {
+                        network_access: false,
+                        ..
+                    }
+                )
+        ));
+    }
+    assert_eq!(tokio::fs::read_to_string(&path).await?, saved);
     app_server.shutdown().await?;
     Ok(())
 }

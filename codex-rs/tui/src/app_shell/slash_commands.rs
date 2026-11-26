@@ -277,7 +277,7 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Permissions),
         name: "/permissions",
-        description: "Choose approval permissions",
+        description: "Choose the sandbox and approval reviewer",
         accepts_arguments: false,
     },
     SlashCommandDefinition {

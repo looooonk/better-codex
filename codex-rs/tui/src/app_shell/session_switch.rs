@@ -12,7 +12,9 @@ use codex_app_server_protocol::ProjectReadParams;
 use codex_app_server_protocol::ProjectReadResponse;
 use codex_config::types::ResumeCwdMode;
 use codex_protocol::ThreadId;
+use codex_protocol::models::PermissionProfileSnapshot;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_approval_presets::builtin_permission_profile_for_active_permission_profile;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::eyre;
@@ -92,6 +94,20 @@ impl ShellState {
             .approval_policy
             .set(self.approval_policy.to_core())
             .wrap_err("current approval policy is not allowed for a new session")?;
+        if let Some(active) = &self.active_permission_profile
+            && let Some(profile) = builtin_permission_profile_for_active_permission_profile(active)
+        {
+            let snapshot = PermissionProfileSnapshot::active(profile, active.clone());
+            session_config
+                .permissions
+                .set_permission_profile_from_session_snapshot(snapshot)
+                .wrap_err("current permission profile is not allowed for a new session")?;
+            session_config.permissions.network = session_config
+                .network_proxy_spec_for_active_permission_profile(
+                    active,
+                    session_config.permissions.permission_profile(),
+                )?;
+        }
         Ok(session_config)
     }
 

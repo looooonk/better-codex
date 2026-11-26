@@ -118,6 +118,10 @@ impl ShellState {
             self.show_hint("wait for the session transition before sending a message");
             return true;
         }
+        if self.has_pending_backend_action(ActionGroup::Settings) {
+            self.show_hint("wait for settings to finish applying");
+            return true;
+        }
         if self.is_thread_revert_hydrating() {
             self.show_hint("wait for the reverted session to refresh");
             return true;
