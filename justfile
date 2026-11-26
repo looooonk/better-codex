@@ -23,6 +23,9 @@ alias c := codex
 codex *args:
     {{ python }} ../scripts/run_source.py --profile {{ quote(cargo_profile) }} -- {args}
 
+# Test the local build in the current directory without the shared daemon.
+bct: (codex "--no-daemon" "-C" invocation_directory())
+
 # `codex exec`
 exec *args:
     {{ python }} ../scripts/run_source.py --profile {{ quote(cargo_profile) }} -- exec {args}
