@@ -278,7 +278,7 @@ async fn composer_permissions_button_opens_the_policy_picker() {
 
     let full_access = text_color_for_row(&popup, panel, "Full access");
     assert_eq!(full_access, Some(design::palette::error()));
-    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('3')).await;
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('4')).await;
     complete_backend_actions(&mut shell, &backend).await;
     assert!(matches!(
         backend.calls().as_slice(),
@@ -314,6 +314,25 @@ fn composer_permissions_menu_shows_all_five_options_with_custom() {
         .filter_map(|row| selector.option_at(panel, Position::new(panel.x + 2, row.y)))
         .collect();
     assert_eq!(hit_options, vec![0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn composer_permissions_menu_fits_restricted_choices() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.approval_policy = AskForApproval::Never;
+    shell.set_configured_permissions(shell.active_permissions());
+    shell.permission_modes = vec![permission_modes::PermissionMode::ReadOnly];
+    shell.open_composer_picker(composer_toolbar::ComposerControl::Permissions);
+
+    let screen = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let panel = ShellView { shell: &shell }.selector_area(screen);
+    let popup = render_shell_buffer(&shell, screen);
+    insta::assert_snapshot!(
+        "composer_permissions_menu_restricted",
+        buffer_contents(&popup, panel)
+    );
 }
 
 #[tokio::test]

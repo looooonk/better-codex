@@ -71,11 +71,11 @@ enum SettingRow {
 // Navigation, rendering, and hit testing use the same ordered rows.
 const ROWS: &[SettingRow] = &[
     SettingRow::Heading("Permissions"),
+    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::ReadOnly)),
     SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::Ask)),
     SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::AutoReview)),
-    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::FullAccess)),
-    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::ReadOnly)),
     SettingRow::Action(SettingsAction::CustomPermissions),
+    SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::FullAccess)),
     SettingRow::Spacer,
     SettingRow::Heading("Appearance"),
     SettingRow::Action(SettingsAction::AppTheme),

@@ -12132,7 +12132,7 @@ async fn rejected_permission_change_preserves_previous_mode() {
     backend.fail_next_thread_settings_update("thread update rejected");
     shell
         .handle_selector_key(
-            KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE),
             &mut backend.clone(),
         )
         .await

@@ -24,6 +24,7 @@ use unicode_width::UnicodeWidthStr;
 const MAX_VISIBLE_ROWS: usize = 12;
 // Top border, title, bottom border.
 const MENU_CHROME: u16 = 3;
+const EMPTY_MENU_MESSAGE: &str = "No options available";
 
 impl<T> SelectorState<T> {
     pub(super) fn menu_height(&self) -> u16 {
@@ -35,19 +36,24 @@ impl<T> SelectorState<T> {
         control: ComposerControl,
         available: u16,
     ) -> (u16, u16) {
-        let max_label = self
+        // Include both borders, side padding, and space for the active checkmark.
+        let option_width = self
             .options
             .iter()
-            .map(|o| o.label.width())
-            .max()
-            .unwrap_or_default();
+            .map(|option| option.label.width() + 7)
+            .max();
         let width = match control {
             ComposerControl::ReasoningEffort => return (40.min(available), EffortSlider::HEIGHT),
-            ComposerControl::Permissions => 46,
-            ComposerControl::Model => (max_label + 7).clamp(26, 44) as u16,
-            ComposerControl::ServiceTier => (max_label + 7).clamp(20, 36) as u16,
+            ComposerControl::Permissions => {
+                let heading = self.save_error.as_deref().unwrap_or(&self.title);
+                option_width
+                    .unwrap_or(EMPTY_MENU_MESSAGE.width() + 4)
+                    .max(heading.width() + 4)
+            }
+            ComposerControl::Model => option_width.unwrap_or_default().clamp(26, 44),
+            ComposerControl::ServiceTier => option_width.unwrap_or_default().clamp(20, 36),
         }
-        .min(available);
+        .min(usize::from(available)) as u16;
         (width, self.menu_height())
     }
 
@@ -78,7 +84,6 @@ impl<T> SelectorState<T> {
             .style(pane_style(palette::elevated()))
             .render(panel, buf);
         let title = match control {
-            Some(ComposerControl::Permissions) => "Permissions",
             Some(ComposerControl::ServiceTier) => "Speed",
             _ => &self.title,
         };
@@ -92,7 +97,7 @@ impl<T> SelectorState<T> {
             .render(heading, buf);
 
         if self.options.is_empty() {
-            Paragraph::new("No options available")
+            Paragraph::new(EMPTY_MENU_MESSAGE)
                 .fg(palette::muted())
                 .render(
                     Rect {

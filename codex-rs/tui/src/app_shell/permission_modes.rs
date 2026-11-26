@@ -25,10 +25,10 @@ pub(super) enum PermissionMode {
 
 impl PermissionMode {
     pub(super) const ALL: [Self; 4] = [
+        Self::ReadOnly,
         Self::Ask,
         Self::AutoReview,
         Self::FullAccess,
-        Self::ReadOnly,
     ];
 
     pub(super) fn preset(self) -> &'static ApprovalPreset {

@@ -21,12 +21,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
                                                   │
                                                   │
                                                   │
- ╭────────────────────────────────────────────╮   │
- │ Save failed: thread update rejected        │   │
- │ ⓘ Ask for approval                       ✓ │   │
-╭│ ⛨ Approve for me                           │──╮│
-││ ⚠ Full access                              │  ││
-││ ◈ Read only                                │  ││
-│╰────────────────────────────────────────────╯  ││
+ ╭─────────────────────────────────────╮          │
+ │ Save failed: thread update rejected │          │
+ │ ◈ Read only                         │          │
+╭│ ⓘ Ask for approval                ✓ │─────────╮│
+││ ⛨ Approve for me                    │         ││
+││ ⚠ Full access                       │         ││
+│╰─────────────────────────────────────╯         ││
 │ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

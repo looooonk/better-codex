@@ -412,12 +412,17 @@ impl SelectorState<SelectorValue> {
             })
             .collect();
         if shell.settings.custom_permissions.is_some() {
-            options.push(
+            let full_access = shell
+                .permission_modes
+                .iter()
+                .position(|&mode| mode == PermissionMode::FullAccess);
+            options.insert(
+                full_access.unwrap_or(options.len()),
                 SelectorOption::new(SelectorValue::CustomPermissions, "⚙ Custom", "")
                     .current(shell.custom_permissions_active()),
             );
         }
-        Self::new("Select permissions", options).anchored_menu(ComposerControl::Permissions)
+        Self::new("Permissions", options).anchored_menu(ComposerControl::Permissions)
     }
 }
 

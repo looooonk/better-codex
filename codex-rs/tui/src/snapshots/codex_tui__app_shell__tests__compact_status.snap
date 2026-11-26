@@ -6,10 +6,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │  Sessions   │  Status  │  Agents  │  Settings
                             │────────────────────────────────────━━━━━━━━━━━━
    > Create a divergent stan│◆ PERMISSIONS
-                            │› ● ⓘ Ask for approval
-                            │  ○ ⛨ Approve for me
-   Started a fullscreen app │  ○ ⚠ Full access
                             │  ○ ◈ Read only
+                            │› ● ⓘ Ask for approval
+   Started a fullscreen app │  ○ ⛨ Approve for me
+                            │  ○ ⚠ Full access
       ▸ Edited files        │
                             │◆ APPEARANCE
    The new shell owns the fu│  Theme: Tokyo Night ▾

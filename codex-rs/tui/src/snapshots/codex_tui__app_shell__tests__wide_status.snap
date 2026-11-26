@@ -7,10 +7,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
                                                               │────────────────────────────────────━━━━━━━━━━━━
    > Create a divergent standalone TUI.                       │
                                                               │◆ PERMISSIONS
-                                                              │› ● ⓘ Ask for approval
-   Started a fullscreen app shell backed by app-server turns. │  ○ ⛨ Approve for me
-                                                              │  ○ ⚠ Full access
-      ▸ Edited files                                          │  ○ ◈ Read only
+                                                              │  ○ ◈ Read only
+   Started a fullscreen app shell backed by app-server turns. │› ● ⓘ Ask for approval
+                                                              │  ○ ⛨ Approve for me
+      ▸ Edited files                                          │  ○ ⚠ Full access
                                                               │
    The new shell owns the fullscreen surface.                 │◆ APPEARANCE
                                                               │  Theme: Tokyo Night ▾

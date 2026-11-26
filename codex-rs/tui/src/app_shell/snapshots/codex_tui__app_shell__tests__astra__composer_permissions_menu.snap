@@ -2,10 +2,10 @@
 source: tui/src/app_shell/astra_tests.rs
 expression: "buffer_contents(&popup, panel)"
 ---
-╭────────────────────────────────────────────╮
-│ Permissions                                │
-│ ⓘ Ask for approval                       ✓ │
-│ ⛨ Approve for me                           │
-│ ⚠ Full access                              │
-│ ◈ Read only                                │
-╰────────────────────────────────────────────╯
+╭───────────────────────╮
+│ Permissions           │
+│ ◈ Read only           │
+│ ⓘ Ask for approval  ✓ │
+│ ⛨ Approve for me      │
+│ ⚠ Full access         │
+╰───────────────────────╯

@@ -184,7 +184,7 @@ async fn both_permission_pickers_follow_the_configured_workspace_setup() -> Resu
         let mut picker = SelectorState::permissions(&shell);
         assert_eq!(
             matches!(
-                picker.handle_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::NONE)),
+                picker.handle_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::NONE)),
                 SelectorOutcome::Selected(SelectorValue::CustomPermissions)
             ),
             custom,
