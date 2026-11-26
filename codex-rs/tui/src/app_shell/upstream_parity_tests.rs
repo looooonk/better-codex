@@ -389,29 +389,89 @@ fn resumed_view_only_agents_cannot_receive_turns() {
     );
 }
 
+#[tokio::test]
+async fn guardian_warning_is_retained_in_diagnostics_while_the_tool_displays_the_review() {
+    use codex_app_server_client::AppServerEvent;
+    use codex_app_server_protocol::GuardianWarningNotification;
+    use codex_app_server_protocol::ServerNotification;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let hint = shell.input_hint.clone();
+    let message = "Automatic approval review approved".to_string();
+    let warning = GuardianWarningNotification {
+        thread_id: shell.thread_id.to_string(),
+        message: message.clone(),
+    };
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(Box::new(ServerNotification::GuardianWarning(
+                warning,
+            ))),
+        )
+        .await
+        .unwrap();
+    assert_eq!(shell.input_hint, hint);
+    shell
+        .run_diagnostic_command(
+            crate::app_shell::diagnostic_commands::DiagnosticCommand::Warnings,
+            &backend,
+        )
+        .unwrap();
+    assert_eq!(shell.transcript.back().unwrap().text, message);
+}
+
 #[test]
 fn guardian_review_reports_terminal_decision_without_creating_duplicate_activity() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
     let mut review = codex_app_server_protocol::GuardianApprovalReview {
         status: codex_app_server_protocol::GuardianApprovalReviewStatus::InProgress,
         risk_level: None,
         user_authorization: None,
         rationale: None,
     };
-    shell.record_guardian_review("review-1".to_string(), review.clone());
+    let action = codex_app_server_protocol::GuardianApprovalReviewAction::Command {
+        source: codex_app_server_protocol::GuardianCommandSource::UnifiedExec,
+        command: "upload credentials".into(),
+        cwd: LegacyAppPathString::from_abs_path(&test_absolute_path("workspace")),
+    };
+    let target = Some("upload");
+    shell.record_guardian_review("review-1".into(), target, &action, review.clone());
+    shell.push_tool_with_status_for_item(
+        "upload",
+        "upload credentials",
+        ToolBlockStatus::Running,
+        Some(tool_groups::ToolAction::Command),
+    );
+    shell.push_tool_with_status_for_item(
+        "parallel",
+        "ls",
+        ToolBlockStatus::Success,
+        Some(tool_groups::ToolAction::Command),
+    );
     review.status = codex_app_server_protocol::GuardianApprovalReviewStatus::Denied;
     review.rationale =
         Some("The requested upload includes credentials outside the authorized scope.".to_string());
-    shell.record_guardian_review("review-1".to_string(), review);
-    assert_eq!(
-        shell
-            .transcript
-            .iter()
-            .filter(|line| line.kind == TranscriptKind::Tool
-                && line.item_id.as_deref() == Some("guardian:review-1"))
-            .count(),
-        1
+    shell.record_guardian_review("review-1".into(), target, &action, review);
+    shell.push_tool_with_status_for_item(
+        "upload",
+        "upload credentials",
+        ToolBlockStatus::Fail,
+        Some(tool_groups::ToolAction::Command),
     );
+    let index = shell
+        .transcript
+        .iter()
+        .position(|line| line.item_id.as_deref() == target)
+        .unwrap();
+    assert_eq!(shell.transcript[index].approvals.len(), 1);
+    assert!(shell.transcript[index + 1].approvals.is_empty());
+    let area = Rect::new(0, 0, 100, 28);
+    assert!(!render_shell(&shell, area).contains("credentials"));
+    shell.toggle_tool_group(shell.tool_group_start(index).unwrap());
+    let expanded = render_shell(&shell, area);
+    assert!(expanded.contains("Auto-review") && expanded.contains("Denied"));
     insta::assert_snapshot!(
         "guardian_review_denied",
         render_shell(&shell, Rect::new(0, 0, 100, 28))

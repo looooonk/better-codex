@@ -6,7 +6,6 @@ use super::ToolOutputBuffer;
 use super::TranscriptKind;
 use super::TranscriptLine;
 use super::next_local_output_item_id;
-use super::next_transcript_render_revision;
 
 pub(super) const TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS: usize = 8_000;
 pub(super) const TRANSCRIPT_OUTPUT_HIGH_WATER_LINES: usize = 160;
@@ -37,15 +36,10 @@ impl TranscriptLine {
         item_id: String,
     ) -> Self {
         Self {
-            kind: TranscriptKind::Output,
-            text: preview,
             full_text: Some(full_text),
             tool_status: Some(status),
             item_id: Some(item_id),
-            rewind_anchor: None,
-            tool_action: None,
-            tool_group_expanded: false,
-            render_revision: next_transcript_render_revision(),
+            ..Self::new(TranscriptKind::Output, preview)
         }
     }
 }

@@ -701,7 +701,8 @@ impl ShellState {
             }
             ServerNotification::GuardianWarning(warning) => {
                 if warning.thread_id == self.thread_id.to_string() {
-                    self.retain_warning(warning.message);
+                    // The structured review carries the verdict on the tool itself.
+                    self.warnings.record(&warning.message);
                 }
             }
             ServerNotification::ConfigWarning(warning) => {
@@ -737,7 +738,12 @@ impl ShellState {
             }
             ServerNotification::ItemGuardianApprovalReviewStarted(notification) => {
                 if notification.thread_id == self.thread_id.to_string() {
-                    self.record_guardian_review(notification.review_id, notification.review);
+                    self.record_guardian_review(
+                        notification.review_id,
+                        notification.target_item_id.as_deref(),
+                        &notification.action,
+                        notification.review,
+                    );
                 }
             }
             ServerNotification::ItemGuardianApprovalReviewCompleted(notification) => {

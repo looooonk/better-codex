@@ -287,6 +287,7 @@ struct TranscriptLine {
     item_id: Option<String>,
     rewind_anchor: Option<rewind::RewindAnchor>,
     tool_action: Option<tool_groups::ToolAction>,
+    approvals: Vec<guardian_activity::ToolApproval>,
     tool_group_expanded: bool,
     render_revision: u64,
 }
@@ -301,6 +302,7 @@ impl TranscriptLine {
             item_id: None,
             rewind_anchor: None,
             tool_action: None,
+            approvals: Vec::new(),
             tool_group_expanded: false,
             render_revision: next_transcript_render_revision(),
         }
@@ -337,6 +339,7 @@ impl Clone for TranscriptLine {
             item_id: self.item_id.clone(),
             rewind_anchor: self.rewind_anchor.clone(),
             tool_action: self.tool_action.clone(),
+            approvals: self.approvals.clone(),
             tool_group_expanded: self.tool_group_expanded,
             render_revision: next_transcript_render_revision(),
         }
@@ -347,6 +350,7 @@ impl PartialEq for TranscriptLine {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
             && self.text == other.text
+            && self.approvals == other.approvals
             && self.full_text == other.full_text
             && self.tool_status == other.tool_status
             && self.item_id == other.item_id
@@ -2120,11 +2124,18 @@ impl ShellState {
     fn upsert_line(&mut self, mut line: TranscriptLine) {
         if let Some(item_id) = line.item_id.as_deref()
             && let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
-                existing.kind == line.kind && existing.item_id.as_deref() == Some(item_id)
+                existing.item_id.as_deref() == Some(item_id)
+                    && (existing.kind == line.kind
+                        || (line.kind == TranscriptKind::Diff
+                            && matches!(
+                                existing.tool_action,
+                                Some(tool_groups::ToolAction::ApprovalReview)
+                            )))
             })
         {
             line.tool_group_expanded = existing.tool_group_expanded;
-            if line.tool_action.is_none() {
+            line.approvals = std::mem::take(&mut existing.approvals);
+            if line.kind == existing.kind && line.tool_action.is_none() {
                 line.tool_action = existing.tool_action.take();
             }
             *existing = line;

@@ -14,7 +14,12 @@ impl ShellState {
         &mut self,
         notification: ItemGuardianApprovalReviewCompletedNotification,
     ) {
-        self.record_guardian_review(notification.review_id.clone(), notification.review.clone());
+        self.record_guardian_review(
+            notification.review_id.clone(),
+            notification.target_item_id.as_deref(),
+            &notification.action,
+            notification.review.clone(),
+        );
         self.recent_guardian_denials
             .retain(|event| event.id != notification.review_id);
         if notification.review.status != GuardianApprovalReviewStatus::Denied {
@@ -99,7 +104,11 @@ impl ShellState {
         }
         let mut lines = vec!["Recent auto-review denials".to_string()];
         for event in &self.recent_guardian_denials {
-            lines.push(format!("{}: {}", event.id, action_summary(&event.action)));
+            lines.push(format!(
+                "{}: {}",
+                event.id,
+                super::guardian_activity::action_summary(&event.action.clone().into())
+            ));
             lines.push(
                 event
                     .rationale
@@ -109,40 +118,6 @@ impl ShellState {
         }
         lines.push("Use /approve <review-id> to allow one retry. The retry still goes through auto-review.".to_string());
         self.push_system(lines.join("\n"));
-    }
-}
-
-fn action_summary(action: &codex_protocol::approvals::GuardianAssessmentAction) -> String {
-    use codex_protocol::approvals::GuardianAssessmentAction;
-    match action {
-        GuardianAssessmentAction::Command { command, .. } => command.clone(),
-        GuardianAssessmentAction::Execve { program, argv, .. } => {
-            if argv.is_empty() {
-                program.clone()
-            } else {
-                shlex::try_join(argv.iter().map(String::as_str)).unwrap_or_else(|_| argv.join(" "))
-            }
-        }
-        GuardianAssessmentAction::WriteStdin {
-            process_id, stdin, ..
-        } => format!("Send {stdin:?} to terminal {process_id}"),
-        GuardianAssessmentAction::ApplyPatch { files, .. } => format!(
-            "Modify {}",
-            files
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        GuardianAssessmentAction::NetworkAccess { target, .. } => {
-            format!("Network access to {target}")
-        }
-        GuardianAssessmentAction::McpToolCall {
-            server, tool_name, ..
-        } => format!("Tool {server}/{tool_name}"),
-        GuardianAssessmentAction::RequestPermissions { reason, .. } => reason
-            .clone()
-            .unwrap_or_else(|| "Request additional permissions".to_string()),
     }
 }
 

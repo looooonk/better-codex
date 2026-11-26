@@ -168,6 +168,7 @@ impl TranscriptRenderCache {
                     anchor_source: anchor_source(),
                     kind: item.kind,
                     text: &item.text,
+                    approvals: &item.approvals,
                     tool_status: item.tool_status,
                     selected,
                 },
@@ -196,6 +197,7 @@ impl TranscriptRenderCache {
                     ),
                     kind: TranscriptKind::Assistant,
                     text: &shell.streaming_assistant,
+                    approvals: &[],
                     tool_status: None,
                     selected: false,
                 },
@@ -261,6 +263,7 @@ struct CachedSource<'a> {
     anchor_source: TranscriptAnchorSource,
     kind: TranscriptKind,
     text: &'a str,
+    approvals: &'a [super::guardian_activity::ToolApproval],
     tool_status: Option<ToolBlockStatus>,
     selected: bool,
 }
@@ -369,7 +372,7 @@ impl CachedTranscriptItem {
         }
 
         let _active_theme = crate::app_theme::activate(app_theme);
-        let lines = render_transcript_line_with_visualizations(
+        let mut lines = render_transcript_line_with_visualizations(
             source.kind,
             source.text,
             source.tool_status,
@@ -378,6 +381,9 @@ impl CachedTranscriptItem {
             selected,
             visuals,
         );
+        for approval in source.approvals {
+            lines.extend(approval.lines(source.text, width - indent));
+        }
         let lines = indent_lines(lines, indent);
         if self.has_visualization {
             return lines;

@@ -31,18 +31,24 @@ pub(super) enum DiagnosticRequest {
 #[derive(Default)]
 pub(super) struct WarningHistory(VecDeque<String>);
 
-impl ShellState {
-    pub(super) fn retain_warning(&mut self, message: String) {
+impl WarningHistory {
+    pub(super) fn record(&mut self, message: &str) {
         let mut retained = message.chars().take(16_384).collect::<String>();
         if retained.len() < message.len() {
             retained.push_str("\n[warning truncated]");
         }
-        if self.warnings.0.back() != Some(&retained) {
-            self.warnings.0.push_back(retained);
-            if self.warnings.0.len() > 100 {
-                self.warnings.0.pop_front();
+        if self.0.back() != Some(&retained) {
+            self.0.push_back(retained);
+            if self.0.len() > 100 {
+                self.0.pop_front();
             }
         }
+    }
+}
+
+impl ShellState {
+    pub(super) fn retain_warning(&mut self, message: String) {
+        self.warnings.record(&message);
         self.show_hint(message.lines().next().unwrap_or("warning"));
     }
 

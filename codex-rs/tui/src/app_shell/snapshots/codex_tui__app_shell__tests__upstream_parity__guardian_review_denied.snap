@@ -4,22 +4,22 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-                                                  │━━━━━━━━━━━━━───────────────────────────────────
-   > Create a divergent standalone TUI.           │
-                                                  │ Projects
-                                                  │ No projects
-   Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents
-                                                  │ + New session  Ctrl+N
-      ▸ Edited files                              │ loading sessions
+      ⌄ Ran command                               │━━━━━━━━━━━━━───────────────────────────────────
                                                   │
-   ▌ tool Approval review: Denied                 │
-                                                  │
-     ▌ output The requested upload includes       │
-     ▌        credentials outside the authorized  │
-     ▌        scope.                              │
+        ▌ tool upload credentials                 │ Projects
+          ↳ Auto-review  Denied                   │ No projects
+            The requested upload includes         │
+            credentials outside the authorized    │ Recents
+            scope.                                │ + New session  Ctrl+N
+                                                  │ loading sessions
+        ▌ tool ls                                 │
                                                   │
    The new shell owns the fullscreen surface.     │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

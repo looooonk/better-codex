@@ -17,6 +17,7 @@ use std::ops::Range;
 
 #[derive(Debug, Clone)]
 pub(super) enum ToolAction {
+    ApprovalReview,
     Command,
     Edit,
     Search,
@@ -31,6 +32,11 @@ impl ToolAction {
     fn label(&self, status: ToolBlockStatus) -> String {
         // The subject names the operation when its result is unavailable or it did not succeed.
         let (present, past, subject) = match self {
+            Self::ApprovalReview => (
+                "Reviewing permissions",
+                "Reviewed permissions",
+                "Permission review",
+            ),
             Self::Command => ("Running command", "Ran command", "Command"),
             Self::Edit => ("Editing files", "Edited files", "File edit"),
             Self::Search => ("Searching web", "Searched web", "Web search"),
