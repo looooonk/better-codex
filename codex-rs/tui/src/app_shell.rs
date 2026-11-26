@@ -69,6 +69,7 @@ mod agent_log;
 mod agent_log_format;
 mod agent_log_view;
 mod approval;
+mod approval_popup;
 mod backend;
 mod backend_actions;
 mod backend_background;
@@ -1518,10 +1519,12 @@ impl ShellState {
     }
 
     fn explain_pending_approval(&mut self) {
-        let Some(pending) = self.pending_approval.as_ref() else {
-            return;
-        };
-        self.push_system(pending.explanation());
+        if let Some(pending) = self.pending_approval.as_mut()
+            && pending.toggle_explanation()
+        {
+            let explanation = pending.explanation();
+            self.push_system(explanation);
+        }
     }
 
     fn seed_composer_with_edit_prompt(&mut self, edit_prompt: String) {

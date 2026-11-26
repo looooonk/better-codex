@@ -3,7 +3,9 @@ use super::dashboard::dashboard_value;
 use super::dashboard::format_usize;
 use super::design::palette;
 use crate::status::format_directory_display;
-use codex_protocol::models::ManagedFileSystemPermissions;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
+use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
 use codex_protocol::models::PermissionProfile;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -28,37 +30,15 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
             ]));
         }
     }
-    let permission_details = match &shell.permission_profile {
-        PermissionProfile::Managed {
-            file_system,
-            network,
-        } => {
-            let file_system_label = match file_system {
-                ManagedFileSystemPermissions::Restricted { .. } => "restricted",
-                ManagedFileSystemPermissions::Unrestricted => "unrestricted",
-            };
-            workspace_lines.push(profile_line(shell, width, "managed"));
-            Some(Line::from(format!(
-                "files {file_system_label}, net {network}"
-            )))
-        }
-        PermissionProfile::Disabled => {
-            workspace_lines.push(profile_line(shell, width, "full access"));
-            None
-        }
-        PermissionProfile::External { network } => {
-            workspace_lines.push(profile_line(shell, width, "external"));
-            Some(Line::from(format!("net {network}")))
-        }
-    };
+    workspace_lines.push(Line::from(vec![
+        "profile ".dim(),
+        profile_label(shell).into(),
+    ]));
     let cwd = format_directory_display(Path::new(&shell.cwd), /*max_width*/ None);
     workspace_lines.push(Line::from(vec![
         "cwd ".dim(),
         dashboard_value(&cwd, width, /*prefix_width*/ 4).into(),
     ]));
-    if let Some(permission_details) = permission_details {
-        workspace_lines.push(permission_details);
-    }
     if shell.runtime_workspace_roots.is_empty() {
         workspace_lines.push(Line::from("roots none selected".dim()));
     } else if shell.runtime_workspace_roots.len() > 1 {
@@ -88,16 +68,32 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
     workspace_lines
 }
 
-fn profile_line(shell: &ShellState, width: usize, kind: &str) -> Line<'static> {
-    let label = shell
-        .active_permission_profile
-        .as_ref()
-        .map(|profile| format!("{} ({kind})", profile.id))
-        .unwrap_or_else(|| kind.to_string());
-    Line::from(vec![
-        "profile ".dim(),
-        dashboard_value(&label, width, /*prefix_width*/ 8).into(),
-    ])
+fn profile_label(shell: &ShellState) -> &'static str {
+    if let Some(active) = &shell.active_permission_profile {
+        return match active.id.as_str() {
+            BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS => "full access",
+            BUILT_IN_PERMISSION_PROFILE_READ_ONLY => "read only",
+            BUILT_IN_PERMISSION_PROFILE_WORKSPACE => "workspace write",
+            _ => "custom",
+        };
+    }
+    match &shell.permission_profile {
+        PermissionProfile::Disabled => "full access",
+        PermissionProfile::External { .. } => "external sandbox",
+        profile @ PermissionProfile::Managed { .. } => {
+            let fs = profile.file_system_sandbox_policy();
+            let cwd = Path::new(&shell.cwd);
+            if fs.has_full_disk_write_access() {
+                "managed access"
+            } else if fs.can_write_local_path_with_cwd(cwd, cwd) {
+                "workspace write"
+            } else if fs.get_writable_roots_with_cwd(cwd).is_empty() {
+                "read only"
+            } else {
+                "custom"
+            }
+        }
+    }
 }
 
 fn workspace_change_lines(

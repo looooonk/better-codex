@@ -498,10 +498,9 @@ impl ShellState {
             }
             return false;
         }
-        let over_approval = self.pending_approval.is_some()
-            && (ShellView { shell: self })
-                .input_area(area)
-                .contains(position);
+        let over_approval = (ShellView { shell: self })
+            .approval_area(area)
+            .is_some_and(|popup| popup.contains(position));
         if over_approval {
             if let Some(pending) = &mut self.pending_approval {
                 match direction {

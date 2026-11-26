@@ -16,7 +16,6 @@ use super::design::title_rect;
 use super::input_request_layout::approval_panel_hit;
 use super::input_request_layout::elicitation_panel_hit;
 use super::input_request_layout::request_panel_hit;
-use super::input_request_layout::visible_approval_panel_lines;
 use super::input_request_layout::visible_elicitation_panel_lines;
 use super::input_request_layout::visible_request_panel_lines;
 use super::input_request_view::approval_lines;
@@ -131,6 +130,9 @@ impl ShellView<'_> {
         }
         super::queued_message_popup_view::render(self.shell, layout.transcript, layout.input, buf);
         super::slash_command_popup_view::render(self.shell, layout.transcript, layout.input, buf);
+        if let Some(pending) = &self.shell.pending_approval {
+            super::approval_popup::render(pending, layout.transcript, buf);
+        }
         if let Some(pending) = &self.shell.pending_external_agent_import {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
         }
@@ -363,6 +365,14 @@ impl ShellView<'_> {
         super::command_palette_view::entry_at(self.shell, area, position)
     }
 
+    pub(super) fn approval_area(&self, area: Rect) -> Option<Rect> {
+        let pending = self.shell.pending_approval.as_ref()?;
+        Some(super::approval_popup::area(
+            pending,
+            self.layout(area)?.transcript,
+        ))
+    }
+
     pub(super) fn approval_action_at(
         &self,
         area: Rect,
@@ -370,8 +380,8 @@ impl ShellView<'_> {
     ) -> Option<super::ApprovalAction> {
         let pending = self.shell.pending_approval.as_ref()?;
         let lines = approval_lines(pending);
-        let hit = approval_panel_hit(self.input_area(area), position, pending)?;
-        let option_start = pending.details().len().saturating_add(1);
+        let hit = approval_panel_hit(self.approval_area(area)?, position, pending)?;
+        let option_start = pending.details().count().saturating_add(1);
         if (option_start..option_start.saturating_add(pending.option_count())).contains(&hit.line) {
             return Some(super::ApprovalAction::Choose(hit.line - option_start));
         }
@@ -385,7 +395,10 @@ impl ShellView<'_> {
             .collect::<String>();
         [
             ("e Edit", Some(super::ApprovalAction::Edit)),
-            ("? Explain", Some(super::ApprovalAction::Explain)),
+            (
+                pending.explain_label(),
+                Some(super::ApprovalAction::Explain),
+            ),
         ]
         .into_iter()
         .find_map(|(label, action)| {
@@ -457,12 +470,6 @@ impl ShellView<'_> {
             .border_style(Style::new().fg(border_color))
             .style(pane_style(palette::surface()))
             .render(area, buf);
-        if let Some(pending) = &self.shell.pending_approval {
-            let body = body_rect_after_title(pane_content_rect(area));
-            let lines = visible_approval_panel_lines(pending, body.width, body.height);
-            self.render_titled_panel(area, "APPROVAL", lines, palette::surface(), buf);
-            return;
-        }
         if let Some(pending) = &self.shell.pending_elicitation {
             let body = body_rect_after_title(pane_content_rect(area));
             let lines = visible_elicitation_panel_lines(
@@ -497,7 +504,9 @@ impl ShellView<'_> {
         if self.shell.composer.has_images() {
             hints.push(self.shell.composer.image_summary());
         }
-        if let Some(hint) = &self.shell.input_hint {
+        if self.shell.pending_approval.is_none()
+            && let Some(hint) = &self.shell.input_hint
+        {
             hints.insert(0, hint.clone());
         }
         if !hints.is_empty() {

@@ -1,7 +1,6 @@
 use super::ShellState;
 use super::design::pane_content_rect;
 use super::input_request_layout::request_panel_visual_line_count;
-use super::input_request_view::approval_lines;
 use super::input_request_view::elicitation_lines;
 use super::input_request_view::user_input_lines;
 use super::navigation::DashboardRoute;
@@ -115,7 +114,7 @@ fn workspace_layout(shell: &ShellState, area: Rect, input_height: u16) -> ShellL
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(status_height),
-            Constraint::Min(transcript_min_height(shell, area.height)),
+            Constraint::Min(transcript_min_height(area.height)),
             Constraint::Length(input_height),
         ])
         .split(area);
@@ -127,8 +126,8 @@ fn workspace_layout(shell: &ShellState, area: Rect, input_height: u16) -> ShellL
     }
 }
 
-fn transcript_min_height(shell: &ShellState, terminal_height: u16) -> u16 {
-    if terminal_height == MIN_TERMINAL_HEIGHT || shell.pending_approval.is_some() {
+fn transcript_min_height(terminal_height: u16) -> u16 {
+    if terminal_height == MIN_TERMINAL_HEIGHT {
         0
     } else {
         TRANSCRIPT_MIN_HEIGHT
@@ -207,9 +206,7 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
         available_height,
     ));
     let body_width = content.width;
-    let request_lines = if let Some(pending) = &shell.pending_approval {
-        Some(approval_lines(pending))
-    } else if let Some(pending) = &shell.pending_elicitation {
+    let request_lines = if let Some(pending) = &shell.pending_elicitation {
         Some(elicitation_lines(pending, &shell.composer, body_width))
     } else {
         shell

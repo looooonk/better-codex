@@ -7,40 +7,30 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 
 pub(super) fn approval_lines(pending: &PendingApproval) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(vec![
-        "? ".fg(palette::warning()).bold(),
-        pending.title().to_string().fg(palette::text()).bold(),
-    ])];
+    let mut lines = vec![Line::from(
+        pending.title().to_owned().fg(palette::text()).bold(),
+    )];
     lines.extend(
         pending
             .details()
-            .iter()
-            .map(|detail| Line::from(vec!["  ".into(), detail.clone().fg(palette::muted())])),
+            .map(|detail| Line::from(detail.clone().fg(palette::muted()))),
     );
     lines.extend(pending.options().map(|(index, label)| {
-        let marker = if index == pending.selected_option() {
-            "> "
-        } else {
-            "  "
-        };
+        let selected = index == pending.selected_option();
+        let marker = if selected { "› " } else { "  " };
         Line::from(vec![
-            marker.fg(palette::focus()).bold(),
-            format!("{} ", index + 1).fg(palette::success()).bold(),
-            label.to_string().fg(palette::text()),
+            marker.fg(palette::focus()),
+            format!("{} ", index + 1).fg(palette::muted()),
+            label.to_owned().fg(if selected {
+                palette::focus()
+            } else {
+                palette::text()
+            }),
         ])
     }));
-    lines.push(Line::from(vec![
-        "  ".into(),
-        " e Edit "
-            .fg(palette::text())
-            .bg(palette::elevated())
-            .bold(),
-        " ".into(),
-        " ? Explain "
-            .fg(palette::text())
-            .bg(palette::elevated())
-            .bold(),
-    ]));
+    lines.push(Line::from(
+        format!("e Edit    {}", pending.explain_label()).fg(palette::muted()),
+    ));
     lines
 }
 

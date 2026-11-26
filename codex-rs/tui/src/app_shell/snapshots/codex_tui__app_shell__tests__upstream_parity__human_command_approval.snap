@@ -15,18 +15,18 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │
    The new shell owns the fullscreen surface.               │
                                                             │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
+│ Approval required                                         │
+│ Human approval required: Run command: cargo test -p       │
+│ codex-tui                                                 │
+│ Reason: Needs network access                              │
+│ Working directory: /workspace/better-codex                │
+│ › 1 Run once                                              │
+│   2 Deny                                                  │
+│   3 Deny and interrupt                                    │
+│ e Edit    ? Explain                                       │
 ╭──────────────────────────────────────────────────────────╮│
-│◆ APPROVAL                                                ││
-│? Human approval required: Run command: cargo test -p     ││
-│codex-tui                                                 ││
-│  Reason: Needs network access                            ││
-│  Working directory: /workspace/better-codex              ││
-│> 1 Run once                                              ││
-│  2 Deny                                                  ││
-│  3 Deny and interrupt                                    ││
-│   e Edit   ? Explain                                     ││
+│> Summarize the new shell architecture                    ││
+│                                                          ││
+│                                                          ││
+│ ⓘ Ask for approval ▾   gpt-… ▾   Default ▾   ◷ Default ▾ ││
 ╰──────────────────────────────────────────────────────────╯│

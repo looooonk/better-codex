@@ -18,14 +18,14 @@ expression: "render_shell(&shell, area)"
                                                   │▎3 files +128 -24
                                                   │
                                                   │▎◆ WORKSPACE
-                                                  │▎profile managed
+                                                  │▎profile workspace write
                                                   │▎cwd /workspace/better-codex
-                                                  │▎files restricted, net restricted
                                                   │▎roots none selected
                                                   │
                                                   │▎◆ TOKENS
-╭ goal active. Objective: Ship the standalone she╮│▎input 1k | output 240
-│> Type a message                                ││▎Context 100% left
+                                                  │▎input 1k | output 240
+╭ goal active. Objective: Ship the standalone she╮│▎Context 100% left
+│> Type a message                                ││
 │                                                ││
 │                                                ││
 │ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││

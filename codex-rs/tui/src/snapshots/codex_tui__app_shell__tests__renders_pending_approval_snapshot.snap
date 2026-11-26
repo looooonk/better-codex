@@ -4,29 +4,29 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
-                                                │ │━━━━━━━━━━━━━───────────────────────────────────
-      ▸ Edited files                            │ │
-                                                ┃ │ Projects
-   The new shell owns the fullscreen surface.   ┃ │ No projects
-                                                  │
-╭────────────────────────────────────────────────╮│ Recents
-│◆ APPROVAL                                      ││ + New session  Ctrl+N
-│? Run command: cargo test -p codex-tui          ││ loading sessions
-│  Reason: Needs network access                  ││
-│  Working directory: /workspace/better-codex    ││
-│  Command actions: [{ type: "read", command:    ││
-│  "cat Cargo.toml", name: "Cargo.toml", path: "/││
-│  workspace/better-codex/Cargo.toml" }]         ││
-│  Requested additional per-command permissions: ││
-│  { network: { enabled: true }, fileSystem:     ││
-│  { read: null, write: null, entries: [{ path:  ││
-│  { type: "path", path: "/workspace/shared-     ││
-│  cache" }, access: "write" }] } }              ││
-│  Proposed persistent command rule: ["cargo",   ││
-│  "test"]                                       ││
-│> 1 Run once                                    ││
-│  2 Run and always allow command prefix: cargo  ││
-│  test                                          ││
-│  3 Deny and interrupt                          ││
-│   e Edit   ? Explain                           ││
+                                                  │━━━━━━━━━━━━━───────────────────────────────────
+   > Create a divergent standalone TUI.           │
+                                                  │ Projects
+                                                  │ No projects
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents
+│ Approval required                               │ + New session  Ctrl+N
+│ Run command: cargo test -p codex-tui            │ loading sessions
+│ Reason: Needs network access                    │
+│ Working directory: /workspace/better-codex      │
+│ Requested additional per-command permissions:   │
+│ { network: { enabled: true }, fileSystem:       │
+│ { read: null, write: null, entries: [{ path:    │
+│ { type: "path", path: "/workspace/shared-       │
+│ cache" }, access: "write" }] } }                │
+│ › 1 Run once                                    │
+│   2 Run and always allow command prefix: cargo  │
+│   test                                          │
+│   3 Deny and interrupt                          │
+│ e Edit    ? Explain                             │
+╭────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

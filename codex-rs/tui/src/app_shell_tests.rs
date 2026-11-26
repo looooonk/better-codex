@@ -7572,8 +7572,10 @@ fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
     );
     insta::assert_snapshot!(rendered);
 
-    let input = (ShellView { shell: &shell }).input_area(area);
-    let position = Position::new(input.x.saturating_add(1), input.y.saturating_add(1));
+    let view = ShellView { shell: &shell };
+    let popup = view.approval_area(area).unwrap();
+    assert_eq!(popup.bottom(), view.input_area(area).y);
+    let position = Position::new(popup.x.saturating_add(1), popup.y.saturating_add(1));
     for _ in 0..20 {
         shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Down);
     }
@@ -7833,6 +7835,25 @@ fn renders_pending_approval_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+
+    shell.explain_pending_approval();
+    let view = ShellView { shell: &shell };
+    let expanded = render_shell(&shell, area);
+    let less = rendered_text_position(&expanded, "? Less");
+    assert_eq!(
+        view.approval_action_at(area, less),
+        Some(ApprovalAction::Explain)
+    );
+    assert!(
+        shell
+            .pending_approval
+            .as_ref()
+            .unwrap()
+            .details()
+            .any(|detail| detail.contains("Command actions"))
+    );
+    shell.explain_pending_approval();
+    assert!(render_shell(&shell, area).contains("? Explain"));
 }
 
 #[test]
@@ -8354,9 +8375,15 @@ fn tool_transcript_blocks_use_status_accent_colors() {
 fn renders_activity_dashboard_panels_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
-    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
-        .expect("approval request should be valid");
-    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    for request in [command_approval_request(), tool_user_input_request()] {
+        shell
+            .receive_interactive_request(
+                PendingInteractiveRequest::from_request(&request)
+                    .unwrap()
+                    .unwrap(),
+            )
+            .unwrap();
+    }
     shell.active_turn_id = Some("turn-background-1234567890".to_string());
     shell.workspace_status_refresh_due = true;
     shell.subagent_activity = VecDeque::from([

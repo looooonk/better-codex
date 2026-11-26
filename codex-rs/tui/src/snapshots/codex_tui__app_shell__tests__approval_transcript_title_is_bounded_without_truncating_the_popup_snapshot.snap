@@ -14,19 +14,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 
 
 
-
-
-
-
+│ Approval required
+│ Run command: printf first
+│ printf second
+│ printf third
+│ printf private-fourth
+│ Reason: Needs network access
+│ Working directory: /workspace/better-codex
+│ › 1 Run once
+│   2 Deny and interrupt
+│ e Edit    ? Explain
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
-│◆ APPROVAL                                                                                        │
-│? Run command: printf first                                                                       │
-│printf second                                                                                     │
-│printf third                                                                                      │
-│printf private-fourth                                                                             │
-│  Reason: Needs network access                                                                    │
-│  Working directory: /workspace/better-codex                                                      │
-│> 1 Run once                                                                                      │
-│  2 Deny and interrupt                                                                            │
-│   e Edit   ? Explain                                                                             │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+│ ⓘ Ask for approval ▾                                     gpt-5-codex ▾   Default ▾   ◷ Default ▾ │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

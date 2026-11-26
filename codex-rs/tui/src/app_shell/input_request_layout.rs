@@ -85,7 +85,7 @@ pub(super) fn approval_panel_hit(
     position: Position,
     pending: &PendingApproval,
 ) -> Option<RequestPanelHit> {
-    let body = body_rect_after_title(pane_content_rect(panel));
+    let body = super::approval_popup::body(panel);
     if !body.contains(position) {
         return None;
     }
@@ -137,7 +137,7 @@ fn visible_approval_segments(
         return segments.into_iter().take(visible).collect();
     }
 
-    let preferred_pinned_line = pending.details().len().saturating_add(1);
+    let preferred_pinned_line = pending.details().count().saturating_add(1);
     let final_line = lines.len().saturating_sub(1);
     let pinned_start = pinned_suffix_start(&segments, preferred_pinned_line, final_line, visible);
     let (selected, max_start) = visible_scrolled_segments(

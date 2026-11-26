@@ -37,7 +37,6 @@ enum DashboardPanelKind {
     Projects,
     Tokens,
     Approvals,
-    Background,
     RateLimits,
     Edits,
     Goal,
@@ -135,7 +134,6 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
             DashboardPanelKind::Workspace,
             DashboardPanelKind::Tokens,
             DashboardPanelKind::RateLimits,
-            DashboardPanelKind::Background,
         ],
         DashboardRoute::Settings => &[DashboardPanelKind::Navigation, DashboardPanelKind::Settings],
     }
@@ -207,9 +205,6 @@ fn dashboard_panel(
             || shell.pending_elicitation.is_some()
             || shell.pending_user_input.is_some())
         .then(|| DashboardPanel::new("Approvals", approval_activity_lines(shell, content_width))),
-        DashboardPanelKind::Background => {
-            background_activity_lines(shell).map(|lines| DashboardPanel::new("Background", lines))
-        }
         DashboardPanelKind::RateLimits => (!shell.rate_limits.is_empty()
             || shell.rate_limit_reset_credits.is_some())
         .then(|| {
@@ -392,14 +387,6 @@ fn approval_activity_lines(shell: &ShellState, width: usize) -> Vec<Line<'static
         lines.push(Line::from("none pending".dim()));
     }
     lines
-}
-
-fn background_activity_lines(shell: &ShellState) -> Option<Vec<Line<'static>>> {
-    let mut lines = Vec::new();
-    if shell.workspace_status_refresh_due {
-        lines.push(Line::from("workspace refresh queued".dim()));
-    }
-    (!lines.is_empty()).then_some(lines)
 }
 
 fn activity_status_line(label: &'static str, title: &str, width: usize) -> Line<'static> {

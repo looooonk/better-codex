@@ -40,9 +40,11 @@ pub(super) struct PendingApproval {
     request_id: RequestId,
     title: String,
     details: Vec<String>,
+    explanation_details: Vec<String>,
     edit_prompt: String,
     options: Vec<ApprovalOption>,
     selected_option: usize,
+    explanation_open: bool,
     scroll_offset: Cell<usize>,
     scroll_max: Cell<usize>,
 }
@@ -96,8 +98,19 @@ impl PendingApproval {
                         context.host
                     ));
                 }
-                if let Some(actions) = params.command_actions.as_ref() {
-                    details.push(json_detail("Command actions", actions));
+                let mut explanation_details = Vec::new();
+                let command_actions = params
+                    .command_actions
+                    .as_ref()
+                    .filter(|actions| !actions.is_empty())
+                    .map(|actions| json_detail("Command actions", actions));
+                // A parsed copy of a visible command belongs in its explanation.
+                if let Some(actions) = command_actions {
+                    if params.command.is_some() {
+                        explanation_details.push(actions);
+                    } else {
+                        details.push(actions);
+                    }
                 }
                 if let Some(permissions) = params.additional_permissions.as_ref() {
                     details.push(json_detail(
@@ -106,10 +119,12 @@ impl PendingApproval {
                     ));
                 }
                 if let Some(amendment) = params.proposed_execpolicy_amendment.as_ref() {
-                    details.push(json_detail("Proposed persistent command rule", amendment));
+                    explanation_details
+                        .push(json_detail("Proposed persistent command rule", amendment));
                 }
                 if let Some(amendments) = params.proposed_network_policy_amendments.as_ref() {
-                    details.push(json_detail("Proposed persistent network rules", amendments));
+                    explanation_details
+                        .push(json_detail("Proposed persistent network rules", amendments));
                 }
                 let options = params
                     .available_decisions
@@ -138,9 +153,11 @@ impl PendingApproval {
                     request_id: request_id.clone(),
                     title,
                     details,
+                    explanation_details,
                     edit_prompt: format!("Revise and retry this command:\n{command}"),
                     options,
                     selected_option: 0,
+                    explanation_open: false,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
                 }))
@@ -148,6 +165,7 @@ impl PendingApproval {
             ServerRequest::FileChangeRequestApproval { request_id, params } => Ok(Some(Self {
                 request_id: request_id.clone(),
                 title: format!("Apply file changes: {}", params.item_id),
+                explanation_details: Vec::new(),
                 details: context_details(
                     params.reason.as_deref(),
                     params
@@ -181,6 +199,7 @@ impl PendingApproval {
                     },
                 ],
                 selected_option: 0,
+                explanation_open: false,
                 scroll_offset: Cell::new(0),
                 scroll_max: Cell::new(0),
             })),
@@ -199,6 +218,7 @@ impl PendingApproval {
                 Ok(Some(Self {
                     request_id: request_id.clone(),
                     title: "Grant permissions".to_string(),
+                    explanation_details: Vec::new(),
                     details,
                     edit_prompt: "Revise the requested permissions before trying again".to_string(),
                     options: vec![
@@ -244,6 +264,7 @@ impl PendingApproval {
                         },
                     ],
                     selected_option: 0,
+                    explanation_open: false,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
                 }))
@@ -267,13 +288,36 @@ impl PendingApproval {
         &self.title
     }
 
-    pub(super) fn details(&self) -> &[String] {
-        &self.details
+    pub(super) fn details(&self) -> impl Iterator<Item = &String> {
+        let extra = if self.explanation_open {
+            self.explanation_details.as_slice()
+        } else {
+            &[]
+        };
+        self.details.iter().chain(extra)
+    }
+
+    pub(super) fn explain_label(&self) -> &'static str {
+        if self.explanation_open {
+            "? Less"
+        } else {
+            "? Explain"
+        }
+    }
+
+    pub(super) fn toggle_explanation(&mut self) -> bool {
+        if self.explanation_details.is_empty() {
+            return true;
+        }
+        self.explanation_open = !self.explanation_open;
+        self.scroll_offset.set(0);
+        self.explanation_open
     }
 
     pub(super) fn explanation(&self) -> String {
         std::iter::once(self.title.as_str())
             .chain(self.details.iter().map(String::as_str))
+            .chain(self.explanation_details.iter().map(String::as_str))
             .collect::<Vec<_>>()
             .join(" - ")
     }
@@ -443,7 +487,7 @@ fn context_details(
         details.push(format!("Reason: {reason}"));
     }
     details.extend(context);
-    if let Some(environment_id) = environment_id {
+    if let Some(environment_id) = environment_id.filter(|id| *id != "local") {
         details.push(format!("Environment: {environment_id}"));
     }
     if details.is_empty() {
@@ -549,7 +593,8 @@ fn command_decision_label(decision: &CommandExecutionApprovalDecision) -> String
             execpolicy_amendment,
         } => format!(
             "Run and always allow command prefix: {}",
-            execpolicy_amendment.command.join(" ")
+            shlex::try_join(execpolicy_amendment.command.iter().map(String::as_str))
+                .unwrap_or_else(|_| format!("{:?}", execpolicy_amendment.command))
         ),
         CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
             network_policy_amendment,

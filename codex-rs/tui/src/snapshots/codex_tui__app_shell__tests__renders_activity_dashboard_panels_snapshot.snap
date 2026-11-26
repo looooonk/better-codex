@@ -13,17 +13,14 @@ expression: "render_shell(&shell, area)"
       ▸ Edited files                                                  │▎3 files +128 -24
                                                                       │
    The new shell owns the fullscreen surface.                         │▎◆ WORKSPACE
-                                                                      │▎profile managed
+                                                                      │▎profile workspace write
         Thinking... · — tok/s                                         │▎cwd /workspace/better-codex
-                                                                      │▎files restricted, net restricted
                                                                       │▎roots none selected
                                                                       │
                                                                       │▎◆ TOKENS
                                                                       │▎input 1k | output 240
                                                                       │▎Context 100% left
                                                                       │
-                                                                      │▎◆ BACKGROUND
-                                                                      │▎workspace refresh queued
                                                                       │
                                                                       │
                                                                       │
@@ -46,13 +43,16 @@ expression: "render_shell(&shell, area)"
                                                                       │
                                                                       │
                                                                       │
-                                                                      │
+│ Approval required                                                   │
+│ Run command: cargo test -p codex-tui                                │
+│ Reason: Needs network access                                        │
+│ Working directory: /workspace/better-codex                          │
+│ › 1 Run once                                                        │
+│   2 Deny and interrupt                                              │
+│ e Edit    ? Explain                                                 │
 ╭────────────────────────────────────────────────────────────────────╮│
-│◆ APPROVAL                                                          ││
-│? Run command: cargo test -p codex-tui                              ││
-│  Reason: Needs network access                                      ││
-│  Working directory: /workspace/better-codex                        ││
-│> 1 Run once                                                        ││
-│  2 Deny and interrupt                                              ││
-│   e Edit   ? Explain                                               ││
+│> Summarize the new shell architecture                              ││
+│                                                                    ││
+│                                                                    ││
+│ ⓘ Ask for approval ▾       gpt-5-codex ▾   Default ▾   ◷ Default ▾ ││
 ╰────────────────────────────────────────────────────────────────────╯│

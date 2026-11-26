@@ -14,19 +14,19 @@ expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
       ▸ Edited files                              │ loading sessions
                                                   │
    The new shell owns the fullscreen surface.     │
-                                                  │
-                                                  │
-                                                  │
+│ Approval required                               │
+│ Connect to https://packages.example.com         │
+│ Reason: Needs network access                    │
+│ Network target: https://packages.example.com    │
+│ › 1 Run once                                    │
+│   2 Run for this session                        │
+│   3 Allow host permanently:                     │
+│   packages.example.com                          │
+│   4 Deny and interrupt                          │
+│ e Edit    ? Explain                             │
 ╭────────────────────────────────────────────────╮│
-│◆ APPROVAL                                      ││
-│? Connect to https://packages.example.com       ││
-│  Reason: Needs network access                  ││
-│  Network target: https://packages.example.com  ││
-│  Proposed persistent network rules: [{ host:   ││
-│  "packages.example.com", action: "allow" }]    ││
-│> 1 Run once                                    ││
-│  2 Run for this session                        ││
-│  3 Allow host permanently: packages.example.com││
-│  4 Deny and interrupt                          ││
-│   e Edit   ? Explain                           ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

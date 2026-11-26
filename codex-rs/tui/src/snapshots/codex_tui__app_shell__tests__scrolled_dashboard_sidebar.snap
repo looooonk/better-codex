@@ -5,13 +5,13 @@ expression: after
                                                   │
                                                   │  Sessions   │  Status  │  Agents  │  Settings
                                                 │ │──────────────━━━━━━━━━━────────────────────────
-   Started a fullscreen app shell backed by     │ │▎◆ EDITS
-   app-server turns.                            ┃ │▎3 files +128 -24
-                                                ┃ │
-      ▸ Edited files                            ┃ │▎◆ WORKSPACE
-                                                ┃ │▎profile managed
-   The new shell owns the fullscreen surface.   ┃ │▎cwd /workspace/better-codex
-                                                  │▎files restricted, net restricted
+   Started a fullscreen app shell backed by     │ │
+   app-server turns.                            ┃ │▎◆ EDITS
+                                                ┃ │▎3 files +128 -24
+      ▸ Edited files                            ┃ │
+                                                ┃ │▎◆ WORKSPACE
+   The new shell owns the fullscreen surface.   ┃ │▎profile workspace write
+                                                  │▎cwd /workspace/better-codex
 ╭────────────────────────────────────────────────╮│▎roots none selected
 │> Summarize the new shell architecture          ││
 │                                                ││▎◆ TOKENS
