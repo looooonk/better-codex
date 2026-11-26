@@ -19,13 +19,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
    • Full rewrite                                 │
                                                   │
    The new shell owns the fullscreen surface.     │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+       ╭ Question ───────────────────────╮        │
+       │ Which approach?                 │        │
+       │                                 │        │
+       │ ● Small change                  │        │
+       │ ○ Full rewrite                  │        │
+       │ ○ Write an answer…              │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││

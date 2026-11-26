@@ -14,10 +14,7 @@ use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::title_rect;
 use super::input_request_layout::elicitation_panel_hit;
-use super::input_request_layout::request_panel_hit;
 use super::input_request_layout::visible_elicitation_panel_lines;
-use super::input_request_layout::visible_request_panel_lines;
-use super::input_request_view::user_input_lines;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
 use super::shell_layout;
@@ -42,7 +39,6 @@ use ratatui::widgets::Borders;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
-use unicode_width::UnicodeWidthStr;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     shell.pets.clear()?;
@@ -136,6 +132,13 @@ impl ShellView<'_> {
                 buf,
             );
         }
+        if let Some(pending) = &self.shell.pending_user_input {
+            super::question_popup::QuestionPopup::new(pending, layout.transcript).render(
+                pending,
+                self.shell.pointer_position,
+                buf,
+            );
+        }
         if let Some(pending) = &self.shell.pending_external_agent_import {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
         }
@@ -192,13 +195,17 @@ impl ShellView<'_> {
             || self.shell.pending_external_agent_import.is_some()
             || self.shell.pending_mcp_management.is_some()
             || self.shell.pending_plugin_management.is_some()
-            || self.shell.pending_user_input.is_some()
             || self.shell.safety_buffering_modal_lines().is_some()
-            || self.shell.dashboard_focused()
         {
             return None;
         }
 
+        if let Some(pending) = &self.shell.pending_user_input {
+            return self.question_popup(area)?.cursor(pending);
+        }
+        if self.shell.dashboard_focused() {
+            return None;
+        }
         let input = self.layout(area)?.input;
         let composer = self.shell.composer.display();
         let body = composer_body(input);
@@ -403,29 +410,14 @@ impl ShellView<'_> {
         pending.choice_at(hit.line, hit.column)
     }
 
-    pub(super) fn user_input_option_at(&self, area: Rect, position: Position) -> Option<usize> {
-        let pending = self.shell.pending_user_input.as_ref()?;
-        let input_area = self.input_area(area);
-        let width = body_rect_after_title(pane_content_rect(input_area)).width;
-        let lines = user_input_lines(pending, &self.shell.composer, width);
-        let hit = request_panel_hit(input_area, position, &lines)?;
-        let option_index = hit.line.checked_sub(2)?;
-        let option = pending
-            .current_question()?
-            .options
-            .as_ref()?
-            .get(option_index)?;
-        let text = lines[hit.line]
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-        let label = format!("{} {}", option_index + 1, option.label);
-        let byte_start = text.find(&label)?;
-        let start = UnicodeWidthStr::width(&text[..byte_start]);
-        (start..start + UnicodeWidthStr::width(label.as_str()))
-            .contains(&hit.column)
-            .then_some(option_index)
+    pub(super) fn question_popup(
+        &self,
+        area: Rect,
+    ) -> Option<super::question_popup::QuestionPopup> {
+        Some(super::question_popup::QuestionPopup::new(
+            self.shell.pending_user_input.as_ref()?,
+            self.layout(area)?.transcript,
+        ))
     }
 
     fn layout(&self, area: Rect) -> Option<ShellLayout> {
@@ -458,18 +450,6 @@ impl ShellView<'_> {
             self.render_titled_panel(area, "MCP ELICITATION", lines, palette::surface(), buf);
             return;
         }
-        if let Some(pending) = &self.shell.pending_user_input {
-            let width = body_rect_after_title(pane_content_rect(area)).width;
-            self.render_request_panel(
-                area,
-                "TOOL INPUT",
-                user_input_lines(pending, &self.shell.composer, width),
-                palette::surface(),
-                buf,
-            );
-            return;
-        }
-
         // Keep transient draft information on the border so the input always starts on row one.
         let mut hints = Vec::new();
         if let Some(hint) = self.shell.rewind_input_hint() {
@@ -482,6 +462,7 @@ impl ShellView<'_> {
             hints.push(self.shell.composer.image_summary());
         }
         if self.shell.pending_approval.is_none()
+            && self.shell.pending_user_input.is_none()
             && let Some(hint) = &self.shell.input_hint
         {
             hints.insert(0, hint.clone());
@@ -571,18 +552,5 @@ impl ShellView<'_> {
             .style(pane_style(background))
             .wrap(Wrap { trim: false })
             .render(body_rect_after_title(content), buf);
-    }
-
-    fn render_request_panel(
-        &self,
-        area: Rect,
-        title: &str,
-        lines: Vec<Line<'static>>,
-        background: Color,
-        buf: &mut Buffer,
-    ) {
-        let body = body_rect_after_title(pane_content_rect(area));
-        let visible_lines = visible_request_panel_lines(&lines, body.width, body.height);
-        self.render_titled_panel(area, title, visible_lines, background, buf);
     }
 }

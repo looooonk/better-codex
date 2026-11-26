@@ -213,9 +213,11 @@ impl ShellState {
             return Ok(());
         }
         if self.pending_user_input.is_some() {
-            if let Some(index) = (ShellView { shell: self }).user_input_option_at(area, position) {
-                self.composer.set_text((index + 1).to_string());
-                self.resolve_pending_user_input(app_server).await?;
+            if let Some(hit) = (ShellView { shell: self })
+                .question_popup(area)
+                .and_then(|popup| popup.hit(position))
+            {
+                self.handle_question_hit(hit, app_server).await?;
             }
             return Ok(());
         }
@@ -522,6 +524,19 @@ impl ShellState {
                     MouseScrollDirection::Down => pending.scroll_down(/*amount*/ 3),
                 }
             }
+            return false;
+        }
+        if let Some(popup) = (ShellView { shell: self }).question_popup(area)
+            && popup.panel.contains(position)
+            && let Some(pending) = &self.pending_user_input
+        {
+            popup.scroll(
+                pending,
+                match direction {
+                    MouseScrollDirection::Up => -3,
+                    MouseScrollDirection::Down => 3,
+                },
+            );
             return false;
         }
         let over_elicitation = self.pending_elicitation.is_some()

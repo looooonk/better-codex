@@ -65,7 +65,7 @@ impl ShellState {
     }
 
     pub(super) fn has_text_selection(&self) -> bool {
-        self.composer.selected_text().is_some() || self.text_selection.transcript.is_some()
+        self.focused_editor().selected_text().is_some() || self.text_selection.transcript.is_some()
     }
 
     pub(super) fn clear_transcript_text_selection(&mut self) {
@@ -79,7 +79,7 @@ impl ShellState {
     }
 
     pub(super) fn clear_text_selections(&mut self) {
-        self.composer.clear_selection();
+        self.focused_editor_mut().clear_selection();
         self.text_selection = TextSelectionState::default();
     }
 
@@ -88,7 +88,7 @@ impl ShellState {
         copy_fn: impl FnOnce(&str) -> Result<Option<ClipboardLease>, String>,
     ) -> bool {
         let text = self
-            .composer
+            .focused_editor()
             .selected_text()
             .map(str::to_string)
             .or_else(|| {
@@ -138,6 +138,36 @@ impl ShellState {
         if self.begin_dashboard_resize(area, position) {
             self.clear_text_selections();
             return Ok(());
+        }
+        if matches!(
+            self.active_input_route(),
+            Some(super::input_router::ActiveInputRoute::UserInput)
+        ) {
+            let popup = (ShellView { shell: self }).question_popup(area);
+            if let Some(popup) = popup.filter(|popup| popup.editor.contains(position))
+                && let Some(pending) = &mut self.pending_user_input
+            {
+                pending.select(pending.options().len());
+                let editor = &mut pending.draft_mut().editor;
+                let display = editor.display();
+                if let Some(hit) = composer_render::editor_text_hit(
+                    popup.editor,
+                    display.text(),
+                    display.cursor(),
+                    position,
+                ) {
+                    editor.set_cursor_from_display_range(hit.caret_range());
+                    self.text_selection.drag = Some(TextSelectionDrag::Message {
+                        anchor: hit.grapheme_range(),
+                        origin: position,
+                        moved: false,
+                    });
+                }
+                return Ok(());
+            }
+            return self
+                .handle_mouse_click(area, position, config, app_server)
+                .await;
         }
         let queued_message_popup_hit = {
             let view = ShellView { shell: self };
@@ -291,17 +321,21 @@ impl ShellState {
                     origin,
                     moved,
                 });
-                let input = (ShellView { shell: self }).input_area(area);
-                let display = self.composer.display();
-                let Some(focus) = composer_render::composer_text_hit_clamped_to_visible_viewport(
-                    input,
+                let view = ShellView { shell: self };
+                let body = view.question_popup(area).map_or_else(
+                    || super::composer_layout::composer_body(view.input_area(area)),
+                    |popup| popup.editor,
+                );
+                let display = self.focused_editor().display();
+                let Some(focus) = composer_render::editor_text_hit_clamped(
+                    body,
                     display.text(),
                     display.cursor(),
                     position,
                 ) else {
                     return;
                 };
-                self.composer
+                self.focused_editor_mut()
                     .set_selection_from_display_ranges(anchor.clone(), focus.grapheme_range());
                 self.text_selection.drag = Some(TextSelectionDrag::Message {
                     anchor,

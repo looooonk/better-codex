@@ -33,17 +33,6 @@ pub(super) fn request_panel_visual_line_count(lines: &[Line<'static>], width: u1
     wrapped_segments(lines, width).len()
 }
 
-pub(super) fn visible_request_panel_lines(
-    lines: &[Line<'static>],
-    width: u16,
-    height: u16,
-) -> Vec<Line<'static>> {
-    visible_segments(lines, width, height)
-        .into_iter()
-        .map(|segment| segment.content)
-        .collect()
-}
-
 pub(super) fn visible_elicitation_panel_lines(
     pending: &PendingElicitation,
     composer: &ComposerState,
@@ -56,7 +45,8 @@ pub(super) fn visible_elicitation_panel_lines(
         .collect()
 }
 
-pub(super) fn request_panel_hit(
+#[cfg(test)]
+fn request_panel_hit(
     panel: Rect,
     position: Position,
     lines: &[Line<'static>],
@@ -323,7 +313,7 @@ fn visible_segment_indices(
     selected
 }
 
-fn wrapped_segments(lines: &[Line<'static>], width: u16) -> Vec<RequestPanelSegment> {
+pub(super) fn wrapped_segments(lines: &[Line<'static>], width: u16) -> Vec<RequestPanelSegment> {
     let width = usize::from(width.max(/*other*/ 1));
     lines
         .iter()

@@ -54,6 +54,7 @@ const RAW_KEY_CAPTURE: u32 = 1 << 18;
 const VOICE_TOGGLE_BLOCKED: u32 = 1 << 19;
 const TRANSCRIPT_ACTIONS: u32 = 1 << 20;
 const COPY_FOCUS: u32 = 1 << 21;
+const ANSWER_EDITOR: u32 = 1 << 22;
 
 const TRANSCRIPT_BROWSING: u32 = 1 << 14;
 
@@ -166,6 +167,9 @@ impl KeymapContextSet {
             && (self.0 & COPY_FOCUS == 0
                 || action.context != KeymapContext::Global
                 || action.action == "copy")
+            && (self.0 & ANSWER_EDITOR == 0
+                || action.context != KeymapContext::Global
+                || matches!(action.action, "open_external_editor" | "copy"))
             && (self.0 & ACTIVITY_FOCUS == 0
                 || action.context != KeymapContext::Global
                 || matches!(
@@ -187,6 +191,15 @@ impl KeymapContextSet {
             && (!self.is_warnings()
                 || action.context != KeymapContext::Global
                 || matches!(action.action, "open_warnings" | "copy"))
+    }
+
+    pub(crate) const fn answer_editor() -> Self {
+        Self(
+            context_bit(KeymapContext::Editor)
+                | context_bit(KeymapContext::Composer)
+                | context_bit(KeymapContext::Global)
+                | ANSWER_EDITOR,
+        )
     }
 
     pub(crate) const fn with_copy(self) -> Self {

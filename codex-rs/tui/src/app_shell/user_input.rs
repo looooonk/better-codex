@@ -1,16 +1,22 @@
-use std::collections::HashMap;
+use super::composer::ComposerState;
+use std::cell::Cell;
 use std::time::Duration;
 
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::backend_actions::ActionGroup;
 use super::backend_actions::BackendActionResult;
+use codex_app_server_protocol::AsyncUserInputQuestion;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ToolRequestUserInputAnswer;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
 use codex_app_server_protocol::ToolRequestUserInputResponse;
+use codex_app_server_protocol::UserInput;
+use codex_context_fragments::AnsweredQuestion;
+use codex_context_fragments::ContextualUserFragment;
+use codex_protocol::models::ContentItem;
 use serde_json::Value;
 use tokio::time::Instant;
 
@@ -20,19 +26,35 @@ struct AutoResolution {
     deadline: Instant,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(super) struct QuestionDraft {
+    pub(super) selected: usize,
+    pub(super) editor: ComposerState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum QuestionSource {
+    Server(RequestId),
+    Async(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PendingUserInput {
-    request_id: RequestId,
+    pub(super) source: QuestionSource,
     title: String,
     questions: Vec<ToolRequestUserInputQuestion>,
     current_index: usize,
-    answers: HashMap<String, ToolRequestUserInputAnswer>,
+    drafts: Vec<QuestionDraft>,
+    pub(super) error: Option<String>,
+    pub(super) scroll: Cell<usize>,
+    pub(super) reveal_selection: Cell<bool>,
     auto_resolution: Option<AutoResolution>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum UserInputAdvance {
     Next,
+    AsyncReply(Vec<UserInput>),
     Complete {
         request_id: RequestId,
         result: Value,
@@ -46,11 +68,14 @@ impl PendingUserInput {
         };
 
         Some(Self {
-            request_id: request_id.clone(),
+            source: QuestionSource::Server(request_id.clone()),
             title: format!("Tool input: {}", params.item_id),
             questions: params.questions.clone(),
             current_index: 0,
-            answers: HashMap::new(),
+            drafts: vec![QuestionDraft::default(); params.questions.len().max(1)],
+            error: None,
+            scroll: Cell::default(),
+            reveal_selection: Cell::default(),
             auto_resolution: (!params.is_blocking)
                 .then_some(120_000)
                 .and_then(|delay_ms| {
@@ -61,12 +86,52 @@ impl PendingUserInput {
         })
     }
 
+    pub(super) fn from_async(item_id: &str, questions: Vec<AsyncUserInputQuestion>) -> Self {
+        let drafts = vec![QuestionDraft::default(); questions.len().max(1)];
+        Self {
+            source: QuestionSource::Async(item_id.to_owned()),
+            title: questions
+                .first()
+                .map(|q| q.title.clone())
+                .unwrap_or_default(),
+            questions: questions
+                .into_iter()
+                .enumerate()
+                .map(|(index, q)| ToolRequestUserInputQuestion {
+                    id: serde_json::json!(["request_user_input_async", item_id, index]).to_string(),
+                    header: String::new(),
+                    question: q.title,
+                    is_other: true,
+                    is_secret: false,
+                    options: q.options.map(|options| {
+                        options
+                            .into_iter()
+                            .map(|label| ToolRequestUserInputOption {
+                                label,
+                                description: String::new(),
+                            })
+                            .collect()
+                    }),
+                })
+                .collect(),
+            current_index: 0,
+            drafts,
+            error: None,
+            scroll: Cell::default(),
+            reveal_selection: Cell::default(),
+            auto_resolution: None,
+        }
+    }
+
     pub(super) fn snooze_auto_resolution(&mut self) {
         self.auto_resolution = None;
     }
 
-    pub(super) fn request_id(&self) -> &RequestId {
-        &self.request_id
+    pub(super) fn request_id(&self) -> Option<&RequestId> {
+        match &self.source {
+            QuestionSource::Server(id) => Some(id),
+            QuestionSource::Async(_) => None,
+        }
     }
 
     pub(super) fn title(&self) -> &str {
@@ -93,44 +158,109 @@ impl PendingUserInput {
             .map(|resolution| resolution.deadline)
     }
 
-    pub(super) fn answer_current(&mut self, answer: String) -> Result<UserInputAdvance, String> {
-        let Some(question) = self.current_question() else {
-            return self.complete();
-        };
-        let answer = selected_answer(question, answer)?;
-        self.answers.insert(
-            question.id.clone(),
-            ToolRequestUserInputAnswer {
-                answers: vec![answer],
-            },
-        );
-        self.current_index += 1;
-
-        if self.current_index >= self.questions.len() {
-            self.complete()
-        } else {
-            Ok(UserInputAdvance::Next)
-        }
+    pub(super) fn draft(&self) -> &QuestionDraft {
+        &self.drafts[self.current_index]
     }
 
-    fn complete(&self) -> Result<UserInputAdvance, String> {
-        let (request_id, result) = self.response()?;
+    pub(super) fn draft_mut(&mut self) -> &mut QuestionDraft {
+        &mut self.drafts[self.current_index]
+    }
+
+    pub(super) fn options(&self) -> &[ToolRequestUserInputOption] {
+        self.current_question()
+            .and_then(|q| q.options.as_deref())
+            .unwrap_or_default()
+    }
+
+    pub(super) fn allows_text(&self) -> bool {
+        self.options().is_empty() || self.current_question().is_some_and(|q| q.is_other)
+    }
+
+    pub(super) fn editing(&self) -> bool {
+        self.draft().selected == self.options().len() && self.allows_text()
+    }
+
+    pub(super) fn select(&mut self, index: usize) {
+        self.error = None;
+        self.draft_mut().selected = index;
+        self.reveal_selection.set(true);
+        self.snooze_auto_resolution();
+    }
+
+    pub(super) fn previous(&mut self) {
+        self.current_index = self.current_index.saturating_sub(1);
+        self.scroll.set(0);
+        self.reveal_selection.set(true);
+    }
+
+    pub(super) fn answer_current(&mut self) -> Result<UserInputAdvance, String> {
+        if self.current_question().is_some()
+            && self.editing()
+            && self.draft().editor.text().trim().is_empty()
+        {
+            return Err("Enter an answer".to_string());
+        }
+        if self.current_index + 1 < self.questions.len() {
+            self.current_index += 1;
+            self.scroll.set(0);
+            self.reveal_selection.set(false);
+            return Ok(UserInputAdvance::Next);
+        }
+        if matches!(self.source, QuestionSource::Async(_)) {
+            let mut items = Vec::with_capacity(self.questions.len());
+            for (question, draft) in self.questions.iter().zip(&self.drafts) {
+                let answer = draft
+                    .selected_option(question)
+                    .unwrap_or_else(|| draft.editor.text());
+                let fragment = AnsweredQuestion::new(&question.id, &question.question, answer);
+                let ContentItem::InputText { text } = fragment.render() else {
+                    return Err("Could not format question reply".into());
+                };
+                items.push(UserInput::Text {
+                    text,
+                    text_elements: Vec::new(),
+                });
+            }
+            return Ok(UserInputAdvance::AsyncReply(items));
+        }
+        let (request_id, result) = self.response(self.questions.len())?;
         Ok(UserInputAdvance::Complete { request_id, result })
     }
 
-    fn response(&self) -> Result<(RequestId, Value), String> {
-        let result = serde_json::to_value(ToolRequestUserInputResponse {
-            answers: self.answers.clone(),
-        })
-        .map_err(|err| format!("failed to serialize tool input response: {err}"))?;
-        Ok((self.request_id.clone(), result))
+    fn response(&self, count: usize) -> Result<(RequestId, Value), String> {
+        let answers = self
+            .questions
+            .iter()
+            .zip(&self.drafts)
+            .take(count)
+            .map(|(question, draft)| {
+                let answer = draft.selected_option(question).map_or_else(
+                    || format!("user_note: {}", draft.editor.text()),
+                    str::to_owned,
+                );
+                (
+                    question.id.clone(),
+                    ToolRequestUserInputAnswer {
+                        answers: vec![answer],
+                    },
+                )
+            })
+            .collect();
+        let result = serde_json::to_value(ToolRequestUserInputResponse { answers })
+            .map_err(|err| format!("failed to serialize tool input response: {err}"))?;
+        Ok((
+            self.request_id()
+                .ok_or("Expected a server request")?
+                .clone(),
+            result,
+        ))
     }
 
     fn take_auto_resolution(&mut self) -> Result<Option<(RequestId, Value)>, String> {
         if self.auto_resolution.take().is_none() {
             return Ok(None);
         }
-        self.response().map(Some)
+        self.response(self.current_index).map(Some)
     }
 }
 
@@ -175,42 +305,12 @@ impl ShellState {
     }
 }
 
-fn selected_answer(
-    question: &ToolRequestUserInputQuestion,
-    answer: String,
-) -> Result<String, String> {
-    let answer = answer.trim();
-    if answer.is_empty() {
-        return Err("answer cannot be empty".to_string());
+impl QuestionDraft {
+    fn selected_option<'a>(&self, question: &'a ToolRequestUserInputQuestion) -> Option<&'a str> {
+        question
+            .options
+            .as_ref()?
+            .get(self.selected)
+            .map(|option| option.label.as_str())
     }
-
-    let options = question
-        .options
-        .as_deref()
-        .filter(|options| !options.is_empty());
-    if let Some(options) = options {
-        if let Ok(index) = answer.parse::<usize>()
-            && let Some(option) = index.checked_sub(1).and_then(|index| options.get(index))
-        {
-            return Ok(option.label.clone());
-        }
-        if let Some(option) = matching_option(options, answer) {
-            return Ok(option.label.clone());
-        }
-        if question.is_other {
-            return Ok(format!("user_note: {answer}"));
-        }
-        return Err("answer must match one of the listed options".to_string());
-    }
-
-    Ok(format!("user_note: {answer}"))
-}
-
-fn matching_option<'a>(
-    options: &'a [ToolRequestUserInputOption],
-    answer: &str,
-) -> Option<&'a ToolRequestUserInputOption> {
-    options
-        .iter()
-        .find(|option| option.label.eq_ignore_ascii_case(answer))
 }

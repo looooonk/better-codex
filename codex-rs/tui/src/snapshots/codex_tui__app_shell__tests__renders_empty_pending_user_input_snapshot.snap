@@ -14,19 +14,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
       ▸ Edited files                              │ loading sessions
                                                   │
    The new shell owns the fullscreen surface.     │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+       ╭ Question · Environment ─────────╮        │
+       │ Which environment should the    │        │
+       │ tool use?                       │        │
+       │                                 │        │
+       │ ● Production  Use the live      │        │
+       │ service                         │        │
+       │ ○ Staging  Use the staging      │        │
+       │ service                         │        │
+       │ ○ Write an answer…              │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
-│◆ TOOL INPUT                                    ││
-│? Tool input: tool-input-1 (1/1)                ││
-│  Environment: Which environment should the tool││
-│  use?                                          ││
-│  1 Production - Use the live service           ││
-│  2 Staging - Use the staging service           ││
-│  Other (free-form) - Type a custom answer      ││
-│  below.                                        ││
-│> ▏answer                                       ││
+│> Type a message                                ││
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

@@ -43,8 +43,12 @@ impl ShellState {
         if self.pending_plugin_management.is_some() {
             return;
         }
-        if self.pending_user_input.is_some() {
-            self.insert_pasted_composer_text(&text);
+        if let Some(pending) = &mut self.pending_user_input {
+            if pending.allows_text() {
+                pending.select(pending.options().len());
+                let result = pending.draft_mut().editor.insert_str(&text);
+                self.report_composer_insert(result);
+            }
             return;
         }
         if self.dashboard_visible

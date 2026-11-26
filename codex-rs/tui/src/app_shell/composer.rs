@@ -152,10 +152,6 @@ impl ComposerState {
         self.input.text_with_cursor_window(max_width)
     }
 
-    pub(super) fn masked_text_with_cursor_window(&self, max_width: usize) -> String {
-        self.input.masked_text_with_cursor_window(max_width)
-    }
-
     pub(super) fn cursor_position(&self) -> (usize, usize) {
         let display = self.input.display();
         let cursor = display.cursor();
@@ -315,7 +311,12 @@ mod keyboard_selection;
 impl super::ShellState {
     pub(super) fn report_composer_insert(&mut self, result: ComposerInsertResult) {
         if let ComposerInsertResult::TooLarge { attempted_bytes } = result {
-            self.show_hint(input_too_large_message(attempted_bytes));
+            let message = input_too_large_message(attempted_bytes);
+            if let Some(pending) = &mut self.pending_user_input {
+                pending.error = Some(message);
+            } else {
+                self.show_hint(message);
+            }
         }
     }
 

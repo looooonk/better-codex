@@ -34,11 +34,11 @@ impl PendingInteractiveRequest {
         }
     }
 
-    pub(super) fn request_id(&self) -> RequestId {
+    pub(super) fn request_id(&self) -> Option<RequestId> {
         match self {
-            Self::Approval(pending) => pending.request_id(),
-            Self::Elicitation(pending) => pending.request_id(),
-            Self::UserInput(pending) => pending.request_id().clone(),
+            Self::Approval(pending) => Some(pending.request_id()),
+            Self::Elicitation(pending) => Some(pending.request_id()),
+            Self::UserInput(pending) => pending.request_id().cloned(),
         }
     }
 
@@ -105,11 +105,11 @@ impl ShellState {
             || self
                 .pending_user_input
                 .as_ref()
-                .is_some_and(|pending| pending.request_id() == request_id)
+                .is_some_and(|pending| pending.request_id() == Some(request_id))
             || self
                 .queued_interactive_requests
                 .iter()
-                .any(|pending| pending.request_id() == request_id.clone())
+                .any(|pending| pending.request_id().as_ref() == Some(request_id))
     }
 
     pub(super) fn remove_interactive_request(
@@ -141,16 +141,16 @@ impl ShellState {
         if self
             .pending_user_input
             .as_ref()
-            .is_some_and(|pending| pending.request_id() == request_id)
+            .is_some_and(|pending| pending.request_id() == Some(request_id))
         {
             self.pending_user_input = None;
-            self.composer.clear_text();
+            self.text_selection = Default::default();
             return InteractiveRequestRemoval::Active;
         }
         let Some(index) = self
             .queued_interactive_requests
             .iter()
-            .position(|pending| pending.request_id() == request_id.clone())
+            .position(|pending| pending.request_id().as_ref() == Some(request_id))
         else {
             return InteractiveRequestRemoval::Missing;
         };
@@ -181,6 +181,10 @@ impl ShellState {
 
     fn activate_interactive_request(&mut self, pending: PendingInteractiveRequest) {
         let status = pending.requested_status();
+        if !matches!(pending, PendingInteractiveRequest::UserInput(_)) {
+            self.composer.finish_queued_message_edit();
+        }
+        self.text_selection = Default::default();
         self.close_overlays_for_interactive_request();
         match pending {
             PendingInteractiveRequest::Approval(pending) => {
@@ -201,7 +205,6 @@ impl ShellState {
     }
 
     fn close_overlays_for_interactive_request(&mut self) {
-        self.composer.finish_queued_message_edit();
         self.close_agent_log();
         self.close_tool_output();
         self.close_diff_view();

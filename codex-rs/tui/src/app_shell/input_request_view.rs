@@ -1,79 +1,8 @@
 use super::PendingElicitation;
-use super::PendingUserInput;
 use super::composer::ComposerState;
 use super::design::palette;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-
-pub(super) fn user_input_lines(
-    pending: &PendingUserInput,
-    composer: &ComposerState,
-    width: u16,
-) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    let (current, total) = pending.question_position();
-    lines.push(Line::from(vec![
-        "? ".fg(palette::cyan()).bold(),
-        format!("{} ({current}/{total})", pending.title()).bold(),
-    ]));
-
-    if let Some(question) = pending.current_question() {
-        lines.push(Line::from(vec![
-            "  ".into(),
-            question.header.clone().bold(),
-            ": ".dim(),
-            question.question.clone().into(),
-        ]));
-        if let Some(options) = question
-            .options
-            .as_deref()
-            .filter(|options| !options.is_empty())
-        {
-            lines.extend(options.iter().enumerate().map(|(index, option)| {
-                Line::from(vec![
-                    "  ".into(),
-                    format!("{} ", index + 1).fg(palette::success()).bold(),
-                    option.label.clone().into(),
-                    " - ".dim(),
-                    option.description.clone().dim(),
-                ])
-            }));
-            if question.is_other {
-                lines.push(Line::from(vec![
-                    "  ".into(),
-                    "Other (free-form)".into(),
-                    " - Type a custom answer below.".dim(),
-                ]));
-            }
-        }
-    }
-
-    if let Some(delay_ms) = pending.auto_resolution_ms() {
-        let delay = if delay_ms.is_multiple_of(1_000) {
-            format!("{}s", delay_ms / 1_000)
-        } else {
-            format!("{delay_ms}ms")
-        };
-        lines.push(Line::from(vec![
-            "  ".into(),
-            format!("Auto-continue after {delay} if unanswered").dim(),
-        ]));
-    }
-
-    let secret = pending
-        .current_question()
-        .is_some_and(|question| question.is_secret);
-    let answer_width = usize::from(width).saturating_sub(2).max(1);
-    let answer = if composer.is_empty() {
-        "▏answer".dim()
-    } else if secret {
-        composer.masked_text_with_cursor_window(answer_width).dim()
-    } else {
-        composer.text_with_cursor_window(answer_width).into()
-    };
-    lines.push(Line::from(vec!["> ".fg(palette::cyan()).bold(), answer]));
-    lines
-}
 
 pub(super) fn elicitation_lines(
     pending: &PendingElicitation,

@@ -15,11 +15,11 @@ impl ShellState {
     pub(super) fn move_composer_up(&mut self, layout: ComposerNavigationLayout) {
         match layout {
             ComposerNavigationLayout::LogicalLines => {
-                self.composer.move_up_or_recall_history();
+                self.focused_editor_mut().move_up_or_recall_history();
             }
             ComposerNavigationLayout::Area(area) => {
                 let target = self.composer_vertical_target(area, ComposerVerticalDirection::Up);
-                self.composer
+                self.focused_editor_mut()
                     .move_or_recall_history_visually(ComposerVerticalDirection::Up, target);
             }
         }
@@ -28,11 +28,11 @@ impl ShellState {
     pub(super) fn move_composer_down(&mut self, layout: ComposerNavigationLayout) {
         match layout {
             ComposerNavigationLayout::LogicalLines => {
-                self.composer.move_down_or_recall_history();
+                self.focused_editor_mut().move_down_or_recall_history();
             }
             ComposerNavigationLayout::Area(area) => {
                 let target = self.composer_vertical_target(area, ComposerVerticalDirection::Down);
-                self.composer
+                self.focused_editor_mut()
                     .move_or_recall_history_visually(ComposerVerticalDirection::Down, target);
             }
         }
@@ -43,12 +43,19 @@ impl ShellState {
         area: Rect,
         direction: ComposerVerticalDirection,
     ) -> ComposerVerticalTarget {
-        let input = (ShellView { shell: self }).input_area(area);
-        let body = composer_body(input);
+        let view = ShellView { shell: self };
+        let body = view.question_popup(area).map_or_else(
+            || composer_body(view.input_area(area)),
+            |popup| popup.editor,
+        );
         if body.width == 0 {
             return ComposerVerticalTarget::Boundary;
         }
-        let display = self.composer.display();
+        let display = self.focused_editor().display();
+        if self.pending_user_input.is_some() {
+            return super::composer_layout::ComposerLayout::new(display.text(), body.width.into())
+                .vertical_target(display.cursor(), direction);
+        }
         self.composer_layout
             .borrow_mut()
             .for_draft(display.text(), usize::from(body.width))

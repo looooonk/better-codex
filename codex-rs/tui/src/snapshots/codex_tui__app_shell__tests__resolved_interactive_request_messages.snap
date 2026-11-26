@@ -25,7 +25,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │
 ╭ elicitation requested: MCP github: URL request ╮│
-│> Type a message                                ││
+│> saved draft                                   ││
 │                                                ││
 │                                                ││
 │ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││

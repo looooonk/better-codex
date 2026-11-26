@@ -2,7 +2,6 @@ use super::ShellState;
 use super::design::pane_content_rect;
 use super::input_request_layout::request_panel_visual_line_count;
 use super::input_request_view::elicitation_lines;
-use super::input_request_view::user_input_lines;
 use super::navigation::DashboardRoute;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -206,15 +205,8 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
         available_height,
     ));
     let body_width = content.width;
-    let request_lines = if let Some(pending) = &shell.pending_elicitation {
-        Some(elicitation_lines(pending, &shell.composer, body_width))
-    } else {
-        shell
-            .pending_user_input
-            .as_ref()
-            .map(|pending| user_input_lines(pending, &shell.composer, body_width))
-    };
-    if let Some(lines) = request_lines {
+    if let Some(pending) = &shell.pending_elicitation {
+        let lines = elicitation_lines(pending, &shell.composer, body_width);
         let visual_line_count =
             u16::try_from(request_panel_visual_line_count(&lines, body_width)).unwrap_or(u16::MAX);
         let desired_height = visual_line_count.saturating_add(PANE_CHROME_HEIGHT).clamp(

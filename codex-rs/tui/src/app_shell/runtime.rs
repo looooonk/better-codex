@@ -348,6 +348,7 @@ pub(crate) async fn run(
                             }
                             while let Some(request) = shell.take_vim_input_request() {
                                 let originating_thread_id = request.thread_id();
+                                let question = request.question.clone();
                                 let replaced_draft = request.replaced_draft().map(str::to_string);
                                 draw_shell(tui, &shell)?;
                                 shell.pets.clear()?;
@@ -371,6 +372,10 @@ pub(crate) async fn run(
                                         );
                                     }
                                 };
+                                if let Some((source, position)) = question {
+                                    shell.complete_question_editor(originating_thread_id, source, position, result, &mut app_server).await?;
+                                    continue;
+                                }
                                 if originating_thread_id == shell.thread_id
                                     && replaced_draft.as_deref() == Some(shell.composer.submission_text().as_str())
                                     && matches!(&result, Ok(vim_input::VimInputOutcome::Submit(_) | vim_input::VimInputOutcome::ReturnDraft(_)))

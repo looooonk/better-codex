@@ -13,20 +13,20 @@ expression: after
                                                   │ + New session  Ctrl+N
       ▸ Edited files                              │ loading sessions
                                                   │
-   The new shell owns the fullscreen surface.     │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+   The ╭ Question · Environment ─────────╮ce.     │
+       │ Which environment should the    │        │
+       │ tool use?                       │        │
+       │                                 │        │
+       │ ○ Production  Use the live      │        │
+       │ service                         │        │
+       │ ○ Staging  Use the staging      │        │
+       │ service                         │        │
+       │ > alpha beta                    │        │
+       │                        Submit ↵ │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
-│◆ TOOL INPUT                                    ││
-│? Tool input: tool-input-1 (1/1)                ││
-│  Environment: Which environment should the tool││
-│  use?                                          ││
-│  1 Production - Use the live service           ││
-│  2 Staging - Use the staging service           ││
-│  Other (free-form) - Type a custom answer      ││
-│  below.                                        ││
-│> ▏alpha beta                                   ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

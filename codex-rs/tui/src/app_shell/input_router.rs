@@ -130,11 +130,20 @@ impl ShellState {
             {
                 KeymapContextSet::new(Editor).with(List)
             }
-            Some(
-                ActiveInputRoute::ElicitationEditing
-                | ActiveInputRoute::UserInput
-                | ActiveInputRoute::RewindEditing,
-            ) => KeymapContextSet::new(Editor).with(List),
+            Some(ActiveInputRoute::UserInput) => {
+                if self
+                    .pending_user_input
+                    .as_ref()
+                    .is_some_and(super::PendingUserInput::editing)
+                {
+                    KeymapContextSet::answer_editor()
+                } else {
+                    KeymapContextSet::new(List)
+                }
+            }
+            Some(ActiveInputRoute::ElicitationEditing | ActiveInputRoute::RewindEditing) => {
+                KeymapContextSet::new(Editor).with(List)
+            }
             Some(_) => KeymapContextSet::new(List),
             None if self.dashboard_focused() => {
                 if self.plain_text_repeat_enabled() {
@@ -196,6 +205,7 @@ impl ShellState {
         key: KeyEvent,
         config: &Config,
         app_server: &mut S,
+        layout: ComposerNavigationLayout,
     ) -> Result<Option<bool>>
     where
         S: AppShellBackend,
@@ -263,7 +273,10 @@ impl ShellState {
                         .await?;
                 }
             }
-            ActiveInputRoute::ElicitationEditing | ActiveInputRoute::UserInput => {
+            ActiveInputRoute::UserInput => {
+                self.handle_question_key(key, layout, app_server).await?;
+            }
+            ActiveInputRoute::ElicitationEditing => {
                 return self.handle_user_input_key(key, app_server).await.map(Some);
             }
             ActiveInputRoute::ExternalAgentImport => {
@@ -489,7 +502,7 @@ impl ShellState {
             return Ok(false);
         }
         if let Some(exit) = self
-            .handle_active_input_route(key, config, app_server)
+            .handle_active_input_route(key, config, app_server, composer_navigation_layout)
             .await?
         {
             return Ok(exit);

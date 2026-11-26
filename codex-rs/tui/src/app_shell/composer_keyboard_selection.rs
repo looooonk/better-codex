@@ -18,13 +18,13 @@ impl ShellState {
         match (key.code, modifiers) {
             (KeyCode::Left | KeyCode::Up, KeyModifiers::SUPER)
             | (KeyCode::Home, KeyModifiers::CONTROL) => {
-                self.composer
+                self.focused_editor_mut()
                     .input
                     .extend_selection_with(|input| input.set_cursor(0));
             }
             (KeyCode::Right | KeyCode::Down, KeyModifiers::SUPER)
             | (KeyCode::End, KeyModifiers::CONTROL) => {
-                self.composer
+                self.focused_editor_mut()
                     .input
                     .extend_selection_with(|input| input.set_cursor(input.text().len()));
             }
@@ -40,40 +40,44 @@ impl ShellState {
                     }
                     ComposerNavigationLayout::LogicalLines => None,
                 };
-                self.composer.input.extend_selection_with(|input| {
-                    let boundary = match direction {
-                        ComposerVerticalDirection::Up => 0,
-                        ComposerVerticalDirection::Down => input.text().len(),
-                    };
-                    let cursor = match visual_target {
-                        Some(ComposerVerticalTarget::Cursor(cursor)) => {
-                            input
-                                .display()
-                                .source_range_for_display_range(cursor..cursor)
-                                .start
-                        }
-                        Some(ComposerVerticalTarget::Boundary) => boundary,
-                        None => {
-                            let moved = match direction {
-                                ComposerVerticalDirection::Up => input.move_up(),
-                                ComposerVerticalDirection::Down => input.move_down(),
-                            };
-                            if moved {
-                                return;
+                self.focused_editor_mut()
+                    .input
+                    .extend_selection_with(|input| {
+                        let boundary = match direction {
+                            ComposerVerticalDirection::Up => 0,
+                            ComposerVerticalDirection::Down => input.text().len(),
+                        };
+                        let cursor = match visual_target {
+                            Some(ComposerVerticalTarget::Cursor(cursor)) => {
+                                input
+                                    .display()
+                                    .source_range_for_display_range(cursor..cursor)
+                                    .start
                             }
-                            boundary
-                        }
-                    };
-                    input.set_cursor(cursor);
-                });
+                            Some(ComposerVerticalTarget::Boundary) => boundary,
+                            None => {
+                                let moved = match direction {
+                                    ComposerVerticalDirection::Up => input.move_up(),
+                                    ComposerVerticalDirection::Down => input.move_down(),
+                                };
+                                if moved {
+                                    return;
+                                }
+                                boundary
+                            }
+                        };
+                        input.set_cursor(cursor);
+                    });
             }
             (KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End, _) => {
                 let Some(action) = text_input_action_from_key(KeyEvent { modifiers, ..key }) else {
                     return false;
                 };
-                self.composer.input.extend_selection_with(|input| {
-                    input.apply(action);
-                });
+                self.focused_editor_mut()
+                    .input
+                    .extend_selection_with(|input| {
+                        input.apply(action);
+                    });
             }
             _ => return false,
         }

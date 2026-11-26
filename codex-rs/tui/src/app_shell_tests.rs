@@ -31,6 +31,9 @@ use crate::app_server_session::AppServerStartedThread;
 #[path = "app_shell/ide_submission_tests.rs"]
 mod ide_submission;
 
+#[path = "app_shell/question_input_tests.rs"]
+mod question_input_tests;
+
 #[path = "app_shell/astra_tests.rs"]
 mod astra;
 #[path = "app_shell/upstream_parity_tests.rs"]
@@ -3496,7 +3499,7 @@ async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
         shell
             .queued_interactive_requests
             .iter()
-            .map(PendingInteractiveRequest::request_id)
+            .filter_map(PendingInteractiveRequest::request_id)
             .collect::<Vec<_>>(),
         vec![RequestId::Integer(43), RequestId::Integer(45)]
     );
@@ -3519,7 +3522,7 @@ async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
     assert_eq!(shell.queued_interactive_requests.len(), 1);
     assert_eq!(shell.status, "waiting");
 
-    shell.composer.set_text("2");
+    shell.pending_user_input.as_mut().unwrap().select(1);
     shell
         .resolve_pending_user_input(&mut backend)
         .await
@@ -3563,7 +3566,8 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
             .await
             .expect("interactive request should be accepted");
     }
-    shell.composer.set_text("stale answer");
+    shell.composer.set_text("saved draft");
+    shell.focused_editor_mut().set_text("stale answer");
     shell.transcript.clear();
 
     for request_id in [RequestId::Integer(41), RequestId::Integer(999)] {
@@ -3576,12 +3580,12 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
     }
 
     assert!(shell.pending_user_input.is_some());
-    assert_eq!(shell.composer.text(), "stale answer");
+    assert_eq!(shell.focused_editor().text(), "stale answer");
     assert_eq!(
         shell
             .queued_interactive_requests
             .iter()
-            .map(PendingInteractiveRequest::request_id)
+            .filter_map(PendingInteractiveRequest::request_id)
             .collect::<Vec<_>>(),
         vec![RequestId::Integer(45)]
     );
@@ -3595,7 +3599,7 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
 
     assert!(shell.pending_user_input.is_none());
     assert!(shell.pending_elicitation.is_some());
-    assert!(shell.composer.text().is_empty());
+    assert_eq!(shell.composer.text(), "saved draft");
     assert!(shell.queued_interactive_requests.is_empty());
 
     shell.handle_notification(ServerNotification::ServerRequestResolved(
@@ -4710,16 +4714,16 @@ async fn text_input_shortcuts_work_in_message_and_tool_input_panes() {
             let mut backend = RecordingBackend::default();
             if tool_input {
                 shell.pending_user_input =
-                    PendingUserInput::from_request(&tool_user_input_request());
+                    PendingUserInput::from_request(&tool_free_form_user_input_request());
             }
-            set_composer_cursor(&mut shell.composer, before);
+            set_composer_cursor(shell.focused_editor_mut(), before);
 
             shell
                 .handle_key(KeyEvent::new(code, modifiers), &config, &mut backend)
                 .await
                 .expect("text editing shortcut should be handled");
 
-            assert_eq!(composer_cursor_text(&shell.composer), expected);
+            assert_eq!(composer_cursor_text(shell.focused_editor()), expected);
             assert_eq!(shell.pending_user_input.is_some(), tool_input);
             assert_eq!(backend.calls(), Vec::new());
         }
@@ -4757,12 +4761,14 @@ async fn tool_input_renders_cursor_and_tracks_shortcuts() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
-    set_composer_cursor(&mut shell.composer, "alpha |beta");
+    shell.pending_user_input.as_mut().unwrap().select(2);
+    set_composer_cursor(shell.focused_editor_mut(), "alpha |beta");
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
     let before = render_shell(&shell, area);
-    assert!(before.contains("alpha ▏beta"));
+    assert!(before.contains("alpha beta"));
+    let before_cursor = (ShellView { shell: &shell }).cursor_position(area).unwrap();
 
     shell
         .handle_key(
@@ -4774,8 +4780,8 @@ async fn tool_input_renders_cursor_and_tracks_shortcuts() {
         .expect("command left should be handled");
 
     let after = render_shell(&shell, area);
-    assert!(after.contains("▏alpha beta"));
-    assert!(!after.contains("alpha ▏beta"));
+    let after_cursor = (ShellView { shell: &shell }).cursor_position(area).unwrap();
+    assert_eq!(after_cursor.x + 6, before_cursor.x);
     assert_eq!(backend.calls(), Vec::new());
     insta::assert_snapshot!("tool_input_command_left_cursor", after);
 }
@@ -4824,7 +4830,7 @@ async fn printable_character_repeat_inserts_continuously_in_composer_inputs() {
 
     assert_eq!(
         (
-            shell.composer.text(),
+            shell.focused_editor().text(),
             shell.pending_user_input.is_some(),
             backend.calls(),
         ),
@@ -4842,7 +4848,7 @@ async fn printable_character_repeat_inserts_continuously_in_composer_inputs() {
 
     assert_eq!(
         (
-            shell.composer.text(),
+            shell.focused_editor().text(),
             shell.pending_user_input.is_some(),
             backend.calls(),
         ),
@@ -7521,6 +7527,12 @@ async fn long_narrow_elicitation_and_tool_options_are_clickable() {
     question.header = "Deployment environment and release channel".to_string();
     question.question = "Which environment should receive the carefully validated release after all preflight checks complete?".to_string();
     shell.pending_user_input = PendingUserInput::from_request(&user_input_request);
+    let popup = (ShellView { shell: &shell }).question_popup(area).unwrap();
+    shell.handle_mouse_scroll(
+        area,
+        Position::new(popup.panel.x + 1, popup.panel.y + 1),
+        tui::MouseScrollDirection::Down,
+    );
     let rendered = render_shell(&shell, area);
     assert!(
         rendered.contains("Staging"),
@@ -7740,7 +7752,8 @@ async fn blocking_overlays_capture_keys_and_paste_before_the_composer() {
 
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
     shell.insert_pasted_text(" answer");
-    assert_eq!(shell.composer.text(), "draft answer");
+    assert_eq!(shell.focused_editor().text(), " answer");
+    assert_eq!(shell.composer.text(), "draft");
 }
 
 #[tokio::test]
@@ -8204,7 +8217,7 @@ fn renders_secret_user_input_cursor_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_user_input = PendingUserInput::from_request(&tool_free_form_user_input_request());
     set_composer_cursor(
-        &mut shell.composer,
+        shell.focused_editor_mut(),
         &format!("{}sec▏ret|value", "hidden".repeat(20)),
     );
 
@@ -12253,8 +12266,8 @@ async fn alt_enter_inserts_a_newline_during_tool_input() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
-    shell.composer.set_text("details");
+    shell.pending_user_input = PendingUserInput::from_request(&tool_free_form_user_input_request());
+    shell.focused_editor_mut().set_text("details");
 
     shell
         .handle_key(
@@ -12268,8 +12281,8 @@ async fn alt_enter_inserts_a_newline_during_tool_input() {
     assert_eq!(
         (
             shell.pending_user_input.is_some(),
-            shell.composer.text(),
-            shell.composer.cursor_position(),
+            shell.focused_editor().text(),
+            shell.focused_editor().cursor_position(),
             backend.calls(),
         ),
         (true, "details\n", (1, 0), Vec::new())
@@ -12899,10 +12912,12 @@ fn user_input_serializes_free_form_answer() {
     let mut pending = PendingUserInput::from_request(&tool_free_form_user_input_request())
         .expect("request should be supported");
 
+    pending
+        .draft_mut()
+        .editor
+        .set_text("Use my staging API key");
     assert_eq!(
-        pending
-            .answer_current("Use my staging API key".to_string())
-            .expect("answer should serialize"),
+        pending.answer_current().expect("answer should serialize"),
         UserInputAdvance::Complete {
             request_id: RequestId::Integer(44),
             result: json!({
@@ -12921,10 +12936,9 @@ fn user_input_serializes_option_selection() {
     let mut pending = PendingUserInput::from_request(&tool_user_input_request())
         .expect("request should be supported");
 
+    pending.select(1);
     assert_eq!(
-        pending
-            .answer_current("2".to_string())
-            .expect("answer should serialize"),
+        pending.answer_current().expect("answer should serialize"),
         UserInputAdvance::Complete {
             request_id: RequestId::Integer(43),
             result: json!({
@@ -12943,9 +12957,14 @@ fn user_input_serializes_other_answer() {
     let mut pending = PendingUserInput::from_request(&tool_user_input_request())
         .expect("request should be supported");
 
+    pending.select(2);
+    pending
+        .draft_mut()
+        .editor
+        .set_text("Use the canary environment");
     assert_eq!(
         pending
-            .answer_current("Use the canary environment".to_string())
+            .answer_current()
             .expect("other answer should serialize"),
         UserInputAdvance::Complete {
             request_id: RequestId::Integer(43),

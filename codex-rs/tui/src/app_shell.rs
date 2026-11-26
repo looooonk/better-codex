@@ -112,6 +112,8 @@ mod input_request_layout;
 mod input_request_view;
 mod input_router;
 mod keybindings;
+mod question_input;
+mod question_popup;
 mod request_popup;
 mod review_popup;
 mod transcript_find;
@@ -1296,24 +1298,31 @@ impl ShellState {
         if self.reject_unsupported_images() {
             return;
         }
-        let cyber_access_program = match crate::daybreak::program_for_turn(
-            &self.available_models,
-            &self.model,
-            self.model_provider_id == "openai",
-            self.daybreak_enabled,
-        ) {
-            Ok(program) => program,
+        let params = match self.turn_start_params(self.composer.submission_items(&prompt)) {
+            Ok(params) => params,
             Err(error) => {
                 self.push_error(error);
                 return;
             }
         };
+        if self.start_turn_with_ide(app_server, params, prompt, submission) {
+            self.composer.clear();
+        }
+    }
+
+    fn turn_start_params(&self, items: Vec<UserInput>) -> Result<AppShellTurnStart, String> {
+        let cyber_access_program = crate::daybreak::program_for_turn(
+            &self.available_models,
+            &self.model,
+            self.model_provider_id == "openai",
+            self.daybreak_enabled,
+        )?;
         let client_user_message_id = format!("better-codex-turn-{}", uuid::Uuid::new_v4());
-        let params = AppShellTurnStart {
+        Ok(AppShellTurnStart {
             cyber_access_program,
             thread_id: self.thread_id,
             client_user_message_id,
-            items: self.composer.submission_items(&prompt),
+            items,
             cwd: self.cwd.clone().into(),
             permissions_override: TurnPermissionsOverride::Preserve,
             workspace_roots: self.runtime_workspace_roots.clone(),
@@ -1324,10 +1333,7 @@ impl ShellState {
             collaboration_mode: self.collaboration_mode.as_deref().cloned(),
             personality: self.personality,
             output_schema: None,
-        };
-        if self.start_turn_with_ide(app_server, params, prompt, submission) {
-            self.composer.clear();
-        }
+        })
     }
 
     fn complete_turn_start<S>(
@@ -1529,12 +1535,8 @@ impl ShellState {
                 if self.reject_oversized_composer() {
                     return Ok(false);
                 }
-                if self.pending_elicitation.is_some() {
-                    self.resolve_pending_elicitation(app_server, ElicitationChoice::Accept)
-                        .await?;
-                } else {
-                    self.resolve_pending_user_input(app_server).await?;
-                }
+                self.resolve_pending_elicitation(app_server, ElicitationChoice::Accept)
+                    .await?;
                 Ok(false)
             }
             KeyCode::Up => {
@@ -1584,45 +1586,6 @@ impl ShellState {
             | KeyCode::Media(_)
             | KeyCode::Modifier(_) => Ok(false),
         }
-    }
-
-    async fn resolve_pending_user_input<S>(&mut self, app_server: &mut S) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
-        if self.has_pending_backend_action(ActionGroup::UserInput) {
-            self.show_hint("tool input is already being resolved");
-            return Ok(());
-        }
-        let answer = self.composer.submission_text();
-        let Some(pending) = self.pending_user_input.as_ref() else {
-            return Ok(());
-        };
-        let mut next_pending = pending.clone();
-        let title = pending.title().to_string();
-        match next_pending.answer_current(answer) {
-            Ok(UserInputAdvance::Next) => {
-                self.pending_user_input = Some(next_pending);
-                self.composer.clear();
-                self.record_decision("tool input", "answered", &title);
-            }
-            Ok(UserInputAdvance::Complete { request_id, result }) => {
-                let completed_request_id = request_id.clone();
-                app_server
-                    .resolve_server_request(request_id, result)
-                    .await
-                    .wrap_err("failed to resolve app-server tool input request")?;
-                let removal = self.remove_interactive_request(&completed_request_id);
-                self.record_decision("tool input", "submitted", &title);
-                if removal == InteractiveRequestRemoval::Active {
-                    self.activate_next_interactive_request();
-                }
-            }
-            Err(message) => {
-                self.push_error(message);
-            }
-        }
-        Ok(())
     }
 
     fn finish_streaming_assistant(&mut self) {
@@ -1736,6 +1699,21 @@ impl ShellState {
                         && self.streaming_assistant == text)
                 {
                     self.clear_streaming_assistant();
+                }
+                if origin == CompletedItemOrigin::Live
+                    && let Some(questions) = questions.filter(|questions| !questions.is_empty())
+                    && !self.transcript.iter().rev().any(|line| {
+                        line.kind == TranscriptKind::Assistant
+                            && line.item_id.as_deref() == Some(id.as_str())
+                    })
+                {
+                    let pending = PendingUserInput::from_async(&id, questions);
+                    if self
+                        .receive_interactive_request(PendingInteractiveRequest::UserInput(pending))
+                        .is_err()
+                    {
+                        self.push_error("Question queue is full");
+                    }
                 }
                 if !text.is_empty() {
                     self.push_assistant_for_item(id, text);
@@ -2726,7 +2704,8 @@ fn format_user_inputs(content: &[UserInput]) -> String {
     content
         .iter()
         .map(|input| match input {
-            UserInput::Text { text, .. } => crate::ide_context::visible_request(text).to_string(),
+            UserInput::Text { text, .. } => question_input::visible_answer(text)
+                .unwrap_or_else(|| crate::ide_context::visible_request(text).to_string()),
             UserInput::Image { .. } => "[image]".to_string(),
             UserInput::LocalImage { path, .. } => format!("[image {}]", path.display()),
             UserInput::Audio { .. } => "[audio]".to_string(),

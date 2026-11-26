@@ -158,7 +158,15 @@ pub(super) fn composer_text_hit_inside(
     cursor: usize,
     position: Position,
 ) -> Option<ComposerTextHit> {
-    let body = composer_body(input_area);
+    editor_text_hit(composer_body(input_area), text, cursor, position)
+}
+
+pub(super) fn editor_text_hit(
+    body: Rect,
+    text: &str,
+    cursor: usize,
+    position: Position,
+) -> Option<ComposerTextHit> {
     let layout = ComposerLayout::new(text, usize::from(body.width));
     let viewport = composer_viewport(body, layout.cursor(cursor))?;
     if !viewport.body.contains(position) {
@@ -168,13 +176,22 @@ pub(super) fn composer_text_hit_inside(
 }
 
 /// Resolve a position to the closest hit in the cursor-following visible composer viewport.
+#[cfg(test)]
 pub(super) fn composer_text_hit_clamped_to_visible_viewport(
     input_area: Rect,
     text: &str,
     cursor: usize,
     position: Position,
 ) -> Option<ComposerTextHit> {
-    let body = composer_body(input_area);
+    editor_text_hit_clamped(composer_body(input_area), text, cursor, position)
+}
+
+pub(super) fn editor_text_hit_clamped(
+    body: Rect,
+    text: &str,
+    cursor: usize,
+    position: Position,
+) -> Option<ComposerTextHit> {
     let layout = ComposerLayout::new(text, usize::from(body.width));
     let viewport = composer_viewport(body, layout.cursor(cursor))?;
     let position = Position::new(

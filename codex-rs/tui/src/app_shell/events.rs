@@ -871,7 +871,7 @@ impl ShellState {
                 Err(pending) => {
                     self.reject_request_with_message(
                         app_server,
-                        pending.request_id(),
+                        request.id().clone(),
                         format!(
                             "interactive request queue is full: {}",
                             pending.transcript_title()

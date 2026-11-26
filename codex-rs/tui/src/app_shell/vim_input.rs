@@ -34,6 +34,7 @@ pub(super) const MAX_VIM_SUBMISSION_BYTES: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct VimInputRequest {
+    pub(super) question: Option<(super::user_input::QuestionSource, usize)>,
     seed: String,
     replace_current_draft: bool,
     thread_id: ThreadId,
@@ -44,6 +45,7 @@ impl VimInputRequest {
         Self {
             seed: String::new(),
             replace_current_draft: false,
+            question: None,
             thread_id,
         }
     }
@@ -245,13 +247,48 @@ impl ShellState {
     pub(super) fn request_external_editor(&mut self) {
         self.request_vim_input();
         if let Some(request) = self.pending_vim_input.as_mut() {
-            request.seed = self.composer.submission_text();
-            request.replace_current_draft = true;
+            if let Some(pending) = &mut self.pending_user_input {
+                pending.snooze_auto_resolution();
+                request.seed = pending.draft().editor.submission_text();
+                request.question = Some((pending.source.clone(), pending.question_position().0));
+            } else {
+                request.seed = self.composer.submission_text();
+                request.replace_current_draft = true;
+            }
         }
     }
 
     pub(super) fn take_vim_input_request(&mut self) -> Option<VimInputRequest> {
         self.pending_vim_input.take()
+    }
+
+    pub(super) async fn complete_question_editor<S: AppShellBackend>(
+        &mut self,
+        thread: ThreadId,
+        source: super::user_input::QuestionSource,
+        position: usize,
+        result: Result<VimInputOutcome>,
+        backend: &mut S,
+    ) -> Result<()> {
+        let Some(pending) = &mut self.pending_user_input else {
+            return Ok(());
+        };
+        if self.thread_id != thread
+            || pending.source != source
+            || pending.question_position().0 != position
+        {
+            return Ok(());
+        }
+        match result {
+            Ok(VimInputOutcome::Submit(text)) => {
+                pending.draft_mut().editor.set_text(text);
+                self.resolve_pending_user_input(backend).await?;
+            }
+            Ok(VimInputOutcome::ReturnDraft(text)) => pending.draft_mut().editor.set_text(text),
+            Ok(VimInputOutcome::Cancelled) => {}
+            Err(err) => pending.error = Some(format!("Could not open editor: {err}")),
+        }
+        Ok(())
     }
 
     pub(super) async fn complete_vim_input<S>(

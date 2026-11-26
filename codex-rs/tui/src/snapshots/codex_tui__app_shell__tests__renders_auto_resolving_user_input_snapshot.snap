@@ -12,21 +12,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
    server turns.                                  │ Recents
                                                   │ + New session  Ctrl+N
       ▸ Edited files                              │ loading sessions
-                                                  │
-   The new shell owns the fullscreen surface.     │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+       ╭ Question · Environment ─────────╮        │
+   The │ Which environment should the    │ce.     │
+       │ tool use?                       │        │
+       │                                 │        │
+       │ ● Production  Use the live      │        │
+       │ service                         │        │
+       │ ○ Staging  Use the staging      │        │
+       │ service                         │        │
+       │ Continues after 120s if         │        │
+       │ unanswered                      │        │
+       │ ○ Write an answer…              │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
-│◆ TOOL INPUT                                    ││
-│? Tool input: tool-input-1 (1/1)                ││
-│  Environment: Which environment should the tool││
-│  use?                                          ││
-│  1 Production - Use the live service           ││
-│  2 Staging - Use the staging service           ││
-│  Other (free-form) - Type a custom answer      ││
-│  below.                                        ││
-│  Auto-continue after 120s if unanswered        ││
-│> ▏answer                                       ││
+│> Type a message                                ││
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│
