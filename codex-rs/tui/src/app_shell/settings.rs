@@ -2,6 +2,7 @@ use super::DashboardRouteStep;
 use super::ShellState;
 use super::design::palette;
 use super::design::selection_style;
+use super::permission_modes::ConfiguredPermissions;
 use super::permission_modes::PermissionMode;
 use super::selector::ReasoningEffortValue;
 use crate::app_theme::TuiAppTheme;
@@ -24,6 +25,7 @@ pub(super) use persistence::persist_settings_update;
 #[derive(Debug, Clone, Default)]
 pub(super) struct SettingsState {
     selected: SettingsAction,
+    pub(super) custom_permissions: Option<ConfiguredPermissions>,
     pub(super) focused: bool,
     edit: Option<EditableText>,
     feedback: Option<String>,
@@ -43,6 +45,7 @@ pub(super) enum EffortSave {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SettingsAction {
     PermissionMode(PermissionMode),
+    CustomPermissions,
     AppTheme,
     Theme,
     Animations,
@@ -72,6 +75,7 @@ const ROWS: &[SettingRow] = &[
     SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::AutoReview)),
     SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::FullAccess)),
     SettingRow::Action(SettingsAction::PermissionMode(PermissionMode::ReadOnly)),
+    SettingRow::Action(SettingsAction::CustomPermissions),
     SettingRow::Spacer,
     SettingRow::Heading("Appearance"),
     SettingRow::Action(SettingsAction::AppTheme),
@@ -126,18 +130,29 @@ impl ShellState {
 }
 
 impl SettingsState {
+    pub(super) fn set_custom_permissions(&mut self, permissions: Option<ConfiguredPermissions>) {
+        if permissions.is_none() && self.selected == SettingsAction::CustomPermissions {
+            self.focus_action(SettingsAction::default());
+        }
+        self.custom_permissions = permissions;
+    }
+
+    fn rows(&self) -> impl DoubleEndedIterator<Item = &SettingRow> + Clone {
+        ROWS.iter().filter(|row| {
+            !matches!(row, SettingRow::Action(SettingsAction::CustomPermissions))
+                || self.custom_permissions.is_some()
+        })
+    }
+
     pub(super) fn lines(&self, shell: &ShellState, width: usize) -> Vec<Line<'static>> {
         let mut lines = Vec::with_capacity(ROWS.len() + 2);
-        for row in ROWS {
+        for row in self.rows() {
             match *row {
                 SettingRow::Heading(title) => {
-                    let mut spans = vec![
+                    let spans = vec![
                         "◆ ".fg(palette::focus()),
                         title.to_uppercase().fg(palette::muted()).bold(),
                     ];
-                    if title == "Permissions" && shell.permission_mode().is_none() {
-                        spans.push(format!("  {}", shell.permission_caption()).fg(palette::text()));
-                    }
                     lines.push(spans.into());
                 }
                 SettingRow::Spacer => lines.push(Line::default()),
@@ -163,7 +178,7 @@ impl SettingsState {
     }
 
     fn selected_line(&self) -> usize {
-        ROWS.iter()
+        self.rows()
             .position(|row| matches!(row, SettingRow::Action(action) if *action == self.selected))
             .unwrap_or_default()
     }
@@ -183,34 +198,36 @@ impl SettingsState {
         } else {
             line
         };
-        match ROWS.get(index)? {
+        match self.rows().nth(index)? {
             SettingRow::Action(action) => Some(*action),
             SettingRow::Heading(_) | SettingRow::Spacer => None,
         }
     }
 
     pub(super) fn move_up(&mut self) {
-        if let Some(action) = ROWS[..self.selected_line()]
-            .iter()
-            .rev()
-            .find_map(SettingRow::action)
-        {
+        let previous = self
+            .rows()
+            .take(self.selected_line())
+            .filter_map(SettingRow::action)
+            .last();
+        if let Some(action) = previous {
             self.focus_action(action);
         }
     }
 
     pub(super) fn move_down(&mut self) {
-        if let Some(action) = ROWS[self.selected_line() + 1..]
-            .iter()
-            .find_map(SettingRow::action)
-        {
+        let next = self
+            .rows()
+            .skip(self.selected_line() + 1)
+            .find_map(SettingRow::action);
+        if let Some(action) = next {
             self.focus_action(action);
         }
     }
 
     pub(super) fn step_section(&mut self, direction: DashboardRouteStep) {
-        // Each heading precedes the first action in its section.
-        let starts: Vec<usize> = ROWS
+        let rows: Vec<_> = self.rows().collect();
+        let starts: Vec<usize> = rows
             .iter()
             .enumerate()
             .filter_map(|(index, row)| matches!(row, SettingRow::Heading(_)).then_some(index + 1))
@@ -221,7 +238,7 @@ impl SettingsState {
             DashboardRouteStep::Next => (section + 1) % starts.len(),
             DashboardRouteStep::Previous => (section + starts.len() - 1) % starts.len(),
         };
-        if let Some(action) = ROWS[starts[target]].action() {
+        if let Some(action) = rows[starts[target]].action() {
             self.focus_action(action);
         }
     }
@@ -311,6 +328,7 @@ fn setting_row(action: SettingsAction, selected: bool, shell: &ShellState) -> Li
             }
             label
         }
+        SettingsAction::CustomPermissions => choice("⚙ Custom", shell.custom_permissions_active()),
         SettingsAction::AppTheme => format!("Theme: {} ▾", app_theme_label(shell.app_theme)),
         SettingsAction::Theme => format!(
             "Syntax theme: {} ▾",

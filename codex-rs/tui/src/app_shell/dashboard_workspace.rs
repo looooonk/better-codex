@@ -3,6 +3,8 @@ use super::dashboard::dashboard_value;
 use super::dashboard::format_usize;
 use super::design::palette;
 use crate::status::format_directory_display;
+use codex_app_server_protocol::AskForApproval;
+use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_READ_ONLY;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
@@ -32,8 +34,30 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
     }
     workspace_lines.push(Line::from(vec![
         "profile ".dim(),
-        profile_label(shell).into(),
+        dashboard_value(profile_label(shell), width, /*prefix_width*/ 8).into(),
     ]));
+    if shell.permission_mode().is_none() {
+        let policy = match shell.approval_policy {
+            AskForApproval::OnRequest => "on request",
+            AskForApproval::UnlessTrusted => "unless trusted",
+            AskForApproval::Never => "never",
+            AskForApproval::Granular { .. } => "granular",
+        };
+        let reviewer = match shell.approvals_reviewer {
+            ApprovalsReviewer::User => "you",
+            ApprovalsReviewer::AutoReview => "auto-review",
+        };
+        if matches!(shell.permission_profile, PermissionProfile::Managed { .. })
+            && shell
+                .permission_profile
+                .network_sandbox_policy()
+                .is_enabled()
+        {
+            workspace_lines.push(Line::from(vec!["network ".dim(), "allowed".into()]));
+        }
+        workspace_lines.push(Line::from(vec!["approval ".dim(), policy.into()]));
+        workspace_lines.push(Line::from(vec!["reviewer ".dim(), reviewer.into()]));
+    }
     let cwd = format_directory_display(Path::new(&shell.cwd), /*max_width*/ None);
     workspace_lines.push(Line::from(vec![
         "cwd ".dim(),
@@ -68,13 +92,14 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
     workspace_lines
 }
 
-fn profile_label(shell: &ShellState) -> &'static str {
+fn profile_label(shell: &ShellState) -> &str {
     if let Some(active) = &shell.active_permission_profile {
-        return match active.id.as_str() {
-            BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS => "full access",
-            BUILT_IN_PERMISSION_PROFILE_READ_ONLY => "read only",
-            BUILT_IN_PERMISSION_PROFILE_WORKSPACE => "workspace write",
-            _ => "custom",
+        match active.id.as_str() {
+            BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS => return "full access",
+            BUILT_IN_PERMISSION_PROFILE_READ_ONLY => return "read only",
+            BUILT_IN_PERMISSION_PROFILE_WORKSPACE => return "workspace write",
+            id if !id.starts_with(':') => return id,
+            _ => {}
         };
     }
     match &shell.permission_profile {

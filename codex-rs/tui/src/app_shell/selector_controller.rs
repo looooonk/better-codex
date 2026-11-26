@@ -210,6 +210,7 @@ impl ShellState {
                 self.apply_service_tier(Some(tier), app_server);
             }
             SelectorValue::PermissionMode(mode) => self.select_permission_mode(mode, app_server),
+            SelectorValue::CustomPermissions => self.select_custom_permissions(app_server),
             SelectorValue::TranscriptMatch(revision) => self.select_transcript_match(revision),
             SelectorValue::Keybinding(action) => {
                 self.selector = None;

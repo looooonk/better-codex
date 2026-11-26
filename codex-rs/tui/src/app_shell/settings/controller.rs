@@ -176,6 +176,7 @@ impl ShellState {
                 self.open_syntax_theme_menu();
             }
             SettingsAction::PermissionMode(mode) => self.select_permission_mode(mode, app_server),
+            SettingsAction::CustomPermissions => self.select_custom_permissions(app_server),
             SettingsAction::GraphicalMath => self.toggle_graphical_math(),
             SettingsAction::Animations => {
                 let animations = !self.animations;
@@ -365,6 +366,21 @@ impl ShellState {
                 .set_error("Permission mode unavailable under the current configuration.");
         } else {
             self.apply_permission_mode(mode, app_server);
+        }
+    }
+
+    pub(in crate::app_shell) fn select_custom_permissions<S: AppShellBackend>(
+        &mut self,
+        app_server: &S,
+    ) {
+        if let Some(configured) = &self.settings.custom_permissions {
+            let params = configured.update(self.thread_id);
+            self.schedule_settings_update(
+                app_server,
+                SettingsChange::Permissions,
+                Vec::new(),
+                Some(params),
+            );
         }
     }
 

@@ -59,6 +59,7 @@ pub(super) enum SelectorValue {
     ReasoningEffort(ReasoningEffortValue),
     ServiceTier(ServiceTierValue),
     PermissionMode(PermissionMode),
+    CustomPermissions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,9 +381,27 @@ impl SelectorState<SelectorValue> {
         Self::new("Select service tier", options).anchored_menu(ComposerControl::ServiceTier)
     }
 
+    // A config read may finish after the user has already moved within the menu.
+    pub(super) fn refresh_permission_options(&mut self, mut updated: Self) {
+        if self.options == updated.options {
+            return;
+        }
+        if let Some(highlighted) = self.options.get(self.selected)
+            && !highlighted.current
+            && let Some(index) = updated
+                .options
+                .iter()
+                .position(|option| option.value == highlighted.value)
+        {
+            updated.selected = index;
+        }
+        self.options = updated.options;
+        self.selected = updated.selected;
+    }
+
     pub(super) fn permissions(shell: &super::ShellState) -> Self {
         let current = shell.permission_mode();
-        let options = shell
+        let mut options: Vec<_> = shell
             .permission_modes
             .iter()
             .map(|&mode| {
@@ -396,6 +415,16 @@ impl SelectorState<SelectorValue> {
                 option
             })
             .collect();
+        if shell.settings.custom_permissions.is_some() {
+            options.push(
+                SelectorOption::new(
+                    SelectorValue::CustomPermissions,
+                    "⚙ Custom",
+                    "Uses permissions defined in config.toml",
+                )
+                .current(shell.custom_permissions_active()),
+            );
+        }
         Self::new("Select permissions", options).anchored_menu(ComposerControl::Permissions)
     }
 }

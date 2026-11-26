@@ -8032,10 +8032,7 @@ fn approval_hover_fills_choice_rows_and_only_the_pointed_footer_button() {
         let buf = render_shell_buffer(&shell, area);
         assert_eq!(buf[button].bg, design::palette::border());
         assert_ne!(buf[other].bg, design::palette::border());
-        assert_ne!(
-            buf[(edit.x + 4, edit.y)].bg,
-            design::palette::border()
-        );
+        assert_ne!(buf[(edit.x + 4, edit.y)].bg, design::palette::border());
     }
 }
 

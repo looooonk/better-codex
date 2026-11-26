@@ -175,10 +175,8 @@ pub(crate) async fn run(
     if restoring_session || shell.model_provider_id != config.model_provider_id {
         shell.refresh_session_models(&app_server);
     }
-    shell.permission_modes = super::permission_modes::PermissionMode::ALL
-        .into_iter()
-        .filter(|mode| mode.available(&config))
-        .collect();
+    let mut permission_defaults = super::permission_modes::WorkspacePermissionDefaults::default();
+    shell.configure_permission_picker(&config);
     shell.service_tier_features = config.features.get().clone();
     let invalid_display_items = shell.status_surfaces.configure(&config);
     if !invalid_display_items.is_empty() {
@@ -187,7 +185,7 @@ pub(crate) async fn run(
             invalid_display_items.join(", ")
         ));
     }
-    shell.worktree_loader = Some(worktree_runtime.loader);
+    shell.worktree_loader = Some(worktree_runtime.loader.clone());
     shell.voice.configure(&config);
     shell.keybindings = super::keybindings::ShellKeymap::from_config(&config.tui_keymap)
         .map_err(|error| color_eyre::eyre::eyre!(error))?;
@@ -266,6 +264,9 @@ pub(crate) async fn run(
         );
         turn_timer_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = 'event_loop: loop {
+            if permission_defaults.refresh(&mut shell, &config, &worktree_runtime.loader, &app_server).await {
+                tui.frame_requester().schedule_frame();
+            }
             let animate_ultra = shell.animations && shell.selector.as_ref().is_some_and(super::selector::SelectorState::shows_ultra);
             let animate_activity = shell.animations && shell.shimmer_enabled && shell.active_turn_id.is_some();
             shell.refresh_status_metadata(&app_server);

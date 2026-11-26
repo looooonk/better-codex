@@ -101,6 +101,9 @@ impl ShellState {
         );
         child.voice = self.voice.for_new_session();
         child.permission_modes = self.permission_modes.clone();
+        child
+            .settings
+            .set_custom_permissions(self.settings.custom_permissions.clone());
         child.service_tier_features = self.service_tier_features.clone();
         child.keybindings = self.keybindings.clone();
         std::mem::swap(&mut child.graphics, &mut self.graphics);
