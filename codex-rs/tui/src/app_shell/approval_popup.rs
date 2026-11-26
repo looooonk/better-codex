@@ -2,19 +2,19 @@ use super::ApprovalAction;
 use super::PendingApproval;
 use super::design::palette;
 use super::design::pane_style;
-use super::input_request_layout::approval_panel_hit;
+use super::input_request_layout::RequestPanelSegment;
 use super::input_request_layout::request_panel_visual_line_count;
-use super::input_request_layout::visible_approval_panel_lines;
+use super::input_request_layout::visible_approval_segments;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Block;
 use ratatui::widgets::BorderType;
 use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
-use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use std::ops::Range;
 
@@ -67,6 +67,48 @@ impl ApprovalRows {
         ]));
         Self { lines, choices }
     }
+    // Geometry is shared by clicks and hover. A choice owns its whole row,
+    // while each footer button owns only its visible cells after wrapping.
+    fn actions(&self, segment: &RequestPanelSegment, row: Rect) -> Vec<(ApprovalAction, Rect)> {
+        if self.choices.contains(&segment.logical_line) {
+            return vec![(
+                ApprovalAction::Choose(segment.logical_line - self.choices.start),
+                row,
+            )];
+        }
+        if segment.logical_line != self.lines.len() - 1 {
+            return Vec::new();
+        }
+        let footer = &self.lines[segment.logical_line];
+        let visible_start = segment.source_column;
+        let visible_end = visible_start
+            + segment
+                .content
+                .width()
+                .saturating_sub(segment.display_prefix_width);
+        let mut start = 0;
+        let mut buttons = Vec::new();
+        for (span, action) in footer.spans.iter().zip([
+            Some(ApprovalAction::Edit),
+            None,
+            Some(ApprovalAction::Explain),
+        ]) {
+            let end = start + span.width();
+            let left = start.max(visible_start);
+            let right = end.min(visible_end);
+            if let Some(action) = action
+                && left < right
+            {
+                let x = segment.display_prefix_width + left - visible_start;
+                buttons.push((
+                    action,
+                    Rect::new(row.x + x as u16, row.y, (right - left) as u16, 1).intersection(row),
+                ));
+            }
+            start = end;
+        }
+        buttons
+    }
 }
 
 pub(super) fn area(pending: &PendingApproval, transcript: Rect) -> Rect {
@@ -100,31 +142,25 @@ pub(super) fn action_at(
     panel: Rect,
     position: Position,
 ) -> Option<ApprovalAction> {
-    let hit = approval_panel_hit(panel, position, pending)?;
-    let rows = ApprovalRows::new(pending);
-    if rows.choices.contains(&hit.line) {
-        return Some(ApprovalAction::Choose(hit.line - rows.choices.start));
-    }
-    if hit.line != rows.lines.len() - 1 {
+    let body = body(panel);
+    if !body.contains(position) {
         return None;
     }
-    let footer = rows.lines.last()?;
-    let mut start = 0;
-    for (span, action) in footer.spans.iter().zip([
-        Some(ApprovalAction::Edit),
-        None,
-        Some(ApprovalAction::Explain),
-    ]) {
-        let end = start + span.width();
-        if (start..end).contains(&hit.column) {
-            return action;
-        }
-        start = end;
-    }
-    None
+    let rows = ApprovalRows::new(pending);
+    let segments = visible_approval_segments(pending, &rows, body.width, body.height);
+    let segment = segments.get(usize::from(position.y - body.y))?;
+    let row = Rect::new(body.x, position.y, body.width, 1);
+    rows.actions(segment, row)
+        .into_iter()
+        .find_map(|(action, rect)| rect.contains(position).then_some(action))
 }
 
-pub(super) fn render(pending: &PendingApproval, transcript: Rect, buf: &mut Buffer) {
+pub(super) fn render(
+    pending: &PendingApproval,
+    transcript: Rect,
+    pointer: Option<Position>,
+    buf: &mut Buffer,
+) {
     let panel = area(pending, transcript);
     Clear.render(panel, buf);
     Block::default()
@@ -135,6 +171,23 @@ pub(super) fn render(pending: &PendingApproval, transcript: Rect, buf: &mut Buff
         .title(" Approval required ".fg(palette::focus()).bold())
         .render(panel, buf);
     let body = body(panel);
-    let lines = visible_approval_panel_lines(pending, body.width, body.height);
-    Paragraph::new(lines).render(body, buf);
+    let rows = ApprovalRows::new(pending);
+    let segments = visible_approval_segments(pending, &rows, body.width, body.height);
+    let mut actions = Vec::new();
+    for (row, segment) in body.rows().zip(segments) {
+        if pointer.is_some_and(|position| body.contains(position)) {
+            actions.extend(rows.actions(&segment, row));
+        }
+        segment.content.render(row, buf);
+    }
+    if let Some(hovered) = actions
+        .iter()
+        .find_map(|(action, rect)| pointer.filter(|p| rect.contains(*p)).map(|_| *action))
+    {
+        for (action, rect) in actions {
+            if action == hovered {
+                buf.set_style(rect, Style::new().bg(palette::border()));
+            }
+        }
+    }
 }

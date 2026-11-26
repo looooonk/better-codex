@@ -360,7 +360,7 @@ fn transcript_card_hit_at(
     shell: &ShellState,
     viewport: &TranscriptViewport,
     position: Position,
-) -> Option<(TranscriptCardHit, u16)> {
+) -> Option<(TranscriptCardHit, Range<u16>)> {
     if !viewport.text_body.contains(position) {
         return None;
     }
@@ -395,7 +395,19 @@ fn transcript_card_hit_at(
             }
         }
     };
-    (position.x >= viewport.text_body.x.saturating_add(indent)).then_some((hit, indent))
+    let right = if matches!(hit, TranscriptCardHit::Review { .. }) {
+        let line = viewport.layout.row_at(logical_row)?.line()?;
+        let width = u16::try_from(line.line.width()).unwrap_or(u16::MAX);
+        viewport
+            .text_body
+            .x
+            .saturating_add(width)
+            .min(viewport.text_body.right())
+    } else {
+        viewport.text_body.right()
+    };
+    let columns = viewport.text_body.x.saturating_add(indent)..right;
+    columns.contains(&position.x).then_some((hit, columns))
 }
 
 fn render_card_hover(
@@ -404,7 +416,7 @@ fn render_card_hover(
     hover_position: Option<Position>,
     buf: &mut Buffer,
 ) {
-    let Some((hit, block_indent)) =
+    let Some((hit, columns)) =
         hover_position.and_then(|position| transcript_card_hit_at(shell, viewport, position))
     else {
         return;
@@ -423,9 +435,9 @@ fn render_card_hover(
         u16::try_from(hover_start.saturating_sub(viewport.visible_from)).unwrap_or(u16::MAX);
     let height = u16::try_from(hover_end.saturating_sub(hover_start)).unwrap_or(u16::MAX);
     let hover_area = Rect::new(
-        viewport.text_body.x.saturating_add(block_indent),
+        columns.start,
         viewport.text_body.y.saturating_add(y_offset),
-        viewport.text_body.width.saturating_sub(block_indent),
+        columns.end - columns.start,
         height,
     );
     buf.set_style(hover_area, Style::new().bg(palette::border()));

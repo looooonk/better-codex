@@ -461,6 +461,22 @@ async fn guardian_review_reports_terminal_decision_without_creating_duplicate_ac
         .unwrap();
     shell.toggle_tool_group(shell.tool_group_start(index).unwrap());
     let position = rendered_text_position(&render_shell(&shell, area), "Auto-review");
+    shell.pointer_position = Some(position);
+    let buf = render_shell_buffer(&shell, area);
+    let arrow = position_in(area, |p| p.y == position.y && buf[p].symbol() == "↳");
+    let end = position_in(area, |p| p.y == position.y && buf[p].symbol() == "▸");
+    let outside = Position::new(end.x + 1, end.y);
+    for x in arrow.x..outside.x {
+        assert_eq!(buf[(x, position.y)].bg, design::palette::border());
+    }
+    for x in [arrow.x - 1, outside.x] {
+        assert_ne!(buf[(x, position.y)].bg, design::palette::border());
+    }
+    assert!(
+        (ShellView { shell: &shell })
+            .transcript_card_at(area, outside)
+            .is_none()
+    );
     shell
         .handle_mouse_selection_down(area, position, &config, &mut backend)
         .await

@@ -22,11 +22,11 @@ pub(super) struct RequestPanelHit {
 }
 
 #[derive(Debug, Clone)]
-struct RequestPanelSegment {
-    content: Line<'static>,
-    logical_line: usize,
-    source_column: usize,
-    display_prefix_width: usize,
+pub(super) struct RequestPanelSegment {
+    pub(super) content: Line<'static>,
+    pub(super) logical_line: usize,
+    pub(super) source_column: usize,
+    pub(super) display_prefix_width: usize,
 }
 
 pub(super) fn request_panel_visual_line_count(lines: &[Line<'static>], width: u16) -> usize {
@@ -39,17 +39,6 @@ pub(super) fn visible_request_panel_lines(
     height: u16,
 ) -> Vec<Line<'static>> {
     visible_segments(lines, width, height)
-        .into_iter()
-        .map(|segment| segment.content)
-        .collect()
-}
-
-pub(super) fn visible_approval_panel_lines(
-    pending: &PendingApproval,
-    width: u16,
-    height: u16,
-) -> Vec<Line<'static>> {
-    visible_approval_segments(pending, width, height)
         .into_iter()
         .map(|segment| segment.content)
         .collect()
@@ -77,19 +66,6 @@ pub(super) fn request_panel_hit(
         return None;
     }
     let segments = visible_segments(lines, body.width, body.height);
-    request_panel_hit_from_segments(body, position, &segments)
-}
-
-pub(super) fn approval_panel_hit(
-    panel: Rect,
-    position: Position,
-    pending: &PendingApproval,
-) -> Option<RequestPanelHit> {
-    let body = super::approval_popup::body(panel);
-    if !body.contains(position) {
-        return None;
-    }
-    let segments = visible_approval_segments(pending, body.width, body.height);
     request_panel_hit_from_segments(body, position, &segments)
 }
 
@@ -124,12 +100,12 @@ fn request_panel_hit_from_segments(
     })
 }
 
-fn visible_approval_segments(
+pub(super) fn visible_approval_segments(
     pending: &PendingApproval,
+    rows: &ApprovalRows,
     width: u16,
     height: u16,
 ) -> Vec<RequestPanelSegment> {
-    let rows = ApprovalRows::new(pending);
     let segments = wrapped_segments(&rows.lines, width);
     let visible = usize::from(height).min(segments.len());
     let reveal = pending.reveal_selection.replace(false);

@@ -129,7 +129,12 @@ impl ShellView<'_> {
         super::queued_message_popup_view::render(self.shell, layout.transcript, layout.input, buf);
         super::slash_command_popup_view::render(self.shell, layout.transcript, layout.input, buf);
         if let Some(pending) = &self.shell.pending_approval {
-            super::approval_popup::render(pending, layout.transcript, buf);
+            super::approval_popup::render(
+                pending,
+                layout.transcript,
+                self.shell.pointer_position,
+                buf,
+            );
         }
         if let Some(pending) = &self.shell.pending_external_agent_import {
             render_modal(area, "Claude Code Import", pending.lines(), buf);

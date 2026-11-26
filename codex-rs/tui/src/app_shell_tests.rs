@@ -8010,6 +8010,35 @@ fn approval_action_keys_cover_full_keyboard_flow() {
     );
 }
 
+#[test]
+fn approval_hover_fills_choice_rows_and_only_the_pointed_footer_button() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval =
+        PendingApproval::from_request(&permissions_approval_request()).unwrap();
+    let area = Rect::new(0, 0, 110, 34);
+    let panel = ShellView { shell: &shell }.approval_area(area).unwrap();
+    let body = approval_popup::body(panel);
+    let text = render_shell(&shell, area);
+    let option = rendered_text_position(&text, "○ Deny");
+    shell.pointer_position = Some(Position::new(body.right() - 1, option.y));
+    let buf = render_shell_buffer(&shell, area);
+    for x in body.x..body.right() {
+        assert_eq!(buf[(x, option.y)].bg, design::palette::border());
+    }
+    let edit = rendered_text_position(&text, "[e Edit]");
+    let explain = rendered_text_position(&text, "[? Explain");
+    for (button, other) in [(edit, explain), (explain, edit)] {
+        shell.pointer_position = Some(button);
+        let buf = render_shell_buffer(&shell, area);
+        assert_eq!(buf[button].bg, design::palette::border());
+        assert_ne!(buf[other].bg, design::palette::border());
+        assert_ne!(
+            buf[(edit.x + 4, edit.y)].bg,
+            design::palette::border()
+        );
+    }
+}
+
 #[tokio::test]
 async fn permissions_approval_supports_arrow_number_and_mouse_selection() {
     let config = test_config().await;
