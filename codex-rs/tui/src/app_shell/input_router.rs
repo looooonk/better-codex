@@ -11,7 +11,6 @@ use super::composer_navigation::ComposerNavigationLayout;
 use super::dashboard_route_from_key;
 use super::dashboard_route_step_from_key;
 use super::elicitation_action_from_key;
-use super::is_composer_newline_key;
 use super::navigation::DashboardRoute;
 use super::shell_command::ShellCommand;
 use super::transcript_copy::response_ordinal_from_alt_key;
@@ -665,10 +664,10 @@ impl ShellState {
             | super::SlashCommandPopupKeyResult::Unhandled => {}
         }
         if !self.dashboard_focused()
-            && let Some(action) = text_input_action_from_key(key)
+            && let Some(result) = self.composer.edit_key(key)
         {
             self.slash_command_popup.reset();
-            self.composer.apply_text_input_action(action);
+            self.report_composer_insert(result);
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('p')) {
@@ -686,12 +685,6 @@ impl ShellState {
         match key.code {
             KeyCode::Esc => Ok(self.confirm_exit()),
             KeyCode::Enter => {
-                if is_composer_newline_key(key) {
-                    self.slash_command_popup.reset();
-                    let result = self.composer.insert_newline();
-                    self.report_composer_insert(result);
-                    return Ok(false);
-                }
                 if self.reject_oversized_composer() {
                     return Ok(false);
                 }
@@ -776,14 +769,6 @@ impl ShellState {
                 }
                 Ok(false)
             }
-            KeyCode::Char(ch) => {
-                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                    self.slash_command_popup.reset();
-                    let result = self.composer.insert_char(ch);
-                    self.report_composer_insert(result);
-                }
-                Ok(false)
-            }
             KeyCode::Tab => {
                 self.slash_command_popup.reset();
                 if self.composer.queued_edit_position().is_some()
@@ -807,7 +792,8 @@ impl ShellState {
                 self.report_composer_insert(result);
                 Ok(false)
             }
-            KeyCode::Backspace
+            KeyCode::Char(_)
+            | KeyCode::Backspace
             | KeyCode::Left
             | KeyCode::Right
             | KeyCode::Delete

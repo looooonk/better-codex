@@ -1,7 +1,11 @@
 use crate::text_input::EditableText;
 use crate::text_input::EditableTextDisplay;
 use crate::text_input::TextInputAction;
+use crate::text_input::text_input_action_from_key;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use std::collections::VecDeque;
 use std::ops::Range;
 use unicode_width::UnicodeWidthStr;
@@ -264,6 +268,24 @@ impl ComposerState {
 
     pub(super) fn move_word_right(&mut self) {
         self.input.apply(TextInputAction::MoveWordRight);
+    }
+
+    /// Editing keys shared by the Message pane and question drafts. The owning pane
+    /// handles submission, history, and focus changes.
+    pub(super) fn edit_key(&mut self, key: KeyEvent) -> Option<ComposerInsertResult> {
+        if let Some(action) = text_input_action_from_key(key) {
+            self.apply_text_input_action(action);
+            return Some(ComposerInsertResult::Inserted);
+        }
+        match key.code {
+            KeyCode::Enter if super::is_composer_newline_key(key) => Some(self.insert_newline()),
+            KeyCode::Char(ch)
+                if matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT) =>
+            {
+                Some(self.insert_char(ch))
+            }
+            _ => None,
+        }
     }
 
     pub(super) fn apply_text_input_action(&mut self, action: TextInputAction) {
