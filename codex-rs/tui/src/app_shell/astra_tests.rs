@@ -291,6 +291,31 @@ async fn composer_permissions_button_opens_the_policy_picker() {
     assert_eq!(shell.approval_policy, AskForApproval::OnRequest);
 }
 
+#[test]
+fn composer_permissions_menu_shows_all_five_options_with_custom() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.approval_policy = AskForApproval::Never;
+    shell.set_configured_permissions(shell.active_permissions());
+    shell.open_composer_picker(composer_toolbar::ComposerControl::Permissions);
+
+    let screen = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let panel = ShellView { shell: &shell }.selector_area(screen);
+    let popup = render_shell_buffer(&shell, screen);
+    insta::assert_snapshot!(
+        "composer_permissions_menu_with_custom",
+        buffer_contents(&popup, panel)
+    );
+
+    let selector = shell.selector.as_ref().unwrap();
+    let hit_options: Vec<_> = panel
+        .rows()
+        .filter_map(|row| selector.option_at(panel, Position::new(panel.x + 2, row.y)))
+        .collect();
+    assert_eq!(hit_options, vec![0, 1, 2, 3, 4]);
+}
+
 #[tokio::test]
 async fn composer_menus_switch_anchors_and_select_visible_rows_after_resize() {
     use composer_toolbar::ComposerControl;

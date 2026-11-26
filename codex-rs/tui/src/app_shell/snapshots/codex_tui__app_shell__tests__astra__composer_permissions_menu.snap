@@ -5,15 +5,7 @@ expression: "buffer_contents(&popup, panel)"
 ╭────────────────────────────────────────────╮
 │ Permissions                                │
 │ ⓘ Ask for approval                       ✓ │
-│ Edit the workspace. Ask you for broader    │
-│ access.                                    │
 │ ⛨ Approve for me                           │
-│ Edit the workspace. Send requests to       │
-│ automatic review.                          │
 │ ⚠ Full access                              │
-│ Allow unrestricted file and network        │
-│ access.                                    │
 │ ◈ Read only                                │
-│ Read files. Ask you before edits or        │
-│ network access.                            │
 ╰────────────────────────────────────────────╯

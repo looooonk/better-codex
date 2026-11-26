@@ -13,20 +13,20 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
                                                   │ + New session  Ctrl+N
       ▸ Edited files                              │ loading sessions
                                                   │
+   The new shell owns the fullscreen surface.     │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
  ╭────────────────────────────────────────────╮   │
  │ Save failed: thread update rejected        │   │
  │ ⓘ Ask for approval                       ✓ │   │
- │ Edit the workspace. Ask you for broader    │   │
- │ access.                                    │   │
- │ ⛨ Approve for me                           │   │
- │ Edit the workspace. Send requests to       │   │
- │ automatic review.                          │   │
- │ ⚠ Full access                              │   │
- │ Allow unrestricted file and network        │   │
- │ access.                                    │   │
-╭│ ◈ Read only                                │──╮│
-││ Read files. Ask you before edits or        │  ││
-││ network access.                            │  ││
+╭│ ⛨ Approve for me                           │──╮│
+││ ⚠ Full access                              │  ││
+││ ◈ Read only                                │  ││
 │╰────────────────────────────────────────────╯  ││
 │ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
 ╰────────────────────────────────────────────────╯│

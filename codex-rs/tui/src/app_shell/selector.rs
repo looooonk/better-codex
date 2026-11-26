@@ -147,8 +147,7 @@ impl<T> SelectorState<T> {
     }
 
     pub(super) fn settings_menu_height(&self) -> Option<u16> {
-        matches!(self.presentation, Presentation::Menu(None))
-            .then(|| 3 + self.options.len().clamp(1, 12) as u16)
+        matches!(self.presentation, Presentation::Menu(None)).then(|| self.menu_height())
     }
 
     pub(super) fn composer_control(&self) -> Option<ComposerControl> {
@@ -165,9 +164,9 @@ impl<T> SelectorState<T> {
 
     pub(super) fn option_at(&self, area: Rect, position: Position) -> Option<usize> {
         match self.presentation {
-            Presentation::Menu(control) => {
+            Presentation::Menu(_) => {
                 return self
-                    .menu_rows(area, control)
+                    .menu_rows(area)
                     .into_iter()
                     .find_map(|(i, row)| row.contains(position).then_some(i));
             }
@@ -405,24 +404,17 @@ impl SelectorState<SelectorValue> {
             .permission_modes
             .iter()
             .map(|&mode| {
-                let mut option = SelectorOption::new(
-                    SelectorValue::PermissionMode(mode),
-                    mode.caption(),
-                    mode.description(),
-                )
-                .current(Some(mode) == current);
+                let mut option =
+                    SelectorOption::new(SelectorValue::PermissionMode(mode), mode.caption(), "")
+                        .current(Some(mode) == current);
                 option.danger = mode == PermissionMode::FullAccess;
                 option
             })
             .collect();
         if shell.settings.custom_permissions.is_some() {
             options.push(
-                SelectorOption::new(
-                    SelectorValue::CustomPermissions,
-                    "⚙ Custom",
-                    "Uses permissions defined in config.toml",
-                )
-                .current(shell.custom_permissions_active()),
+                SelectorOption::new(SelectorValue::CustomPermissions, "⚙ Custom", "")
+                    .current(shell.custom_permissions_active()),
             );
         }
         Self::new("Select permissions", options).anchored_menu(ComposerControl::Permissions)

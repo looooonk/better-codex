@@ -1,6 +1,5 @@
 //! Compact menus attached to the composer toolbar.
 
-use super::SelectorOption;
 use super::SelectorState;
 use super::effort_slider::EffortSlider;
 use crate::app_shell::composer_toolbar::ComposerControl;
@@ -9,6 +8,7 @@ use crate::app_shell::design::palette;
 use crate::app_shell::design::pane_style;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use ratatui::buffer::Buffer;
+use ratatui::layout::Margin;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
@@ -21,11 +21,15 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use unicode_width::UnicodeWidthStr;
 
-const MAX_VISIBLE_ROWS: u16 = 12;
+const MAX_VISIBLE_ROWS: usize = 12;
 // Top border, title, bottom border.
 const MENU_CHROME: u16 = 3;
 
 impl<T> SelectorState<T> {
+    pub(super) fn menu_height(&self) -> u16 {
+        MENU_CHROME + self.options.len().clamp(1, MAX_VISIBLE_ROWS) as u16
+    }
+
     pub(in crate::app_shell) fn popup_size(
         &self,
         control: ComposerControl,
@@ -44,48 +48,16 @@ impl<T> SelectorState<T> {
             ComposerControl::ServiceTier => (max_label + 7).clamp(20, 36) as u16,
         }
         .min(available);
-        let rows = self.options.iter().fold(0u16, |height, option| {
-            height.saturating_add(option_height(option, Some(control), width))
-        });
-        (width, MENU_CHROME + rows.clamp(1, MAX_VISIBLE_ROWS))
+        (width, self.menu_height())
     }
 
-    pub(super) fn menu_rows(
-        &self,
-        panel: Rect,
-        control: Option<ComposerControl>,
-    ) -> Vec<(usize, Rect)> {
-        let capacity = panel.height.saturating_sub(MENU_CHROME);
-        if capacity == 0 || self.options.is_empty() {
-            return Vec::new();
-        }
-        let mut first = self.selected;
-        let mut used = option_height(&self.options[first], control, panel.width);
-        while first > 0 {
-            let previous = option_height(&self.options[first - 1], control, panel.width);
-            if used.saturating_add(previous) > capacity {
-                break;
-            }
-            first -= 1;
-            used += previous;
-        }
-        let mut y = panel.y + 2;
-        let bottom = panel.bottom() - 1;
-        let mut rows = Vec::new();
-        for (index, option) in self.options.iter().enumerate().skip(first) {
-            let remaining = bottom - y;
-            let height = option_height(option, control, panel.width);
-            if remaining == 0 || (height > remaining && !rows.is_empty()) {
-                break;
-            }
-            let height = height.min(remaining);
-            rows.push((
-                index,
-                Rect::new(panel.x + 1, y, panel.width.saturating_sub(2), height),
-            ));
-            y += height;
-        }
-        rows
+    pub(super) fn menu_rows(&self, panel: Rect) -> Vec<(usize, Rect)> {
+        let capacity = usize::from(panel.height.saturating_sub(MENU_CHROME));
+        let first = (self.selected + 1).saturating_sub(capacity);
+        let inner = panel.inner(Margin::new(/*horizontal*/ 1, /*vertical*/ 1));
+        (first..self.options.len())
+            .zip(inner.rows().skip(1))
+            .collect()
     }
 
     pub(super) fn render_menu(
@@ -131,7 +103,7 @@ impl<T> SelectorState<T> {
                 );
             return;
         }
-        let rows = self.menu_rows(panel, control);
+        let rows = self.menu_rows(panel);
         for &(index, row) in &rows {
             let option = &self.options[index];
             if pointer.is_some_and(|p| row.contains(p)) || index == self.selected {
@@ -150,24 +122,6 @@ impl<T> SelectorState<T> {
                     .set_symbol("✓")
                     .set_fg(palette::focus());
             }
-            if row.height > 1 {
-                let details = textwrap::wrap(
-                    &option.detail,
-                    usize::from(panel.width.saturating_sub(4)).max(1),
-                )
-                .into_iter()
-                .map(Line::from)
-                .collect::<Vec<_>>();
-                Paragraph::new(details).fg(palette::muted()).render(
-                    Rect::new(
-                        row.x + 1,
-                        row.y + 1,
-                        row.width.saturating_sub(2),
-                        row.height - 1,
-                    ),
-                    buf,
-                );
-            }
         }
         if let (Some(&(first, top)), Some(&(last, bottom))) = (rows.first(), rows.last()) {
             if first > 0 {
@@ -181,18 +135,5 @@ impl<T> SelectorState<T> {
                     .set_fg(palette::muted());
             }
         }
-    }
-}
-
-fn option_height<T>(
-    option: &SelectorOption<T>,
-    control: Option<ComposerControl>,
-    width: u16,
-) -> u16 {
-    if control == Some(ComposerControl::Permissions) {
-        let lines = textwrap::wrap(&option.detail, usize::from(width.saturating_sub(4)).max(1));
-        1u16.saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX))
-    } else {
-        1
     }
 }

@@ -59,15 +59,6 @@ impl PermissionMode {
         }
     }
 
-    pub(super) fn description(self) -> &'static str {
-        match self {
-            Self::Ask => "Edit the workspace. Ask you for broader access.",
-            Self::AutoReview => "Edit the workspace. Send requests to automatic review.",
-            Self::FullAccess => "Allow unrestricted file and network access.",
-            Self::ReadOnly => "Read files. Ask you before edits or network access.",
-        }
-    }
-
     pub(super) fn available(self, config: &Config) -> bool {
         let preset = self.preset();
         (self != Self::AutoReview || config.features.enabled(Feature::GuardianApproval))
