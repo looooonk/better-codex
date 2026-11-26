@@ -18,8 +18,6 @@ use ratatui::widgets::Clear;
 use ratatui::widgets::Widget;
 use std::ops::Range;
 
-const EDIT_BUTTON: &str = "[e Edit]";
-
 pub(super) struct ApprovalRows {
     pub(super) lines: Vec<Line<'static>>,
     pub(super) choices: Range<usize>,
@@ -57,57 +55,20 @@ impl ApprovalRows {
                 .details()
                 .map(|detail| Line::from(detail.clone().fg(palette::muted()))),
         );
-        lines.push(Line::default());
-        lines.push(Line::from(vec![
-            EDIT_BUTTON.fg(palette::cyan()).bg(palette::elevated()),
-            "  ".into(),
-            format!("[{}]", pending.explain_label())
-                .fg(palette::cyan())
-                .bg(palette::elevated()),
-        ]));
         Self { lines, choices }
     }
-    // Geometry is shared by clicks and hover. A choice owns its whole row,
-    // while each footer button owns only its visible cells after wrapping.
-    fn actions(&self, segment: &RequestPanelSegment, row: Rect) -> Vec<(ApprovalAction, Rect)> {
-        if self.choices.contains(&segment.logical_line) {
-            return vec![(
-                ApprovalAction::Choose(segment.logical_line - self.choices.start),
-                row,
-            )];
+
+    fn choice_line_at(
+        &self,
+        body: Rect,
+        segments: &[RequestPanelSegment],
+        position: Position,
+    ) -> Option<usize> {
+        if !body.contains(position) {
+            return None;
         }
-        if segment.logical_line != self.lines.len() - 1 {
-            return Vec::new();
-        }
-        let footer = &self.lines[segment.logical_line];
-        let visible_start = segment.source_column;
-        let visible_end = visible_start
-            + segment
-                .content
-                .width()
-                .saturating_sub(segment.display_prefix_width);
-        let mut start = 0;
-        let mut buttons = Vec::new();
-        for (span, action) in footer.spans.iter().zip([
-            Some(ApprovalAction::Edit),
-            None,
-            Some(ApprovalAction::Explain),
-        ]) {
-            let end = start + span.width();
-            let left = start.max(visible_start);
-            let right = end.min(visible_end);
-            if let Some(action) = action
-                && left < right
-            {
-                let x = segment.display_prefix_width + left - visible_start;
-                buttons.push((
-                    action,
-                    Rect::new(row.x + x as u16, row.y, (right - left) as u16, 1).intersection(row),
-                ));
-            }
-            start = end;
-        }
-        buttons
+        let line = segments.get(usize::from(position.y - body.y))?.logical_line;
+        self.choices.contains(&line).then_some(line)
     }
 }
 
@@ -148,11 +109,8 @@ pub(super) fn action_at(
     }
     let rows = ApprovalRows::new(pending);
     let segments = visible_approval_segments(pending, &rows, body.width, body.height);
-    let segment = segments.get(usize::from(position.y - body.y))?;
-    let row = Rect::new(body.x, position.y, body.width, 1);
-    rows.actions(segment, row)
-        .into_iter()
-        .find_map(|(action, rect)| rect.contains(position).then_some(action))
+    rows.choice_line_at(body, &segments, position)
+        .map(|line| ApprovalAction::Choose(line - rows.choices.start))
 }
 
 pub(super) fn render(
@@ -173,21 +131,11 @@ pub(super) fn render(
     let body = body(panel);
     let rows = ApprovalRows::new(pending);
     let segments = visible_approval_segments(pending, &rows, body.width, body.height);
-    let mut actions = Vec::new();
+    let hovered = pointer.and_then(|position| rows.choice_line_at(body, &segments, position));
     for (row, segment) in body.rows().zip(segments) {
-        if pointer.is_some_and(|position| body.contains(position)) {
-            actions.extend(rows.actions(&segment, row));
-        }
         segment.content.render(row, buf);
-    }
-    if let Some(hovered) = actions
-        .iter()
-        .find_map(|(action, rect)| pointer.filter(|p| rect.contains(*p)).map(|_| *action))
-    {
-        for (action, rect) in actions {
-            if action == hovered {
-                buf.set_style(rect, Style::new().bg(palette::border()));
-            }
+        if hovered == Some(segment.logical_line) {
+            buf.set_style(row, Style::new().bg(palette::border()));
         }
     }
 }

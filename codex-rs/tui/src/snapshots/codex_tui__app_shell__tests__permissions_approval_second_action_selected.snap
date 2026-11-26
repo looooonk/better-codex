@@ -6,14 +6,16 @@ expression: "render_shell(&shell, area)"
                                                   │  Sessions   │  Status  │  Agents  │  Settings
                                                   │━━━━━━━━━━━━━───────────────────────────────────
    > Create a divergent standalone TUI.           │
-       ╭ Approval required ──────────────╮        │ Projects
-       │ Need package registry access    │        │ No projects
-   Star│                                 │y app-  │
-   serv│ ○ Grant for this turn           │        │ Recents
-       │ ○ Grant for this session        │        │ + New session  Ctrl+N
-      ▸│ ○ Grant for this turn; review   │        │ loading sessions
+                                                  │ Projects
+                                                  │ No projects
+   Star╭ Approval required ──────────────╮y app-  │
+   serv│ Need package registry access    │        │ Recents
+       │                                 │        │ + New session  Ctrl+N
+      ▸│ ○ Grant for this turn           │        │ loading sessions
+       │ ○ Grant for this session        │        │
+   The │ ○ Grant for this turn; review   │ce.     │
        │ each command                    │        │
-   The │ ○ Deny                          │ce.     │
+       │ ○ Deny                          │        │
        │                                 │        │
        │ Grant permissions               │        │
        │ Working directory: /workspace/  │        │
@@ -21,8 +23,6 @@ expression: "render_shell(&shell, area)"
        │ Requested permissions:          │        │
        │ { network: { enabled: true },   │        │
        │ fileSystem: null }              │        │
-       │                                 │        │
-       │ [e Edit]  [? Explain]           │        │
        ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

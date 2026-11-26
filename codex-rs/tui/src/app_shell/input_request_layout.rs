@@ -25,8 +25,8 @@ pub(super) struct RequestPanelHit {
 pub(super) struct RequestPanelSegment {
     pub(super) content: Line<'static>,
     pub(super) logical_line: usize,
-    pub(super) source_column: usize,
-    pub(super) display_prefix_width: usize,
+    source_column: usize,
+    display_prefix_width: usize,
 }
 
 pub(super) fn request_panel_visual_line_count(lines: &[Line<'static>], width: u16) -> usize {
@@ -114,18 +114,9 @@ pub(super) fn visible_approval_segments(
         return segments.into_iter().take(visible).collect();
     }
 
-    // On very short terminals, let every row scroll so even the last option is reachable.
-    let footer = segments
-        .iter()
-        .position(|segment| segment.logical_line == rows.lines.len() - 1)
-        .unwrap_or(segments.len());
-    let pin_footer = visible > segments.len() - footer + 2;
-    let (scrollable, viewport) = if pin_footer {
-        (footer, visible - (segments.len() - footer) - 1)
-    } else {
-        (segments.len(), visible)
-    };
-    pending.set_scroll_max(scrollable.saturating_sub(viewport));
+    // Reserve a row for the scroll hint only if a content row still fits.
+    let viewport = if visible > 1 { visible - 1 } else { visible };
+    pending.set_scroll_max(segments.len() - viewport);
     if reveal {
         let selected = rows.choices.start + pending.selected_option();
         if let Some(row) = segments
@@ -137,17 +128,17 @@ pub(super) fn visible_approval_segments(
             pending.scroll_down((row + 1).saturating_sub(offset + viewport));
         }
     }
-    if !pin_footer {
+    if visible == 1 {
         return segments
             .into_iter()
             .skip(pending.scroll_offset())
-            .take(visible)
+            .take(1)
             .collect();
     }
     visible_scrolled_segments(
         &segments,
         visible,
-        footer,
+        segments.len(),
         pending.scroll_offset(),
         " (j/k)",
     )

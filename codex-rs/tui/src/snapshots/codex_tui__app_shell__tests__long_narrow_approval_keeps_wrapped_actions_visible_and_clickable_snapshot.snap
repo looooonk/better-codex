@@ -11,8 +11,8 @@ expression: rendered
       │                          │    ┃
       │ Run command: printf      │    ┃
       │ 'validated safe prefix'; │    ┃
-   The│   ↓ more (j/k)           │en  ┃
-   sur│ [e Edit]  [? Explain]    │    ┃
+   The│ printf 'validated safe   │en  ┃
+   sur│   ↓ more (j/k)           │    ┃
       ╰──────────────────────────╯
 ╭──────────────────────────────────────╮
 │> Summarize the new shell architecture│

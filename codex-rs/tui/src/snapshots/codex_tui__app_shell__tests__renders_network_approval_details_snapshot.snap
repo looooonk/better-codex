@@ -8,12 +8,14 @@ expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
    > Create a divergent standalone TUI.           │
                                                   │ Projects
                                                   │ No projects
-   Star╭ Approval required ──────────────╮y app-  │
-   serv│ Needs network access            │        │ Recents
-       │                                 │        │ + New session  Ctrl+N
-      ▸│ ○ Run once                      │        │ loading sessions
+   Started a fullscreen app shell backed by app-  │
+   server turns.                                  │ Recents
+       ╭ Approval required ──────────────╮        │ + New session  Ctrl+N
+      ▸│ Needs network access            │        │ loading sessions
+       │                                 │        │
+   The │ ○ Run once                      │ce.     │
        │ ○ Run for this session          │        │
-   The │ ○ Allow host permanently:       │ce.     │
+       │ ○ Allow host permanently:       │        │
        │ packages.example.com            │        │
        │ ○ Deny and interrupt            │        │
        │                                 │        │
@@ -21,8 +23,6 @@ expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
        │ packages.example.com            │        │
        │ Network target: https://        │        │
        │ packages.example.com            │        │
-       │                                 │        │
-       │ [e Edit]  [? Explain]           │        │
        ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

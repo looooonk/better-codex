@@ -3512,7 +3512,7 @@ async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
     );
 
     shell
-        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
+        .resolve_pending_approval(&backend, /*option_index*/ 0)
         .expect("approval should resolve");
     complete_backend_actions(&mut shell, &backend).await;
     assert!(shell.pending_user_input.is_some());
@@ -7562,13 +7562,13 @@ fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 18,
     );
     let rendered = render_shell(&shell, area);
-    let explain = rendered_text_position(&rendered, "? Explain");
+    let run = rendered_text_position(&rendered, "○ Run once");
 
     assert!(rendered.contains("↓ more"));
     assert!(!rendered.contains(dangerous_suffix));
     assert_eq!(
-        ShellView { shell: &shell }.approval_action_at(area, explain),
-        Some(ApprovalAction::Explain)
+        ShellView { shell: &shell }.approval_action_at(area, run),
+        Some(ApprovalAction::Choose(0))
     );
     insta::assert_snapshot!(rendered);
 
@@ -7848,25 +7848,6 @@ fn renders_pending_approval_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
-
-    shell.explain_pending_approval();
-    let view = ShellView { shell: &shell };
-    let expanded = render_shell(&shell, area);
-    let less = rendered_text_position(&expanded, "? Less");
-    assert_eq!(
-        view.approval_action_at(area, less),
-        Some(ApprovalAction::Explain)
-    );
-    assert!(
-        shell
-            .pending_approval
-            .as_ref()
-            .unwrap()
-            .details()
-            .any(|detail| detail.contains("Command actions"))
-    );
-    shell.explain_pending_approval();
-    assert!(render_shell(&shell, area).contains("? Explain"));
 }
 
 #[test]
@@ -7970,14 +7951,6 @@ fn approval_action_keys_cover_full_keyboard_flow() {
         Some(ApprovalAction::Choose(1))
     );
     assert_eq!(
-        approval_action_from_key(&pending, key_char('e')),
-        Some(ApprovalAction::Edit)
-    );
-    assert_eq!(
-        approval_action_from_key(&pending, key_char('?')),
-        Some(ApprovalAction::Explain)
-    );
-    assert_eq!(
         approval_action_from_key(&pending, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
         Some(ApprovalAction::Choose(0))
     );
@@ -8011,7 +7984,7 @@ fn approval_action_keys_cover_full_keyboard_flow() {
 }
 
 #[test]
-fn approval_hover_fills_choice_rows_and_only_the_pointed_footer_button() {
+fn approval_hover_fills_the_pointed_choice_row() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval =
         PendingApproval::from_request(&permissions_approval_request()).unwrap();
@@ -8025,15 +7998,7 @@ fn approval_hover_fills_choice_rows_and_only_the_pointed_footer_button() {
     for x in body.x..body.right() {
         assert_eq!(buf[(x, option.y)].bg, design::palette::border());
     }
-    let edit = rendered_text_position(&text, "[e Edit]");
-    let explain = rendered_text_position(&text, "[? Explain");
-    for (button, other) in [(edit, explain), (explain, edit)] {
-        shell.pointer_position = Some(button);
-        let buf = render_shell_buffer(&shell, area);
-        assert_eq!(buf[button].bg, design::palette::border());
-        assert_ne!(buf[other].bg, design::palette::border());
-        assert_ne!(buf[(edit.x + 4, edit.y)].bg, design::palette::border());
-    }
+    assert_ne!(buf[(body.x, option.y - 1)].bg, design::palette::border());
 }
 
 #[tokio::test]
@@ -8190,36 +8155,6 @@ async fn approval_keys_take_priority_over_transcript_selection_without_writing_a
         vec![RecordedBackendCall::Resolve(RequestId::Integer(41))]
     );
     assert!(shell.transcript.is_empty());
-}
-
-#[test]
-fn approval_explain_keeps_request_pending_and_writes_audit() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
-        .expect("approval request should be valid");
-
-    shell.explain_pending_approval();
-
-    assert!(shell.pending_approval.is_some());
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::System,
-            "Run command: cargo test -p codex-tui - Reason: Needs network access - Working directory: /workspace/better-codex",
-        ))
-    );
-}
-
-#[test]
-fn approval_edit_prompt_preserves_existing_composer_draft() {
-    let mut shell = ShellState::snapshot_fixture();
-
-    shell.seed_composer_with_edit_prompt("Revise and retry this command:\njust test".to_string());
-
-    assert_eq!(
-        shell.composer.text(),
-        "Summarize the new shell architecture\n\nRevise and retry this command:\njust test"
-    );
 }
 
 #[test]
@@ -12050,7 +11985,7 @@ async fn failed_approval_response_keeps_modal_open() {
     backend.fail_next_action("approval response rejected");
 
     shell
-        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
+        .resolve_pending_approval(&backend, /*option_index*/ 0)
         .expect("approval response should start");
     complete_backend_actions(&mut shell, &backend).await;
 
@@ -12072,7 +12007,7 @@ async fn completed_approval_keeps_an_active_turn_running() {
         .expect("approval request should open");
 
     shell
-        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
+        .resolve_pending_approval(&backend, /*option_index*/ 0)
         .expect("approval response should start");
     complete_backend_actions(&mut shell, &backend).await;
 
@@ -12956,21 +12891,6 @@ fn permissions_approval_serializes_grant_and_empty_deny() {
             "permissions": {},
             "scope": "turn"
         })
-    );
-}
-
-#[test]
-fn command_approval_exposes_edit_prompt_and_explanation() {
-    let pending = PendingApproval::from_request(&command_approval_request())
-        .expect("approval request should be valid")
-        .expect("request should be supported");
-
-    assert_eq!(
-        (pending.edit_prompt().to_string(), pending.explanation(),),
-        (
-            "Revise and retry this command:\ncargo test -p codex-tui".to_string(),
-            "Run command: cargo test -p codex-tui - Reason: Needs network access - Working directory: /workspace/better-codex".to_string(),
-        )
     );
 }
 
@@ -16403,7 +16323,7 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
         .await
         .expect("approval request should be handled");
     shell
-        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
+        .resolve_pending_approval(&backend, /*option_index*/ 0)
         .expect("approval should resolve");
     complete_backend_actions(&mut shell, &backend).await;
 

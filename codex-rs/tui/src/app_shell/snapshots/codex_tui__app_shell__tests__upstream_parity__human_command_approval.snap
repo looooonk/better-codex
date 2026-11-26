@@ -10,10 +10,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │ No projects
    Started a fullscreen app shell backed by app-server      │
    turns.                                                   │ Recents
-         ╭ Approval required ─────────────────────╮         │ + New session  Ctrl+N
-      ▸ E│ Needs network access                   │         │ loading sessions
+                                                            │ + New session  Ctrl+N
+      ▸ Edited files                                        │ loading sessions
+         ╭ Approval required ─────────────────────╮         │
+   The ne│ Needs network access                   │         │
          │                                        │         │
-   The ne│ ○ Run once                             │         │
+         │ ○ Run once                             │         │
          │ ○ Deny                                 │         │
          │ ○ Deny and interrupt                   │         │
          │                                        │         │
@@ -21,8 +23,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
          │ cargo test -p codex-tui                │         │
          │ Working directory: /workspace/better-  │         │
          │ codex                                  │         │
-         │                                        │         │
-         │ [e Edit]  [? Explain]                  │         │
          ╰────────────────────────────────────────╯         │
 ╭──────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                    ││

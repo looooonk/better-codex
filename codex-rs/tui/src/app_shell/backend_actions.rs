@@ -95,7 +95,6 @@ pub(super) enum BackendActionResult {
     },
     Approval {
         request_id: RequestId,
-        edit_prompt: Option<String>,
         result: std::io::Result<()>,
     },
     CurrentTime {
@@ -433,16 +432,9 @@ impl ShellState {
                 name,
                 result,
             } => self.complete_session_rename(thread_id, name, result),
-            BackendActionResult::Approval {
-                request_id,
-                edit_prompt,
-                result,
-            } => match result {
+            BackendActionResult::Approval { request_id, result } => match result {
                 Ok(()) => {
                     let removal = self.remove_interactive_request(&request_id);
-                    if let Some(edit_prompt) = edit_prompt {
-                        self.seed_composer_with_edit_prompt(edit_prompt);
-                    }
                     if removal == super::InteractiveRequestRemoval::Active {
                         self.activate_next_interactive_request();
                     }

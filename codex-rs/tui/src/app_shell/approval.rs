@@ -20,8 +20,6 @@ use std::cell::Cell;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ApprovalAction {
     Choose(usize),
-    Edit,
-    Explain,
     Select(ApprovalSelectionDirection),
     ScrollUp,
     ScrollDown,
@@ -41,11 +39,8 @@ pub(super) struct PendingApproval {
     title: String,
     reason: Option<String>,
     details: Vec<String>,
-    explanation_details: Vec<String>,
-    edit_prompt: String,
     options: Vec<ApprovalOption>,
     selected_option: usize,
-    explanation_open: bool,
     scroll_offset: Cell<usize>,
     scroll_max: Cell<usize>,
     pub(super) reveal_selection: Cell<bool>,
@@ -99,33 +94,19 @@ impl PendingApproval {
                         context.host
                     ));
                 }
-                let mut explanation_details = Vec::new();
-                let command_actions = params
-                    .command_actions
-                    .as_ref()
-                    .filter(|actions| !actions.is_empty())
-                    .map(|actions| json_detail("Command actions", actions));
-                // A parsed copy of a visible command belongs in its explanation.
-                if let Some(actions) = command_actions {
-                    if params.command.is_some() {
-                        explanation_details.push(actions);
-                    } else {
-                        details.push(actions);
-                    }
+                if params.command.is_none()
+                    && let Some(actions) = params
+                        .command_actions
+                        .as_ref()
+                        .filter(|actions| !actions.is_empty())
+                {
+                    details.push(json_detail("Command actions", actions));
                 }
                 if let Some(permissions) = params.additional_permissions.as_ref() {
                     details.push(json_detail(
                         "Requested additional per-command permissions",
                         permissions,
                     ));
-                }
-                if let Some(amendment) = params.proposed_execpolicy_amendment.as_ref() {
-                    explanation_details
-                        .push(json_detail("Proposed persistent command rule", amendment));
-                }
-                if let Some(amendments) = params.proposed_network_policy_amendments.as_ref() {
-                    explanation_details
-                        .push(json_detail("Proposed persistent network rules", amendments));
                 }
                 let options = params
                     .available_decisions
@@ -149,17 +130,13 @@ impl PendingApproval {
                 if options.is_empty() {
                     return Err("command approval request has no available decisions".to_string());
                 }
-                let command = params.command.clone().unwrap_or_else(|| title.clone());
                 Ok(Some(Self {
                     request_id: request_id.clone(),
                     title,
                     reason: params.reason.clone(),
                     details,
-                    explanation_details,
-                    edit_prompt: format!("Revise and retry this command:\n{command}"),
                     options,
                     selected_option: 0,
-                    explanation_open: false,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
                     reveal_selection: Cell::new(false),
@@ -169,17 +146,12 @@ impl PendingApproval {
                 request_id: request_id.clone(),
                 title: format!("Apply file changes: {}", params.item_id),
                 reason: params.reason.clone(),
-                explanation_details: Vec::new(),
                 details: context_details(
                     params
                         .grant_root
                         .as_ref()
                         .map(|root| format!("Grant root: {}", root.display())),
                     /*environment_id*/ None,
-                ),
-                edit_prompt: format!(
-                    "Revise the requested file changes before trying again: {}",
-                    params.item_id
                 ),
                 options: vec![
                     ApprovalOption {
@@ -202,7 +174,6 @@ impl PendingApproval {
                     },
                 ],
                 selected_option: 0,
-                explanation_open: false,
                 scroll_offset: Cell::new(0),
                 scroll_max: Cell::new(0),
                 reveal_selection: Cell::new(false),
@@ -222,9 +193,7 @@ impl PendingApproval {
                     request_id: request_id.clone(),
                     title: "Grant permissions".to_string(),
                     reason: params.reason.clone(),
-                    explanation_details: Vec::new(),
                     details,
-                    edit_prompt: "Revise the requested permissions before trying again".to_string(),
                     options: vec![
                         ApprovalOption {
                             label: "Grant for this turn".to_string(),
@@ -268,7 +237,6 @@ impl PendingApproval {
                         },
                     ],
                     selected_option: 0,
-                    explanation_open: false,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
                     reveal_selection: Cell::new(false),
@@ -301,46 +269,7 @@ impl PendingApproval {
     }
 
     pub(super) fn details(&self) -> impl Iterator<Item = &String> {
-        let extra = if self.explanation_open {
-            self.explanation_details.as_slice()
-        } else {
-            &[]
-        };
-        self.details.iter().chain(extra)
-    }
-
-    pub(super) fn explain_label(&self) -> &'static str {
-        if self.explanation_open {
-            "? Less"
-        } else {
-            "? Explain"
-        }
-    }
-
-    pub(super) fn toggle_explanation(&mut self) -> bool {
-        if self.explanation_details.is_empty() {
-            return true;
-        }
-        self.explanation_open = !self.explanation_open;
-        self.scroll_offset.set(0);
-        self.explanation_open
-    }
-
-    pub(super) fn explanation(&self) -> String {
-        std::iter::once(self.title.clone())
-            .chain(self.reason().map(|reason| format!("Reason: {reason}")))
-            .chain(
-                self.details
-                    .iter()
-                    .chain(&self.explanation_details)
-                    .cloned(),
-            )
-            .collect::<Vec<_>>()
-            .join(" - ")
-    }
-
-    pub(super) fn edit_prompt(&self) -> &str {
-        &self.edit_prompt
+        self.details.iter()
     }
 
     pub(super) fn options(&self) -> impl Iterator<Item = (usize, &str)> {

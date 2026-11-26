@@ -2,18 +2,19 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-       ╭ Approval required ──────────────╮        │
-       │ Needs network access            │        │  Sessions   │  Status  │  Agents  │  Settings
-       │                                 │        │━━━━━━━━━━━━━───────────────────────────────────
-   > Cr│ ○ Run once                      │        │
-       │ ○ Run and always allow command  │        │ Projects
-       │ prefix: cargo test              │        │ No projects
-   Star│ ○ Deny and interrupt            │y app-  │
-   serv│                                 │        │ Recents
-       │ Run command: cargo test -p      │        │ + New session  Ctrl+N
-      ▸│ codex-tui                       │        │ loading sessions
-       │ Working directory: /workspace/  │        │
-   The │ better-codex                    │ce.     │
+                                                  │
+       ╭ Approval required ──────────────╮        │  Sessions   │  Status  │  Agents  │  Settings
+       │ Needs network access            │        │━━━━━━━━━━━━━───────────────────────────────────
+   > Cr│                                 │        │
+       │ ○ Run once                      │        │ Projects
+       │ ○ Run and always allow command  │        │ No projects
+   Star│ prefix: cargo test              │y app-  │
+   serv│ ○ Deny and interrupt            │        │ Recents
+       │                                 │        │ + New session  Ctrl+N
+      ▸│ Run command: cargo test -p      │        │ loading sessions
+       │ codex-tui                       │        │
+   The │ Working directory: /workspace/  │ce.     │
+       │ better-codex                    │        │
        │ Requested additional per-       │        │
        │ command permissions: { network: │        │
        │ { enabled: true }, fileSystem:  │        │
@@ -21,8 +22,7 @@ expression: "render_shell(&shell, area)"
        │ entries: [{ path: { type:       │        │
        │ "path", path: "/workspace/      │        │
        │ shared-cache" }, access:        │        │
-       │   ↓ more (j/k)                  │        │
-       │ [e Edit]  [? Explain]           │        │
+       │ "write" }] } }                  │        │
        ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

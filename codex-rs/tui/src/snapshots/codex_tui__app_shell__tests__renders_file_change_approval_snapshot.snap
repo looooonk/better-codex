@@ -10,10 +10,12 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │ No projects
    Started a fullscreen app shell backed by app-  │
    server turns.                                  │ Recents
-       ╭ Approval required ──────────────╮        │ + New session  Ctrl+N
-      ▸│ Update the dashboard layout     │        │ loading sessions
+                                                  │ + New session  Ctrl+N
+      ▸ Edited files                              │ loading sessions
+       ╭ Approval required ──────────────╮        │
+   The │ Update the dashboard layout     │ce.     │
        │                                 │        │
-   The │ ○ Apply once                    │ce.     │
+       │ ○ Apply once                    │        │
        │ ○ Apply for this session        │        │
        │ ○ Deny                          │        │
        │ ○ Deny and interrupt            │        │
@@ -21,8 +23,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
        │ Apply file changes: patch-1     │        │
        │ Grant root: /workspace/better-  │        │
        │ codex                           │        │
-       │                                 │        │
-       │ [e Edit]  [? Explain]           │        │
        ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││

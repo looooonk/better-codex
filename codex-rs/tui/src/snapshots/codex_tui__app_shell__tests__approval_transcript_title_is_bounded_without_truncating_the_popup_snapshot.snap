@@ -10,6 +10,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 
 
 
+
+
                ╭ Approval required ─────────────────────────────────────────────────╮
                │ Needs network access                                               │
                │                                                                    │
@@ -21,8 +23,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                │ printf third                                                       │
                │ printf private-fourth                                              │
                │ Working directory: /workspace/better-codex                         │
-               │                                                                    │
-               │ [e Edit]  [? Explain]                                              │
                ╰────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │

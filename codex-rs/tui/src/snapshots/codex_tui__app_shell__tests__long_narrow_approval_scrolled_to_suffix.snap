@@ -4,15 +4,15 @@ expression: rendered
 ---
       ╭ Approval required ───────╮
       │   ↑ more (j/k)           │
-      │ prefix'; printf          │    │
       │ 'validated safe prefix'; │    │
-   Sta│ printf 'validated safe   │    ┃
-   bac│ prefix'; && rm -rf /     │    ┃
+      │ printf 'validated safe   │    │
+   Sta│ prefix'; printf          │    ┃
+   bac│ 'validated safe prefix'; │    ┃
+      │ printf 'validated safe   │    ┃
+      │ prefix'; && rm -rf /     │    ┃
       │ workspace/production     │    ┃
-      │ Working directory: /     │    ┃
-      │ workspace/better-codex   │    ┃
-   The│                          │en  ┃
-   sur│ [e Edit]  [? Explain]    │    ┃
+   The│ Working directory: /     │en  ┃
+   sur│ workspace/better-codex   │    ┃
       ╰──────────────────────────╯
 ╭──────────────────────────────────────╮
 │> Summarize the new shell architecture│

@@ -39,6 +39,8 @@ expression: "render_shell(&shell, area)"
                                                                       │
                                                                       │
                                                                       │
+                                                                      │
+                                                                      │
           ╭ Approval required ────────────────────────────╮           │
           │ Needs network access                          │           │
           │                                               │           │
@@ -47,8 +49,6 @@ expression: "render_shell(&shell, area)"
           │                                               │           │
           │ Run command: cargo test -p codex-tui          │           │
           │ Working directory: /workspace/better-codex    │           │
-          │                                               │           │
-          │ [e Edit]  [? Explain]                         │           │
           ╰───────────────────────────────────────────────╯           │
 ╭────────────────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                              ││

@@ -1431,12 +1431,7 @@ impl ShellState {
         Ok(())
     }
 
-    fn resolve_pending_approval<S>(
-        &mut self,
-        app_server: &S,
-        option_index: usize,
-        edit_prompt: Option<String>,
-    ) -> Result<()>
+    fn resolve_pending_approval<S>(&mut self, app_server: &S, option_index: usize) -> Result<()>
     where
         S: AppShellBackend,
     {
@@ -1449,7 +1444,6 @@ impl ShellState {
         self.start_backend_action(ActionGroup::Approval, "resolving approval", async move {
             BackendActionResult::Approval {
                 request_id,
-                edit_prompt,
                 result: request.await,
             }
         });
@@ -1466,12 +1460,7 @@ impl ShellState {
     {
         match action {
             ApprovalAction::Choose(option_index) => {
-                self.resolve_pending_approval(app_server, option_index, None)
-            }
-            ApprovalAction::Edit => self.edit_pending_approval(app_server),
-            ApprovalAction::Explain => {
-                self.explain_pending_approval();
-                Ok(())
+                self.resolve_pending_approval(app_server, option_index)
             }
             ApprovalAction::Select(direction) => {
                 if let Some(pending) = &mut self.pending_approval {
@@ -1503,41 +1492,6 @@ impl ShellState {
                 }
                 Ok(())
             }
-        }
-    }
-
-    fn edit_pending_approval<S>(&mut self, app_server: &S) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
-        let Some(pending) = self.pending_approval.as_ref() else {
-            return Ok(());
-        };
-        let edit_prompt = pending.edit_prompt().to_string();
-        let Some(denial_index) = pending.denial_index() else {
-            self.show_hint("this approval request cannot be denied for editing");
-            return Ok(());
-        };
-        self.resolve_pending_approval(app_server, denial_index, Some(edit_prompt))
-    }
-
-    fn explain_pending_approval(&mut self) {
-        if let Some(pending) = self.pending_approval.as_mut()
-            && pending.toggle_explanation()
-        {
-            let explanation = pending.explanation();
-            self.push_system(explanation);
-        }
-    }
-
-    fn seed_composer_with_edit_prompt(&mut self, edit_prompt: String) {
-        self.slash_command_popup.reset();
-        let composer_text = self.composer.text().trim();
-        if composer_text.is_empty() {
-            self.composer.set_text(edit_prompt);
-        } else {
-            self.composer
-                .set_text(format!("{composer_text}\n\n{edit_prompt}"));
         }
     }
 
@@ -3038,8 +2992,6 @@ fn approval_action_from_key(pending: &PendingApproval, key: KeyEvent) -> Option<
         KeyCode::Esc | KeyCode::Char('d' | 'D' | 'n' | 'N') => {
             pending.denial_index().map(ApprovalAction::Choose)
         }
-        KeyCode::Char('e') | KeyCode::Char('E') => Some(ApprovalAction::Edit),
-        KeyCode::Char('?') => Some(ApprovalAction::Explain),
         KeyCode::Up => Some(ApprovalAction::Select(ApprovalSelectionDirection::Previous)),
         KeyCode::Down => Some(ApprovalAction::Select(ApprovalSelectionDirection::Next)),
         KeyCode::Char('k' | 'K') => Some(ApprovalAction::ScrollUp),

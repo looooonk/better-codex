@@ -13,6 +13,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 
 
 
+
+
                ╭ Approval required ─────────────────────────────────────────────────╮
                │ Needs network access                                               │
                │                                                                    │
@@ -21,8 +23,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
                │                                                                    │
                │ Run command: cargo test -p codex-tui                               │
                │ Working directory: /workspace/better-codex                         │
-               │                                                                    │
-               │ [e Edit]  [? Explain]                                              │
                ╰────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │

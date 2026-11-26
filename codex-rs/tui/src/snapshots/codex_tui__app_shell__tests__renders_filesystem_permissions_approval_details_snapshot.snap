@@ -21,8 +21,8 @@ expression: "render_shell(&permissions_shell, area)"
        │ { type: "special", value:       │        │
        │ { kind: "root" } }, access:     │        │
        │ "read" }, { path: { type:       │        │
+       │ "glob_pattern", pattern: "/     │        │
        │   ↓ more (j/k)                  │        │
-       │ [e Edit]  [? Explain]           │        │
        ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
