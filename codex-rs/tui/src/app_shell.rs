@@ -112,6 +112,7 @@ mod input_request_layout;
 mod input_request_view;
 mod input_router;
 mod keybindings;
+mod request_popup;
 mod review_popup;
 mod transcript_find;
 mod turn_activity;

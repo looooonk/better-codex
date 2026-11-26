@@ -1,7 +1,6 @@
 use super::ApprovalAction;
 use super::PendingApproval;
 use super::design::palette;
-use super::design::pane_style;
 use super::input_request_layout::RequestPanelSegment;
 use super::input_request_layout::request_panel_visual_line_count;
 use super::input_request_layout::visible_approval_segments;
@@ -11,10 +10,6 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::widgets::Block;
-use ratatui::widgets::BorderType;
-use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Widget;
 use std::ops::Range;
 
@@ -73,29 +68,10 @@ impl ApprovalRows {
 }
 
 pub(super) fn area(pending: &PendingApproval, transcript: Rect) -> Rect {
-    let width = (u32::from(transcript.width) * 7 / 10) as u16;
+    let width = super::request_popup::width(transcript);
     let rows =
         request_panel_visual_line_count(&ApprovalRows::new(pending).lines, width.saturating_sub(4));
-    let height = u16::try_from(rows)
-        .unwrap_or(u16::MAX)
-        .saturating_add(2)
-        .min(22)
-        .min(transcript.height);
-    Rect::new(
-        transcript.x + (transcript.width - width) / 2,
-        transcript.bottom() - height,
-        width,
-        height,
-    )
-}
-
-pub(super) fn body(panel: Rect) -> Rect {
-    Rect::new(
-        panel.x + 2,
-        panel.y + 1,
-        panel.width.saturating_sub(4),
-        panel.height.saturating_sub(2),
-    )
+    super::request_popup::area(transcript, rows)
 }
 
 pub(super) fn action_at(
@@ -103,7 +79,7 @@ pub(super) fn action_at(
     panel: Rect,
     position: Position,
 ) -> Option<ApprovalAction> {
-    let body = body(panel);
+    let body = super::request_popup::body(panel);
     if !body.contains(position) {
         return None;
     }
@@ -120,15 +96,8 @@ pub(super) fn render(
     buf: &mut Buffer,
 ) {
     let panel = area(pending, transcript);
-    Clear.render(panel, buf);
-    Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .style(pane_style(palette::surface()))
-        .border_style(palette::focus())
-        .title(" Approval required ".fg(palette::focus()).bold())
-        .render(panel, buf);
-    let body = body(panel);
+    super::request_popup::render_frame(panel, " Approval required ", buf);
+    let body = super::request_popup::body(panel);
     let rows = ApprovalRows::new(pending);
     let segments = visible_approval_segments(pending, &rows, body.width, body.height);
     let hovered = pointer.and_then(|position| rows.choice_line_at(body, &segments, position));
