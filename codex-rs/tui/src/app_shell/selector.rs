@@ -59,8 +59,6 @@ pub(super) enum SelectorValue {
     ReasoningEffort(ReasoningEffortValue),
     ServiceTier(ServiceTierValue),
     PermissionMode(PermissionMode),
-    ConfirmFullAccess,
-    CancelFullAccess(Option<ComposerControl>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -399,24 +397,6 @@ impl SelectorState<SelectorValue> {
             })
             .collect();
         Self::new("Select permissions", options).anchored_menu(ComposerControl::Permissions)
-    }
-
-    pub(super) fn confirm_full_access(return_to: Option<ComposerControl>) -> Self {
-        Self::new(
-            "Enable full access?",
-            vec![
-                SelectorOption::new(
-                    SelectorValue::ConfirmFullAccess,
-                    "Enable full access",
-                    "Allow unrestricted file and network access without approval.",
-                ),
-                SelectorOption::new(
-                    SelectorValue::CancelFullAccess(return_to),
-                    "Cancel",
-                    "Keep current permissions.",
-                ),
-            ],
-        )
     }
 }
 

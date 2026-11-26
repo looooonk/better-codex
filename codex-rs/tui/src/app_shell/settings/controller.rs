@@ -6,7 +6,6 @@ use super::super::is_unmodified_key_event;
 use super::super::is_unmodified_key_press;
 use super::super::permission_modes::PermissionMode;
 use super::super::selector::ReasoningEffortValue;
-use super::super::selector::SelectorState;
 use super::EffortSave;
 use super::SettingsAction;
 use super::background::SettingsChange;
@@ -364,12 +363,6 @@ impl ShellState {
         if !self.permission_modes.contains(&mode) {
             self.settings
                 .set_error("Permission mode unavailable under the current configuration.");
-        } else if mode == PermissionMode::FullAccess {
-            let return_to = self
-                .selector
-                .as_ref()
-                .and_then(SelectorState::composer_control);
-            self.open_selector(SelectorState::confirm_full_access(return_to));
         } else {
             self.apply_permission_mode(mode, app_server);
         }

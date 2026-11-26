@@ -210,12 +210,6 @@ impl ShellState {
                 self.apply_service_tier(Some(tier), app_server);
             }
             SelectorValue::PermissionMode(mode) => self.select_permission_mode(mode, app_server),
-            SelectorValue::ConfirmFullAccess => self.apply_permission_mode(
-                super::permission_modes::PermissionMode::FullAccess,
-                app_server,
-            ),
-            SelectorValue::CancelFullAccess(Some(control)) => self.open_composer_picker(control),
-            SelectorValue::CancelFullAccess(None) => self.selector = None,
             SelectorValue::TranscriptMatch(revision) => self.select_transcript_match(revision),
             SelectorValue::Keybinding(action) => {
                 self.selector = None;

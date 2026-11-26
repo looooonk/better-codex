@@ -15900,14 +15900,7 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             .await
             .unwrap();
     }
-    assert!(backend.calls().is_empty());
-    shell
-        .handle_selector_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &mut backend,
-        )
-        .await
-        .unwrap();
+    assert!(shell.selector.is_none());
     complete_backend_actions(&mut shell, &backend).await;
     shell.settings.focus_action(SettingsAction::Animations);
     shell
