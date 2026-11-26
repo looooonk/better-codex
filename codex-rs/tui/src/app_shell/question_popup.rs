@@ -100,16 +100,19 @@ impl QuestionPopup {
             0
         };
         let (current, total) = pending.question_position();
-        let footer = current > 1 || pending.editing();
+        let show_forward = total > 1 || pending.editing();
         let panel = request_popup::area(
             transcript,
-            segments.len() + editor_rows + usize::from(footer),
+            segments.len() + editor_rows + usize::from(show_forward),
         );
         let body = request_popup::body(panel);
-        let footer_rows = u16::from(footer && body.height > 2);
-        let editor_height = (editor_rows as u16).min(body.height.saturating_sub(footer_rows + 1));
+        let footer_rows = u16::from(show_forward && body.height >= 2);
+        let answer_rows = body.height - footer_rows;
+        // With one row above the buttons, give it to the active answer editor or choice list.
+        let min_content_rows = u16::from(answer_rows > 1 || !pending.editing());
+        let editor_height = (editor_rows as u16).min(answer_rows.saturating_sub(min_content_rows));
         let content = Rect {
-            height: body.height.saturating_sub(editor_height + footer_rows),
+            height: answer_rows - editor_height,
             ..body
         };
         let editor = Rect::new(body.x, content.bottom(), width, editor_height);
@@ -126,7 +129,7 @@ impl QuestionPopup {
         };
         let buttons = [
             (current > 1).then(|| button("Previous".fg(palette::muted()), QuestionHit::Back)),
-            pending.editing().then(|| {
+            show_forward.then(|| {
                 let label = if current < total { "Next" } else { "Submit" };
                 button(label.fg(palette::focus()), QuestionHit::Submit)
             }),

@@ -23,6 +23,31 @@ fn question_item() -> ThreadItem {
 }
 
 #[test]
+fn compact_bundle_keeps_the_answer_editor_and_next_button_clickable() {
+    use question_popup::QuestionHit;
+    use question_popup::QuestionPopup;
+
+    let mut pending = PendingUserInput::from_async(
+        "labels",
+        ["First label?", "Second label?"]
+            .map(|title| AsyncUserInputQuestion {
+                title: title.into(),
+                options: None,
+            })
+            .into(),
+    );
+    pending.draft_mut().editor.set_text("blue");
+    let popup = QuestionPopup::new(&pending, Rect::new(0, 0, 60, 4));
+    let body = request_popup::body(popup.panel);
+    let cursor = popup.cursor(&pending).expect("visible answer cursor");
+    assert_eq!(popup.hit(cursor), Some(QuestionHit::Editor));
+    assert_eq!(
+        popup.hit(Position::new(body.x, body.bottom() - 1)),
+        Some(QuestionHit::Submit)
+    );
+}
+
+#[test]
 fn footer_hover_and_click_targets_follow_the_labels() {
     use question_popup::QuestionHit;
     use question_popup::QuestionPopup;
@@ -63,6 +88,60 @@ fn footer_hover_and_click_targets_follow_the_labels() {
             assert_eq!(cell.bg == design::palette::border(), highlighted);
         }
     }
+}
+
+#[tokio::test]
+async fn bundled_choices_offer_next_and_final_choice_click_submits_immediately() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    let mut request = tool_user_input_request();
+    let ServerRequest::ToolRequestUserInput { params, .. } = &mut request else {
+        unreachable!()
+    };
+    let question = params.questions[0].clone();
+    for id in ["second", "third"] {
+        params.questions.push(ToolRequestUserInputQuestion {
+            id: id.into(),
+            ..question.clone()
+        });
+    }
+    shell.pending_user_input = PendingUserInput::from_request(&request);
+    let area = Rect::new(0, 0, 80, 24);
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    shell
+        .handle_key_in_area(area, KeyEvent::from(KeyCode::Down), &config, &mut backend)
+        .await
+        .unwrap();
+    for (page, footer, target) in [
+        ("1/3", "Next", "Next"),
+        ("2/3", "Previous  Next", "Previous"),
+        ("1/3", "Next", "Next"),
+        ("2/3", "Previous  Next", "● Production"),
+        ("3/3", "Previous  Submit", "○ Staging"),
+    ] {
+        let rendered = render_shell(&shell, area);
+        assert!(rendered.contains(&format!("Question {page}")));
+        assert!(rendered.contains(footer), "{rendered}");
+        assert!(backend.calls().is_empty());
+        let pos = rendered_text_position(&rendered, target);
+        shell
+            .handle_mouse_selection_down(area, pos, &config, &mut backend)
+            .await
+            .unwrap();
+    }
+    assert!(shell.pending_user_input.is_none());
+    assert_eq!(
+        *backend.resolved_requests.lock().unwrap(),
+        vec![(
+            RequestId::Integer(43),
+            json!({"answers": {
+                "environment": {"answers": ["Staging"]},
+                "second": {"answers": ["Production"]},
+                "third": {"answers": ["Staging"]}
+            }})
+        )]
+    );
 }
 
 #[tokio::test]
