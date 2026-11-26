@@ -421,8 +421,10 @@ async fn guardian_warning_is_retained_in_diagnostics_while_the_tool_displays_the
     assert_eq!(shell.transcript.back().unwrap().text, message);
 }
 
-#[test]
-fn guardian_review_reports_terminal_decision_without_creating_duplicate_activity() {
+#[tokio::test]
+async fn guardian_review_reports_terminal_decision_without_creating_duplicate_activity() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     let mut review = codex_app_server_protocol::GuardianApprovalReview {
@@ -450,6 +452,24 @@ fn guardian_review_reports_terminal_decision_without_creating_duplicate_activity
         ToolBlockStatus::Success,
         Some(tool_groups::ToolAction::Command),
     );
+    let area = Rect::new(0, 0, 100, 28);
+    assert!(!render_shell(&shell, area).contains("credentials"));
+    let index = shell
+        .transcript
+        .iter()
+        .position(|line| line.item_id.as_deref() == target)
+        .unwrap();
+    shell.toggle_tool_group(shell.tool_group_start(index).unwrap());
+    let position = rendered_text_position(&render_shell(&shell, area), "Auto-review");
+    shell
+        .handle_mouse_selection_down(area, position, &config, &mut backend)
+        .await
+        .unwrap();
+    shell
+        .handle_mouse_selection_release(area, position, &config, &mut backend)
+        .await
+        .unwrap();
+    assert_eq!(shell.tool_review.as_ref().unwrap().approval.id, "review-1");
     review.status = codex_app_server_protocol::GuardianApprovalReviewStatus::Denied;
     review.rationale =
         Some("The requested upload includes credentials outside the authorized scope.".to_string());
@@ -460,22 +480,25 @@ fn guardian_review_reports_terminal_decision_without_creating_duplicate_activity
         ToolBlockStatus::Fail,
         Some(tool_groups::ToolAction::Command),
     );
-    let index = shell
-        .transcript
-        .iter()
-        .position(|line| line.item_id.as_deref() == target)
-        .unwrap();
     assert_eq!(shell.transcript[index].approvals.len(), 1);
     assert!(shell.transcript[index + 1].approvals.is_empty());
-    let area = Rect::new(0, 0, 100, 28);
-    assert!(!render_shell(&shell, area).contains("credentials"));
-    shell.toggle_tool_group(shell.tool_group_start(index).unwrap());
+    let popup = render_shell(&shell, area);
+    assert!(popup.contains("The requested upload includes credentials"));
+    insta::assert_snapshot!("guardian_review_details", popup);
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
     let expanded = render_shell(&shell, area);
-    assert!(expanded.contains("Auto-review") && expanded.contains("Denied"));
-    insta::assert_snapshot!(
-        "guardian_review_denied",
-        render_shell(&shell, Rect::new(0, 0, 100, 28))
+    assert!(
+        expanded.contains("Auto-review  Denied")
+            && !expanded.contains("outside the authorized scope")
     );
+    insta::assert_snapshot!("guardian_review_denied", expanded);
 }
 
 #[test]

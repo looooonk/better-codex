@@ -162,6 +162,9 @@ impl ShellView<'_> {
         if let Some(output) = &self.shell.tool_output {
             super::tool_output_view::render_tool_output(output, area, buf);
         }
+        if let Some(review) = &self.shell.tool_review {
+            review.render(area, buf);
+        }
         if let Some(preview) = &self.shell.source_preview {
             preview.render(area, buf);
         }
@@ -175,7 +178,7 @@ impl ShellView<'_> {
             || self.shell.command_palette.is_some()
             || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
-            || self.shell.tool_output.is_some()
+            || self.shell.tool_detail_open()
             || self.shell.source_preview.is_some()
             || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()
@@ -513,7 +516,7 @@ impl ShellView<'_> {
             || self.shell.command_palette.is_some()
             || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
-            || self.shell.tool_output.is_some()
+            || self.shell.tool_detail_open()
             || self.shell.source_preview.is_some()
             || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()

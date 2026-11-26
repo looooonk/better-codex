@@ -99,14 +99,28 @@ pub(super) fn render_transcript(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TranscriptCardHit {
-    ToolGroup { transcript_index: usize },
-    ToolOutput { transcript_index: usize },
-    Diff { transcript_index: usize },
+    Review {
+        transcript_index: usize,
+        review_index: usize,
+    },
+    ToolGroup {
+        transcript_index: usize,
+    },
+    ToolOutput {
+        transcript_index: usize,
+    },
+    Diff {
+        transcript_index: usize,
+    },
 }
 
 impl TranscriptCardHit {
     fn target(self) -> TranscriptTarget {
         match self {
+            Self::Review {
+                transcript_index,
+                review_index,
+            } => TranscriptTarget::Review(transcript_index, review_index),
             Self::ToolGroup { transcript_index } => TranscriptTarget::ToolGroup(transcript_index),
             Self::ToolOutput { transcript_index } | Self::Diff { transcript_index } => {
                 TranscriptTarget::Item(transcript_index)
@@ -148,7 +162,12 @@ pub(super) fn transcript_output_at(
 ) -> Option<usize> {
     match transcript_card_at(shell, area, position) {
         Some(TranscriptCardHit::ToolOutput { transcript_index }) => Some(transcript_index),
-        Some(TranscriptCardHit::Diff { .. } | TranscriptCardHit::ToolGroup { .. }) | None => None,
+        Some(
+            TranscriptCardHit::Diff { .. }
+            | TranscriptCardHit::ToolGroup { .. }
+            | TranscriptCardHit::Review { .. },
+        )
+        | None => None,
     }
 }
 
@@ -351,6 +370,10 @@ fn transcript_card_hit_at(
         .saturating_add(usize::from(position.y.saturating_sub(viewport.text_body.y)));
     let (target, mut indent) = viewport.layout.target_at_row(logical_row)?;
     let hit = match target {
+        TranscriptTarget::Review(transcript_index, review_index) => TranscriptCardHit::Review {
+            transcript_index,
+            review_index,
+        },
         TranscriptTarget::ToolGroup(transcript_index) => {
             TranscriptCardHit::ToolGroup { transcript_index }
         }

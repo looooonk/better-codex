@@ -43,7 +43,17 @@ pub(super) fn render_scrollback_frame(
     title: impl Into<String>,
     buf: &mut Buffer,
 ) -> ScrollbackGeometry {
-    let geometry = scrollback_geometry(screen);
+    let geometry = scrollback_geometry(screen, MAX_MODAL_WIDTH, MAX_MODAL_HEIGHT);
+    render_scrollback_frame_at(screen, geometry, title, buf);
+    geometry
+}
+
+pub(super) fn render_scrollback_frame_at(
+    screen: Rect,
+    geometry: ScrollbackGeometry,
+    title: impl Into<String>,
+    buf: &mut Buffer,
+) {
     buf.set_style(screen, Style::new().add_modifier(Modifier::DIM));
     Clear.render(geometry.modal, buf);
     fill_rect(buf, geometry.modal, palette::surface());
@@ -55,7 +65,6 @@ pub(super) fn render_scrollback_frame(
         .style(pane_style(palette::surface()))
         .title(Line::from(title.into()).bold())
         .render(geometry.modal, buf);
-    geometry
 }
 
 pub(super) fn render_scrollback_footer(
@@ -78,15 +87,19 @@ pub(super) fn render_scrollback_footer(
 }
 
 pub(super) fn scrollback_panel_area(screen: Rect) -> Rect {
-    scrollback_geometry(screen).modal
+    scrollback_geometry(screen, MAX_MODAL_WIDTH, MAX_MODAL_HEIGHT).modal
 }
 
-fn scrollback_geometry(screen: Rect) -> ScrollbackGeometry {
+pub(super) fn scrollback_geometry(
+    screen: Rect,
+    max_width: u16,
+    max_height: u16,
+) -> ScrollbackGeometry {
     let available_width = screen.width.saturating_sub(MODAL_MARGIN.saturating_mul(2));
     let available_height = screen.height.saturating_sub(MODAL_MARGIN.saturating_mul(2));
-    let width = available_width.min(MAX_MODAL_WIDTH);
+    let width = available_width.min(max_width);
     let height = available_height
-        .min(MAX_MODAL_HEIGHT)
+        .min(max_height)
         .max(available_height.min(MIN_MODAL_HEIGHT));
     let modal = Rect::new(
         screen

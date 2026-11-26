@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell/upstream_parity_tests.rs
+expression: popup
+---
+                                                  │
+                                                  │  Sessions   │  Status  │  Agents  │  Settings
+      ⌄ Ran command                               │━━━━━━━━━━━━━───────────────────────────────────
+                                                  │
+        ▌ tool upload credentials                 │ Projects
+          ↳ Auto-review  Denied ▸                 │ No projects
+                                                  │
+        ▌ tool ls                                 │ Recents
+                                                  │ + New session  Ctrl+N
+   The new╭ Auto-review ─────────────────────────────────────────────────────────────────╮
+          │ Denied                                                                       │
+          │                                                                              │
+          │ The requested upload includes credentials outside the authorized scope.      │
+          │                                                                              │
+          │ Command  upload credentials                                                  │
+          │ Working directory  /workspace                                                │
+          │ Review ID  review-1                                                          │
+          │ Esc close                                                                    │
+          ╰──────────────────────────────────────────────────────────────────────────────╯
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+│ⓘ Ask for approval▾ gpt-5-…▾ Default▾ ◷ Default▾││
+╰────────────────────────────────────────────────╯│

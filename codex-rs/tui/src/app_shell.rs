@@ -112,6 +112,7 @@ mod input_request_layout;
 mod input_request_view;
 mod input_router;
 mod keybindings;
+mod review_popup;
 mod transcript_find;
 mod turn_activity;
 pub(crate) use keybindings::validate_keymap;
@@ -535,6 +536,7 @@ struct ShellState {
     agent_activity: AgentActivityState,
     agent_log: Option<AgentLogState>,
     tool_output: Option<ToolOutputState>,
+    tool_review: Option<review_popup::ReviewPopup>,
     source_preview: Option<source_preview::SourcePreview>,
     diff_store: DiffStore,
     diff_view: Option<DiffViewState>,
@@ -707,6 +709,7 @@ impl ShellState {
             agent_activity: AgentActivityState::for_root(session.thread_id.to_string()),
             agent_log: None,
             tool_output: None,
+            tool_review: None,
             source_preview: None,
             diff_store: DiffStore::with_display_root(session.cwd.as_path()),
             diff_view: None,
@@ -2345,6 +2348,7 @@ impl ShellState {
             agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
             tool_output: None,
+            tool_review: None,
             source_preview: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
                 "/workspace/better-codex",
@@ -2679,6 +2683,7 @@ pub mod bench_support {
             agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
             tool_output: None,
+            tool_review: None,
             source_preview: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
                 "/workspace/better-codex",

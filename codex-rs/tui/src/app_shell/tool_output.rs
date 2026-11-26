@@ -363,6 +363,7 @@ impl ShellState {
         self.command_palette = None;
         self.selector = None;
         self.clear_transcript_selection();
+        self.tool_review = None;
         self.tool_output = Some(ToolOutputState::new(
             ToolOutputTarget {
                 item_id,
@@ -379,7 +380,12 @@ impl ShellState {
             .is_some_and(|index| self.open_tool_output_at(index))
     }
 
+    pub(super) fn tool_detail_open(&self) -> bool {
+        self.tool_output.is_some() || self.tool_review.is_some()
+    }
+
     pub(super) fn close_tool_output(&mut self) {
+        self.tool_review = None;
         self.tool_output = None;
     }
 
@@ -437,7 +443,7 @@ impl ShellState {
     }
 
     pub(super) fn handle_tool_output_key(&mut self, key: KeyEvent) -> bool {
-        if self.tool_output.is_none()
+        if !self.tool_detail_open()
             || !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
             || !matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
         {
@@ -445,6 +451,10 @@ impl ShellState {
         }
         if matches!(key.code, KeyCode::Esc) {
             self.close_tool_output();
+            return true;
+        }
+        if let Some(review) = &mut self.tool_review {
+            review.scroll(key.code);
             return true;
         }
         if key.code == KeyCode::Char('r') {

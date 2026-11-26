@@ -10,7 +10,7 @@ impl ShellState {
         let text = text.replace("\r\n", "\n").replace('\r', "\n");
         if text.is_empty()
             || self.diff_view.is_some()
-            || self.tool_output.is_some()
+            || self.tool_detail_open()
             || self.agent_log.is_some()
             || self.selector.is_some()
             || self.command_palette.is_some()

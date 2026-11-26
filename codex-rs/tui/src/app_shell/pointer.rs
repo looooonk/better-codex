@@ -66,6 +66,12 @@ impl ShellState {
             }
             return Ok(());
         }
+        if let Some(review) = &self.tool_review {
+            if !review.panel(area).contains(position) {
+                self.tool_review = None;
+            }
+            return Ok(());
+        }
         if self.tool_output.is_some() {
             if !super::tool_output_view::tool_output_panel_area(area).contains(position) {
                 self.close_tool_output();
@@ -280,6 +286,10 @@ impl ShellState {
         }
         if let Some(card) = (ShellView { shell: self }).transcript_card_at(area, position) {
             match card {
+                TranscriptCardHit::Review {
+                    transcript_index,
+                    review_index,
+                } => self.open_tool_review(transcript_index, review_index),
                 TranscriptCardHit::ToolGroup { transcript_index } => {
                     let pane = (ShellView { shell: self }).transcript_area(area);
                     super::transcript_view::toggle_tool_group_at(self, pane, transcript_index);
@@ -443,6 +453,10 @@ impl ShellState {
             preview.scroll(key);
             return false;
         }
+        if let Some(review) = &mut self.tool_review {
+            review.scroll(key);
+            return false;
+        }
         if self.tool_output.is_some() {
             match direction {
                 MouseScrollDirection::Up => self.scroll_tool_output_up(),
@@ -553,7 +567,7 @@ impl ShellState {
 
     fn has_blocking_overlay(&self) -> bool {
         self.diff_view.is_some()
-            || self.tool_output.is_some()
+            || self.tool_detail_open()
             || self.source_preview.is_some()
             || self.agent_log.is_some()
             || self.pending_approval.is_some()

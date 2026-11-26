@@ -168,7 +168,6 @@ impl TranscriptRenderCache {
                     anchor_source: anchor_source(),
                     kind: item.kind,
                     text: &item.text,
-                    approvals: &item.approvals,
                     tool_status: item.tool_status,
                     selected,
                 },
@@ -177,6 +176,17 @@ impl TranscriptRenderCache {
                     ..context
                 },
             );
+            for (review_index, approval) in item.approvals.iter().enumerate() {
+                let indent = (detail_indent + 2).min(width.saturating_sub(1));
+                chunks.push(TranscriptChunk {
+                    target: Some(TranscriptTarget::Review(index, review_index)),
+                    indent,
+                    revision: item.render_revision,
+                    anchor_source: TranscriptAnchorSource::Review(approval.id.clone()),
+                    separator_before: false,
+                    lines: indent_lines(vec![HyperlinkLine::new(approval.disclosure())], indent),
+                });
+            }
         }
 
         if !shell.streaming_assistant.is_empty() {
@@ -197,7 +207,6 @@ impl TranscriptRenderCache {
                     ),
                     kind: TranscriptKind::Assistant,
                     text: &shell.streaming_assistant,
-                    approvals: &[],
                     tool_status: None,
                     selected: false,
                 },
@@ -263,7 +272,6 @@ struct CachedSource<'a> {
     anchor_source: TranscriptAnchorSource,
     kind: TranscriptKind,
     text: &'a str,
-    approvals: &'a [super::guardian_activity::ToolApproval],
     tool_status: Option<ToolBlockStatus>,
     selected: bool,
 }
@@ -372,7 +380,7 @@ impl CachedTranscriptItem {
         }
 
         let _active_theme = crate::app_theme::activate(app_theme);
-        let mut lines = render_transcript_line_with_visualizations(
+        let lines = render_transcript_line_with_visualizations(
             source.kind,
             source.text,
             source.tool_status,
@@ -381,9 +389,6 @@ impl CachedTranscriptItem {
             selected,
             visuals,
         );
-        for approval in source.approvals {
-            lines.extend(approval.lines(source.text, width - indent));
-        }
         let lines = indent_lines(lines, indent);
         if self.has_visualization {
             return lines;
@@ -425,6 +430,7 @@ fn indent_lines(mut lines: Vec<HyperlinkLine>, indent: u16) -> Arc<[HyperlinkLin
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TranscriptTarget {
+    Review(usize, usize),
     Item(usize),
     ToolGroup(usize),
 }
@@ -441,6 +447,7 @@ struct TranscriptChunk {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum TranscriptAnchorSource {
+    Review(String),
     Item {
         kind: TranscriptKind,
         item_id: String,

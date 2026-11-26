@@ -59,7 +59,7 @@ impl ShellState {
             Some(ActiveInputRoute::DiffView)
         } else if self.source_preview.is_some() {
             Some(ActiveInputRoute::SourcePreview)
-        } else if self.tool_output.is_some() {
+        } else if self.tool_detail_open() {
             Some(ActiveInputRoute::ToolOutput)
         } else if self.agent_log.is_some() {
             Some(ActiveInputRoute::AgentLog)

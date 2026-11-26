@@ -83,7 +83,7 @@ impl ShellState {
         !self.dashboard_visible
             || self.rewind.is_active()
             || self.diff_view.is_some()
-            || self.tool_output.is_some()
+            || self.tool_detail_open()
             || self.agent_log.is_some()
             || self.selector.is_some()
             || self.command_palette.is_some()

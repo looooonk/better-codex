@@ -156,7 +156,7 @@ impl ShellState {
         }
 
         let selection_blocked = self.diff_view.is_some()
-            || self.tool_output.is_some()
+            || self.tool_detail_open()
             || self.agent_log.is_some()
             || self.selector.is_some()
             || self.command_palette.is_some()
@@ -182,7 +182,10 @@ impl ShellState {
                         if self.transcript_selection.is_some()
                             && !matches!(
                                 transcript_view::transcript_card_at(self, transcript, position),
-                                Some(transcript_view::TranscriptCardHit::ToolGroup { .. })
+                                Some(
+                                    transcript_view::TranscriptCardHit::ToolGroup { .. }
+                                        | transcript_view::TranscriptCardHit::Review { .. }
+                                )
                             )
                         {
                             self.clear_transcript_selection();

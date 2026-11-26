@@ -4,69 +4,38 @@ use super::TranscriptKind;
 use super::TranscriptLine;
 use super::design::palette;
 use super::tool_groups::ToolAction;
-use crate::terminal_hyperlinks::HyperlinkLine;
-use crate::wrapping::RtOptions;
-use crate::wrapping::word_wrap_lines;
 use codex_app_server_protocol::GuardianApprovalReview;
 use codex_app_server_protocol::GuardianApprovalReviewAction;
 use codex_app_server_protocol::GuardianApprovalReviewStatus;
+use ratatui::style::Color;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ToolApproval {
-    id: String,
-    subject: String,
-    review: GuardianApprovalReview,
+    pub(super) id: String,
+    pub(super) action: GuardianApprovalReviewAction,
+    pub(super) review: GuardianApprovalReview,
 }
 
 impl ToolApproval {
-    pub(super) fn lines(&self, parent: &str, width: u16) -> Vec<HyperlinkLine> {
-        let (label, color) = match self.review.status {
+    pub(super) fn status(&self) -> (&'static str, Color) {
+        match self.review.status {
             GuardianApprovalReviewStatus::InProgress => ("Reviewing", palette::cyan()),
             GuardianApprovalReviewStatus::Approved => ("Approved", palette::success()),
             GuardianApprovalReviewStatus::Denied => ("Denied", palette::error()),
             GuardianApprovalReviewStatus::TimedOut => ("Timed out", palette::warning()),
             GuardianApprovalReviewStatus::Aborted => ("Aborted", palette::warning()),
-        };
-        let mut heading = vec![
-            "  ↳ Auto-review  ".fg(palette::muted()),
-            label.fg(color).bold(),
-        ];
-        if !parent.contains(&self.subject) {
-            heading.push(format!(" · {}", self.subject).fg(palette::muted()));
         }
-        if let Some(risk) = self.review.risk_level {
-            heading.push(
-                format!(" · {risk:?} risk")
-                    .to_lowercase()
-                    .fg(palette::muted()),
-            );
-        }
-        if let Some(auth) = self.review.user_authorization {
-            heading.push(
-                format!(" · {auth:?} authorization")
-                    .to_lowercase()
-                    .fg(palette::muted()),
-            );
-        }
-        let width = usize::from(width.max(1));
-        let indent = Line::from("    ");
-        let mut rows = word_wrap_lines(
-            [Line::from(heading)],
-            RtOptions::new(width).subsequent_indent(indent.clone()),
-        );
-        if let Some(reason) = &self.review.rationale {
-            rows.extend(word_wrap_lines(
-                reason
-                    .lines()
-                    .map(|line| Line::from(line.to_owned().fg(palette::muted()))),
-                RtOptions::new(width)
-                    .initial_indent(indent.clone())
-                    .subsequent_indent(indent),
-            ));
-        }
-        rows.into_iter().map(HyperlinkLine::new).collect()
+    }
+
+    pub(super) fn disclosure(&self) -> Line<'static> {
+        let (label, color) = self.status();
+        Line::from(vec![
+            "↳ Auto-review  ".fg(palette::muted()),
+            label.fg(color),
+            " ▸".fg(palette::muted()),
+        ])
     }
 }
 
@@ -83,9 +52,14 @@ impl ShellState {
             .unwrap_or_else(|| format!("guardian:{id}"));
         let approval = ToolApproval {
             id,
-            subject: action_summary(action),
+            action: action.clone(),
             review,
         };
+        if let Some(popup) = &mut self.tool_review
+            && popup.approval.id == approval.id
+        {
+            popup.approval = approval.clone();
+        }
         let status = match approval.review.status {
             GuardianApprovalReviewStatus::InProgress => ToolBlockStatus::Running,
             GuardianApprovalReviewStatus::Approved => ToolBlockStatus::Success,
@@ -113,7 +87,7 @@ impl ShellState {
             parent.mark_render_changed();
         } else {
             // Approval can precede item/started. An independent network review has no parent at all.
-            let mut line = TranscriptLine::new(TranscriptKind::Tool, approval.subject.clone())
+            let mut line = TranscriptLine::new(TranscriptKind::Tool, action_summary(action))
                 .item_id(parent_id)
                 .tool_status(status);
             line.tool_action = Some(ToolAction::ApprovalReview);

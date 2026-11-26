@@ -7,14 +7,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
       ⌄ Ran command                               │━━━━━━━━━━━━━───────────────────────────────────
                                                   │
         ▌ tool upload credentials                 │ Projects
-          ↳ Auto-review  Denied                   │ No projects
-            The requested upload includes         │
-            credentials outside the authorized    │ Recents
-            scope.                                │ + New session  Ctrl+N
-                                                  │ loading sessions
-        ▌ tool ls                                 │
+          ↳ Auto-review  Denied ▸                 │ No projects
                                                   │
-   The new shell owns the fullscreen surface.     │
+        ▌ tool ls                                 │ Recents
+                                                  │ + New session  Ctrl+N
+   The new shell owns the fullscreen surface.     │ loading sessions
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │
