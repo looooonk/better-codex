@@ -8,22 +8,22 @@ expression: "render_shell(&network_shell, Rect::new(0, 0, 100, 28))"
    > Create a divergent standalone TUI.           │
                                                   │ Projects
                                                   │ No projects
-   Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents
-                                                  │ + New session  Ctrl+N
-      ▸ Edited files                              │ loading sessions
-                                                  │
-   The new shell owns the fullscreen surface.     │
-│ Approval required                               │
-│ Connect to https://packages.example.com         │
-│ Reason: Needs network access                    │
-│ Network target: https://packages.example.com    │
-│ › 1 Run once                                    │
-│   2 Run for this session                        │
-│   3 Allow host permanently:                     │
-│   packages.example.com                          │
-│   4 Deny and interrupt                          │
-│ e Edit    ? Explain                             │
+   Star╭ Approval required ──────────────╮y app-  │
+   serv│ Needs network access            │        │ Recents
+       │                                 │        │ + New session  Ctrl+N
+      ▸│ ○ Run once                      │        │ loading sessions
+       │ ○ Run for this session          │        │
+   The │ ○ Allow host permanently:       │ce.     │
+       │ packages.example.com            │        │
+       │ ○ Deny and interrupt            │        │
+       │                                 │        │
+       │ Connect to https://             │        │
+       │ packages.example.com            │        │
+       │ Network target: https://        │        │
+       │ packages.example.com            │        │
+       │                                 │        │
+       │ [e Edit]  [? Explain]           │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││

@@ -6,24 +6,24 @@ expression: "render_shell(&shell, area)"
                                                   │  Sessions   │  Status  │  Agents  │  Settings
                                                   │━━━━━━━━━━━━━───────────────────────────────────
    > Create a divergent standalone TUI.           │
-                                                  │ Projects
-                                                  │ No projects
-   Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents
-                                                  │ + New session  Ctrl+N
-      ▸ Edited files                              │ loading sessions
-                                                  │
-│ Approval required                               │
-│ Grant permissions                               │
-│ Reason: Need package registry access            │
-│ Working directory: /workspace/better-codex      │
-│ Requested permissions: { network: { enabled:    │
-│ true }, fileSystem: null }                      │
-│   1 Grant for this turn                         │
-│ › 2 Grant for this session                      │
-│   3 Grant for this turn; review each command    │
-│   4 Deny                                        │
-│ e Edit    ? Explain                             │
+       ╭ Approval required ──────────────╮        │ Projects
+       │ Need package registry access    │        │ No projects
+   Star│                                 │y app-  │
+   serv│ ○ Grant for this turn           │        │ Recents
+       │ ○ Grant for this session        │        │ + New session  Ctrl+N
+      ▸│ ○ Grant for this turn; review   │        │ loading sessions
+       │ each command                    │        │
+   The │ ○ Deny                          │ce.     │
+       │                                 │        │
+       │ Grant permissions               │        │
+       │ Working directory: /workspace/  │        │
+       │ better-codex                    │        │
+       │ Requested permissions:          │        │
+       │ { network: { enabled: true },   │        │
+       │ fileSystem: null }              │        │
+       │                                 │        │
+       │ [e Edit]  [? Explain]           │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││

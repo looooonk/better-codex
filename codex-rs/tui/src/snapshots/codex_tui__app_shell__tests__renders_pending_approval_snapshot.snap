@@ -2,28 +2,28 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-                                                  │
-                                                  │  Sessions   │  Status  │  Agents  │  Settings
-                                                  │━━━━━━━━━━━━━───────────────────────────────────
-   > Create a divergent standalone TUI.           │
-                                                  │ Projects
-                                                  │ No projects
-   Started a fullscreen app shell backed by app-  │
-   server turns.                                  │ Recents
-│ Approval required                               │ + New session  Ctrl+N
-│ Run command: cargo test -p codex-tui            │ loading sessions
-│ Reason: Needs network access                    │
-│ Working directory: /workspace/better-codex      │
-│ Requested additional per-command permissions:   │
-│ { network: { enabled: true }, fileSystem:       │
-│ { read: null, write: null, entries: [{ path:    │
-│ { type: "path", path: "/workspace/shared-       │
-│ cache" }, access: "write" }] } }                │
-│ › 1 Run once                                    │
-│   2 Run and always allow command prefix: cargo  │
-│   test                                          │
-│   3 Deny and interrupt                          │
-│ e Edit    ? Explain                             │
+       ╭ Approval required ──────────────╮        │
+       │ Needs network access            │        │  Sessions   │  Status  │  Agents  │  Settings
+       │                                 │        │━━━━━━━━━━━━━───────────────────────────────────
+   > Cr│ ○ Run once                      │        │
+       │ ○ Run and always allow command  │        │ Projects
+       │ prefix: cargo test              │        │ No projects
+   Star│ ○ Deny and interrupt            │y app-  │
+   serv│                                 │        │ Recents
+       │ Run command: cargo test -p      │        │ + New session  Ctrl+N
+      ▸│ codex-tui                       │        │ loading sessions
+       │ Working directory: /workspace/  │        │
+   The │ better-codex                    │ce.     │
+       │ Requested additional per-       │        │
+       │ command permissions: { network: │        │
+       │ { enabled: true }, fileSystem:  │        │
+       │ { read: null, write: null,      │        │
+       │ entries: [{ path: { type:       │        │
+       │ "path", path: "/workspace/      │        │
+       │ shared-cache" }, access:        │        │
+       │   ↓ more (j/k)                  │        │
+       │ [e Edit]  [? Explain]           │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││

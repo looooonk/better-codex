@@ -10,20 +10,20 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
                                                             │ No projects
    Started a fullscreen app shell backed by app-server      │
    turns.                                                   │ Recents
-                                                            │ + New session  Ctrl+N
-      ▸ Edited files                                        │ loading sessions
-                                                            │
-   The new shell owns the fullscreen surface.               │
-                                                            │
-│ Approval required                                         │
-│ Human approval required: Run command: cargo test -p       │
-│ codex-tui                                                 │
-│ Reason: Needs network access                              │
-│ Working directory: /workspace/better-codex                │
-│ › 1 Run once                                              │
-│   2 Deny                                                  │
-│   3 Deny and interrupt                                    │
-│ e Edit    ? Explain                                       │
+         ╭ Approval required ─────────────────────╮         │ + New session  Ctrl+N
+      ▸ E│ Needs network access                   │         │ loading sessions
+         │                                        │         │
+   The ne│ ○ Run once                             │         │
+         │ ○ Deny                                 │         │
+         │ ○ Deny and interrupt                   │         │
+         │                                        │         │
+         │ Human approval required: Run command:  │         │
+         │ cargo test -p codex-tui                │         │
+         │ Working directory: /workspace/better-  │         │
+         │ codex                                  │         │
+         │                                        │         │
+         │ [e Edit]  [? Explain]                  │         │
+         ╰────────────────────────────────────────╯         │
 ╭──────────────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture                    ││
 │                                                          ││

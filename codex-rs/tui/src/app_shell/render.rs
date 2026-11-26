@@ -13,12 +13,10 @@ use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::title_rect;
-use super::input_request_layout::approval_panel_hit;
 use super::input_request_layout::elicitation_panel_hit;
 use super::input_request_layout::request_panel_hit;
 use super::input_request_layout::visible_elicitation_panel_lines;
 use super::input_request_layout::visible_request_panel_lines;
-use super::input_request_view::approval_lines;
 use super::input_request_view::user_input_lines;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
@@ -379,36 +377,7 @@ impl ShellView<'_> {
         position: Position,
     ) -> Option<super::ApprovalAction> {
         let pending = self.shell.pending_approval.as_ref()?;
-        let lines = approval_lines(pending);
-        let hit = approval_panel_hit(self.approval_area(area)?, position, pending)?;
-        let option_start = pending.details().count().saturating_add(1);
-        if (option_start..option_start.saturating_add(pending.option_count())).contains(&hit.line) {
-            return Some(super::ApprovalAction::Choose(hit.line - option_start));
-        }
-        if hit.line != lines.len().saturating_sub(1) {
-            return None;
-        }
-        let text = lines[hit.line]
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
-        [
-            ("e Edit", Some(super::ApprovalAction::Edit)),
-            (
-                pending.explain_label(),
-                Some(super::ApprovalAction::Explain),
-            ),
-        ]
-        .into_iter()
-        .find_map(|(label, action)| {
-            let byte_start = text.find(label)?;
-            let start = UnicodeWidthStr::width(&text[..byte_start]);
-            (start..start + UnicodeWidthStr::width(label))
-                .contains(&hit.column)
-                .then_some(action)
-                .flatten()
-        })
+        super::approval_popup::action_at(pending, self.approval_area(area)?, position)
     }
 
     pub(super) fn elicitation_choice_at(

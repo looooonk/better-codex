@@ -39,6 +39,7 @@ pub(super) enum ApprovalSelectionDirection {
 pub(super) struct PendingApproval {
     request_id: RequestId,
     title: String,
+    reason: Option<String>,
     details: Vec<String>,
     explanation_details: Vec<String>,
     edit_prompt: String,
@@ -47,6 +48,7 @@ pub(super) struct PendingApproval {
     explanation_open: bool,
     scroll_offset: Cell<usize>,
     scroll_max: Cell<usize>,
+    pub(super) reveal_selection: Cell<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,7 +86,6 @@ impl PendingApproval {
                     title = format!("Human approval required: {title}");
                 }
                 let mut details = context_details(
-                    params.reason.as_deref(),
                     params
                         .cwd
                         .as_ref()
@@ -152,6 +153,7 @@ impl PendingApproval {
                 Ok(Some(Self {
                     request_id: request_id.clone(),
                     title,
+                    reason: params.reason.clone(),
                     details,
                     explanation_details,
                     edit_prompt: format!("Revise and retry this command:\n{command}"),
@@ -160,14 +162,15 @@ impl PendingApproval {
                     explanation_open: false,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
+                    reveal_selection: Cell::new(false),
                 }))
             }
             ServerRequest::FileChangeRequestApproval { request_id, params } => Ok(Some(Self {
                 request_id: request_id.clone(),
                 title: format!("Apply file changes: {}", params.item_id),
+                reason: params.reason.clone(),
                 explanation_details: Vec::new(),
                 details: context_details(
-                    params.reason.as_deref(),
                     params
                         .grant_root
                         .as_ref()
@@ -202,6 +205,7 @@ impl PendingApproval {
                 explanation_open: false,
                 scroll_offset: Cell::new(0),
                 scroll_max: Cell::new(0),
+                reveal_selection: Cell::new(false),
             })),
             ServerRequest::PermissionsRequestApproval { request_id, params } => {
                 let requested = CoreRequestPermissionProfile::try_from(params.permissions.clone())
@@ -209,7 +213,6 @@ impl PendingApproval {
                         format!("failed to localize requested filesystem paths: {err}")
                     })?;
                 let mut details = context_details(
-                    params.reason.as_deref(),
                     Some(format!("Working directory: {}", params.cwd.render_for_ui())),
                     params.environment_id.as_deref(),
                 );
@@ -218,6 +221,7 @@ impl PendingApproval {
                 Ok(Some(Self {
                     request_id: request_id.clone(),
                     title: "Grant permissions".to_string(),
+                    reason: params.reason.clone(),
                     explanation_details: Vec::new(),
                     details,
                     edit_prompt: "Revise the requested permissions before trying again".to_string(),
@@ -267,6 +271,7 @@ impl PendingApproval {
                     explanation_open: false,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
+                    reveal_selection: Cell::new(false),
                 }))
             }
             ServerRequest::ExecCommandApproval { .. }
@@ -286,6 +291,13 @@ impl PendingApproval {
 
     pub(super) fn title(&self) -> &str {
         &self.title
+    }
+
+    pub(super) fn reason(&self) -> Option<&str> {
+        self.reason
+            .as_deref()
+            .map(str::trim)
+            .filter(|reason| !reason.is_empty())
     }
 
     pub(super) fn details(&self) -> impl Iterator<Item = &String> {
@@ -315,9 +327,14 @@ impl PendingApproval {
     }
 
     pub(super) fn explanation(&self) -> String {
-        std::iter::once(self.title.as_str())
-            .chain(self.details.iter().map(String::as_str))
-            .chain(self.explanation_details.iter().map(String::as_str))
+        std::iter::once(self.title.clone())
+            .chain(self.reason().map(|reason| format!("Reason: {reason}")))
+            .chain(
+                self.details
+                    .iter()
+                    .chain(&self.explanation_details)
+                    .cloned(),
+            )
             .collect::<Vec<_>>()
             .join(" - ")
     }
@@ -342,6 +359,7 @@ impl PendingApproval {
     }
 
     pub(super) fn move_selection(&mut self, direction: ApprovalSelectionDirection) {
+        self.reveal_selection.set(true);
         self.selected_option = match direction {
             ApprovalSelectionDirection::Previous => self
                 .selected_option
@@ -477,26 +495,16 @@ impl ApprovalDecision {
     }
 }
 
-fn context_details(
-    reason: Option<&str>,
-    context: Option<String>,
-    environment_id: Option<&str>,
-) -> Vec<String> {
+fn context_details(context: Option<String>, environment_id: Option<&str>) -> Vec<String> {
     let mut details = Vec::new();
-    if let Some(reason) = reason.filter(|reason| !reason.is_empty()) {
-        details.push(format!("Reason: {reason}"));
-    }
     details.extend(context);
     if let Some(environment_id) = environment_id.filter(|id| *id != "local") {
         details.push(format!("Environment: {environment_id}"));
     }
-    if details.is_empty() {
-        details.push("Approve or deny this backend request.".to_string());
-    }
     details
 }
 
-fn json_detail(label: &str, value: &impl Serialize) -> String {
+pub(super) fn json_detail(label: &str, value: &impl Serialize) -> String {
     let value = serde_json::to_value(value)
         .map(inline_json)
         .unwrap_or_else(|_| "<unavailable>".to_string());
@@ -528,7 +536,7 @@ fn inline_json(value: Value) -> String {
     }
 }
 
-fn protocol_label(protocol: NetworkApprovalProtocol) -> &'static str {
+pub(super) fn protocol_label(protocol: NetworkApprovalProtocol) -> &'static str {
     match protocol {
         NetworkApprovalProtocol::Http => "http",
         NetworkApprovalProtocol::Https => "https",

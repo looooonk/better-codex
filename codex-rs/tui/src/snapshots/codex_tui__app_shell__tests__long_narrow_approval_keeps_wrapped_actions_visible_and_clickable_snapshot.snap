@@ -2,18 +2,18 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
-│ Approval required
-│ Run command: printf 'validated safe
-│ prefix'; printf 'validated safe
-│ prefix'; printf 'validated safe
-│ prefix'; printf 'validated safe
-│ prefix'; printf 'validated safe
-│ prefix'; printf 'validated safe
-│ prefix'; printf 'validated safe
-│   ↓ more (j/k)
-│ › 1 Run once
-│   2 Deny and interrupt
-│ e Edit    ? Explain
+      ╭ Approval required ───────╮
+      │ Review the full command  │
+      │ before approving         │    │
+      │                          │    │
+   Sta│ ○ Run once               │    ┃
+   bac│ ○ Deny and interrupt     │    ┃
+      │                          │    ┃
+      │ Run command: printf      │    ┃
+      │ 'validated safe prefix'; │    ┃
+   The│   ↓ more (j/k)           │en  ┃
+   sur│ [e Edit]  [? Explain]    │    ┃
+      ╰──────────────────────────╯
 ╭──────────────────────────────────────╮
 │> Summarize the new shell architecture│
 │                                      │

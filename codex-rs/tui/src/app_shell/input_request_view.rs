@@ -1,38 +1,9 @@
-use super::PendingApproval;
 use super::PendingElicitation;
 use super::PendingUserInput;
 use super::composer::ComposerState;
 use super::design::palette;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-
-pub(super) fn approval_lines(pending: &PendingApproval) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(
-        pending.title().to_owned().fg(palette::text()).bold(),
-    )];
-    lines.extend(
-        pending
-            .details()
-            .map(|detail| Line::from(detail.clone().fg(palette::muted()))),
-    );
-    lines.extend(pending.options().map(|(index, label)| {
-        let selected = index == pending.selected_option();
-        let marker = if selected { "› " } else { "  " };
-        Line::from(vec![
-            marker.fg(palette::focus()),
-            format!("{} ", index + 1).fg(palette::muted()),
-            label.to_owned().fg(if selected {
-                palette::focus()
-            } else {
-                palette::text()
-            }),
-        ])
-    }));
-    lines.push(Line::from(
-        format!("e Edit    {}", pending.explain_label()).fg(palette::muted()),
-    ));
-    lines
-}
 
 pub(super) fn user_input_lines(
     pending: &PendingUserInput,

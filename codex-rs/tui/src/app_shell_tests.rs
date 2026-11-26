@@ -7574,7 +7574,9 @@ fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
 
     let view = ShellView { shell: &shell };
     let popup = view.approval_area(area).unwrap();
-    assert_eq!(popup.bottom(), view.input_area(area).y);
+    let input = view.input_area(area);
+    assert_eq!(popup.bottom(), input.y);
+    assert!((popup.x - input.x).abs_diff(input.right() - popup.right()) <= 1);
     let position = Position::new(popup.x.saturating_add(1), popup.y.saturating_add(1));
     for _ in 0..20 {
         shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Down);
@@ -7601,6 +7603,17 @@ fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
             .expect("approval should remain pending")
             .scroll_offset()
             < end_offset
+    );
+
+    shell
+        .pending_approval
+        .as_mut()
+        .unwrap()
+        .move_selection(ApprovalSelectionDirection::Next);
+    let choice = rendered_text_position(&render_shell(&shell, area), "○ Deny and interrupt");
+    assert_eq!(
+        (ShellView { shell: &shell }).approval_action_at(area, choice),
+        Some(ApprovalAction::Choose(1))
     );
 }
 
@@ -8050,7 +8063,7 @@ async fn permissions_approval_supports_arrow_number_and_mouse_selection() {
 
     shell.pending_approval = PendingApproval::from_request(&permissions_approval_request())
         .expect("permissions approval request should be valid");
-    let deny_position = rendered_text_position(&render_shell(&shell, area), "4 Deny");
+    let deny_position = rendered_text_position(&render_shell(&shell, area), "○ Deny");
     shell
         .handle_mouse_click(area, deny_position, &config, &mut backend)
         .await

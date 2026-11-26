@@ -1,10 +1,10 @@
 use super::PendingApproval;
 use super::PendingElicitation;
+use super::approval_popup::ApprovalRows;
 use super::composer::ComposerState;
 use super::design::body_rect_after_title;
 use super::design::palette;
 use super::design::pane_content_rect;
-use super::input_request_view::approval_lines;
 use super::input_request_view::elicitation_lines;
 use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_lines;
@@ -129,26 +129,53 @@ fn visible_approval_segments(
     width: u16,
     height: u16,
 ) -> Vec<RequestPanelSegment> {
-    let lines = approval_lines(pending);
-    let segments = wrapped_segments(&lines, width);
+    let rows = ApprovalRows::new(pending);
+    let segments = wrapped_segments(&rows.lines, width);
     let visible = usize::from(height).min(segments.len());
+    let reveal = pending.reveal_selection.replace(false);
     if visible == segments.len() || visible == 0 {
         pending.set_scroll_max(0);
         return segments.into_iter().take(visible).collect();
     }
 
-    let preferred_pinned_line = pending.details().count().saturating_add(1);
-    let final_line = lines.len().saturating_sub(1);
-    let pinned_start = pinned_suffix_start(&segments, preferred_pinned_line, final_line, visible);
-    let (selected, max_start) = visible_scrolled_segments(
+    // On very short terminals, let every row scroll so even the last option is reachable.
+    let footer = segments
+        .iter()
+        .position(|segment| segment.logical_line == rows.lines.len() - 1)
+        .unwrap_or(segments.len());
+    let pin_footer = visible > segments.len() - footer + 2;
+    let (scrollable, viewport) = if pin_footer {
+        (footer, visible - (segments.len() - footer) - 1)
+    } else {
+        (segments.len(), visible)
+    };
+    pending.set_scroll_max(scrollable.saturating_sub(viewport));
+    if reveal {
+        let selected = rows.choices.start + pending.selected_option();
+        if let Some(row) = segments
+            .iter()
+            .position(|segment| segment.logical_line == selected)
+        {
+            let offset = pending.scroll_offset();
+            pending.scroll_up(offset.saturating_sub(row));
+            pending.scroll_down((row + 1).saturating_sub(offset + viewport));
+        }
+    }
+    if !pin_footer {
+        return segments
+            .into_iter()
+            .skip(pending.scroll_offset())
+            .take(visible)
+            .collect();
+    }
+    visible_scrolled_segments(
         &segments,
         visible,
-        pinned_start,
+        footer,
         pending.scroll_offset(),
         " (j/k)",
-    );
-    pending.set_scroll_max(max_start);
-    selected
+    )
+    .0
 }
 
 fn visible_elicitation_segments(

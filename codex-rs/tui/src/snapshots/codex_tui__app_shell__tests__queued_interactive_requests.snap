@@ -13,17 +13,17 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 
 
 
-
-
-
-
-│ Approval required
-│ Run command: cargo test -p codex-tui
-│ Reason: Needs network access
-│ Working directory: /workspace/better-codex
-│ › 1 Run once
-│   2 Deny and interrupt
-│ e Edit    ? Explain
+               ╭ Approval required ─────────────────────────────────────────────────╮
+               │ Needs network access                                               │
+               │                                                                    │
+               │ ○ Run once                                                         │
+               │ ○ Deny and interrupt                                               │
+               │                                                                    │
+               │ Run command: cargo test -p codex-tui                               │
+               │ Working directory: /workspace/better-codex                         │
+               │                                                                    │
+               │ [e Edit]  [? Explain]                                              │
+               ╰────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │

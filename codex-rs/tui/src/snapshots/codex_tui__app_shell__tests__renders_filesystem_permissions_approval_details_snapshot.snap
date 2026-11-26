@@ -2,28 +2,28 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&permissions_shell, area)"
 ---
-                                                  │
-                                                  │  Sessions   │  Status  │  Agents  │  Settings
-                                                  │━━━━━━━━━━━━━───────────────────────────────────
-   > Create a divergent standalone TUI.           │
-                                                  │ Projects
-                                                  │ No projects
-   Started a fullscreen app shell backed by app-  │
-│ Approval required                               │ Recents
-│ Grant permissions                               │ + New session  Ctrl+N
-│ Reason: Need package registry access            │ loading sessions
-│ Working directory: /workspace/better-codex      │
-│ Requested permissions: { network: { enabled:    │
-│ true }, fileSystem: { read: null, write: null,  │
-│ entries: [{ path: { type: "special", value:     │
-│ { kind: "root" } }, access: "read" }, { path:   │
-│ { type: "glob_pattern", pattern: "/private/     │
-│ secrets/**" }, access: "write" }] } }           │
-│ › 1 Grant for this turn                         │
-│   2 Grant for this session                      │
-│   3 Grant for this turn; review each command    │
-│   4 Deny                                        │
-│ e Edit    ? Explain                             │
+       ╭ Approval required ──────────────╮        │
+       │ Need package registry access    │        │  Sessions   │  Status  │  Agents  │  Settings
+       │                                 │        │━━━━━━━━━━━━━───────────────────────────────────
+   > Cr│ ○ Grant for this turn           │        │
+       │ ○ Grant for this session        │        │ Projects
+       │ ○ Grant for this turn; review   │        │ No projects
+   Star│ each command                    │y app-  │
+   serv│ ○ Deny                          │        │ Recents
+       │                                 │        │ + New session  Ctrl+N
+      ▸│ Grant permissions               │        │ loading sessions
+       │ Working directory: /workspace/  │        │
+   The │ better-codex                    │ce.     │
+       │ Requested permissions:          │        │
+       │ { network: { enabled: true },   │        │
+       │ fileSystem: { read: null,       │        │
+       │ write: null, entries: [{ path:  │        │
+       │ { type: "special", value:       │        │
+       │ { kind: "root" } }, access:     │        │
+       │ "read" }, { path: { type:       │        │
+       │   ↓ more (j/k)                  │        │
+       │ [e Edit]  [? Explain]           │        │
+       ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
 │                                                ││
