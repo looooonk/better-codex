@@ -22,6 +22,49 @@ fn question_item() -> ThreadItem {
     })
 }
 
+#[test]
+fn footer_hover_and_click_targets_follow_the_labels() {
+    use question_popup::QuestionHit;
+    use question_popup::QuestionPopup;
+    use ratatui::buffer::Buffer;
+
+    let ThreadItemPayload::AgentMessage {
+        id,
+        questions: Some(questions),
+        ..
+    } = question_item().payload
+    else {
+        unreachable!()
+    };
+    let mut pending = PendingUserInput::from_async(&id, questions);
+    assert_eq!(pending.answer_current(), Ok(UserInputAdvance::Next));
+    let area = Rect::new(0, 0, 80, 24);
+    let popup = QuestionPopup::new(&pending, area);
+    let body = request_popup::body(popup.panel);
+    let y = body.bottom() - 1;
+    let footer = "Previous  Submit";
+    let mut targets = vec![None; usize::from(body.width)];
+    for (label, action) in [
+        ("Previous", QuestionHit::Back),
+        ("Submit", QuestionHit::Submit),
+    ] {
+        let start = footer.find(label).unwrap();
+        targets[start..start + label.len()].fill(Some(action));
+    }
+    let mut buf = Buffer::empty(area);
+    for (x, &expected) in (body.x..body.right()).zip(&targets) {
+        let pos = Position::new(x, y);
+        assert_eq!(popup.hit(pos), expected);
+        popup.render(&pending, Some(pos), &mut buf);
+        for (offset, ch) in footer.char_indices() {
+            let cell = &buf[(body.x + offset as u16, y)];
+            assert_eq!(cell.symbol(), ch.to_string());
+            let highlighted = expected.is_some() && targets[offset] == expected;
+            assert_eq!(cell.bg == design::palette::border(), highlighted);
+        }
+    }
+}
+
 #[tokio::test]
 async fn async_bundle_preserves_drafts_and_submits_once_after_a_retry() {
     let mut shell = ShellState::snapshot_fixture();

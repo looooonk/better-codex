@@ -13,15 +13,23 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use std::ops::Range;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum QuestionHit {
     Option(usize),
     Editor,
     Back,
     Submit,
+}
+
+struct FooterButton {
+    label: Span<'static>,
+    area: Rect,
+    action: QuestionHit,
 }
 
 /// Keep wrapped button rows, editor viewport, and mouse targets on the same geometry.
@@ -31,8 +39,7 @@ pub(super) struct QuestionPopup {
     segments: Vec<RequestPanelSegment>,
     options: Range<usize>,
     pub(super) editor: Rect,
-    back: Rect,
-    submit: Rect,
+    buttons: [Option<FooterButton>; 2],
     scroll_max: usize,
     editor_layout: ComposerLayout,
 }
@@ -92,7 +99,7 @@ impl QuestionPopup {
         } else {
             0
         };
-        let (current, _) = pending.question_position();
+        let (current, total) = pending.question_position();
         let footer = current > 1 || pending.editing();
         let panel = request_popup::area(
             transcript,
@@ -106,18 +113,24 @@ impl QuestionPopup {
             ..body
         };
         let editor = Rect::new(body.x, content.bottom(), width, editor_height);
-        let back = Rect::new(
-            body.x,
-            editor.bottom(),
-            if current > 1 { width.min(9) } else { 0 },
-            footer_rows,
-        );
-        let submit = Rect::new(
-            body.right().saturating_sub(width.min(9)),
-            editor.bottom(),
-            if pending.editing() { width.min(9) } else { 0 },
-            footer_rows,
-        );
+        let mut x = body.x;
+        let mut button = |label: Span<'static>, action| {
+            let width = (label.width() as u16).min(body.right().saturating_sub(x));
+            let area = Rect::new(x, editor.bottom(), width, footer_rows);
+            x = area.right().saturating_add(2);
+            FooterButton {
+                label,
+                area,
+                action,
+            }
+        };
+        let buttons = [
+            (current > 1).then(|| button("Previous".fg(palette::muted()), QuestionHit::Back)),
+            pending.editing().then(|| {
+                let label = if current < total { "Next" } else { "Submit" };
+                button(label.fg(palette::focus()), QuestionHit::Submit)
+            }),
+        ];
         let scroll_max = segments.len().saturating_sub(content.height.into());
         let mut offset = pending.scroll.get().min(scroll_max);
         if pending.reveal_selection.replace(false) {
@@ -140,8 +153,7 @@ impl QuestionPopup {
             segments,
             options,
             editor,
-            back,
-            submit,
+            buttons,
             scroll_max,
             editor_layout,
         }
@@ -161,11 +173,10 @@ impl QuestionPopup {
         if self.editor.contains(pos) {
             return Some(QuestionHit::Editor);
         }
-        if self.back.contains(pos) {
-            return Some(QuestionHit::Back);
-        }
-        if self.submit.contains(pos) {
-            return Some(QuestionHit::Submit);
+        for button in self.buttons.iter().flatten() {
+            if button.area.contains(pos) {
+                return Some(button.action);
+            }
         }
         if !self.content.contains(pos) {
             return None;
@@ -260,14 +271,11 @@ impl QuestionPopup {
         if matches!(hovered, Some(QuestionHit::Editor)) && !pending.editing() {
             buf.set_style(self.editor, Style::new().bg(palette::border()));
         }
-        Line::from("‹ Back F2".fg(palette::muted())).render(self.back, buf);
-        let send = if current < total {
-            "Next ↵"
-        } else {
-            "Submit ↵"
-        };
-        Line::from(send.fg(palette::focus()))
-            .right_aligned()
-            .render(self.submit, buf);
+        for button in self.buttons.iter().flatten() {
+            (&button.label).render(button.area, buf);
+            if hovered == Some(button.action) {
+                buf.set_style(button.area, Style::new().bg(palette::border()));
+            }
+        }
     }
 }

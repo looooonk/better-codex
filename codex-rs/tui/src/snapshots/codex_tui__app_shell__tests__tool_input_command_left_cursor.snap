@@ -22,7 +22,7 @@ expression: after
        │ ○ Staging  Use the staging      │        │
        │ service                         │        │
        │ > alpha beta                    │        │
-       │                        Submit ↵ │        │
+       │ Submit                          │        │
        ╰─────────────────────────────────╯        │
 ╭────────────────────────────────────────────────╮│
 │> Summarize the new shell architecture          ││
