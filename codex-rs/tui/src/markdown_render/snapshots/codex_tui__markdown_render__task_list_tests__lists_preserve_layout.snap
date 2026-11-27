@@ -1,6 +1,7 @@
 ---
 source: tui/src/markdown_render/task_list_tests.rs
-expression: "stages.join(\"\\n\\n---\\n\\n\")"
+assertion_line: 42
+expression: "stages.join(\"\\n---\\n\")"
 ---
 ☐ Unchecked
 ☑ Checked
@@ -48,7 +49,7 @@ expression: "stages.join(\"\\n\\n---\\n\\n\")"
 ☐ 
     • child
 
-☑ # title
+☑ title
 ☑ > quote
 ☑ 
 

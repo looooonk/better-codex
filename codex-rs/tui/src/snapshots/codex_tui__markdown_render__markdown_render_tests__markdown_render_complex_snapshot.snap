@@ -1,8 +1,9 @@
 ---
 source: tui/src/markdown_render_tests.rs
+assertion_line: 1752
 expression: rendered
 ---
-# H1: Markdown Streaming Test
+H1: Markdown Streaming Test
 
 Intro paragraph with bold text, italic text, and inline code x=1.
 Combined bold-italic both and escaped asterisks *literal*.

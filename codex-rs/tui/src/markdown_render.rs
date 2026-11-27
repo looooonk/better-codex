@@ -114,12 +114,7 @@ const TABLE_HEADER_SEPARATOR_CHAR: char = '━';
 const TABLE_BODY_SEPARATOR_CHAR: char = '─';
 
 pub(crate) struct MarkdownStyles {
-    h1: Style,
-    h2: Style,
-    h3: Style,
-    h4: Style,
-    h5: Style,
-    h6: Style,
+    headings: [Style; 6],
     pub(crate) code: Style,
     pub(crate) emphasis: Style,
     pub(crate) strong: Style,
@@ -146,17 +141,14 @@ impl MarkdownStyles {
             });
             style
         };
+        let palette = crate::app_theme::palette();
         Self {
-            h1: foreground(&["markup.heading.1.markdown", "markup.heading.markdown"])
-                .bold()
-                .underlined(),
-            h2: foreground(&["markup.heading.2.markdown", "markup.heading.markdown"]).bold(),
-            h3: foreground(&["markup.heading.3.markdown", "markup.heading.markdown"])
-                .bold()
-                .italic(),
-            h4: foreground(&["markup.heading.4.markdown", "markup.heading.markdown"]).italic(),
-            h5: foreground(&["markup.heading.5.markdown", "markup.heading.markdown"]).italic(),
-            h6: foreground(&["markup.heading.6.markdown", "markup.heading.markdown"]).italic(),
+            headings: std::array::from_fn(|index| {
+                let color = crate::render::highlight::markdown_heading_color(theme, index + 1)
+                    .map(|color| crate::style::readable_color_on(color, Some(palette.base)))
+                    .unwrap_or(palette.headings[index]);
+                Style::new().fg(color).bold()
+            }),
             code: foreground_style_for_scopes_with_theme(
                 theme,
                 &[
@@ -538,6 +530,7 @@ struct Writer<'a, 'policy> {
     styles: MarkdownStyles,
     inline_styles: Vec<Style>,
     copy_inline: Vec<crate::markdown_copy::Inline>,
+    active_heading: Option<HeadingLevel>,
     copy_line: crate::markdown_copy::CopyLine,
     quote_sources: Vec<std::sync::Arc<str>>,
     code_sources: Vec<crate::markdown_copy::SourceBlock>,
@@ -583,6 +576,7 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             styles: MarkdownStyles::default(),
             inline_styles: Vec::new(),
             copy_inline: Vec::new(),
+            active_heading: None,
             copy_line: Default::default(),
             quote_sources: Vec::new(),
             code_sources: Vec::new(),
@@ -879,19 +873,9 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             self.push_line(Line::default());
             self.needs_newline = false;
         }
-        let heading_style = match level {
-            HeadingLevel::H1 => self.styles.h1,
-            HeadingLevel::H2 => self.styles.h2,
-            HeadingLevel::H3 => self.styles.h3,
-            HeadingLevel::H4 => self.styles.h4,
-            HeadingLevel::H5 => self.styles.h5,
-            HeadingLevel::H6 => self.styles.h6,
-        };
-        let content = format!("{} ", "#".repeat(level as usize));
-        let heading = content.len();
-        self.push_line(Line::from(vec![Span::styled(content, heading_style)]));
-        self.copy_line.heading = heading;
-        self.push_inline_style(heading_style);
+        self.push_line(Line::default());
+        self.copy_line.heading = Some(level);
+        self.active_heading = Some(level);
         self.needs_newline = false;
     }
 
@@ -899,8 +883,9 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         if self.in_table_cell() {
             return;
         }
+        self.flush_current_line();
+        self.active_heading = None;
         self.needs_newline = true;
-        self.pop_inline_style();
     }
 
     fn start_blockquote(&mut self) {
@@ -1071,6 +1056,12 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         if self.in_table_cell() {
             let style = self.inline_styles.last().copied().unwrap_or_default();
             self.push_span_to_table_cell(Span::styled(" ".to_string(), style));
+            return;
+        }
+        if self.active_heading.is_some() {
+            // A setext heading can span source lines but copies as a single ATX heading.
+            let style = self.inline_styles.last().copied().unwrap_or_default();
+            self.push_span(Span::styled(" ", style));
             return;
         }
         if self.line_ends_with_local_link_target {
@@ -2429,6 +2420,12 @@ impl<'a, 'policy> Writer<'a, 'policy> {
 
     fn flush_current_line(&mut self) {
         if let Some(mut line) = self.current_line_content.take() {
+            if let Some(level) = self.active_heading {
+                let heading_style = self.styles.headings[level as usize - 1];
+                for span in &mut line.line.spans {
+                    span.style = span.style.patch(heading_style);
+                }
+            }
             let style = self.current_line_style;
             let mut source = crate::terminal_hyperlinks::LogicalLineSource::from_line(&line.line);
             source.copy = Some(std::sync::Arc::new(std::mem::take(&mut self.copy_line)));
@@ -2535,7 +2532,6 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         self.copy_line.code = self.in_code_block;
         self.copy_line.code_source = self.transformed_code_source.clone();
         self.copy_line.quote_source = self.quote_sources.first().cloned();
-        // Heading markers are already visible; retain them as Markdown syntax.
         self.copy_line
             .push(line.spans.iter().map(|span| span.content.len()).sum(), &[]);
         self.current_line_content = Some(HyperlinkLine::new(line));

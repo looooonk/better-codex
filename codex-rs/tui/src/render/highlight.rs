@@ -317,6 +317,22 @@ pub(crate) fn foreground_style_for_scopes_with_theme(
     })
 }
 
+/// Only level-specific selectors override the app's six distinct heading colors.
+pub(crate) fn markdown_heading_color(theme: &Theme, level: usize) -> Option<RtColor> {
+    let scope = Scope::new(&format!("markup.heading.{level}.markdown")).ok()?;
+    let generic = Scope::new("markup.heading").ok()?;
+    theme
+        .scopes
+        .iter()
+        .filter_map(|rule| {
+            let color = rule.style.foreground?;
+            let score = rule.scope.does_match(&[scope])?;
+            (Some(score) > rule.scope.does_match(&[generic])).then_some((score, color))
+        })
+        .max_by_key(|(score, _)| *score)
+        .and_then(|(_, color)| convert_syntect_color(color))
+}
+
 /// Return the configured kebab-case theme name when it resolves; otherwise
 /// return the adaptive auto-detected default theme name.
 ///

@@ -9,6 +9,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use pulldown_cmark::Event;
+use pulldown_cmark::HeadingLevel;
 use pulldown_cmark::Tag;
 
 use crate::clipboard_copy::CopyFormat;
@@ -107,7 +108,7 @@ pub(crate) struct CopyLine {
     pub(crate) table: Option<table::TableLine>,
     table_cell: bool,
     pub(crate) rule: bool,
-    pub(crate) heading: usize,
+    pub(crate) heading: Option<HeadingLevel>,
     pub(crate) hard_break: bool,
     /// A visual separator inserted between sibling list items, never source content.
     pub(crate) omit: bool,
@@ -238,11 +239,7 @@ impl CopyLine {
                     }
                     out.push_str(&body[body.trim_end().len()..]);
                 }
-                None => {
-                    let heading_end = self.heading.min(end).max(start);
-                    out.push_str(&text[start..heading_end]);
-                    append_inline(&mut out, &escape(&text[heading_end..end]));
-                }
+                None => append_inline(&mut out, &escape(&text[start..end])),
             }
         }
         out
@@ -341,6 +338,14 @@ impl SelectedLine {
         }
     }
 
+    fn complete_heading(&self) -> Option<HeadingLevel> {
+        if self.range == (0..self.source.text.len()) {
+            self.source.copy.as_ref()?.heading
+        } else {
+            None
+        }
+    }
+
     fn separator(&self, output: SelectionOutput) -> &str {
         if output == SelectionOutput::PlainText && self.separator.starts_with("  \n") {
             &self.separator[2..]
@@ -365,6 +370,7 @@ fn render_selection(
 ) -> (String, CopyFormat) {
     // Soft wraps and streamed fragments of the same logical line are already coalesced.
     if let [line] = lines
+        && line.complete_heading().is_none()
         && line
             .source
             .copy
@@ -395,6 +401,7 @@ fn render_selection(
                 && line.source.copy.as_ref().is_some_and(|copy| {
                     !copy.omit
                         && (copy.table.is_some()
+                            || line.complete_heading().is_some()
                             || copy.item_prefix.contains("[x] ")
                             || copy.item_prefix.contains("[ ] "))
                 })
@@ -461,7 +468,14 @@ fn render_selection(
         let prefix = dedent(prefix, indentation.unwrap_or(/*default*/ 0));
         if line.range.is_empty() {
             if line.source.text.is_empty() {
-                out.push_str(prefix.trim_end());
+                if output == SelectionOutput::Markdown
+                    && let Some(level) = line.complete_heading()
+                {
+                    out.push_str(&prefix);
+                    out.push_str(&"#".repeat(level as usize));
+                } else {
+                    out.push_str(prefix.trim_end());
+                }
             }
             first = false;
             continue;
@@ -521,6 +535,12 @@ fn render_selection(
                 out.push_str(&prefix);
             }
             let text = &line.source.text[line.range.clone()];
+            if output == SelectionOutput::Markdown
+                && let Some(level) = line.complete_heading()
+            {
+                out.push_str(&"#".repeat(level as usize));
+                out.push(' ');
+            }
             output.push_prose(&mut out, text, || {
                 copy.render(&line.source.text, line.range.clone(), /*depth*/ 0)
             });

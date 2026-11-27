@@ -1,0 +1,23 @@
+---
+source: tui/src/markdown_render_tests.rs
+assertion_line: 153
+expression: text
+---
+Text::from_iter([
+    Line::from(Span::from("Heading 1").fg(Color::Rgb(122, 162, 247)).bold()),
+    Line::default(),
+    Line::from(Span::from("Heading 2").fg(Color::Rgb(187, 154, 247)).bold()),
+    Line::default(),
+    Line::from(Span::from("Heading 3").fg(Color::Rgb(125, 207, 255)).bold()),
+    Line::default(),
+    Line::from(Span::from("Heading 4").fg(Color::Rgb(115, 218, 202)).bold()),
+    Line::default(),
+    Line::from(Span::from("Heading 5").fg(Color::Rgb(224, 175, 104)).bold()),
+    Line::default(),
+    Line::from_iter([
+        Span::from("Heading 6 with ").fg(Color::Rgb(255, 158, 150)).bold(),
+        Span::from("code").fg(Color::Rgb(255, 158, 150)).bold(),
+        Span::from(" and ").fg(Color::Rgb(255, 158, 150)).bold(),
+        Span::from("emphasis").fg(Color::Rgb(255, 158, 150)).bold().italic(),
+    ]),
+])

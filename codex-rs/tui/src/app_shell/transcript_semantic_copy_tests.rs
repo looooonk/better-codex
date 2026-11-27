@@ -34,6 +34,31 @@ fn selection_preserves_balanced_markup_and_joins_soft_wraps() {
 }
 
 #[test]
+fn copying_wrapped_headings_restores_markers_and_inline_formatting() {
+    let markdown = "### A long heading with *emphasis* and `code` at the end";
+    for width in [32, 96] {
+        assert_eq!(
+            copy_message(markdown, width),
+            markdown.replace("*emphasis*", "_emphasis_")
+        );
+        assert_eq!(copy_message("## `type_name`", width), "## `type_name`");
+        assert_eq!(
+            copy_message("First line\nsecond line\n---", width),
+            "## First line second line"
+        );
+        assert_eq!(
+            copy_message("> ### Quoted title", width),
+            "### Quoted title"
+        );
+        let copied = copy_message("##\n\nBody", width);
+        assert_eq!(
+            copied.lines().map(str::trim_end).collect::<Vec<_>>(),
+            ["##", "", "Body"]
+        );
+    }
+}
+
+#[test]
 fn selection_preserves_task_state_and_local_link_labels() {
     let copied = copy_message(
         "- [x] Read [the implementation](/workspace/src/main.rs:12)\n- [ ] Keep `next_step` ready",

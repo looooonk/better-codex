@@ -6,6 +6,23 @@ use pretty_assertions::assert_eq;
 use std::path::Path;
 
 #[test]
+fn partial_heading_selection_keeps_only_the_selected_text() {
+    let lines = render_markdown_lines_with_width_and_cwd(
+        "### Issue #42",
+        /*width*/ None,
+        /*cwd*/ None,
+    );
+    let source = lines[0].source.clone().unwrap();
+    for range in [0..5, 6..9] {
+        let text = &source.text[range.clone()];
+        let mut selected = Vec::new();
+        SelectedLine::append(&mut selected, source.clone(), range, "");
+        assert_eq!(selection(&selected, text).0, escape(text));
+        assert_eq!(literal_selection(&selected, text), text);
+    }
+}
+
+#[test]
 fn escaping_tracks_block_prefixes_without_rescanning_them() {
     for (text, expected) in [
         ("  - item", "  \\- item"),

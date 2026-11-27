@@ -148,22 +148,35 @@ fn paragraph_multiple() {
 #[test]
 fn headings() {
     set_syntax_theme(syntect::highlighting::Theme::default());
-    let md = "# Heading 1\n## Heading 2\n### Heading 3\n#### Heading 4\n##### Heading 5\n###### Heading 6\n";
+    let md = "# Heading 1\n## Heading 2\n### Heading 3\n#### Heading 4\n##### Heading 5\n###### Heading 6 with `code` and *emphasis*\n";
     let text = render_markdown_text(md);
-    let expected = Text::from_iter([
-        Line::from_iter(["# ".bold().underlined(), "Heading 1".bold().underlined()]),
-        Line::default(),
-        Line::from_iter(["## ".bold(), "Heading 2".bold()]),
-        Line::default(),
-        Line::from_iter(["### ".bold().italic(), "Heading 3".bold().italic()]),
-        Line::default(),
-        Line::from_iter(["#### ".italic(), "Heading 4".italic()]),
-        Line::default(),
-        Line::from_iter(["##### ".italic(), "Heading 5".italic()]),
-        Line::default(),
-        Line::from_iter(["###### ".italic(), "Heading 6".italic()]),
-    ]);
-    assert_eq!(text, expected);
+    assert_debug_snapshot!(text);
+}
+
+#[test]
+fn custom_heading_color_overrides_only_its_level() {
+    use syntect::highlighting::Color;
+    use syntect::highlighting::Theme;
+    use syntect::highlighting::ThemeItem;
+
+    let mut theme = Theme::default();
+    let defaults = MarkdownStyles::for_theme(&theme);
+    for selector in ["markup.heading", "markup.heading.3.markdown"] {
+        theme.scopes.push(ThemeItem {
+            scope: selector.parse().unwrap(),
+            style: syntect::highlighting::StyleModifier {
+                foreground: Some(Color::WHITE),
+                ..Default::default()
+            },
+        });
+    }
+    let mut expected = defaults.headings;
+    expected[2] = expected[2].fg(crate::style::readable_color_on(
+        crate::terminal_palette::rgb_color((255, 255, 255)),
+        Some(crate::app_theme::palette().base),
+    ));
+    assert_ne!(expected, defaults.headings);
+    assert_eq!(MarkdownStyles::for_theme(&theme).headings, expected);
 }
 
 #[test]
@@ -470,7 +483,7 @@ fn blockquote_with_heading_and_paragraph() {
     assert_eq!(
         lines,
         vec![
-            "> # Heading".to_string(),
+            "> Heading".to_string(),
             "> ".to_string(),
             "> paragraph text".to_string(),
         ]
@@ -486,8 +499,9 @@ fn blockquote_heading_inherits_heading_style() {
         [
             Line::from_iter([
                 "> ".into(),
-                "# ".bold().underlined(),
-                "test header".bold().underlined(),
+                "test header"
+                    .fg(crate::app_theme::palette().headings[0])
+                    .bold(),
             ])
             .green(),
             Line::from_iter(["> "]).green(),

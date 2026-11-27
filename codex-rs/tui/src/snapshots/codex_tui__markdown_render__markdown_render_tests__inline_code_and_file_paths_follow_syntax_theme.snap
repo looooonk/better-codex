@@ -1,6 +1,6 @@
 ---
 source: tui/src/markdown_render_tests.rs
-assertion_line: 819
+assertion_line: 833
 expression: rendered
 ---
 [
@@ -8,10 +8,7 @@ expression: rendered
         "catppuccin-mocha",
         "dark",
         [
-            Line::from_iter([
-                Span::from("# ").fg(Color::Rgb(243, 139, 168)).bold().underlined(),
-                Span::from("Heading").fg(Color::Rgb(243, 139, 168)).bold().underlined(),
-            ]),
+            Line::from(Span::from("Heading").fg(Color::Rgb(243, 139, 168)).bold()),
             Line::default(),
             Line::from_iter([
                 Span::from("Bold").fg(Color::Rgb(243, 139, 168)).bold(),
@@ -57,10 +54,7 @@ expression: rendered
         "catppuccin-mocha",
         "light",
         [
-            Line::from_iter([
-                Span::from("# ").fg(Color::Rgb(169, 97, 117)).bold().underlined(),
-                Span::from("Heading").fg(Color::Rgb(169, 97, 117)).bold().underlined(),
-            ]),
+            Line::from(Span::from("Heading").fg(Color::Rgb(243, 139, 168)).bold()),
             Line::default(),
             Line::from_iter([
                 Span::from("Bold").fg(Color::Rgb(169, 97, 117)).bold(),
@@ -106,10 +100,7 @@ expression: rendered
         "catppuccin-latte",
         "light",
         [
-            Line::from_iter([
-                Span::from("# ").fg(Color::Rgb(210, 15, 57)).bold().underlined(),
-                Span::from("Heading").fg(Color::Rgb(210, 15, 57)).bold().underlined(),
-            ]),
+            Line::from(Span::from("Heading").fg(Color::Rgb(222, 82, 112)).bold()),
             Line::default(),
             Line::from_iter([
                 Span::from("Bold").fg(Color::Rgb(210, 15, 57)).bold(),
@@ -155,10 +146,7 @@ expression: rendered
         "nord",
         "dark",
         [
-            Line::from_iter([
-                Span::from("# ").fg(Color::Rgb(136, 192, 208)).bold().underlined(),
-                Span::from("Heading").fg(Color::Rgb(136, 192, 208)).bold().underlined(),
-            ]),
+            Line::from(Span::from("Heading").fg(Color::Rgb(122, 162, 247)).bold()),
             Line::default(),
             Line::from_iter([
                 Span::from("Bold").bold(),
@@ -204,10 +192,7 @@ expression: rendered
         "ansi",
         "dark",
         [
-            Line::from_iter([
-                Span::from("# ").blue().bold().underlined(),
-                Span::from("Heading").blue().bold().underlined(),
-            ]),
+            Line::from(Span::from("Heading").fg(Color::Rgb(122, 162, 247)).bold()),
             Line::default(),
             Line::from_iter([
                 Span::from("Bold").yellow().bold(),

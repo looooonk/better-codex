@@ -1,10 +1,11 @@
 ---
 source: tui/src/app_shell_tests.rs
+assertion_line: 2062
 expression: "render_shell(&shell, area)"
 ---
                                                               │
                                                               │  Sessions   │  Status  │  Agents  │  Settings
-   # Result                                                   │━━━━━━━━━━━━━───────────────────────────────────
+   Result                                                     │━━━━━━━━━━━━━───────────────────────────────────
                                                               │
    • Render assistant text as markdown.                       │ Projects
    • Preserve local links like render.rs (codex-rs/tui/src/   │ No projects
