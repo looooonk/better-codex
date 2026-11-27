@@ -32,7 +32,7 @@ leaving your terminal.
   </tr>
 </table>
 
-Better Codex is a terminal app built on the Codex Rust backend. It offers functionality beyond that of the standard Codex CLI.
+Better Codex is a terminal app built on the Codex Rust backend, offering functionality beyond that of the standard Codex CLI.
 
 ## Install
 
