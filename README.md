@@ -1,20 +1,18 @@
 <div align="center">
 
-<img src=".github/assets/better-codex-logo.png" alt="Better Codex" width="400">
-
-<br>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/better-codex-logo-dark-mode.png">
+  <img src=".github/assets/better-codex-logo.png" alt="Better Codex" width="500">
+</picture>
 
 ---
+
+<br>
 
 **A full-screen terminal workspace for Codex.**
 
 Run agents, inspect tools, review edits, and manage every coding session without
 leaving your terminal.
-
-[![Release](https://img.shields.io/github/v/release/looooonk/better-codex?include_prereleases&sort=semver&style=flat-square&label=release)](https://github.com/looooonk/better-codex/releases)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-6f7dff?style=flat-square)](#system-requirements)
-[![License](https://img.shields.io/github/license/looooonk/better-codex?style=flat-square)](LICENSE)
-[![Rust](https://img.shields.io/badge/built_with-Rust-b7410e?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 
 [Install](#install) · [Features](#features) ·
 [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
