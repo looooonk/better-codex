@@ -51,10 +51,7 @@ pub(super) async fn execute(
             .await?;
         match command {
             AccountCommand::List => {
-                let mut lines = vec![
-                    "Saved accounts: /account switch <session-id> <workspace-id>; /login to add."
-                        .into(),
-                ];
+                let mut lines = Vec::new();
                 for session in accounts.sessions {
                     let name = session
                         .email
@@ -75,10 +72,15 @@ pub(super) async fn execute(
                         lines.push(format!("  {name} [{}]{selected}", workspace.account_id));
                     }
                 }
-                if lines.len() == 1 {
-                    lines.push("No saved ChatGPT accounts. Use /login.".into());
+                if lines.is_empty() {
+                    lines.push("No saved accounts. Use /login to add one.".into());
+                } else {
+                    lines.push("\n/account switch <session-id> <workspace-id>".into());
                 }
-                return Ok(WorkspaceResponse::Notice(lines.join("\n")));
+                return Ok(WorkspaceResponse::Report(
+                    "Saved accounts",
+                    lines.join("\n"),
+                ));
             }
             AccountCommand::Switch {
                 session_id,

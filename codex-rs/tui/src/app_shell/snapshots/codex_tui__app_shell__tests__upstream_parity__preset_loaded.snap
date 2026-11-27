@@ -12,19 +12,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 28))"
    turns.                                                   │ Recents
                                                             │ + New session  Ctrl+N
       ▸ Edited files                                        │ loading sessions
-   Preset ready; your draft was kept:                       │
-   Another preset                                           │
-   The new shell owns the fullscreen surface.               │
+                 ╭ Preset · current draft kept ─────────────────────────────────────────────╮
+   The new shell │                                                                          │
+                 │ Another preset                                                           │
+                 │                                                                          │
+                 │                                                                          │
+                 │                                                                          │
+                 │ Esc close   y copy                                                       │
+                 ╰──────────────────────────────────────────────────────────────────────────╯
                                                             │
                                                             │
                                                             │
                                                             │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
-                                                            │
-╭ preset loaded; press Enter to send ──────────────────────╮│
+╭──────────────────────────────────────────────────────────╮│
 │> Review changes                                          ││
 │                                                          ││
 │                                                          ││

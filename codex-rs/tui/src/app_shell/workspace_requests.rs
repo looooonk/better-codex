@@ -50,7 +50,6 @@ pub(super) enum WorkspaceRequest {
         query: String,
     },
     GuardianApproval(Box<codex_protocol::approvals::GuardianAssessmentEvent>),
-    Diagnostic(super::diagnostic_commands::DiagnosticRequest),
     AutomaticRecap(bool),
     Export(PathBuf),
     Daybreak(bool),
@@ -121,7 +120,6 @@ pub(super) async fn execute(
             ..
         } | WorkspaceRequest::ReadSource(_)
             | WorkspaceRequest::Mention { .. }
-            | WorkspaceRequest::Diagnostic(_)
             | WorkspaceRequest::Skills(_)
             | WorkspaceRequest::Hooks(_)
             | WorkspaceRequest::Experimental(None)
@@ -216,11 +214,6 @@ async fn execute_inner(
                 .await?;
             return Ok(WorkspaceResponse::GuardianApproved(event.id));
         }
-        WorkspaceRequest::Diagnostic(request) => {
-            return super::diagnostic_commands::execute(client, parsed_thread_id, request)
-                .await
-                .map(WorkspaceResponse::Notice);
-        }
         WorkspaceRequest::Export(path) => {
             return super::transcript_export::export(
                 super::transcript_export::NativeExportReader(client),
@@ -234,9 +227,16 @@ async fn execute_inner(
             unreachable!("handled before thread ID conversion")
         }
         WorkspaceRequest::Extension(command) => {
-            return super::extension_commands::execute(client, command)
-                .await
-                .map(WorkspaceResponse::Notice);
+            let usage = matches!(
+                command,
+                super::extension_commands::ExtensionCommand::Usage { reset: false }
+            );
+            let message = super::extension_commands::execute(client, command).await?;
+            return Ok(if usage {
+                WorkspaceResponse::Report("Account usage", message)
+            } else {
+                WorkspaceResponse::Notice(message)
+            });
         }
         WorkspaceRequest::Review(target) => {
             let _: ReviewStartResponse = client
@@ -261,7 +261,7 @@ async fn execute_inner(
                     },
                 })
                 .await?;
-            lines.push("Skills (invoke with $name in your message)".to_string());
+
             for entry in response.data {
                 lines.extend(entry.skills.into_iter().map(|skill| {
                     let status = if skill.enabled { "enabled" } else { "disabled" };
@@ -269,6 +269,12 @@ async fn execute_inner(
                 }));
                 lines.extend(entry.errors.into_iter().map(|error| error.message));
             }
+            if lines.is_empty() {
+                lines.push("No skills available.".into());
+            } else {
+                lines.push("\nUse $name in a message or /skills <name> on|off.".into());
+            }
+            return Ok(WorkspaceResponse::Report("Skills", lines.join("\n")));
         }
         WorkspaceRequest::Hooks(cwd) => {
             let response: HooksListResponse = client
@@ -280,24 +286,33 @@ async fn execute_inner(
                     },
                 })
                 .await?;
-            lines
-                .push("Hooks: /hooks on|off <key>; /hooks trust <key> <reviewed hash>".to_string());
+
             for entry in response.data {
                 lines.extend(entry.hooks.into_iter().map(|hook| {
                     let status = if hook.enabled { "enabled" } else { "disabled" };
+                    use codex_app_server_protocol::HookHandlerMetadata;
+                    let handler = match hook.handler {
+                        HookHandlerMetadata::Command { command, r#async } => {
+                            if r#async { format!("Async command  {command}") } else { format!("Command  {command}") }
+                        }
+                        HookHandlerMetadata::McpTool { server, tool } => format!("MCP tool  {server}/{tool}"),
+                        HookHandlerMetadata::Prompt {} => "Prompt".to_owned(),
+                        HookHandlerMetadata::Agent {} => "Agent".to_owned(),
+                    };
                     format!(
-                        "{}: {:?} [{status}, {:?}]\n  {}\n  {:?}\n  hash: {}",
-                        hook.key,
-                        hook.event_name,
-                        hook.trust_status,
-                        hook.source_path.display(),
-                        hook.handler,
-                        hook.current_hash
+                        "{}  ·  {:?}  ·  {status}  ·  {:?}\n  {handler}\n  {}\n  Reviewed hash  {}\n",
+                        hook.key, hook.event_name, hook.trust_status, hook.source_path.display(), hook.current_hash
                     )
                 }));
                 lines.extend(entry.warnings);
                 lines.extend(entry.errors.into_iter().map(|error| error.message));
             }
+            if lines.is_empty() {
+                lines.push("No hooks configured.".into());
+            } else {
+                lines.push("/hooks on|off <key>    /hooks trust <key> <reviewed hash>".into());
+            }
+            return Ok(WorkspaceResponse::Report("Hooks", lines.join("\n")));
         }
         WorkspaceRequest::Experimental(Some((name, enabled))) => {
             let response = crate::experimental_features::write(
@@ -324,7 +339,6 @@ async fn execute_inner(
             }
         }
         WorkspaceRequest::Experimental(None) => {
-            lines.push("Features (change with /experimental <name> on|off)".to_string());
             let (tx, rx) = tokio::sync::oneshot::channel();
             crate::experimental_features::fetch(
                 client,
@@ -342,9 +356,15 @@ async fn execute_inner(
                     feature.description.unwrap_or_default()
                 )
             }));
+            if lines.is_empty() {
+                lines.push("No experimental features available.".into());
+            }
+            return Ok(WorkspaceResponse::Report(
+                "Experimental features",
+                lines.join("\n"),
+            ));
         }
         WorkspaceRequest::Background => {
-            lines.push("Background terminals".to_string());
             let mut cursor = None;
             let mut cursors = HashSet::new();
             for _ in 0..10 {
@@ -378,6 +398,13 @@ async fn execute_inner(
             if cursor.is_some() {
                 lines.push("Showing the first 1,000 terminals".to_string());
             }
+            if lines.is_empty() {
+                lines.push("No background terminals.".into());
+            }
+            return Ok(WorkspaceResponse::Report(
+                "Background terminals",
+                lines.join("\n"),
+            ));
         }
         WorkspaceRequest::Clean => {
             let _: ThreadBackgroundTerminalsCleanResponse = client

@@ -3155,14 +3155,7 @@ async fn command_palette_reports_context_compaction_failure() {
     complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.status, "action failed");
-    assert_eq!(
-        shell.transcript.back().map(|line| line.kind),
-        Some(TranscriptKind::Error)
-    );
-    assert_eq!(
-        shell.transcript.back().map(|line| line.text.as_str()),
-        Some("failed to start context compaction: compaction unavailable")
-    );
+    assert!(render_shell(&shell, Rect::new(0, 0, 100, 24)).contains("compaction unavailable"));
 }
 
 #[tokio::test]

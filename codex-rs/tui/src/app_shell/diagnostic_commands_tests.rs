@@ -29,7 +29,7 @@ fn warnings_keep_diagnostic_details_visible() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.retain_warning("Project configuration ignored\n/workspace/.codex/config.toml\nTrust this workspace to load its settings.".to_string());
-    shell.push_system(shell.warnings.0.front().unwrap().clone());
+    shell.show_warnings();
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 22,
     );

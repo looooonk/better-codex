@@ -29,7 +29,7 @@ async fn access_uses_native_app_metadata_and_preserves_connection_link() {
     )
     .await
     .unwrap();
-    let WorkspaceResponse::Notice(message) = response else {
+    let WorkspaceResponse::Report("App details", message) = response else {
         panic!("expected app access")
     };
     insta::assert_snapshot!("app_access", message);

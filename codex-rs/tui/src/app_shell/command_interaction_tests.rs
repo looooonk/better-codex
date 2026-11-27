@@ -3,6 +3,34 @@ use crate::app_shell::workspace_requests::WorkspaceResponse;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
+async fn settings_aliases_and_uncached_integrations_open_their_native_views() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    for name in ["/settings", "/options", "/mcp", "/plugins"] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.dashboard_visible = false;
+        shell.mcp_catalog = None;
+        shell.plugin_catalog = None;
+        shell.composer.set_text(name);
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .unwrap();
+        assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+        assert!(shell.settings.focused);
+        assert_eq!(shell.pending_mcp_management.is_some(), name == "/mcp");
+        assert_eq!(
+            shell.pending_plugin_management.is_some(),
+            name == "/plugins"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_command_report_scrolls_and_returns_to_the_existing_draft() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;

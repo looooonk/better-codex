@@ -53,9 +53,12 @@ pub(super) async fn execute(
                 params: ThreadMemoryReadParams { thread_id },
             })
             .await?;
-        return Ok(WorkspaceResponse::Notice(response.summary.unwrap_or_else(
-            || "No saved memory summary for this session.".into(),
-        )));
+        return Ok(WorkspaceResponse::Report(
+            "Session memory",
+            response
+                .summary
+                .unwrap_or_else(|| "No saved memory summary for this session.".into()),
+        ));
     }
     if let MemoryCommand::Session(mode) = command {
         let _: ThreadMemoryModeSetResponse = client
@@ -133,12 +136,15 @@ pub(super) async fn execute(
         .await?;
     let state = |value| if value { "on" } else { "off" };
     let ready = if status.v2_ready { "ready" } else { "building" };
-    Ok(WorkspaceResponse::Notice(format!(
-        "{notice}Memory {ready}: {} consolidated sessions.\nUse memories: {}. Generate memories: {}.\n/memory use on|off; /memory generate on|off; /memory on|off for this session; /memory read for its summary.",
-        status.v2_consolidated_threads,
-        state(use_memories),
-        state(generate_memories)
-    )))
+    Ok(WorkspaceResponse::Report(
+        "Memory",
+        format!(
+            "{notice}Memory {ready}: {} consolidated sessions.\nUse memories: {}. Generate memories: {}.\n/memory use on|off; /memory generate on|off; /memory on|off for this session; /memory read for its summary.",
+            status.v2_consolidated_threads,
+            state(use_memories),
+            state(generate_memories)
+        ),
+    ))
 }
 
 #[cfg(test)]

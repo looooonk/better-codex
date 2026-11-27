@@ -243,6 +243,24 @@ impl BackendActions {
     }
 }
 
+impl BackendActionResult {
+    /// A catalog refresh can finish while the user is already typing in the new session.
+    pub(super) fn model_refresh(
+        thread_id: ThreadId,
+        result: Result<super::workspace_requests::WorkspaceResponse>,
+    ) -> Self {
+        let response = result.unwrap_or_else(|error| {
+            super::workspace_requests::WorkspaceResponse::AccountChanged {
+                models: Err(format!("{error:#}")),
+            }
+        });
+        Self::Workspace {
+            thread_id,
+            result: Ok(response),
+        }
+    }
+}
+
 impl ShellState {
     pub(super) fn start_backend_action<F>(
         &mut self,
@@ -388,7 +406,7 @@ impl ShellState {
                     self.settings.focused = false;
                     self.agents_focused = false;
                 }
-                Err(err) => self.report_action_error("could not start session", err),
+                Err(err) => self.report_command_error("could not start session", err),
             },
             BackendActionResult::SessionProject {
                 thread_id,
@@ -462,7 +480,7 @@ impl ShellState {
             }
             BackendActionResult::Compaction { result } => match result {
                 Ok(()) => self.show_hint("context compaction started"),
-                Err(err) => self.report_action_error("failed to start context compaction", err),
+                Err(err) => self.report_command_error("failed to start context compaction", err),
             },
             BackendActionResult::ConversationFork {
                 point,

@@ -149,10 +149,7 @@ impl ShellState {
         );
         self.backend_actions.invalidate([ActionGroup::ModelCatalog]);
         self.start_backend_action(ActionGroup::ModelCatalog, "refreshing models", async move {
-            BackendActionResult::Workspace {
-                thread_id,
-                result: request.await,
-            }
+            BackendActionResult::model_refresh(thread_id, request.await)
         });
     }
 

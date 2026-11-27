@@ -96,10 +96,7 @@ pub(super) async fn execute(
         .await?;
     let settings = match command {
         ProviderCommand::List => {
-            let mut lines = vec![
-                "Providers: /provider use <id> [model] selects the default for new sessions."
-                    .to_string(),
-            ];
+            let mut lines = Vec::new();
             for provider in catalog.data {
                 let selected = if provider.id == catalog.default_provider_id {
                     " (default)"
@@ -120,8 +117,11 @@ pub(super) async fn execute(
                     lines.push(format!("  {url}"));
                 }
             }
-            lines.push("/provider configure <id> field=value ...; /provider add <name> <url> [key-environment-variable]".into());
-            return Ok(WorkspaceResponse::Notice(lines.join("\n")));
+            lines.push("\n/provider use <id> [model]\n/provider configure <id> field=value …\n/provider add <name> <url> [key-environment-variable]".into());
+            return Ok(WorkspaceResponse::Report(
+                "Model providers",
+                lines.join("\n"),
+            ));
         }
         ProviderCommand::Use { id, model } => {
             if !catalog.can_change_default {

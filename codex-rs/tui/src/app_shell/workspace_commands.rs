@@ -16,6 +16,8 @@ use codex_protocol::config_types::Settings;
 use color_eyre::Result;
 use color_eyre::eyre::bail;
 
+pub(super) const INIT_PROMPT: &str = include_str!("../../assets/prompt_for_init_command.md");
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum WorkspaceCommand {
     StatusSurface(super::status_surfaces::Surface),
@@ -27,7 +29,8 @@ pub(super) enum WorkspaceCommand {
     Attach,
     Detach,
     Approve,
-    Diagnostic(super::diagnostic_commands::DiagnosticCommand),
+    Warnings,
+    Init,
     New,
     Archive,
     Delete,
@@ -60,7 +63,6 @@ pub(super) enum WorkspaceCommand {
     Cd,
     Rename,
     Diff,
-    Import,
     Theme,
     Voice,
     Daemon,
@@ -101,8 +103,13 @@ impl ShellState {
                 return Ok(());
             }
             WorkspaceCommand::Approve => None,
-            WorkspaceCommand::Diagnostic(command) => {
-                return self.run_diagnostic_command(command, app_server);
+            WorkspaceCommand::Warnings => {
+                self.show_warnings();
+                return Ok(());
+            }
+            WorkspaceCommand::Init => {
+                self.submit_prompt(app_server, INIT_PROMPT.to_string());
+                return Ok(());
             }
             WorkspaceCommand::Worktree => {
                 return self.run_worktree_command(args, config, app_server);
@@ -119,14 +126,27 @@ impl ShellState {
             }
             WorkspaceCommand::Voice => return self.run_voice_command(args, app_server),
             WorkspaceCommand::New => Some(CommandPaletteAction::NewSession),
-            WorkspaceCommand::Config | WorkspaceCommand::Theme => {
+            WorkspaceCommand::Config
+            | WorkspaceCommand::Theme
+            | WorkspaceCommand::Mcp
+            | WorkspaceCommand::Plugins => {
                 self.dashboard_visible = true;
                 self.set_dashboard_route(DashboardRoute::Settings);
                 self.dashboard_scroll.set(0);
                 self.session_list.focused = false;
                 self.settings.focused = true;
-                if command == WorkspaceCommand::Theme {
-                    self.settings.focus_action(SettingsAction::AppTheme);
+                match command {
+                    WorkspaceCommand::Theme => self.settings.focus_action(SettingsAction::AppTheme),
+                    WorkspaceCommand::Mcp | WorkspaceCommand::Plugins => {
+                        let action = if command == WorkspaceCommand::Mcp {
+                            SettingsAction::McpServers
+                        } else {
+                            SettingsAction::Plugins
+                        };
+                        self.settings.focus_action(action);
+                        self.activate_selected_setting(app_server).await?;
+                    }
+                    _ => {}
                 }
                 self.settings.reveal_selection.set(true);
                 return Ok(());
@@ -152,7 +172,6 @@ impl ShellState {
             WorkspaceCommand::Model => Some(CommandPaletteAction::SwitchModel),
             WorkspaceCommand::Permissions => Some(CommandPaletteAction::ChangePermissions),
             WorkspaceCommand::Compact => Some(CommandPaletteAction::CompactContext),
-            WorkspaceCommand::Import => Some(CommandPaletteAction::ImportExternalAgentConfig),
             WorkspaceCommand::Pwd => {
                 self.show_command_report("Working directory", self.cwd.clone());
                 return Ok(());
@@ -171,14 +190,7 @@ impl ShellState {
             WorkspaceCommand::Agents => {
                 self.dashboard_visible = true;
                 self.set_dashboard_route(DashboardRoute::Agents);
-                return Ok(());
-            }
-            WorkspaceCommand::Mcp => {
-                self.open_mcp_management();
-                return Ok(());
-            }
-            WorkspaceCommand::Plugins => {
-                self.open_plugin_management();
+                self.agents_focused = true;
                 return Ok(());
             }
             WorkspaceCommand::Mention
@@ -207,7 +219,7 @@ impl ShellState {
         let request = match self.workspace_request(command, args) {
             Ok(request) => request,
             Err(error) => {
-                self.push_error(error.to_string());
+                self.command_feedback("Command error", error.to_string());
                 return Ok(());
             }
         };
@@ -350,7 +362,8 @@ impl ShellState {
             | WorkspaceCommand::Keymap
             | WorkspaceCommand::Pets
             | WorkspaceCommand::Ide
-            | WorkspaceCommand::Diagnostic(_)
+            | WorkspaceCommand::Init
+            | WorkspaceCommand::Warnings
             | WorkspaceCommand::Worktree
             | WorkspaceCommand::New
             | WorkspaceCommand::Delete
@@ -366,7 +379,6 @@ impl ShellState {
             | WorkspaceCommand::Compact
             | WorkspaceCommand::Pwd
             | WorkspaceCommand::Diff
-            | WorkspaceCommand::Import
             | WorkspaceCommand::Theme
             | WorkspaceCommand::Voice
             | WorkspaceCommand::Daemon
@@ -389,9 +401,9 @@ impl ShellState {
         if matches!(
             self.status.as_str(),
             "loading workspace action"
-                | "loading diagnostics"
                 | "opening source"
                 | "refreshing models"
+                | "refreshing account"
         ) {
             self.status = if self.active_turn_id.is_some() {
                 "thinking"
@@ -402,9 +414,7 @@ impl ShellState {
         }
         match result {
             Ok(WorkspaceResponse::ProviderSelected { id, model }) => {
-                self.push_system(format!(
-                    "Default provider: {id}. Use /new to start with this provider."
-                ));
+                self.command_feedback("Provider", format!("Use /new to start with {id}."));
                 self.next_model_provider = Some(id);
                 self.next_provider_model = model;
             }
@@ -417,9 +427,11 @@ impl ShellState {
                     Ok(models) => {
                         self.available_models = models;
                     }
-                    Err(error) => self.push_error(format!(
-                        "Model refresh failed: {error}. Use /account refresh to retry."
-                    )),
+                    Err(error) => {
+                        self.warnings
+                            .record(&format!("Model refresh failed: {error}"));
+                        self.show_hint("Model refresh failed · /warnings for details");
+                    }
                 }
             }
             Ok(WorkspaceResponse::MentionFiles(files)) => self.open_file_mentions(files),
@@ -435,18 +447,20 @@ impl ShellState {
                     self.composer.set_text(input);
                     self.show_hint("preset loaded; press Enter to send");
                 } else {
-                    self.push_system(format!("Preset ready; your draft was kept:\n{input}"));
+                    self.show_command_report("Preset · current draft kept", input);
                 }
             }
             Ok(WorkspaceResponse::GuardianApproved(id)) => {
                 self.recent_guardian_denials.retain(|event| event.id != id);
-                self.push_system(
-                    "Approval recorded for one retry. The retry still goes through auto-review."
-                        .to_string(),
-                );
+                self.show_hint("One retry authorized for auto-review");
             }
             Ok(WorkspaceResponse::AutomaticRecap(enabled)) => {
                 self.automatic_recap.enabled = enabled;
+                self.show_hint(if enabled {
+                    "Automatic recaps on"
+                } else {
+                    "Automatic recaps off"
+                });
                 if !enabled {
                     self.recap.cancel_automatic();
                 }
@@ -457,15 +471,23 @@ impl ShellState {
             }) => {
                 self.daybreak_enabled = enabled;
                 if let Some(error) = default_error {
-                    self.push_error(format!("Daybreak was updated for this conversation, but the default could not be saved: {error}"));
+                    self.show_command_report("Daybreak", format!("Daybreak was updated for this conversation, but the default could not be saved: {error}"));
+                } else {
+                    self.show_hint(if enabled {
+                        "Daybreak on"
+                    } else {
+                        "Daybreak off"
+                    });
                 }
             }
             Ok(WorkspaceResponse::Report(title, body)) => self.show_command_report(title, body),
-            Ok(WorkspaceResponse::Notice(message)) => self.push_system(message),
+            Ok(WorkspaceResponse::Notice(message)) => {
+                self.command_feedback("Command result", message)
+            }
             Ok(WorkspaceResponse::Mode(mode)) => {
                 self.show_hint(format!("{} mode enabled", mode.mode.display_name()));
             }
-            Err(error) => self.report_action_error("workspace action failed", error),
+            Err(error) => self.report_command_error("workspace action failed", error),
         }
     }
 }

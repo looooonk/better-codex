@@ -62,6 +62,16 @@ pub(super) fn render(shell: &ShellState, transcript: Rect, input: Rect, buf: &mu
         vec![
             "◆ ".fg(palette::purple()),
             "COMMANDS".fg(palette::text()).bold(),
+            if visible < suggestions.entries().len() {
+                format!(
+                    "  {} / {}",
+                    suggestions.selected() + 1,
+                    suggestions.entries().len()
+                )
+                .fg(palette::muted())
+            } else {
+                "".into()
+            },
         ]
         .into(),
     ];

@@ -1,47 +1,40 @@
 # Slash commands
 
-Type `/` at the start of the session composer to see the commands supported by
-Better Codex. The popup filters as you type and shows each command's current
-description.
+Type `/` at the start of the composer to open the command picker. Type a command
+name or an alias to filter the list. Use ↑ and ↓ to select, Tab to complete the
+canonical name, Enter to run it, or Esc to dismiss the picker.
 
-| Command             | Action                                                            |
-| ------------------- | ----------------------------------------------------------------- |
-| `/new`, `/resume`, `/fork` | Start, resume, or fork sessions |
-| `/model`, `/permissions` | Open the model or permission menu in the message pane |
-| `/config`, `/theme` | Open the Settings tab or jump to the current app theme |
-| `/status`, `/agent` | Inspect session state or agents |
-| `/review [instructions]` | Review changes; also accepts `--base BRANCH` or `--commit SHA` |
-| `/plan [on\|off]` | Inspect or switch planning mode |
-| `/mcp`, `/plugins`, `/skills`, `/hooks` | Manage integrations and inspect capabilities |
-| `/memory [on\|off]` | Inspect or change this session's memory setting |
-| `/experimental [name on\|off]` | Inspect features or change a feature setting |
-| `/compact` | Compact the current context |
-| `/ps`, `/clean` | List or stop background terminals |
-| `/pwd`, `/cd PATH`, `/rename NAME` | Inspect or change session location and name |
-| `/diff`, `/import` | Review changes or import Claude Code setup |
-| `/voice [on\|off\|mute\|unmute\|settings]` | Control realtime voice |
-| `/ide [on\|off\|status]` | Include the connected IDE selection and open tabs in new messages |
-| `/approve [review-id]` | Inspect denied actions or authorize one retry of a selected action |
-| `/daemon [status]` | Inspect the local background server |
-| `/daemon update latest` | Close the interface and update the daemon from Better Codex releases |
-| `/daemon update from-cli` | Close the interface and pin the daemon to this CLI package |
-| `/clear`            | Clear the visible transcript without deleting the saved session   |
-| `/copy [1-9]`       | Copy the latest response, or an earlier response by reverse index |
-| `/goal`             | Show the active goal                                              |
-| `/goal <objective>` | Set or replace the active goal                                    |
-| `/goal clear`       | Clear the active goal                                             |
-| `/goal pause`       | Pause the active goal                                             |
-| `/goal resume`      | Resume the active goal                                            |
-| `/goal edit`        | Open the active objective in Vim or Neovim                        |
-| `/login`            | Open account authentication                                       |
-| `/logout`           | Sign out of the active account                                    |
-| `/vim`              | Edit the prompt in Vim or Neovim                                  |
-| `/exit`             | Exit Better Codex                                                 |
+For example, `/sett` and `/opt` both suggest `/config`. Typing `/settings` or
+`/options` and pressing Enter opens Settings directly.
 
-`/copy 1` selects the latest response, `/copy 2` the second latest, and so on
-through `/copy 9`. Account changes and daemon updates wait until active work has
-finished. Daemon updates are available only when connected to the local background
-server; manage remote servers on their own host.
+| Commands | Action |
+| --- | --- |
+| `/config` (`/settings`, `/options`), `/theme`, `/keymap` | Open Settings, appearance, or keyboard shortcuts |
+| `/new`, `/resume`, `/fork`, `/worktree` | Start, reopen, or branch a session |
+| `/side` (`/btw`) | Open a side conversation. Use `/side return` to go back |
+| `/rename NAME`, `/archive`, `/delete` | Manage the current session |
+| `/model`, `/permissions` | Choose a model, reasoning effort, or permission mode |
+| `/status`, `/agent`, `/usage` | Inspect session state, agents, or account usage |
+| `/plan [on\|off]`, `/compact` | Toggle planning mode or compact the context |
+| `/review [instructions]`, `/diff` | Start a review or inspect session changes. Review also accepts `--base BRANCH` or `--commit SHA` |
+| `/goal [objective]` | Inspect or set the goal. Use `edit`, `pause`, `resume`, or `clear` to manage it |
+| `/recap`, `/find TEXT`, `/export [path]` | Read a recap, find conversation text, or export Markdown |
+| `/copy [1–9]`, `/clear` | Copy a recent response by reverse index or clear the visible transcript |
+| `/presets`, `/vim` | Manage saved prompts or compose in an external editor |
+| `/attach PATH`, `/detach [number\|all]`, `/mention [query]`, `/ide` | Manage draft images, file mentions, or IDE context |
+| `/pwd`, `/cd PATH`, `/init` | Inspect or change the working directory, or generate repository instructions |
+| `/mcp`, `/plugins`, `/apps`, `/skills`, `/hooks` | Inspect or manage integrations |
+| `/provider`, `/account`, `/login`, `/logout` | Manage model providers, accounts, or sign-in |
+| `/memory`, `/experimental` | Inspect or change memory and feature settings |
+| `/warnings`, `/approve [review-id]` | Inspect warnings and denied actions, or authorize a retry |
+| `/ps`, `/clean` | Inspect or stop background terminals |
+| `/statusline`, `/title`, `/pets` | Customize the status line, terminal title, or pet |
+| `/voice`, `/daybreak` | Manage voice or Daybreak access |
+| `/daemon`, `/exit` | Inspect the local background server or exit Better Codex |
 
-This list is specific to the full-screen Better Codex interface. Upstream Codex
-CLI slash-command lists do not necessarily apply to this fork.
+Long command results open in a separate panel. Scroll with the arrow keys,
+Page Up, Page Down, Home, or End. Press y to copy the result or Esc to return to the composer.
+Short confirmations appear on the composer border.
+
+To import a Claude Code setup, choose **Import Claude Code setup** in the
+command palette (Ctrl+P) while running with `--no-daemon`.

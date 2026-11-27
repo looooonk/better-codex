@@ -725,7 +725,12 @@ pub(super) fn render_transcript_line_with_visualizations(
     } else {
         // Imported prompts may end with a newline. The prompt block supplies its own margin.
         let text = if kind == TranscriptKind::User {
-            text.trim_end()
+            let prompt = text.trim_end();
+            if prompt == super::workspace_commands::INIT_PROMPT.trim_end() {
+                "/init"
+            } else {
+                prompt
+            }
         } else {
             text
         };

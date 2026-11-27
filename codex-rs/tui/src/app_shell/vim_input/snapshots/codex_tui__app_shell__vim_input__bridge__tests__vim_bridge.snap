@@ -40,8 +40,8 @@ function! s:RefreshSlashCommandHighlight() abort
   endif
   let l:boundary = match(l:remaining, s:RustWhitespaceAtom)
   let l:command = l:boundary < 0 ? l:remaining : strpart(l:remaining, 0, l:boundary)
-  let l:valid = index(['/presets', '/find', '/keymap', '/statusline', '/title', '/pets', '/pet', '/attach', '/detach', '/ide', '/mention', '/approve', '/export', '/recap', '/daybreak', '/worktree', '/usage', '/side', '/btw', '/daemon', '/copy', '/goal', '/apps', '/provider', '/providers', '/account', '/accounts', '/review', '/plan', '/skills', '/hooks', '/experimental', '/memory', '/memories', '/cd', '/rename', '/voice'], l:command) >= 0
-  if !l:valid && index(['/config', '/settings', '/options', '/archive', '/delete', '/init', '/warnings', '/debug-config', '/rollout', '/clear', '/login', '/logout', '/vim', '/exit', '/quit', '/new', '/resume', '/fork', '/model', '/permissions', '/status', '/agent', '/agents', '/subagents', '/mcp', '/plugins', '/compact', '/ps', '/clean', '/stop', '/pwd', '/cwd', '/diff', '/import', '/theme'], l:command) >= 0
+  let l:valid = index(['/find', '/goal', '/presets', '/keymap', '/statusline', '/title', '/pets', '/pet', '/attach', '/detach', '/ide', '/mention', '/approve', '/export', '/recap', '/daybreak', '/worktree', '/usage', '/side', '/btw', '/daemon', '/copy', '/apps', '/provider', '/providers', '/account', '/accounts', '/review', '/plan', '/skills', '/hooks', '/experimental', '/memory', '/memories', '/cd', '/rename', '/voice'], l:command) >= 0
+  if !l:valid && index(['/config', '/settings', '/options', '/model', '/new', '/resume', '/archive', '/delete', '/init', '/warnings', '/clear', '/login', '/logout', '/vim', '/exit', '/quit', '/fork', '/permissions', '/status', '/agent', '/agents', '/subagents', '/mcp', '/plugins', '/compact', '/ps', '/clean', '/stop', '/pwd', '/cwd', '/diff', '/theme'], l:command) >= 0
     let l:tail = strpart(l:remaining, strlen(l:command))
     let l:valid = matchend(l:tail, '^' . s:RustWhitespaceAtom . '*') == strlen(l:tail)
   endif

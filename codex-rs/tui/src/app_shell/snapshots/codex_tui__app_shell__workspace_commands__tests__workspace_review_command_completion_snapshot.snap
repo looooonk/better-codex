@@ -15,7 +15,7 @@ expression: "lines.join(\"\\n\")"
    The new shell owns the fullscreen surface.
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
-│▌ /review  Review changes; accepts instructions or --base/--commit    │
+│▌ /review  Review changes, a branch, or a commit                      │
 │↑↓ navigate   Tab complete   Enter run   Esc close                    │
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮

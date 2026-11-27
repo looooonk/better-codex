@@ -82,7 +82,7 @@ pub(super) async fn execute(
         .unwrap_or_default();
     let (slot, dial) = match command {
         PresetCommand::List => {
-            let mut lines = vec!["Presets: /presets <1-9> to load, /presets save <1-9> <prompt>, /presets delete <1-9>".to_string()];
+            let mut lines = Vec::new();
             for slot in 1..=9 {
                 if let Some(dial) = presets.get(&slot.to_string()) {
                     let preview = dial
@@ -96,10 +96,14 @@ pub(super) async fn execute(
                     lines.push(format!("{slot}. {preview}"));
                 }
             }
-            if lines.len() == 1 {
+            if lines.is_empty() {
                 lines.push("No saved presets.".into());
             }
-            return Ok(WorkspaceResponse::Notice(lines.join("\n")));
+            lines.push(
+                "\n/presets <1-9> to load\n/presets save <1-9> <prompt>\n/presets delete <1-9>"
+                    .into(),
+            );
+            return Ok(WorkspaceResponse::Report("Presets", lines.join("\n")));
         }
         PresetCommand::Load(slot) => {
             let dial = presets

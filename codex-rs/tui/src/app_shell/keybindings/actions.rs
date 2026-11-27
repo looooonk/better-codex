@@ -175,12 +175,7 @@ impl ShellState {
                 self.settings.focused = false;
                 self.agents_focused = true;
             }
-            ShellShortcut::Warnings => {
-                self.run_diagnostic_command(
-                    crate::app_shell::diagnostic_commands::DiagnosticCommand::Warnings,
-                    app_server,
-                )?;
-            }
+            ShellShortcut::Warnings => self.show_warnings(),
             ShellShortcut::ClearTerminal => self.terminal_clear_requested.set(true),
             ShellShortcut::Fast => {
                 if !config.features.enabled(codex_features::Feature::FastMode)

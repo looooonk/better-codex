@@ -156,7 +156,7 @@ pub(super) async fn execute(
                     params: None,
                 })
                 .await?;
-            let mut lines = vec!["Account usage".to_string()];
+            let mut lines = Vec::new();
             let limits = response
                 .rate_limits_by_limit_id
                 .unwrap_or_else(|| [("codex".to_string(), response.rate_limits)].into());
@@ -182,6 +182,9 @@ pub(super) async fn execute(
                 if credits.available_count > 0 {
                     lines.push("To spend one reset, enter /usage reset confirm.".to_string());
                 }
+            }
+            if lines.is_empty() {
+                lines.push("No usage limits reported.".into());
             }
             Ok(lines.join("\n"))
         }

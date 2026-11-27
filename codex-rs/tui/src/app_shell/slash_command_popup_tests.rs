@@ -20,7 +20,9 @@ fn composer_with_cursor(marked_text: &str) -> super::super::ComposerState {
 }
 
 fn matching_names(marked_text: &str) -> Option<Vec<&'static str>> {
-    SlashCommandSuggestions::candidate(&composer_with_cursor(marked_text)).map(|suggestions| {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer = composer_with_cursor(marked_text);
+    SlashCommandSuggestions::candidate(&shell).map(|suggestions| {
         suggestions
             .entries()
             .iter()

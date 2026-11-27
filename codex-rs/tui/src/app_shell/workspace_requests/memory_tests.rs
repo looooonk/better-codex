@@ -43,7 +43,7 @@ async fn disabling_memory_use_preserves_generation_preference() -> Result<()> {
         MemoryCommand::Use(false),
     )
     .await?;
-    let WorkspaceResponse::Notice(message) = response else {
+    let WorkspaceResponse::Report("Memory", message) = response else {
         panic!("expected memory status")
     };
     insta::assert_snapshot!("memory_preferences", message);

@@ -1,6 +1,5 @@
 use super::*;
 use crate::app_shell::ShellState;
-use crate::app_shell::diagnostic_commands::DiagnosticRequest;
 use crate::app_shell::render::ShellView;
 use crate::legacy_core::config::ConfigBuilder;
 use codex_config::LoaderOverrides;
@@ -11,7 +10,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 #[tokio::test]
-async fn native_workspace_requests_update_the_selected_thread_and_read_diagnostics() -> Result<()> {
+async fn native_workspace_requests_update_the_selected_thread_and_find_files() -> Result<()> {
     let home = tempfile::tempdir()?;
     let destination = home.path().join("workspace");
     std::fs::create_dir(&destination)?;
@@ -92,34 +91,6 @@ async fn native_workspace_requests_update_the_selected_thread_and_read_diagnosti
     );
     let thread = app_server.thread_read(id, /*include_turns*/ false).await?;
     assert_eq!(thread.name.as_deref(), Some("Native command test"));
-    let rollout = execute(
-        handle.clone(),
-        id,
-        WorkspaceRequest::Diagnostic(DiagnosticRequest::Rollout),
-    )
-    .await?;
-    let WorkspaceResponse::Notice(rollout) = rollout else {
-        panic!("expected rollout path");
-    };
-    assert_eq!(
-        rollout,
-        thread
-            .path
-            .expect("durable thread rollout")
-            .display()
-            .to_string()
-    );
-    let diagnostics = execute(
-        handle.clone(),
-        id,
-        WorkspaceRequest::Diagnostic(DiagnosticRequest::Config(
-            destination.to_string_lossy().into_owned(),
-        )),
-    )
-    .await?;
-    assert!(
-        matches!(diagnostics, WorkspaceResponse::Notice(message) if message.contains("Configuration layers") && message.contains("Effective setting sources"))
-    );
     let files = crate::app_shell::file_mentions::search(
         handle,
         destination.to_string_lossy().into_owned(),

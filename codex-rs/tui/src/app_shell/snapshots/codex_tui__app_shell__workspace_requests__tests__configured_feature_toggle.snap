@@ -4,7 +4,6 @@ expression: rendered
 ---
 
 
-   shell_snapshot enabled in configuration
    The new shell owns the fullscreen surface.
 
 
@@ -18,7 +17,8 @@ expression: rendered
 
 
 
-╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+
+╭ shell_snapshot enabled in configuration ─────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │

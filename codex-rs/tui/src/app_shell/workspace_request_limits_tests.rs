@@ -102,10 +102,11 @@ async fn native_workspace_requests_bound_unresponsive_and_oversized_servers() {
         }
         match scenario {
             "oversized_notice" => {
-                let WorkspaceResponse::Notice(message) = result.unwrap() else {
+                let WorkspaceResponse::Report("Background terminals", message) = result.unwrap()
+                else {
                     panic!("expected terminal list");
                 };
-                assert!(message.starts_with("Background terminals\nprocess: 界"));
+                assert!(message.starts_with("process: 界"));
                 assert!(message.ends_with("\n[output truncated]"));
                 assert!(message.len() <= 256 * 1024);
             }

@@ -133,10 +133,10 @@ impl ShellState {
                         super::backend_actions::ActionGroup::Workspace,
                         "refreshing account",
                         async move {
-                            super::backend_actions::BackendActionResult::Workspace {
+                            super::backend_actions::BackendActionResult::model_refresh(
                                 thread_id,
-                                result: request.await,
-                            }
+                                request.await,
+                            )
                         },
                     );
                 }

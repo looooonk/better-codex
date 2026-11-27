@@ -96,6 +96,8 @@ fn feature_output_stays_with_its_session() {
         Ok(WorkspaceResponse::Notice("old session".to_string())),
     );
     assert_eq!(shell.transcript.len(), previous);
+    assert!(shell.preview.is_none());
+    assert_ne!(shell.input_hint.as_deref(), Some("old session"));
 }
 
 #[test]
@@ -151,7 +153,6 @@ fn completed_workspace_request_clears_only_its_loading_status() {
     shell.active_turn_id = None;
     for (before, expected) in [
         ("loading workspace action", "ready"),
-        ("loading diagnostics", "ready"),
         ("interrupted", "interrupted"),
     ] {
         shell.status = before.to_string();

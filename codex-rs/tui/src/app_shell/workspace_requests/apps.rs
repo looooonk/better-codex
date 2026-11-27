@@ -87,9 +87,7 @@ pub(super) async fn execute(
     if let AppsCommand::List(query) = command {
         let mut cursor = None;
         let mut seen = HashSet::new();
-        let mut lines = vec![
-            "Apps: /apps access <id> to connect; /apps tools <id> for permissions.".to_string(),
-        ];
+        let mut lines = Vec::new();
         let query = query.to_lowercase();
         for _ in 0..100 {
             let response: AppsListResponse = client
@@ -128,10 +126,14 @@ pub(super) async fn execute(
             }
             cursor = response.next_cursor;
             let Some(next) = &cursor else {
-                if lines.len() == 1 {
+                if lines.is_empty() {
                     lines.push("No matching apps.".into());
+                } else {
+                    lines.push(
+                        "\n/apps access <id> to connect\n/apps tools <id> for permissions".into(),
+                    );
                 }
-                return Ok(WorkspaceResponse::Notice(lines.join("\n")));
+                return Ok(WorkspaceResponse::Report("Apps", lines.join("\n")));
             };
             if !seen.insert(next.clone()) {
                 bail!("app catalog returned a repeated cursor");
@@ -159,6 +161,7 @@ pub(super) async fn execute(
         .into_iter()
         .find(|app| &app.id == app_id)
         .ok_or_else(|| eyre!("unknown app {app_id}; use /apps list to find its ID"))?;
+    let report = !matches!(command, AppsCommand::Configure { .. });
     let message = match command {
         AppsCommand::Access(_) => match app.install_url {
             Some(url) => format!("Connect or manage {} in your browser:\n{url}", app.name),
@@ -210,7 +213,11 @@ pub(super) async fn execute(
         }
         AppsCommand::List(_) => unreachable!(),
     };
-    Ok(WorkspaceResponse::Notice(message))
+    Ok(if report {
+        WorkspaceResponse::Report("App details", message)
+    } else {
+        WorkspaceResponse::Notice(message)
+    })
 }
 
 #[cfg(test)]

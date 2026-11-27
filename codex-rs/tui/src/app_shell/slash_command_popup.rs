@@ -1,7 +1,8 @@
 use super::ShellState;
-use super::composer::ComposerState;
 use super::slash_commands::SLASH_COMMANDS;
 use super::slash_commands::SlashCommandDefinition;
+use super::slash_commands::SlashCommandId;
+use super::workspace_commands::WorkspaceCommand;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
@@ -50,7 +51,8 @@ impl SlashCommandPopupState {
 }
 
 impl SlashCommandSuggestions {
-    fn candidate(composer: &ComposerState) -> Option<Self> {
+    fn candidate(shell: &ShellState) -> Option<Self> {
+        let composer = &shell.composer;
         let text = composer.text();
         let cursor = composer.cursor();
         let before_cursor = text.get(..cursor)?;
@@ -65,6 +67,10 @@ impl SlashCommandSuggestions {
         let mut entries = SLASH_COMMANDS
             .iter()
             .copied()
+            .filter(|entry| {
+                entry.id() != SlashCommandId::Workspace(WorkspaceCommand::Daemon)
+                    || shell.resume_cwd_runtime.daemon_update_available
+            })
             .filter(|definition| definition.names.iter().any(|name| name.starts_with(&query)))
             .collect::<Vec<_>>();
         // Prefer an exact spelling, then canonical prefixes, then alias prefixes.
@@ -100,7 +106,7 @@ impl ShellState {
         if !self.composer_owns_focus() {
             return None;
         }
-        let mut suggestions = SlashCommandSuggestions::candidate(&self.composer)?;
+        let mut suggestions = SlashCommandSuggestions::candidate(self)?;
         if self.slash_command_popup.dismissed_query.as_deref() == Some(&suggestions.query) {
             return None;
         }
@@ -120,7 +126,7 @@ impl ShellState {
         if key.modifiers != KeyModifiers::NONE || !self.composer_owns_focus() {
             return SlashCommandPopupKeyResult::Unhandled;
         }
-        let Some(mut suggestions) = SlashCommandSuggestions::candidate(&self.composer) else {
+        let Some(mut suggestions) = SlashCommandSuggestions::candidate(self) else {
             return SlashCommandPopupKeyResult::Unhandled;
         };
         self.slash_command_popup

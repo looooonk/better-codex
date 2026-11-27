@@ -9,16 +9,16 @@ expression: text
 
 
    Started a fullscreen app shell backed by app-server turns.
+            ╭ Warnings ────────────────────────────────────────────────────────────────╮
+      ▸ Edit│                                                                          │
+            │ Project configuration ignored                                            │
+   The new s│ /workspace/.codex/config.toml                                            │
+            │ Trust this workspace to load its settings.                               │
+            │                                                                          │
+            │ Esc close   y copy                                                       │
+            ╰──────────────────────────────────────────────────────────────────────────╯
 
-      ▸ Edited files
-   Project configuration ignored
-   /workspace/.codex/config.toml
-   Trust this workspace to load its settings.
-   The new shell owns the fullscreen surface.
-
-
-
-╭ Project configuration ignored ───────────────────────────────────────────────────────────────────╮
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                                            │
 │                                                                                                  │
 │                                                                                                  │

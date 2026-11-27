@@ -412,13 +412,8 @@ async fn guardian_warning_is_retained_in_diagnostics_while_the_tool_displays_the
         .await
         .unwrap();
     assert_eq!(shell.input_hint, hint);
-    shell
-        .run_diagnostic_command(
-            crate::app_shell::diagnostic_commands::DiagnosticCommand::Warnings,
-            &backend,
-        )
-        .unwrap();
-    assert_eq!(shell.transcript.back().unwrap().text, message);
+    shell.show_warnings();
+    assert!(render_shell(&shell, Rect::new(0, 0, 100, 26)).contains(&message));
 }
 
 #[tokio::test]
