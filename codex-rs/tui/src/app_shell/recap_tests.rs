@@ -91,7 +91,7 @@ fn bounded_recap_renders_summary_and_next_action() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.dashboard_visible = false;
-    shell.push_system(recap.into_message());
+    shell.show_command_report("Recap", recap.into_message());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );

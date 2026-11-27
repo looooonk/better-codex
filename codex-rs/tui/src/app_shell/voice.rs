@@ -209,10 +209,10 @@ impl ShellState {
             match settings.await {
                 Ok(Ok(result)) => {
                     self.voice.devices = result.devices;
-                    self.push_system(result.message);
+                    self.show_command_report("Voice settings", result.message);
                 }
-                Ok(Err(error)) => self.push_error(format!("Voice settings: {error}")),
-                Err(_) => self.push_error("Voice settings request stopped unexpectedly"),
+                Ok(Err(error)) => self.command_feedback("Voice settings", error.to_string()),
+                Err(_) => self.show_hint("Voice settings request stopped unexpectedly"),
             }
             changed = true;
         }

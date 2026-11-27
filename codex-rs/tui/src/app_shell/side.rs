@@ -76,7 +76,10 @@ impl ShellState {
         let started = match result {
             Ok(started) => started,
             Err(error) => {
-                self.report_action_error("failed to open side conversation", error);
+                self.command_feedback(
+                    "Side conversation",
+                    format!("Could not open side conversation: {error:#}"),
+                );
                 return;
             }
         };
@@ -113,7 +116,7 @@ impl ShellState {
         child.workspace_command_runner = self.workspace_command_runner.clone();
         child.composer.clear();
         child.transcript.clear();
-        child.push_system("Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.");
+        child.show_hint("Side conversation · /side return to go back");
         child.status = "side conversation".to_string();
         child.terminal_clear_requested.set(true);
         let parent = std::mem::replace(self, child);

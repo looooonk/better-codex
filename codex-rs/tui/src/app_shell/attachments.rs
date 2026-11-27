@@ -77,13 +77,14 @@ impl ShellState {
 
     pub(super) async fn run_attach_command(&mut self, args: &str) -> Result<()> {
         if args.is_empty() && self.composer.has_images() {
-            self.push_system(self.composer.image_summary());
+            self.show_command_report("Attached images", self.composer.image_summary());
             return Ok(());
         }
         let paths = shlex::split(args).filter(|paths| !paths.is_empty());
         let Some(paths) = paths else {
-            self.push_system(
-                "usage: /attach <local-image> [local-image ...]; quote paths containing spaces",
+            self.show_command_report(
+                "Attach images",
+                "/attach <path> [path …]\nQuote paths that contain spaces.",
             );
             return Ok(());
         };
@@ -93,8 +94,8 @@ impl ShellState {
         }
         let paths = paths.into_iter().map(PathBuf::from).collect();
         match self.attach_image_paths(paths).await {
-            Ok(()) => self.show_hint(self.composer.image_summary()),
-            Err(error) => self.show_hint(error.to_string()),
+            Ok(()) => self.show_hint("Images attached"),
+            Err(error) => self.command_feedback("Image attachment failed", error.to_string()),
         }
         Ok(())
     }

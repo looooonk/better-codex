@@ -158,11 +158,14 @@ impl ShellState {
                 let mut prepared = match task.await {
                     Ok(Ok(prepared)) => prepared,
                     Ok(Err(error)) => {
-                        self.push_error(error.to_string());
+                        self.show_command_report("Worktree", error.to_string());
                         return true;
                     }
                     Err(error) => {
-                        self.push_error(format!("Worktree creation failed: {error}"));
+                        self.show_command_report(
+                            "Worktree",
+                            format!("Worktree creation failed: {error}"),
+                        );
                         return true;
                     }
                 };
@@ -174,11 +177,14 @@ impl ShellState {
                     ))
                 };
                 if let Err(error) = ready {
-                    self.push_error(prepared.retained_error(error).to_string());
+                    self.show_command_report(
+                        "Worktree",
+                        prepared.retained_error(error).to_string(),
+                    );
                     return true;
                 }
                 if !prepared.config.active_project.is_trusted() {
-                    self.push_error(prepared.retained_error("The new worktree is not trusted; start Better Codex there to review its trust").to_string());
+                    self.show_command_report("Worktree", prepared.retained_error("The new worktree is not trusted; start Better Codex there to review its trust").to_string());
                     return true;
                 }
                 if pending.mode == WorktreeMode::Fork
@@ -190,11 +196,12 @@ impl ShellState {
                         prepared.config.developer_instructions.clone(),
                     )
                 {
-                    self.push_error(prepared.retained_error("Developer instructions differ; start a new conversation instead of forking").to_string());
+                    self.show_command_report("Worktree", prepared.retained_error("Developer instructions differ; start a new conversation instead of forking").to_string());
                     return true;
                 }
                 let Some(client) = app_server.app_server_request_handle() else {
-                    self.push_error(
+                    self.show_command_report(
+                        "Worktree",
                         prepared
                             .retained_error("The app-server connection is unavailable")
                             .to_string(),
@@ -232,20 +239,27 @@ impl ShellState {
                 let started = match request.await {
                     Ok(Ok(started)) => started,
                     Ok(Err(error)) => {
-                        self.push_error(prepared.retained_error(error).to_string());
+                        self.show_command_report(
+                            "Worktree",
+                            prepared.retained_error(error).to_string(),
+                        );
                         return true;
                     }
                     Err(error) => {
-                        self.push_error(prepared.retained_error(error).to_string());
+                        self.show_command_report(
+                            "Worktree",
+                            prepared.retained_error(error).to_string(),
+                        );
                         return true;
                     }
                 };
                 if let Err(error) = prepared.bind(started.session.thread_id) {
-                    self.push_error(error.to_string());
+                    self.show_command_report("Worktree", error.to_string());
                     return true;
                 }
                 if !same_source || self.check_worktree_idle().is_err() {
-                    self.push_error(
+                    self.show_command_report(
+                        "Worktree",
                         prepared
                             .retained_error(format!(
                                 "The source session changed; new session {} remains available",

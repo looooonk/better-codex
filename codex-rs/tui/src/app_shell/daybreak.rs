@@ -30,7 +30,8 @@ impl ShellState {
             return;
         }
         if self.side_parent.is_some() {
-            self.push_error(
+            self.command_feedback(
+                "Daybreak",
                 "Daybreak is unavailable in side conversations. Use /side return first.",
             );
             return;
@@ -39,7 +40,10 @@ impl ShellState {
             && (self.model_provider_id != "openai"
                 || !crate::daybreak::available(&self.available_models))
         {
-            self.push_error("Daybreak availability could not be confirmed for this account.");
+            self.command_feedback(
+                "Daybreak",
+                "Daybreak availability could not be confirmed for this account.",
+            );
             return;
         }
         let thread_id = self.thread_id;

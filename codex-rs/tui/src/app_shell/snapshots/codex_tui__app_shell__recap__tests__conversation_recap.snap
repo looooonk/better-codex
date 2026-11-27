@@ -4,12 +4,6 @@ expression: screen
 ---
 
 
-   Recap
-
-   The updated interface supports the current model catalog and keeps existing conversations
-   available. Validation is still running.
-
-   Next: Review the remaining test failures before publishing.
    The new shell owns the fullscreen surface.
 
 
@@ -17,9 +11,15 @@ expression: screen
 
 
 
-
-
-
+            ╭ Recap ───────────────────────────────────────────────────────────────────╮
+            │                                                                          │
+            │ The updated interface supports the current model catalog and keeps       │
+            │ existing conversations available. Validation is still running.           │
+            │                                                                          │
+            │ Next: Review the remaining test failures before publishing.              │
+            │                                                                          │
+            │ Esc close   y copy                                                       │
+            ╰──────────────────────────────────────────────────────────────────────────╯
 
 
 

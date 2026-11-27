@@ -129,7 +129,7 @@ pub(super) fn settings_summary(
         },
     );
     format!(
-        "Voice settings\nVoices: {names}\nDefault voice: {}\nMicrophone: {microphone}\nSpeaker: {speaker}\nMicrophone channels: {channels}\n\n/voice settings voice <name|default>\n/voice settings devices\n/voice settings microphone <name|default>\n/voice settings speaker <name|default>\n/voice settings channels <1,2|default>\n/voice [on|off|mute|unmute]",
+        "Voices: {names}\nDefault voice: {}\nMicrophone: {microphone}\nSpeaker: {speaker}\nMicrophone channels: {channels}\n\n/voice settings voice <name|default>\n/voice settings devices\n/voice settings microphone <name|default>\n/voice settings speaker <name|default>\n/voice settings channels <1,2|default>\n/voice [on|off|mute|unmute]",
         response.voices.default_v1.wire_name()
     )
 }

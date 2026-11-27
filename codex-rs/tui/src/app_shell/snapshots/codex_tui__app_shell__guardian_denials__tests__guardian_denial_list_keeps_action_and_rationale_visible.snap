@@ -11,15 +11,15 @@ expression: "lines.join(\"\\n\")"
    Started a fullscreen app shell backed by app-server turns.
 
       ▸ Permission review failed
-   Recent auto-review denials
-   review-1: touch /tmp/reviewed-file
-   This command changes files outside the requested directory.
-   Use /approve <review-id> to allow one retry. The retry still goes through auto-review.
-   The new shell owns the fullscreen surface.
-
-
-
-
+                 ╭ Recent auto-review denials ──────────────────────────────────────────────╮
+   The new shell │                                                                          │
+                 │ review-1: touch /tmp/reviewed-file                                       │
+                 │ This command changes files outside the requested directory.              │
+                 │ Use /approve <review-id> to allow one retry. The retry still goes        │
+                 │ through auto-review.                                                     │
+                 │                                                                          │
+                 │ Esc close   y copy                                                       │
+                 ╰──────────────────────────────────────────────────────────────────────────╯
 
 
 

@@ -10,7 +10,7 @@ impl ShellState {
         }
         let source = match args {
             "" | "status" => {
-                self.push_system("Connected to the local background server. Use /daemon update latest to install the latest Better Codex release, or /daemon update from-cli to use this CLI. Updating closes this interface and restarts the server.".to_string());
+                self.show_command_report("Local daemon", "Connected\n\n/daemon update latest     Install the latest release\n/daemon update from-cli   Use this CLI version\n\nUpdating closes this interface and restarts the server.");
                 return;
             }
             "update latest" => DaemonUpdateSource::PublicStable,

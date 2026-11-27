@@ -232,14 +232,14 @@ impl ShellState {
         let mut state = self.pets.lock();
         let Some(config) = &state.config else {
             drop(state);
-            self.push_error("terminal pet settings are unavailable");
+            self.command_feedback("Terminal pets", "terminal pet settings are unavailable");
             return;
         };
         if id != crate::pets::DISABLED_PET_ID
             && let Some(message) = config.support.unsupported_message()
         {
             drop(state);
-            self.push_system(message);
+            self.show_command_report("Terminal pets", message);
             return;
         }
         state.load(id, /*persist*/ true);
@@ -308,8 +308,14 @@ impl ShellState {
                 }
                 self.terminal_clear_requested.set(true);
             }
-            Ok(Err(error)) => self.push_error(format!("Could not load terminal pet: {error:#}")),
-            Err(error) => self.push_error(format!("Terminal pet load failed: {error}")),
+            Ok(Err(error)) => self.command_feedback(
+                "Terminal pets",
+                format!("Could not load terminal pet: {error:#}"),
+            ),
+            Err(error) => self.command_feedback(
+                "Terminal pets",
+                format!("Terminal pet load failed: {error}"),
+            ),
         }
         true
     }

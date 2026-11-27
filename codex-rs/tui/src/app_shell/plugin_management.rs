@@ -180,9 +180,10 @@ impl ShellState {
                 .map(|app| app.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.push_system(format!(
-                "{plugin_name} {action}; auth required for {app_names}"
-            ));
+            self.show_command_report(
+                "Plugin authentication",
+                format!("{plugin_name} {action}; auth required for {app_names}"),
+            );
         }
     }
 }

@@ -156,7 +156,7 @@ impl ShellState {
                 self.status = "confirm deletion".to_string();
             }
             Err(err) => self
-                .report_action_error("failed to inspect the session subtree before deletion", err),
+                .report_command_error("failed to inspect the session subtree before deletion", err),
         }
     }
 
@@ -174,7 +174,7 @@ impl ShellState {
                 }
                 self.show_hint(format!("deleted session {thread_id}"));
             }
-            Err(err) => self.report_action_error("failed to delete session", err),
+            Err(err) => self.report_command_error("failed to delete session", err),
         }
     }
 }

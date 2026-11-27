@@ -36,7 +36,10 @@ impl ShellState {
             .iter()
             .find(|preset| preset.model == self.model)
         else {
-            self.push_error(format!("model metadata unavailable for `{}`", self.model));
+            self.command_feedback(
+                "Model",
+                format!("Model metadata unavailable for {}", self.model),
+            );
             return;
         };
         let current = self.reasoning_effort.clone().map_or(
@@ -53,7 +56,10 @@ impl ShellState {
             .iter()
             .find(|preset| preset.model == self.model)
         else {
-            self.push_error(format!("model metadata unavailable for `{}`", self.model));
+            self.command_feedback(
+                "Model",
+                format!("Model metadata unavailable for {}", self.model),
+            );
             return None;
         };
         let current = match self.service_tier.as_deref() {

@@ -102,7 +102,7 @@ impl ShellState {
             self.show_hint("No recent auto-review denials in this conversation.");
             return;
         }
-        let mut lines = vec!["Recent auto-review denials".to_string()];
+        let mut lines = Vec::new();
         for event in &self.recent_guardian_denials {
             lines.push(format!(
                 "{}: {}",
@@ -117,7 +117,7 @@ impl ShellState {
             );
         }
         lines.push("Use /approve <review-id> to allow one retry. The retry still goes through auto-review.".to_string());
-        self.push_system(lines.join("\n"));
+        self.show_command_report("Recent auto-review denials", lines.join("\n"));
     }
 }
 

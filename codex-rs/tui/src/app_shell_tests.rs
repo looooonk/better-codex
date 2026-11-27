@@ -4260,12 +4260,7 @@ async fn goal_slash_command_sets_and_shows_thread_goal() {
     assert!(backend.calls().contains(&RecordedBackendCall::GoalGet {
         thread_id: shell.thread_id,
     }));
-    assert!(
-        shell
-            .input_hint
-            .as_deref()
-            .is_some_and(|s| s.contains("goal active. Objective: Ship the standalone shell"))
-    );
+    assert!(shell.preview.is_some());
     assert!(
         !backend
             .calls()
@@ -4279,6 +4274,28 @@ async fn goal_slash_command_sets_and_shows_thread_goal() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
     insta::assert_snapshot!(render_shell(&shell, area));
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.composer.set_text("/goal edit");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        shell.take_vim_input_request().unwrap().replaced_draft(),
+        Some("/goal Ship the standalone shell")
+    );
 }
 
 #[tokio::test]
@@ -4461,11 +4478,8 @@ async fn logout_slash_command_stays_in_session_and_allows_login() {
     assert!(!should_exit);
     assert_eq!(failed_backend.calls(), vec![RecordedBackendCall::Logout]);
     assert_eq!(
-        failed_shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Error,
-            "logout failed: credential store unavailable",
-        ))
+        failed_shell.input_hint.as_deref(),
+        Some("Sign-out failed: credential store unavailable")
     );
 }
 
@@ -15664,6 +15678,7 @@ async fn mcp_management_actions_login_disable_remove_add_and_edit() {
 
     for code in [
         KeyCode::Char('l'),
+        KeyCode::Esc, // Close the sign-in link before choosing another server.
         KeyCode::Down,
         KeyCode::Char('d'),
         KeyCode::Char('x'),
@@ -15837,10 +15852,12 @@ async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
     }
     for (code, description) in [
         (KeyCode::Char('i'), "installed plugin should update"),
+        (KeyCode::Esc, "close the app authentication details"),
         (KeyCode::Char('e'), "installed plugin should disable"),
         (KeyCode::Char('e'), "installed plugin should enable"),
         (KeyCode::Down, "available plugin should be selected"),
         (KeyCode::Enter, "available plugin should install"),
+        (KeyCode::Esc, "close the app authentication details"),
         (KeyCode::Char('u'), "installed plugin should uninstall"),
     ] {
         shell
@@ -15851,6 +15868,11 @@ async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
             )
             .await
             .expect(description);
+        if matches!(code, KeyCode::Char('i') | KeyCode::Enter) {
+            assert!(
+                render_shell(&shell, Rect::new(0, 0, 100, 26)).contains("auth required for Gmail")
+            );
+        }
     }
 
     let calls = backend.calls();
@@ -15879,13 +15901,6 @@ async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
     ] {
         assert!(calls.contains(&expected_call), "{expected_call:?}");
     }
-    assert!(
-        shell
-            .transcript
-            .iter()
-            .any(|line| line.text.contains("auth required for Gmail")),
-        "installing auth-required plugins should report the app auth follow-up"
-    );
 }
 
 #[tokio::test]

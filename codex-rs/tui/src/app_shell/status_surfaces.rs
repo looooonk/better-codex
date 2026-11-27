@@ -338,7 +338,7 @@ impl ShellState {
                     self.show_hint("A higher-priority setting controls the active display");
                 }
             }
-            Err(error) => self.report_action_error("failed to save display settings", error),
+            Err(error) => self.report_command_error("failed to save display settings", error),
         }
     }
 

@@ -1,6 +1,4 @@
 use super::*;
-use crate::app_shell::TranscriptKind;
-use crate::app_shell::TranscriptLine;
 use crate::app_shell::render::ShellView;
 use codex_app_server_protocol::ThreadRealtimeListVoicesResponse;
 use codex_protocol::protocol::RealtimeVoice;
@@ -41,7 +39,7 @@ async fn completed_settings_update_preferences_and_render_controls() {
     };
     let message = voice_settings::settings_summary(&response, &devices);
     let result = voice_settings::SettingsResult {
-        message: message.clone(),
+        message,
         devices: devices.clone(),
     };
     shell.voice.settings = Some(tokio::spawn(async { Ok(result) }));
@@ -50,10 +48,8 @@ async fn completed_settings_update_preferences_and_render_controls() {
     }
     assert!(shell.poll_voice().await);
     assert_eq!(shell.voice.devices, devices);
-    assert_eq!(
-        shell.transcript,
-        std::collections::VecDeque::from([TranscriptLine::new(TranscriptKind::System, message)])
-    );
+    assert!(shell.transcript.is_empty());
+    assert!(shell.preview.is_some());
     assert!(!shell.voice.has_work());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 110, /*height*/ 31,

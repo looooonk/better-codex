@@ -171,10 +171,13 @@ impl ShellState {
                 timeout_secs: None,
             })
             .await?;
-        self.push_system(format!(
-            "{} login started: {}",
-            server.name, response.authorization_url
-        ));
+        self.show_command_report(
+            "MCP sign-in",
+            format!(
+                "Open this link to sign in to {}.\n\n{}",
+                server.name, response.authorization_url
+            ),
+        );
         Ok(())
     }
 

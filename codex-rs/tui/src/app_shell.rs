@@ -7,9 +7,6 @@ use crate::app_server_session::AgentHistoryTask;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_theme::TuiAppTheme;
 use crate::clipboard_copy::ClipboardLease;
-use crate::goal_display::GOAL_USAGE;
-use crate::goal_display::goal_status_label;
-use crate::goal_display::goal_usage_summary;
 use crate::key_hint;
 use crate::legacy_core::config::Config;
 #[cfg(test)]
@@ -30,7 +27,6 @@ use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadGoal;
-use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadUsage;
@@ -103,6 +99,7 @@ mod elicitation;
 mod events;
 mod extension_commands;
 mod external_agent_import;
+mod goal_commands;
 mod goal_rate_limit_recovery;
 mod guardian_activity;
 mod guardian_denials;
@@ -254,7 +251,6 @@ use shell_command::PendingShellCommand;
 use shell_command::ShellCommand;
 use slash_command_popup::SlashCommandPopupKeyResult;
 use slash_command_popup::SlashCommandPopupState;
-use slash_commands::GoalSlashCommand;
 use slash_commands::LocalSlashCommand;
 pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
@@ -1100,8 +1096,12 @@ impl ShellState {
             || self.composer.has_queued_messages();
         let outcome = match command {
             LocalSlashCommand::Workspace(command, args) => {
-                self.run_workspace_command(command, &args, config, app_server)
-                    .await?;
+                if let Err(error) = self
+                    .run_workspace_command(command, &args, config, app_server)
+                    .await
+                {
+                    self.command_feedback("Command error", format!("{error:#}"));
+                }
                 if self.pending_update_action.is_some() {
                     LocalSlashCommandOutcome::Exit
                 } else {
@@ -1149,7 +1149,10 @@ impl ShellState {
                             LocalSlashCommandOutcome::Continue
                         }
                         Err(err) => {
-                            self.push_error(format!("logout failed: {err}"));
+                            self.command_feedback(
+                                "Sign-out failed",
+                                format!("Sign-out failed: {err}"),
+                            );
                             LocalSlashCommandOutcome::Continue
                         }
                     }
@@ -1161,114 +1164,6 @@ impl ShellState {
             }
         };
         Ok(outcome)
-    }
-
-    async fn run_goal_slash_command<S>(&mut self, command: GoalSlashCommand, app_server: &mut S)
-    where
-        S: AppShellBackend,
-    {
-        match command {
-            GoalSlashCommand::Show => self.show_goal_status(app_server).await,
-            GoalSlashCommand::Set(objective) => {
-                self.set_goal_objective(app_server, objective).await
-            }
-            GoalSlashCommand::Clear => self.clear_goal(app_server).await,
-            GoalSlashCommand::Pause => {
-                self.update_goal_status(app_server, ThreadGoalStatus::Paused, "paused")
-                    .await;
-            }
-            GoalSlashCommand::Resume => {
-                self.update_goal_status(app_server, ThreadGoalStatus::Active, "resumed")
-                    .await;
-            }
-            GoalSlashCommand::Edit => {
-                self.show_hint("use /goal <objective> to edit the current goal objective");
-            }
-        }
-    }
-
-    async fn show_goal_status<S>(&mut self, app_server: &mut S)
-    where
-        S: AppShellBackend,
-    {
-        match app_server.thread_goal_get(self.thread_id).await {
-            Ok(response) => {
-                self.record_active_goal(response.goal);
-                match &self.active_goal {
-                    Some(goal) => self.show_hint(format!(
-                        "goal {}. {}",
-                        goal_status_label(goal.status),
-                        goal_usage_summary(goal)
-                    )),
-                    None => self.show_hint(format!("no goal is currently set. {GOAL_USAGE}")),
-                }
-            }
-            Err(err) => self.push_error(format!("failed to read goal: {err}")),
-        }
-    }
-
-    async fn set_goal_objective<S>(&mut self, app_server: &mut S, objective: String)
-    where
-        S: AppShellBackend,
-    {
-        match app_server
-            .thread_goal_set(
-                self.thread_id,
-                Some(objective),
-                Some(ThreadGoalStatus::Active),
-                /*token_budget*/ None,
-            )
-            .await
-        {
-            Ok(response) => {
-                let objective = response.goal.objective.clone();
-                self.record_active_goal(Some(response.goal));
-                self.show_hint(format!("goal set: {objective}"));
-            }
-            Err(err) => self.push_error(format!("failed to set goal: {err}")),
-        }
-    }
-
-    async fn clear_goal<S>(&mut self, app_server: &mut S)
-    where
-        S: AppShellBackend,
-    {
-        match app_server.thread_goal_clear(self.thread_id).await {
-            Ok(response) => {
-                self.record_active_goal(None);
-                if response.cleared {
-                    self.show_hint("goal cleared");
-                } else {
-                    self.show_hint("no goal is currently set");
-                }
-            }
-            Err(err) => self.push_error(format!("failed to clear goal: {err}")),
-        }
-    }
-
-    async fn update_goal_status<S>(
-        &mut self,
-        app_server: &mut S,
-        status: ThreadGoalStatus,
-        action: &str,
-    ) where
-        S: AppShellBackend,
-    {
-        match app_server
-            .thread_goal_set(
-                self.thread_id,
-                /*objective*/ None,
-                Some(status),
-                /*token_budget*/ None,
-            )
-            .await
-        {
-            Ok(response) => {
-                self.record_active_goal(Some(response.goal));
-                self.show_hint(format!("goal {action}"));
-            }
-            Err(err) => self.push_error(format!("failed to update goal: {err}")),
-        }
     }
 
     fn submit_prompt<S>(&mut self, app_server: &S, prompt: String)

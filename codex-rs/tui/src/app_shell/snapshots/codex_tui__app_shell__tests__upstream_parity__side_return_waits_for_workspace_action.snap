@@ -4,17 +4,17 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 24))"
 ---
 
 
-   Side conversation. The main conversation keeps running. Use /side return or Ctrl+C to go back.
 
 
-
-
-
-
-
-
-
-
+                                                 ⢀⣠⣴⠶⠿⠛⠛⠿⠶⣦⣄⡀
+                                               ⢀⣴⠟⠋        ⠙⠻⣦⡀
+                                              ⢀⣾⠋ ⣠⡀         ⠙⣷⡀
+                                              ⣼⡇  ⠈⠛⢶⣄        ⢸⣧
+                                              ⣿     ⣠⡿⠃        ⣿
+                                              ⢻⡇  ⢠⠾⠋  ⣤⣤⣤⣤⡄  ⢸⡟
+                                              ⠈⢿⣄            ⣠⡿⠁
+                                               ⠈⠻⣦⣄        ⣠⣴⠟⠁
+                                                 ⠈⠙⠻⠶⣶⣤⣤⣶⠶⠟⠋⠁
 
 
 

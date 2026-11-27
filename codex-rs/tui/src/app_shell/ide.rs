@@ -93,7 +93,10 @@ impl ShellState {
             }
             Err(error) => {
                 self.ide.enabled = false;
-                self.push_system(format!("IDE context could not be enabled. {error}"));
+                self.command_feedback(
+                    "IDE context",
+                    format!("IDE context could not be enabled. {error}"),
+                );
             }
         }
     }

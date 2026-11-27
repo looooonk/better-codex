@@ -24,7 +24,10 @@ use tokio_util::sync::CancellationToken;
 mod history;
 
 #[derive(Default)]
-pub(super) struct RecapState(Option<RecapRequest>);
+pub(super) struct RecapState {
+    pending: Option<RecapRequest>,
+    latest: Option<(u64, String)>,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum RecapTrigger {
@@ -69,20 +72,20 @@ impl Drop for RecapRequest {
 impl RecapState {
     pub(super) fn cancel_automatic(&mut self) {
         if self
-            .0
+            .pending
             .as_ref()
             .is_some_and(|request| request.trigger == RecapTrigger::Automatic)
         {
-            self.0 = None;
+            self.pending = None;
         }
     }
 
     pub(super) fn has_work(&self) -> bool {
-        self.0.is_some()
+        self.pending.is_some()
     }
 
     pub(super) fn owns_thread(&self, id: &str) -> bool {
-        self.0.as_ref().is_some_and(|request| matches!(request.stage.as_ref(), Some(RecapStage::Running { thread_id, .. }) if thread_id == id))
+        self.pending.as_ref().is_some_and(|request| matches!(request.stage.as_ref(), Some(RecapStage::Running { thread_id, .. }) if thread_id == id))
     }
 
     pub(super) fn forward(&self, notification: &ServerNotification) -> bool {
@@ -94,7 +97,7 @@ impl RecapState {
                     ..
                 }),
             ..
-        }) = self.0.as_ref()
+        }) = self.pending.as_ref()
         else {
             return false;
         };
@@ -121,7 +124,7 @@ struct GeneratedRecap {
 
 impl GeneratedRecap {
     fn into_message(self) -> String {
-        let mut text = format!("Recap\n\n{}", self.summary);
+        let mut text = self.summary;
         if let Some(next) = self.next_action {
             text.push_str(&format!("\n\nNext: {next}"));
         }
@@ -191,6 +194,12 @@ impl ShellState {
             self.show_hint("Usage: /recap [cancel|on|off]");
             return Ok(());
         }
+        if let Some((revision, message)) = &self.recap.latest
+            && *revision == self.recap_revision()
+        {
+            self.show_command_report("Recap", message.clone());
+            return Ok(());
+        }
         self.start_recap(config, app_server, RecapTrigger::Manual)
     }
 
@@ -247,7 +256,7 @@ impl ShellState {
             }
             Ok(id)
         }));
-        self.recap = RecapState(Some(RecapRequest {
+        self.recap.pending = Some(RecapRequest {
             trigger,
             turn_revision: self.automatic_recap.revision,
             owner: self.thread_id,
@@ -256,7 +265,7 @@ impl ShellState {
             client,
             cancellation,
             stage: Some(stage),
-        }));
+        });
         if trigger == RecapTrigger::Manual {
             self.show_hint("Generating recap");
         }
@@ -264,7 +273,7 @@ impl ShellState {
     }
 
     pub(super) async fn poll_recap(&mut self) -> bool {
-        let finished = self.recap.0.as_ref().is_some_and(|request| {
+        let finished = self.recap.pending.as_ref().is_some_and(|request| {
             request.stage.as_ref().is_some_and(|stage| match stage {
                 RecapStage::Starting(task) | RecapStage::Running { task, .. } => task.is_finished(),
             })
@@ -272,7 +281,7 @@ impl ShellState {
         if !finished {
             return false;
         }
-        let Some(mut request) = self.recap.0.take() else {
+        let Some(mut request) = self.recap.pending.take() else {
             return false;
         };
         let Some(stage) = request.stage.take() else {
@@ -315,19 +324,27 @@ impl ShellState {
                     notifications,
                     task,
                 });
-                self.recap.0 = Some(request);
+                self.recap.pending = Some(request);
             }
             Ok(text) if fresh => match parse_recap(&text) {
                 Ok(recap) => {
                     self.automatic_recap.mark_recapped();
-                    self.push_system(recap.into_message());
-                    self.show_hint("Recap ready");
+                    let message = recap.into_message();
+                    if request.trigger == RecapTrigger::Manual {
+                        self.show_command_report("Recap", message.clone());
+                    } else {
+                        self.show_hint("Recap ready · /recap to read");
+                    }
+                    self.recap.latest = Some((request.revision, message));
                 }
                 Err(error) => {
                     if request.trigger == RecapTrigger::Automatic {
                         self.automatic_recap.mark_failed(std::time::Instant::now());
                     } else {
-                        self.report_action_error("Could not generate a recap", error);
+                        self.command_feedback(
+                            "Recap failed",
+                            format!("Could not generate recap: {error:#}"),
+                        );
                     }
                 }
             },
@@ -339,7 +356,10 @@ impl ShellState {
                 if request.trigger == RecapTrigger::Automatic {
                     self.automatic_recap.mark_failed(std::time::Instant::now());
                 } else {
-                    self.report_action_error("Could not generate a recap", error);
+                    self.command_feedback(
+                        "Recap failed",
+                        format!("Could not generate recap: {error:#}"),
+                    );
                 }
             }
             Err(_) => {}
