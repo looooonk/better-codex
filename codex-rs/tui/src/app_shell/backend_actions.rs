@@ -249,14 +249,17 @@ impl BackendActionResult {
         thread_id: ThreadId,
         result: Result<super::workspace_requests::WorkspaceResponse>,
     ) -> Self {
-        let response = result.unwrap_or_else(|error| {
-            super::workspace_requests::WorkspaceResponse::AccountChanged {
-                models: Err(format!("{error:#}")),
-            }
-        });
+        use super::workspace_requests::WorkspaceResponse;
+        let error = match result {
+            Err(error) => format!("{error:#}"),
+            Ok(WorkspaceResponse::AccountChanged { models: Err(error) }) => error,
+            result => return Self::Workspace { thread_id, result },
+        };
         Self::Workspace {
             thread_id,
-            result: Ok(response),
+            result: Ok(WorkspaceResponse::Warning(format!(
+                "Model refresh failed · /warnings for details\n{error}"
+            ))),
         }
     }
 }

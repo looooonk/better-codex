@@ -480,6 +480,7 @@ impl ShellState {
                     });
                 }
             }
+            Ok(WorkspaceResponse::Warning(message)) => self.retain_warning(message),
             Ok(WorkspaceResponse::Report(title, body)) => self.show_command_report(title, body),
             Ok(WorkspaceResponse::Notice(message)) => {
                 self.command_feedback("Command result", message)

@@ -99,6 +99,7 @@ pub(super) enum WorkspaceResponse {
         default_error: Option<String>,
     },
     Notice(String),
+    Warning(String),
     Report(&'static str, String),
     Mode(CollaborationMode),
 }
