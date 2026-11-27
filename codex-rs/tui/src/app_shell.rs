@@ -139,6 +139,7 @@ mod permission_modes;
 mod pets;
 mod plugin_management;
 mod pointer;
+mod preview;
 mod project_catalog;
 mod project_controller;
 mod project_hub;
@@ -540,7 +541,7 @@ struct ShellState {
     agent_log: Option<AgentLogState>,
     tool_output: Option<ToolOutputState>,
     tool_review: Option<review_popup::ReviewPopup>,
-    source_preview: Option<source_preview::SourcePreview>,
+    preview: Option<preview::Preview>,
     diff_store: DiffStore,
     diff_view: Option<DiffViewState>,
     agent_history_task: Option<AgentHistoryTask>,
@@ -713,7 +714,7 @@ impl ShellState {
             agent_log: None,
             tool_output: None,
             tool_review: None,
-            source_preview: None,
+            preview: None,
             diff_store: DiffStore::with_display_root(session.cwd.as_path()),
             diff_view: None,
             agent_history_task: None,
@@ -2282,7 +2283,7 @@ impl ShellState {
             agent_log: None,
             tool_output: None,
             tool_review: None,
-            source_preview: None,
+            preview: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
                 "/workspace/better-codex",
             )),
@@ -2617,7 +2618,7 @@ pub mod bench_support {
             agent_log: None,
             tool_output: None,
             tool_review: None,
-            source_preview: None,
+            preview: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
                 "/workspace/better-codex",
             )),

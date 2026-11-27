@@ -154,7 +154,7 @@ impl ShellState {
             WorkspaceCommand::Compact => Some(CommandPaletteAction::CompactContext),
             WorkspaceCommand::Import => Some(CommandPaletteAction::ImportExternalAgentConfig),
             WorkspaceCommand::Pwd => {
-                self.push_system(self.cwd.clone());
+                self.show_command_report("Working directory", self.cwd.clone());
                 return Ok(());
             }
             WorkspaceCommand::Diff => {
@@ -424,7 +424,7 @@ impl ShellState {
             }
             Ok(WorkspaceResponse::MentionFiles(files)) => self.open_file_mentions(files),
             Ok(WorkspaceResponse::SourcePreview(preview)) => {
-                self.source_preview = Some(preview);
+                self.preview = Some(super::preview::Preview::Source(preview));
             }
             Ok(WorkspaceResponse::Archived) => self.handle_remote_thread_lifecycle(
                 &thread_id.to_string(),
@@ -460,6 +460,7 @@ impl ShellState {
                     self.push_error(format!("Daybreak was updated for this conversation, but the default could not be saved: {error}"));
                 }
             }
+            Ok(WorkspaceResponse::Report(title, body)) => self.show_command_report(title, body),
             Ok(WorkspaceResponse::Notice(message)) => self.push_system(message),
             Ok(WorkspaceResponse::Mode(mode)) => {
                 self.show_hint(format!("{} mode enabled", mode.mode.display_name()));

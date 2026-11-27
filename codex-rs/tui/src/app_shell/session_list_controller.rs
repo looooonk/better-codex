@@ -310,7 +310,7 @@ impl ShellState {
                 }
                 self.show_hint(format!("renamed session {name}"));
             }
-            Err(err) => self.report_action_error("failed to rename session", err),
+            Err(err) => self.report_command_error("failed to rename session", err),
         }
     }
 
@@ -481,7 +481,7 @@ impl ShellState {
         self.ephemeral = session.ephemeral;
         self.can_accept_direct_input = session.can_accept_direct_input;
         self.daybreak_enabled = session.daybreak_enabled;
-        self.source_preview = None;
+        self.preview = None;
         self.model_provider_id = session.model_provider_id;
         self.session_unavailable_reason = None;
         self.thread_name = session.thread_name;

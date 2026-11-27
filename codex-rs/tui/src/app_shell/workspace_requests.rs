@@ -100,6 +100,7 @@ pub(super) enum WorkspaceResponse {
         default_error: Option<String>,
     },
     Notice(String),
+    Report(&'static str, String),
     Mode(CollaborationMode),
 }
 
@@ -148,7 +149,9 @@ pub(super) async fn execute(
     } else {
         "Workspace action timed out. It may still complete; check the current state before retrying."
     }))??;
-    if let WorkspaceResponse::Notice(message) = &mut response {
+    if let WorkspaceResponse::Notice(message) | WorkspaceResponse::Report(_, message) =
+        &mut response
+    {
         const MAX_NOTICE_BYTES: usize = 256 * 1024;
         const TRUNCATED: &str = "\n[output truncated]";
         if message.len() > MAX_NOTICE_BYTES {

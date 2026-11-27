@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/command_interaction_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+
+  ╭ Results ─────────────────────────────────╮│
+  │                                          ││
+  │ Result 25                                │┃
+  │ Result 26                                │┃
+  │ Result 27                                │┃
+  │ Result 28                                │
+╭─│ Result 29                                │─╮
+│>│ Result 30                                │ │
+│ │ Esc close   y copy   ↑↓ 25–30/30         │ │
+│ⓘ╰──────────────────────────────────────────╯ │
+│           gpt-5-codex ▾ Default ▾ ◷ Default ▾│
+╰──────────────────────────────────────────────╯

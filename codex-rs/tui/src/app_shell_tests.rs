@@ -36,6 +36,8 @@ mod question_input_tests;
 
 #[path = "app_shell/astra_tests.rs"]
 mod astra;
+#[path = "app_shell/command_interaction_tests.rs"]
+mod command_interaction;
 #[path = "app_shell/upstream_parity_tests.rs"]
 mod upstream_parity;
 use crate::app_server_session::ForkGoalContinuation;

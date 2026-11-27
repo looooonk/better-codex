@@ -34,7 +34,7 @@ const DASHBOARD_PAGE_SCROLL_STEP: usize = 8;
 pub(super) enum ActiveInputRoute {
     DiffView,
     ToolOutput,
-    SourcePreview,
+    Preview,
     AgentLog,
     Selector,
     CommandPalette,
@@ -56,8 +56,8 @@ impl ShellState {
     pub(super) fn active_input_route(&self) -> Option<ActiveInputRoute> {
         if self.diff_view.is_some() {
             Some(ActiveInputRoute::DiffView)
-        } else if self.source_preview.is_some() {
-            Some(ActiveInputRoute::SourcePreview)
+        } else if self.preview.is_some() {
+            Some(ActiveInputRoute::Preview)
         } else if self.tool_detail_open() {
             Some(ActiveInputRoute::ToolOutput)
         } else if self.agent_log.is_some() {
@@ -106,7 +106,7 @@ impl ShellState {
         match self.active_input_route() {
             Some(
                 ActiveInputRoute::DiffView
-                | ActiveInputRoute::SourcePreview
+                | ActiveInputRoute::Preview
                 | ActiveInputRoute::ToolOutput
                 | ActiveInputRoute::AgentLog,
             ) => KeymapContextSet::new(Pager).with_copy(),
@@ -217,11 +217,16 @@ impl ShellState {
             ActiveInputRoute::DiffView => {
                 self.handle_diff_view_key(key);
             }
-            ActiveInputRoute::SourcePreview => {
+            ActiveInputRoute::Preview => {
                 if key.kind != KeyEventKind::Release {
                     if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
-                        self.source_preview = None;
-                    } else if let Some(preview) = &mut self.source_preview {
+                        self.preview = None;
+                    } else if key.code == KeyCode::Char('y')
+                        && key.modifiers.is_empty()
+                        && let Some(super::preview::Preview::Command(report)) = &mut self.preview
+                    {
+                        report.copy(&mut self.clipboard_lease);
+                    } else if let Some(preview) = &mut self.preview {
                         preview.scroll(key.code);
                     }
                 }

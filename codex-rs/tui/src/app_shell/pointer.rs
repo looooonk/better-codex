@@ -60,9 +60,9 @@ impl ShellState {
             }
             return Ok(());
         }
-        if self.source_preview.is_some() {
-            if !super::scrollback_view::scrollback_panel_area(area).contains(position) {
-                self.source_preview = None;
+        if let Some(preview) = &self.preview {
+            if !preview.panel(area).contains(position) {
+                self.preview = None;
             }
             return Ok(());
         }
@@ -451,7 +451,7 @@ impl ShellState {
             }
             return false;
         }
-        if let Some(preview) = &mut self.source_preview {
+        if let Some(preview) = &mut self.preview {
             preview.scroll(key);
             return false;
         }
@@ -583,7 +583,7 @@ impl ShellState {
     fn has_blocking_overlay(&self) -> bool {
         self.diff_view.is_some()
             || self.tool_detail_open()
-            || self.source_preview.is_some()
+            || self.preview.is_some()
             || self.agent_log.is_some()
             || self.pending_approval.is_some()
             || self.pending_session_delete.is_some()

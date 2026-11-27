@@ -4,6 +4,9 @@ use super::composer::ComposerInsertResult;
 
 impl ShellState {
     pub(super) fn insert_pasted_text(&mut self, text: &str) {
+        if self.preview.is_some() {
+            return;
+        }
         if self.paste_transcript_find(text) {
             return;
         }
