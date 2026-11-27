@@ -8,8 +8,8 @@ use ratatui::text::Line;
 
 pub(crate) const EXTERNAL_AGENT_CONFIG_MIGRATION_NO_ITEMS_MESSAGE: &str =
     "No Claude Code setup was found to import.";
-pub(crate) const EXTERNAL_AGENT_CONFIG_MIGRATION_REMOTE_UNAVAILABLE_MESSAGE: &str = "Import from Claude Code is unavailable in remote sessions. Start Better Codex locally and run /import.";
-pub(crate) const EXTERNAL_AGENT_CONFIG_MIGRATION_DAEMON_UNAVAILABLE_MESSAGE: &str = "Import from Claude Code is unavailable while Better Codex is connected to the local app-server daemon. Stop the daemon, restart Better Codex, and run /import.";
+pub(crate) const EXTERNAL_AGENT_CONFIG_MIGRATION_REMOTE_UNAVAILABLE_MESSAGE: &str = "To import a Claude Code setup, run Better Codex locally with --no-daemon and choose Import Claude Code setup in the command palette (Ctrl+P).";
+pub(crate) const EXTERNAL_AGENT_CONFIG_MIGRATION_DAEMON_UNAVAILABLE_MESSAGE: &str = "Restart Better Codex with --no-daemon and choose Import Claude Code setup in the command palette (Ctrl+P).";
 
 pub(crate) fn external_agent_config_migration_started_lines(
     selected_items: &[ExternalAgentConfigMigrationItem],
@@ -164,7 +164,7 @@ pub(crate) fn external_agent_config_migration_finished_lines(
     lines.push(
         vec![
             "  ".into(),
-            "Run /import again to check for additional items.".dim(),
+            "Choose Import Claude Code setup again in the command palette (Ctrl+P) to check for additional items.".dim(),
         ]
         .into(),
     );
@@ -175,11 +175,11 @@ fn remaining_items_handoff(remaining_item_count: usize) -> Option<String> {
     match remaining_item_count {
         0 => None,
         1 => Some(
-            "1 additional item remains. After it finishes, run /import again to review it."
+            "1 additional item remains. After it finishes, reopen Import Claude Code setup in the command palette (Ctrl+P) to review it."
                 .to_string(),
         ),
         _ => Some(format!(
-            "{remaining_item_count} additional items remain. After it finishes, run /import again to review them."
+            "{remaining_item_count} additional items remain. After it finishes, reopen Import Claude Code setup in the command palette (Ctrl+P) to review them."
         )),
     }
 }

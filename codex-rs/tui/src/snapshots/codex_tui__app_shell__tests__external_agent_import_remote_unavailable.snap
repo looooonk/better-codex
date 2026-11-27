@@ -12,12 +12,12 @@ expression: "render_shell(&remote_shell, Rect::new(0, 0, 100, 28,))"
    server turns.                                  │ Recents
                                                   │ + New session  Ctrl+N
       ▸ Edited files                              │ loading sessions
-   ⚠ Import from Claude Code is unavailable in    │
-     remote sessions. Start Better Codex locally  │
-     and run /import.                             │
+   ⚠ To import a Claude Code setup, run Better    │
+     Codex locally with --no-daemon and choose    │
+     Import Claude Code setup in the command      │
+     palette (Ctrl+P).                            │
                                                   │
    The new shell owns the fullscreen surface.     │
-                                                  │
                                                   │
                                                   │
                                                   │

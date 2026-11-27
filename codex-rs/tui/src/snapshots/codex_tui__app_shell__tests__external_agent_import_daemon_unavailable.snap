@@ -12,12 +12,12 @@ expression: "render_shell(&daemon_shell, Rect::new(0, 0, 100, 28,))"
    server turns.                                  │ Recents
                                                   │ + New session  Ctrl+N
       ▸ Edited files                              │ loading sessions
-   ⚠ Import from Claude Code is unavailable while │
-     Better Codex is connected to the local app-  │
-     server daemon. Stop the daemon, restart      │
-     Better Codex, and run /import.               │
+   ⚠ Restart Better Codex with --no-daemon and    │
+     choose Import Claude Code setup in the       │
+     command palette (Ctrl+P).                    │
                                                   │
    The new shell owns the fullscreen surface.     │
+                                                  │
                                                   │
                                                   │
                                                   │
