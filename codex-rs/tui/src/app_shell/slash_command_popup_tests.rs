@@ -50,6 +50,45 @@ fn suggestions_follow_the_first_command_token_and_cursor() {
 }
 
 #[test]
+fn alias_prefixes_complete_and_submit_the_canonical_command_once() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    for (draft, key, result, expected) in [
+        (
+            "/sett|",
+            KeyCode::Tab,
+            SlashCommandPopupKeyResult::Consumed,
+            "/config ",
+        ),
+        (
+            "/options|",
+            KeyCode::Enter,
+            SlashCommandPopupKeyResult::Submit,
+            "/config",
+        ),
+        (
+            "/bt|w question",
+            KeyCode::Tab,
+            SlashCommandPopupKeyResult::Consumed,
+            "/side question",
+        ),
+    ] {
+        shell.composer = composer_with_cursor(draft);
+        assert_eq!(
+            shell.slash_command_suggestions().unwrap().entries().len(),
+            1
+        );
+        assert_eq!(
+            shell.handle_slash_command_popup_key(KeyEvent::new(key, KeyModifiers::NONE)),
+            result
+        );
+        assert_eq!(shell.composer.text(), expected);
+    }
+    assert_eq!(matching_names("/si|"), Some(vec!["/side"]));
+    assert_eq!(matching_names("/pet|"), Some(vec!["/pets"]));
+}
+
+#[test]
 fn navigation_wraps_and_completion_preserves_the_tail() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;

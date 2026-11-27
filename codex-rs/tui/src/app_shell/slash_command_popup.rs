@@ -62,11 +62,18 @@ impl SlashCommandSuggestions {
             return None;
         }
         let query = before_cursor.to_string();
-        let entries = SLASH_COMMANDS
+        let mut entries = SLASH_COMMANDS
             .iter()
             .copied()
-            .filter(|definition| definition.name().starts_with(&query))
+            .filter(|definition| definition.names.iter().any(|name| name.starts_with(&query)))
             .collect::<Vec<_>>();
+        // Prefer an exact spelling, then canonical prefixes, then alias prefixes.
+        entries.sort_by_key(|entry| {
+            (
+                !entry.names.contains(&query.as_str()),
+                !entry.name().starts_with(&query),
+            )
+        });
         (!entries.is_empty()).then_some(Self {
             query,
             token_range: 0..token_end,

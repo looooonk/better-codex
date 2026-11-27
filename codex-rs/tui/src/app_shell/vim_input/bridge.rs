@@ -4,13 +4,15 @@ pub(super) fn script() -> String {
     let argument_commands = SLASH_COMMANDS
         .iter()
         .filter(|command| command.accepts_arguments())
-        .map(|command| format!("'{}'", command.name()))
+        .flat_map(|command| command.names)
+        .map(|name| format!("'{name}'"))
         .collect::<Vec<_>>()
         .join(", ");
     let no_argument_commands = SLASH_COMMANDS
         .iter()
         .filter(|command| !command.accepts_arguments())
-        .map(|command| format!("'{}'", command.name()))
+        .flat_map(|command| command.names)
+        .map(|name| format!("'{name}'"))
         .collect::<Vec<_>>()
         .join(", ");
 

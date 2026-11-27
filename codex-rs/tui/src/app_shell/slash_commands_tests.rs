@@ -5,6 +5,9 @@ use pretty_assertions::assert_eq;
 #[test]
 fn account_provider_and_apps_commands_are_distinct_workspace_actions() {
     for (text, command, args) in [
+        ("/settings", WorkspaceCommand::Config, ""),
+        ("/options", WorkspaceCommand::Config, ""),
+        ("/btw question", WorkspaceCommand::Side, "question"),
         ("/apps tools docs", WorkspaceCommand::Apps, "tools docs"),
         ("/plugins", WorkspaceCommand::Plugins, ""),
         (

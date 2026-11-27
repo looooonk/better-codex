@@ -18,13 +18,14 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use std::ops::Range;
 
+const MAX_VISIBLE_COMMANDS: usize = 7;
 const MAX_POPUP_WIDTH: u16 = 72;
 
 pub(super) fn render(shell: &ShellState, transcript: Rect, input: Rect, buf: &mut Buffer) {
     let Some(suggestions) = shell.slash_command_suggestions() else {
         return;
     };
-    let height = u16::try_from(suggestions.entries().len())
+    let height = u16::try_from(suggestions.entries().len().min(MAX_VISIBLE_COMMANDS))
         .unwrap_or(u16::MAX)
         .saturating_add(4)
         .min(transcript.height);

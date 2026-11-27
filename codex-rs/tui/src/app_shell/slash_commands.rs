@@ -16,7 +16,8 @@ pub(super) enum SlashCommandId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SlashCommandDefinition {
     id: SlashCommandId,
-    name: &'static str,
+    // The first spelling is the canonical name shown and inserted by the picker.
+    pub(super) names: &'static [&'static str],
     description: &'static str,
     accepts_arguments: bool,
 }
@@ -27,7 +28,7 @@ impl SlashCommandDefinition {
     }
 
     pub(super) const fn name(self) -> &'static str {
-        self.name
+        self.names[0]
     }
 
     pub(super) const fn description(self) -> &'static str {
@@ -42,37 +43,37 @@ impl SlashCommandDefinition {
 pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Config),
-        name: "/config",
-        description: "Configure model, permissions, appearance, and integrations",
+        names: &["/config", "/settings", "/options"],
+        description: "Open workspace settings",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Presets),
-        name: "/presets",
+        names: &["/presets"],
         description: "List, load, save, or delete reusable prompts and commands",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Archive),
-        name: "/archive",
+        names: &["/archive"],
         description: "Archive the current session",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Delete),
-        name: "/delete",
+        names: &["/delete"],
         description: "Confirm permanent deletion of the current session",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Find),
-        name: "/find",
+        names: &["/find"],
         description: "Search the text retained in this conversation",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Keymap),
-        name: "/keymap",
+        names: &["/keymap"],
         description: "View, rebind, or disable keyboard shortcuts",
         accepts_arguments: true,
     },
@@ -80,7 +81,7 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
         id: SlashCommandId::Workspace(WorkspaceCommand::StatusSurface(
             super::status_surfaces::Surface::StatusLine,
         )),
-        name: "/statusline",
+        names: &["/statusline"],
         description: "Choose status items, in display order, or turn the extra row off",
         accepts_arguments: true,
     },
@@ -88,31 +89,31 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
         id: SlashCommandId::Workspace(WorkspaceCommand::StatusSurface(
             super::status_surfaces::Surface::Title,
         )),
-        name: "/title",
+        names: &["/title"],
         description: "Choose terminal title items, in display order, or turn it off",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Pets),
-        name: "/pets",
+        names: &["/pets", "/pet"],
         description: "Choose a terminal pet or hide it",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Attach),
-        name: "/attach",
+        names: &["/attach"],
         description: "Attach local images to your next message",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Detach),
-        name: "/detach",
+        names: &["/detach"],
         description: "Remove an attached image by number, or all",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Ide),
-        name: "/ide",
+        names: &["/ide"],
         description: "Include the IDE selection and open tabs in new messages",
         accepts_arguments: true,
     },
@@ -120,13 +121,13 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
         id: SlashCommandId::Workspace(WorkspaceCommand::Diagnostic(
             super::diagnostic_commands::DiagnosticCommand::Init,
         )),
-        name: "/init",
+        names: &["/init"],
         description: "Create repository instructions in AGENTS.md",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Mention),
-        name: "/mention",
+        names: &["/mention"],
         description: "Find a file to mention; accepts a search query",
         accepts_arguments: true,
     },
@@ -134,7 +135,7 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
         id: SlashCommandId::Workspace(WorkspaceCommand::Diagnostic(
             super::diagnostic_commands::DiagnosticCommand::Warnings,
         )),
-        name: "/warnings",
+        names: &["/warnings"],
         description: "Show retained warnings and diagnostic details",
         accepts_arguments: false,
     },
@@ -142,7 +143,7 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
         id: SlashCommandId::Workspace(WorkspaceCommand::Diagnostic(
             super::diagnostic_commands::DiagnosticCommand::Config,
         )),
-        name: "/debug-config",
+        names: &["/debug-config"],
         description: "Inspect configuration layers and setting sources",
         accepts_arguments: false,
     },
@@ -150,271 +151,265 @@ pub(super) const SLASH_COMMANDS: &[SlashCommandDefinition] = &[
         id: SlashCommandId::Workspace(WorkspaceCommand::Diagnostic(
             super::diagnostic_commands::DiagnosticCommand::Rollout,
         )),
-        name: "/rollout",
+        names: &["/rollout"],
         description: "Show the current session rollout path",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Approve),
-        name: "/approve",
+        names: &["/approve"],
         description: "Inspect a denial or approve one retry by review ID",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Export),
-        name: "/export",
+        names: &["/export"],
         description: "Export the conversation to a new local Markdown file",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Recap),
-        name: "/recap",
+        names: &["/recap"],
         description: "Summarize recent conversation and next steps",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Daybreak),
-        name: "/daybreak",
+        names: &["/daybreak"],
         description: "Manage broader access for cybersecurity work",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Worktree),
-        name: "/worktree",
+        names: &["/worktree"],
         description: "Start or fork a session in a managed worktree",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Usage),
-        name: "/usage",
+        names: &["/usage"],
         description: "Inspect account usage and available resets",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Side),
-        name: "/side",
+        names: &["/side", "/btw"],
         description: "Open a side conversation or return to the main conversation",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
-        id: SlashCommandId::Workspace(WorkspaceCommand::Side),
-        name: "/btw",
-        description: "Ask a quick question in a side conversation",
-        accepts_arguments: true,
-    },
-    SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Daemon),
-        name: "/daemon",
+        names: &["/daemon"],
         description: "Inspect or update the local background server",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Clear,
-        name: "/clear",
+        names: &["/clear"],
         description: "Clear the visible transcript",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Copy,
-        name: "/copy",
+        names: &["/copy"],
         description: "Copy response Markdown; accepts an optional 1-9 index",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Goal,
-        name: "/goal",
+        names: &["/goal"],
         description: "Show or update the active goal",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Login,
-        name: "/login",
+        names: &["/login"],
         description: "Sign in across Codex clients",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Logout,
-        name: "/logout",
+        names: &["/logout"],
         description: "Sign out across Codex clients",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Vim,
-        name: "/vim",
+        names: &["/vim"],
         description: "Edit the prompt in Vim or Neovim",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Exit,
-        name: "/exit",
+        names: &["/exit", "/quit"],
         description: "Exit Better Codex",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::New),
-        name: "/new",
+        names: &["/new"],
         description: "Start a new session",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Resume),
-        name: "/resume",
+        names: &["/resume"],
         description: "Find and resume a session",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Fork),
-        name: "/fork",
+        names: &["/fork"],
         description: "Fork a saved session",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Model),
-        name: "/model",
+        names: &["/model"],
         description: "Choose a model and reasoning effort",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Permissions),
-        name: "/permissions",
+        names: &["/permissions"],
         description: "Choose the sandbox and approval reviewer",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Status),
-        name: "/status",
+        names: &["/status"],
         description: "Show session settings and usage",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Agents),
-        name: "/agent",
+        names: &["/agent", "/agents", "/subagents"],
         description: "Inspect agents and their activity",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Mcp),
-        name: "/mcp",
+        names: &["/mcp"],
         description: "Manage MCP servers",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Apps),
-        name: "/apps",
+        names: &["/apps"],
         description: "List connected apps, manage access and tool permissions",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Provider),
-        name: "/provider",
+        names: &["/provider", "/providers"],
         description: "List, configure, or select a model provider for new sessions",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Account),
-        name: "/account",
+        names: &["/account", "/accounts"],
         description: "List and switch saved accounts and workspaces",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Plugins),
-        name: "/plugins",
+        names: &["/plugins"],
         description: "Manage plugins and connected apps",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Compact),
-        name: "/compact",
+        names: &["/compact"],
         description: "Compact the current context",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Review),
-        name: "/review",
+        names: &["/review"],
         description: "Review changes; accepts instructions or --base/--commit",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Plan),
-        name: "/plan",
+        names: &["/plan"],
         description: "Switch planning mode: on or off",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Skills),
-        name: "/skills",
+        names: &["/skills"],
         description: "List skills or set <name> on/off",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Hooks),
-        name: "/hooks",
+        names: &["/hooks"],
         description: "Inspect hooks or set on/off/trust for a reviewed hook",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Experimental),
-        name: "/experimental",
+        names: &["/experimental"],
         description: "List features or set <name> on/off",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Background),
-        name: "/ps",
+        names: &["/ps"],
         description: "List background terminals",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Clean),
-        name: "/clean",
+        names: &["/clean", "/stop"],
         description: "Stop background terminals for this session",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Memory),
-        name: "/memory",
+        names: &["/memory", "/memories"],
         description: "Read memories or control their use and generation",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Pwd),
-        name: "/pwd",
+        names: &["/pwd", "/cwd"],
         description: "Show the current working directory",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Cd),
-        name: "/cd",
+        names: &["/cd"],
         description: "Change the session working directory",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Rename),
-        name: "/rename",
+        names: &["/rename"],
         description: "Rename the current session",
         accepts_arguments: true,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Diff),
-        name: "/diff",
+        names: &["/diff"],
         description: "Review session file changes",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Import),
-        name: "/import",
+        names: &["/import"],
         description: "Import Claude Code setup",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Theme),
-        name: "/theme",
+        names: &["/theme"],
         description: "Choose the workspace appearance",
         accepts_arguments: false,
     },
     SlashCommandDefinition {
         id: SlashCommandId::Workspace(WorkspaceCommand::Voice),
-        name: "/voice",
+        names: &["/voice"],
         description: "Voice conversation: on, off, mute, unmute, or settings",
         accepts_arguments: true,
     },
@@ -446,23 +441,12 @@ impl LocalSlashCommand {
     pub(super) fn parse(text: &str) -> Option<Self> {
         let trimmed = text.trim();
         let mut parts = trimmed.splitn(2, char::is_whitespace);
-        let command = match parts.next()? {
-            "/quit" => "/exit",
-            "/pet" => "/pets",
-            "/providers" => "/provider",
-            "/accounts" => "/account",
-            "/agents" | "/subagents" => "/agent",
-            "/memories" => "/memory",
-            "/stop" => "/clean",
-            "/settings" => "/config",
-            "/cwd" => "/pwd",
-            command => command,
-        };
+        let command = parts.next()?;
         let args = parts.next().unwrap_or("").trim();
         let definition = SLASH_COMMANDS
             .iter()
             .copied()
-            .find(|definition| definition.name() == command)?;
+            .find(|definition| definition.names.contains(&command))?;
         if !definition.accepts_arguments() && !args.is_empty() {
             return None;
         }
