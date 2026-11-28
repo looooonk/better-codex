@@ -156,6 +156,12 @@ pub(super) trait AppShellBackend {
         params: ThreadListParams,
     ) -> impl std::future::Future<Output = Result<ThreadListResponse>> + Send + 'static;
 
+    fn agent_trace_in_background(
+        &self,
+        root: ThreadId,
+        previous: std::sync::Arc<super::agent_trace::Trace>,
+    ) -> impl std::future::Future<Output = Result<super::agent_trace::Trace>> + Send + 'static;
+
     /// Reads a complete thread transcript without borrowing the event-loop-owned backend.
     fn thread_read_full_in_background(
         &self,
@@ -599,6 +605,19 @@ impl AppShellBackend for AppServerSession {
                     .await?)
             }
         })
+    }
+
+    fn agent_trace_in_background(
+        &self,
+        root: ThreadId,
+        previous: std::sync::Arc<super::agent_trace::Trace>,
+    ) -> impl std::future::Future<Output = Result<super::agent_trace::Trace>> + Send + 'static {
+        super::agent_trace::load(
+            self.request_handle(),
+            root,
+            !self.uses_remote_workspace(),
+            previous,
+        )
     }
 
     fn thread_read_full_in_background(

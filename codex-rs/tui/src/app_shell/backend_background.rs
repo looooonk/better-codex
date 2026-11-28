@@ -68,8 +68,27 @@ pub(super) async fn count_descendants(
     thread_id: ThreadId,
 ) -> Result<usize> {
     let mut count = 0;
+    descendant_pages(request_handle, thread_id, |page| count += page.len()).await?;
+    Ok(count)
+}
+
+pub(super) async fn descendants(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+) -> Result<Vec<codex_app_server_protocol::Thread>> {
+    let mut threads = Vec::new();
+    descendant_pages(request_handle, thread_id, |page| threads.extend(page)).await?;
+    Ok(threads)
+}
+
+async fn descendant_pages(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    mut visit: impl FnMut(Vec<codex_app_server_protocol::Thread>),
+) -> Result<()> {
     for archived in [false, true] {
         let mut cursor = None;
+        let mut cursors = std::collections::HashSet::new();
         loop {
             let response: ThreadListResponse = request_handle
                 .request_typed(ClientRequest::ThreadList {
@@ -97,14 +116,18 @@ pub(super) async fn count_descendants(
                     },
                 })
                 .await?;
-            count += response.data.len();
+            visit(response.data);
             let Some(next_cursor) = response.next_cursor else {
                 break;
             };
+            color_eyre::eyre::ensure!(
+                cursors.insert(next_cursor.clone()),
+                "Repeated descendant cursor"
+            );
             cursor = Some(next_cursor);
         }
     }
-    Ok(count)
+    Ok(())
 }
 
 pub(super) async fn set_thread_name(

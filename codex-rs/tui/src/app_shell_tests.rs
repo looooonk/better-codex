@@ -17082,6 +17082,15 @@ impl backend::AppShellBackend for RecordingBackend {
         async move { backend.thread_list(params).await }
     }
 
+    fn agent_trace_in_background(
+        &self,
+        _root: codex_protocol::ThreadId,
+        _previous: std::sync::Arc<agent_trace::Trace>,
+    ) -> impl std::future::Future<Output = color_eyre::Result<agent_trace::Trace>> + Send + 'static
+    {
+        std::future::ready(Ok(agent_trace::Trace::default()))
+    }
+
     fn thread_read_full_in_background(
         &self,
         thread_id: codex_protocol::ThreadId,

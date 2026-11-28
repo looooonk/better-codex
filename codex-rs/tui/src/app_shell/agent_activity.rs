@@ -106,7 +106,12 @@ impl AgentActivity {
         if let Some(prompt) = prompt
             && (matches!(tool, CollabAgentTool::SpawnAgent) || self.task_summary.is_none())
         {
-            self.task_summary = concise_summary(prompt);
+            let summary = if super::agent_trace::is_encrypted_prompt(prompt) {
+                super::agent_trace::Body::Encrypted.text()
+            } else {
+                prompt
+            };
+            self.task_summary = concise_summary(summary);
         }
         if !self.live_runtime_settings
             && let Some(model) = model
