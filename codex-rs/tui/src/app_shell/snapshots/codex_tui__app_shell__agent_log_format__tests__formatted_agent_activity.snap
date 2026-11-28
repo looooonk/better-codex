@@ -6,11 +6,8 @@ Turn 1  Completed  1.5s
 Reasoning
 Inspecting the relevant rendering path.
 
-$ just test -p codex-tui  1.3s
-… 8 earlier lines
-test snapshots ... ok
-test transcript ... ok
-1316 passed; 0 failed
+Run just test  1.3s
+… 1316 passed; 0 failed
 
 Edits  Completed  2 files
   M  tui/src/agent_log.rs

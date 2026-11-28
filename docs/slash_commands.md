@@ -15,7 +15,7 @@ For example, `/sett` and `/opt` both suggest `/config`. Typing `/settings` or
 | `/rename NAME`, `/archive`, `/delete` | Manage the current session |
 | `/model`, `/permissions` | Choose a model, reasoning effort, or permission mode |
 | `/status`, `/usage` | Inspect session state or account usage |
-| `/agent` (`/agents`, `/subagents`) | View agent communications. Select an arrow for its message or an agent lane for its trajectory |
+| `/agent` (`/agents`, `/subagents`) | View agent communications. Select a white arrow for its message or an agent lane for its trajectory |
 | `/plan [on\|off]`, `/compact` | Toggle planning mode or compact the context |
 | `/review [instructions]`, `/diff` | Start a review or inspect session changes. Review also accepts `--base BRANCH` or `--commit SHA` |
 | `/goal [objective]` | Inspect or set the goal. Use `edit`, `pause`, `resume`, or `clear` to manage it |

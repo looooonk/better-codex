@@ -2822,7 +2822,11 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
     let log = shell.agent_log.as_ref().expect("agent log should be open");
     assert!(!log.is_loading());
     assert_eq!(log.error(), None);
-    let rendered = log.lines().iter().map(line_text).join("\n");
+    let rendered = log
+        .lines()
+        .iter()
+        .map(|line| line_text(&line.line))
+        .join("\n");
     assert!(rendered.contains("earliest history sentinel"));
     assert!(rendered.contains("final suffix sentinel"));
     assert!(rendered.contains(&"x".repeat(700)));

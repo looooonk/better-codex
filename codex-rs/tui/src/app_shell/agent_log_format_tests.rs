@@ -23,7 +23,7 @@ fn formats_only_digestible_subagent_activity() {
     let lines =
         thread_to_agent_log_lines(&thread, RawReasoningVisibility::Hidden, &Trace::default())
             .expect("full history should render");
-    let rendered = plain_text(&lines);
+    let rendered = plain_text(&crate::terminal_hyperlinks::visible_lines(lines));
 
     for hidden in [
         "Original root prompt",
@@ -238,4 +238,24 @@ fn plain_text(lines: &[Line<'static>]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[test]
+fn command_scripts_and_large_function_results_stay_bounded() {
+    let source = "/bin/zsh -lc 'python3 - <<EOF
+print(123)
+EOF'";
+    assert_eq!(command_action(source, &[]), "Run python3");
+    let mut lines = Vec::new();
+    append_output(
+        &mut lines,
+        &format!(
+            "first line
+{}",
+            "x".repeat(2000)
+        ),
+    );
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].width() <= MAX_PREVIEW + 2);
+    assert!(!lines[0].to_string().contains("first line"));
 }

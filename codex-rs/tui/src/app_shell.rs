@@ -65,6 +65,7 @@ mod agent_log;
 mod agent_log_format;
 mod agent_log_view;
 mod agent_panel;
+mod agent_text;
 mod agent_trace;
 mod approval;
 mod approval_popup;

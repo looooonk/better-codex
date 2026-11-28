@@ -88,7 +88,9 @@ async fn async_load_formats_positioned_styles_with_the_selected_app_theme() {
     assert!(log.poll(TuiAppTheme::CatppuccinMocha).await);
 
     assert_eq!(
-        positioned_styles(log.lines()),
+        positioned_styles(&crate::terminal_hyperlinks::visible_lines(
+            log.lines().to_vec()
+        )),
         vec![
             PositionedLine::new(
                 /*line*/ 0,
@@ -252,7 +254,9 @@ fn ready_log() -> AgentLogState {
                     ))
                 }
             })
+            .map(HyperlinkLine::new)
             .collect(),
+        links: AgentTextLinks::default(),
         error: None,
         raw_reasoning_visibility: RawReasoningVisibility::Hidden,
         wrapped_cache: RefCell::new(None),

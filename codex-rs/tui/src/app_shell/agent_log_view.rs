@@ -63,7 +63,7 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
             )
         })
     };
-    let (visible, visual_lines, scroll) = if let Some(wrapped) = transient_lines {
+    let (visual_lines, scroll) = if let Some(wrapped) = transient_lines {
         let visual_lines = wrapped.len();
         log.set_scroll_max(visual_lines.saturating_sub(body_height));
         let scroll = log.scroll();
@@ -72,14 +72,15 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
             .skip(scroll)
             .take(body_height)
             .collect::<Vec<_>>();
-        (visible, visual_lines, scroll)
+        Paragraph::new(visible)
+            .style(pane_style(palette::surface()))
+            .render(geometry.body, buf);
+        (visual_lines, scroll)
     } else {
         let viewport = log.ready_viewport(body_width, body_height);
-        (viewport.lines, viewport.visual_lines, viewport.scroll)
+        log.links.render(&viewport.lines, geometry.body, buf);
+        (viewport.visual_lines, viewport.scroll)
     };
-    Paragraph::new(visible)
-        .style(pane_style(palette::surface()))
-        .render(geometry.body, buf);
 
     render_scrollback_footer(
         geometry,

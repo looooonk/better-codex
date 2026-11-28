@@ -10,6 +10,7 @@ use std::io::Write;
 
 fn lane(id: &str, name: &str, records: Records) -> Lane {
     Lane {
+        cwd: "/workspace".into(),
         target: AgentLogTarget {
             thread_id: id.into(),
             display_name: name.into(),
@@ -48,8 +49,7 @@ async fn parse(id: &str, path: &str, records: Vec<Value>) -> Records {
     Records::read(file.path(), path, id).await.unwrap()
 }
 
-#[tokio::test]
-async fn delayed_encrypted_delivery_keeps_send_order_and_restart_gaps() {
+pub(in crate::app_shell) async fn sample_trace() -> Trace {
     let root = "/root";
     let scout = "/root/scout";
     let review = "/root/review";
@@ -105,7 +105,7 @@ async fn delayed_encrypted_delivery_keeps_send_order_and_restart_gaps() {
     )
     .await;
 
-    let graph = Trace::assemble(
+    Trace::assemble(
         vec![
             lane("m", "Main", main),
             lane("s", "scout", worker),
@@ -113,7 +113,12 @@ async fn delayed_encrypted_delivery_keeps_send_order_and_restart_gaps() {
         ],
         "m",
         false,
-    );
+    )
+}
+
+#[tokio::test]
+async fn delayed_encrypted_delivery_keeps_send_order_and_restart_gaps() {
+    let graph = sample_trace().await;
     let routes = graph
         .messages
         .iter()
@@ -152,7 +157,11 @@ async fn delayed_encrypted_delivery_keeps_send_order_and_restart_gaps() {
     panel.trace = Arc::new(graph);
     let area = Rect::new(0, 0, 65, 20);
     let mut buffer = Buffer::empty(area);
-    render(&panel, area, None, &mut buffer);
+    let mut agents = crate::app_shell::agent_activity::AgentActivityState::default();
+    for lane in panel.trace.lanes.iter().skip(1) {
+        agents.assign_color(&lane.target.thread_id);
+    }
+    render(&panel, &agents, area, None, &mut buffer);
     let text = buffer
         .content
         .chunks(usize::from(area.width))

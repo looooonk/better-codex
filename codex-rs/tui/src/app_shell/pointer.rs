@@ -78,13 +78,21 @@ impl ShellState {
             }
             return Ok(());
         }
-        if self.agent_log.is_some() {
+        if let Some(log) = &self.agent_log {
+            if let Some(target) = log.links.at(position) {
+                self.open_transcript_link(target, app_server);
+                return Ok(());
+            }
             if !super::agent_log_view::agent_log_panel_area(area).contains(position) {
                 self.close_agent_log();
             }
             return Ok(());
         }
-        if self.agent_panel.is_some() {
+        if let Some(panel) = &self.agent_panel {
+            if let Some(target) = panel.link_at(position) {
+                self.open_transcript_link(target, app_server);
+                return Ok(());
+            }
             self.agent_panel_click(area, position, config, app_server);
             return Ok(());
         }
@@ -259,35 +267,7 @@ impl ShellState {
         if let Some(destination) =
             (ShellView { shell: self }).transcript_hyperlink_at(area, position)
         {
-            use crate::terminal_hyperlinks::ClickTarget;
-            let destination = match destination {
-                ClickTarget::External(url) => url,
-                ClickTarget::Source(link) => {
-                    let thread_id = self.thread_id;
-                    let request = app_server.workspace_request_in_background(
-                        thread_id,
-                        super::workspace_requests::WorkspaceRequest::ReadSource(link),
-                    );
-                    self.start_backend_action(
-                        super::backend_actions::ActionGroup::Workspace,
-                        "opening source",
-                        async move {
-                            super::backend_actions::BackendActionResult::Workspace {
-                                thread_id,
-                                result: request.await,
-                            }
-                        },
-                    );
-                    return Ok(());
-                }
-            };
-            match webbrowser::open(&destination) {
-                Ok(()) => self.show_hint("opened link in browser"),
-                Err(error) => {
-                    tracing::warn!(%destination, "failed to open transcript URL: {error}");
-                    self.push_error(format!("Could not open link: {error}"));
-                }
-            }
+            self.open_transcript_link(destination, app_server);
             return Ok(());
         }
         if let Some(card) = (ShellView { shell: self }).transcript_card_at(area, position) {
@@ -419,6 +399,42 @@ impl ShellState {
             }
         }
         Ok(())
+    }
+
+    fn open_transcript_link(
+        &mut self,
+        destination: crate::terminal_hyperlinks::ClickTarget,
+        app_server: &impl AppShellBackend,
+    ) {
+        use crate::terminal_hyperlinks::ClickTarget;
+        let destination = match destination {
+            ClickTarget::External(url) => url,
+            ClickTarget::Source(link) => {
+                let thread_id = self.thread_id;
+                let request = app_server.workspace_request_in_background(
+                    thread_id,
+                    super::workspace_requests::WorkspaceRequest::ReadSource(link),
+                );
+                self.start_backend_action(
+                    super::backend_actions::ActionGroup::Workspace,
+                    "opening source",
+                    async move {
+                        super::backend_actions::BackendActionResult::Workspace {
+                            thread_id,
+                            result: request.await,
+                        }
+                    },
+                );
+                return;
+            }
+        };
+        match webbrowser::open(&destination) {
+            Ok(()) => self.show_hint("opened link in browser"),
+            Err(error) => {
+                tracing::warn!(%destination, "failed to open transcript URL: {error}");
+                self.push_error(format!("Could not open link: {error}"));
+            }
+        }
     }
 
     pub(super) fn set_pointer_position(&mut self, position: Position) -> bool {

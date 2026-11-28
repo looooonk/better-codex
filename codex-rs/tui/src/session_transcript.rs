@@ -68,22 +68,11 @@ pub(crate) fn thread_item_to_transcript_lines(
             id,
             client_id,
             content,
-        } => {
-            let item = UserMessageItem {
-                id: id.clone(),
-                client_id: client_id.clone(),
-                content: content
-                    .iter()
-                    .cloned()
-                    .map(codex_app_server_protocol::UserInput::into_core)
-                    .collect(),
-            };
-            prefixed_text(
-                "You",
-                crate::ide_context::visible_request(&item.message()).to_string(),
-                ratatui::style::Color::Cyan,
-            )
-        }
+        } => prefixed_text(
+            "You",
+            user_text(id, client_id, content),
+            ratatui::style::Color::Cyan,
+        ),
         ThreadItemPayload::AgentMessage {
             text, questions, ..
         } => {
@@ -241,6 +230,23 @@ pub(crate) fn thread_item_to_transcript_lines(
             vec![format!("sleep: {duration_ms} ms").dim().into()]
         }
     }
+}
+
+pub(crate) fn user_text(
+    id: &str,
+    client_id: &Option<String>,
+    content: &[codex_app_server_protocol::UserInput],
+) -> String {
+    let item = UserMessageItem {
+        id: id.to_owned(),
+        client_id: client_id.clone(),
+        content: content
+            .iter()
+            .cloned()
+            .map(codex_app_server_protocol::UserInput::into_core)
+            .collect(),
+    };
+    crate::ide_context::visible_request(&item.message()).to_owned()
 }
 
 fn prefixed_text(label: &str, text: String, color: ratatui::style::Color) -> TranscriptLines {

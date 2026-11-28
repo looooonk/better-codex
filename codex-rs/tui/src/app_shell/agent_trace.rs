@@ -57,6 +57,12 @@ pub(super) struct Message {
     pub(super) kind: String,
 }
 
+impl Message {
+    pub(super) fn readable(&self) -> bool {
+        matches!(self.body.as_ref(), Body::Text(_))
+    }
+}
+
 #[derive(Debug, Default)]
 struct Records {
     spans: Vec<(i64, Option<i64>)>,
@@ -79,6 +85,7 @@ struct Delivery {
 
 #[derive(Debug)]
 pub(super) struct Lane {
+    pub(super) cwd: PathBuf,
     pub(super) target: AgentLogTarget,
     spans: Vec<(i64, Option<i64>)>,
     created: i64,
@@ -111,6 +118,7 @@ impl Lane {
             _ => records.status.unwrap_or(AgentLifecycleStatus::Unknown),
         };
         Self {
+            cwd: thread.cwd.to_path_buf(),
             target: AgentLogTarget {
                 thread_id: thread.id.clone(),
                 display_name: name,
@@ -276,4 +284,4 @@ pub(super) fn clock(at: i64) -> String {
 
 #[cfg(test)]
 #[path = "agent_trace_tests.rs"]
-mod tests;
+pub(super) mod tests;

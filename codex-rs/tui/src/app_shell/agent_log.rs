@@ -2,14 +2,16 @@ use super::ShellState;
 use super::agent_activity::AgentActivity;
 use super::agent_activity::AgentLifecycleStatus;
 use super::agent_log_format::thread_to_agent_log_lines;
+use super::agent_text::AgentTextLinks;
 use super::agent_trace::Trace;
 use super::backend::AppShellBackend;
 use crate::app_theme::TuiAppTheme;
 use crate::legacy_core::config::Config;
 use crate::session_transcript::RawReasoningVisibility;
-use crate::session_transcript::TranscriptLines;
+use crate::terminal_hyperlinks::HyperlinkLine;
+use crate::terminal_hyperlinks::adaptive_wrap_hyperlink_lines;
 use crate::wrapping::RtOptions;
-use crate::wrapping::word_wrap_lines;
+
 use codex_app_server_protocol::Thread;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
@@ -53,9 +55,10 @@ type AgentLogLoad = JoinHandle<Result<(Thread, Arc<Trace>)>>;
 pub(super) struct AgentLogState {
     pub(super) target: AgentLogTarget,
     load_task: Option<AgentLogLoad>,
-    lines: TranscriptLines,
+    lines: Vec<HyperlinkLine>,
     error: Option<String>,
     raw_reasoning_visibility: RawReasoningVisibility,
+    pub(super) links: AgentTextLinks,
     wrapped_cache: RefCell<Option<WrappedLogCache>>,
     scroll: Cell<usize>,
     scroll_max: Cell<usize>,
@@ -63,11 +66,11 @@ pub(super) struct AgentLogState {
 
 struct WrappedLogCache {
     width: usize,
-    lines: TranscriptLines,
+    lines: Vec<HyperlinkLine>,
 }
 
 pub(super) struct AgentLogViewport {
-    pub(super) lines: TranscriptLines,
+    pub(super) lines: Vec<HyperlinkLine>,
     pub(super) visual_lines: usize,
     pub(super) scroll: usize,
 }
@@ -84,6 +87,7 @@ impl AgentLogState {
             lines: Vec::new(),
             error: None,
             raw_reasoning_visibility,
+            links: AgentTextLinks::default(),
             wrapped_cache: RefCell::new(None),
             scroll: Cell::new(0),
             scroll_max: Cell::new(0),
@@ -97,6 +101,7 @@ impl AgentLogState {
             lines: Vec::new(),
             error: Some(message.into()),
             raw_reasoning_visibility: RawReasoningVisibility::Hidden,
+            links: AgentTextLinks::default(),
             wrapped_cache: RefCell::new(None),
             scroll: Cell::new(0),
             scroll_max: Cell::new(0),
@@ -107,7 +112,8 @@ impl AgentLogState {
         self.load_task.is_some()
     }
 
-    pub(super) fn lines(&self) -> &[ratatui::text::Line<'static>] {
+    #[cfg(test)]
+    pub(super) fn lines(&self) -> &[HyperlinkLine] {
         &self.lines
     }
 
@@ -132,7 +138,7 @@ impl AgentLogState {
             .as_ref()
             .is_none_or(|cache| cache.width != width);
         if needs_wrap {
-            let lines = word_wrap_lines(self.lines.clone(), RtOptions::new(width));
+            let lines = adaptive_wrap_hyperlink_lines(&self.lines, RtOptions::new(width));
             *self.wrapped_cache.borrow_mut() = Some(WrappedLogCache { width, lines });
         }
         let cache = self.wrapped_cache.borrow();

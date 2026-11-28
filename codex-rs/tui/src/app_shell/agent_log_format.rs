@@ -1,17 +1,18 @@
+use super::agent_text::markdown;
 use super::agent_trace::Message;
 use super::agent_trace::Trace;
-use super::agent_trace::clock;
-use super::design::markdown_styles;
 use super::design::palette;
 use crate::git_action_directives::parse_assistant_markdown;
-use crate::markdown_render::render_markdown_text_with_width_cwd_and_styles;
 use crate::reasoning_summary::split_reasoning_summary_parts;
 use crate::session_transcript::RawReasoningVisibility;
 use crate::session_transcript::TranscriptLines;
 use crate::session_transcript::thread_item_to_transcript_lines;
+use crate::terminal_hyperlinks::HyperlinkLine;
+use crate::terminal_hyperlinks::plain_hyperlink_lines;
 use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
+use codex_app_server_protocol::CommandAction;
 use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::DynamicToolCallStatus;
 use codex_app_server_protocol::McpToolCallStatus;
@@ -26,17 +27,16 @@ use codex_app_server_protocol::TurnStatus;
 use ratatui::style::Color;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use std::path::Path;
 
-const MAX_COMMAND_OUTPUT_LINES: usize = 3;
-const MAX_OUTPUT_LINE_GRAPHEMES: usize = 240;
-const MAX_FILE_ROWS: usize = 12;
-const MAX_ERROR_GRAPHEMES: usize = 400;
+const MAX_PREVIEW: usize = 88;
+const MAX_FILE_ROWS: usize = 3;
 
 pub(super) fn thread_to_agent_log_lines(
     thread: &Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
     trace: &Trace,
-) -> Result<TranscriptLines, String> {
+) -> Result<Vec<HyperlinkLine>, String> {
     for turn in &thread.turns {
         match turn.items_view {
             TurnItemsView::Full => {}
@@ -88,13 +88,11 @@ pub(super) fn thread_to_agent_log_lines(
                 continue;
             }
             let at = item.completed_at_ms.or(item.started_at_ms);
-            while let Some((time, msg)) = mail.next_if(|(time, _)| at.is_some_and(|at| *time <= at))
-            {
-                append_entry(&mut activity, Some(time), message_lines(trace, msg));
+            while let Some((_, msg)) = mail.next_if(|(time, _)| at.is_some_and(|at| *time <= at)) {
+                append_entry(&mut activity, message_lines(trace, msg, &thread.cwd));
             }
             append_entry(
                 &mut activity,
-                at,
                 agent_item_lines(item, thread, raw_reasoning_visibility),
             );
         }
@@ -102,36 +100,33 @@ pub(super) fn thread_to_agent_log_lines(
             .get(index + 1)
             .and_then(|t| t.started_at)
             .map(|s| s.saturating_mul(1000));
-        while let Some((time, msg)) = mail
+        while let Some((_, msg)) = mail
             .next_if(|(time, _)| next_turn.is_some_and(|t| *time < t) || index + 1 == turns.len())
         {
-            append_entry(&mut activity, Some(time), message_lines(trace, msg));
+            append_entry(&mut activity, message_lines(trace, msg, &thread.cwd));
         }
         if let Some(error) = &turn.error {
             append_entry(
                 &mut activity,
-                None,
-                vec![
+                plain_hyperlink_lines(vec![
                     "Turn failed".bold().fg(palette::error()).into(),
-                    truncate_text(&error.message, MAX_ERROR_GRAPHEMES)
-                        .fg(palette::error())
-                        .into(),
-                ],
+                    one_line(&error.message).fg(palette::error()).into(),
+                ]),
             );
         }
         if !activity.is_empty() {
             if !lines.is_empty() {
-                lines.push(Line::default());
+                lines.push(HyperlinkLine::default());
             }
-            lines.push(turn_header(index + 1, turn));
+            lines.push(turn_header(index + 1, turn).into());
             lines.extend(activity);
         }
     }
-    for (time, msg) in mail {
-        append_entry(&mut lines, Some(time), message_lines(trace, msg));
+    for (_, msg) in mail {
+        append_entry(&mut lines, message_lines(trace, msg, &thread.cwd));
     }
     if lines.is_empty() {
-        lines.push("No activity".fg(palette::muted()).into());
+        lines.push(Line::from("No activity".fg(palette::muted())).into());
     }
     Ok(lines)
 }
@@ -151,22 +146,18 @@ fn local_activity_turns(thread: &Thread) -> &[Turn] {
     &thread.turns
 }
 
-fn append_entry(lines: &mut TranscriptLines, at: Option<i64>, mut entry: TranscriptLines) {
-    let Some(head) = entry.first_mut() else {
+fn append_entry(lines: &mut Vec<HyperlinkLine>, entry: Vec<HyperlinkLine>) {
+    if entry.is_empty() {
         return;
-    };
-    if let Some(at) = at {
-        head.spans
-            .insert(0, format!("{}  ", clock(at)).fg(palette::muted()));
     }
     if !lines.is_empty() {
-        lines.push(Line::default());
+        lines.push(HyperlinkLine::default());
     }
     lines.extend(entry);
 }
 
-fn message_lines(trace: &Trace, msg: &Message) -> TranscriptLines {
-    let mut lines = vec![Line::from(vec![
+fn message_lines(trace: &Trace, msg: &Message, cwd: &Path) -> Vec<HyperlinkLine> {
+    let mut lines = vec![HyperlinkLine::new(Line::from(vec![
         format!(
             "{} → {}",
             trace.lanes[msg.from].target.display_name, trace.lanes[msg.to].target.display_name
@@ -174,8 +165,12 @@ fn message_lines(trace: &Trace, msg: &Message) -> TranscriptLines {
         .bold()
         .fg(palette::cyan()),
         format!("  {}", msg.kind).fg(palette::muted()),
-    ])];
-    lines.extend(msg.body.text().lines().map(|s| Line::from(s.to_owned())));
+    ]))];
+    if msg.readable() {
+        lines.extend(markdown(msg.body.text(), cwd, None));
+    } else {
+        lines.push(Line::from(msg.body.text().to_owned().fg(palette::muted())).into());
+    }
     lines
 }
 
@@ -197,14 +192,20 @@ fn agent_item_lines(
     item: &ThreadItem,
     thread: &Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
-) -> TranscriptLines {
-    match &item.payload {
+) -> Vec<HyperlinkLine> {
+    let lines = match &item.payload {
         ThreadItemPayload::HookPrompt { .. } => Vec::new(),
-        ThreadItemPayload::UserMessage { .. } => {
-            thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility)
+        ThreadItemPayload::UserMessage {
+            id,
+            client_id,
+            content,
+        } => {
+            let text = crate::session_transcript::user_text(id, client_id, content);
+            return themed_prefixed_text("You", &text, palette::cyan(), &thread.cwd);
         }
         ThreadItemPayload::CommandExecution {
             command,
+            command_actions,
             status,
             aggregated_output,
             exit_code,
@@ -212,6 +213,7 @@ fn agent_item_lines(
             ..
         } => command_lines(
             command,
+            command_actions,
             status,
             aggregated_output.as_deref(),
             *exit_code,
@@ -269,31 +271,28 @@ fn agent_item_lines(
             ]
             .into(),
         ],
-        ThreadItemPayload::AgentMessage { text, phase, .. } => {
-            let parsed = parse_assistant_markdown(text, &thread.cwd);
-            if parsed.visible_markdown.trim().is_empty() {
-                Vec::new()
-            } else {
-                let label = match phase {
-                    Some(codex_protocol::models::MessagePhase::Commentary) => "Update",
-                    Some(codex_protocol::models::MessagePhase::FinalAnswer) => "Final answer",
-                    _ => "Assistant",
-                };
-                let mut lines = vec![label.bold().fg(palette::purple()).into()];
-                lines.extend(
-                    render_markdown_text_with_width_cwd_and_styles(
-                        &parsed.visible_markdown,
-                        /*width*/ None,
-                        Some(&thread.cwd),
-                        markdown_styles(),
-                    )
-                    .lines,
-                );
-                lines
-            }
+        ThreadItemPayload::AgentMessage {
+            text,
+            phase,
+            questions,
+            ..
+        } => {
+            let text = crate::assistant_message::with_questions(text, questions.as_deref());
+            let parsed = parse_assistant_markdown(&text, &thread.cwd);
+            let label = match phase {
+                Some(codex_protocol::models::MessagePhase::Commentary) => "Update",
+                Some(codex_protocol::models::MessagePhase::FinalAnswer) => "Final answer",
+                _ => "Assistant",
+            };
+            return themed_prefixed_text(
+                label,
+                &parsed.visible_markdown,
+                palette::purple(),
+                &thread.cwd,
+            );
         }
         ThreadItemPayload::Plan { text, .. } => {
-            themed_prefixed_text("Plan", text.clone(), palette::success())
+            return themed_prefixed_text("Plan", text, palette::success(), &thread.cwd);
         }
         ThreadItemPayload::Reasoning {
             summary, content, ..
@@ -306,18 +305,28 @@ fn agent_item_lines(
                 } else {
                     split_reasoning_summary_parts(summary)
                 };
-            themed_prefixed_text(
-                if header.is_empty() {
-                    "Reasoning"
-                } else {
-                    &header
-                },
-                text,
+            let label = header
+                .strip_prefix("**")
+                .and_then(|s| s.strip_suffix("**"))
+                .unwrap_or(&header);
+            return themed_prefixed_text(
+                if label.is_empty() { "Reasoning" } else { label },
+                &text,
                 palette::muted(),
-            )
+                &thread.cwd,
+            );
         }
-        ThreadItemPayload::FunctionCallOutput { .. }
-        | ThreadItemPayload::WebSearch(_)
+        ThreadItemPayload::FunctionCallOutput { name, output, .. } => {
+            let mut lines = vec![Line::from(vec![
+                "Tool  ".bold().fg(palette::purple()),
+                one_line(name).into(),
+            ])];
+            if let codex_protocol::models::FunctionCallOutputBody::Text(text) = output {
+                append_output(&mut lines, text);
+            }
+            lines
+        }
+        ThreadItemPayload::WebSearch(_)
         | ThreadItemPayload::ImageView { .. }
         | ThreadItemPayload::Sleep(_)
         | ThreadItemPayload::ImageGeneration(_)
@@ -326,45 +335,106 @@ fn agent_item_lines(
         | ThreadItemPayload::ContextCompaction { .. } => {
             thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility)
         }
-    }
+    };
+    plain_hyperlink_lines(lines)
 }
 
-fn themed_prefixed_text(label: &str, text: String, color: Color) -> TranscriptLines {
+fn themed_prefixed_text(label: &str, text: &str, color: Color, cwd: &Path) -> Vec<HyperlinkLine> {
     if text.trim().is_empty() {
         return Vec::new();
     }
-    let mut lines = vec![label.to_string().fg(color).bold().into()];
-    lines.extend(text.lines().map(|line| line.to_string().into()));
+    let mut lines = vec![HyperlinkLine::new(Line::from(
+        label.to_owned().fg(color).bold(),
+    ))];
+    lines.extend(markdown(text, cwd, None));
     lines
+}
+
+fn one_line(text: &str) -> String {
+    let mut lines = text.trim().lines();
+    let first = lines.next().unwrap_or_default();
+    let mut result = truncate_text(first, MAX_PREVIEW);
+    if lines.next().is_some() {
+        result.push('…');
+    }
+    result
+}
+
+fn append_output(lines: &mut TranscriptLines, text: &str) {
+    let mut nonempty = text.lines().rev().map(str::trim).filter(|s| !s.is_empty());
+    if let Some(last) = nonempty.next() {
+        let start = text.trim_start();
+        if start.starts_with('{') || start.starts_with("[{") {
+            lines.push("Structured output".fg(palette::muted()).into());
+        } else {
+            let prefix = if nonempty.next().is_some() {
+                "… "
+            } else {
+                ""
+            };
+            lines.push(
+                format!("{prefix}{}", one_line(last))
+                    .fg(palette::muted())
+                    .into(),
+            );
+        }
+    }
+}
+
+fn command_action(command: &str, actions: &[CommandAction]) -> String {
+    match actions.first() {
+        Some(CommandAction::Read { name, .. }) => format!("Read {}", one_line(name)),
+        Some(CommandAction::ListFiles { path, .. }) => path
+            .as_deref()
+            .map_or_else(|| "List files".into(), |p| format!("List {}", one_line(p))),
+        Some(CommandAction::Search { query, .. }) => query.as_deref().map_or_else(
+            || "Search files".into(),
+            |q| format!("Search {}", one_line(q)),
+        ),
+        _ => {
+            let args = shlex::split(command).unwrap_or_default();
+            let program = |s: &str| s.rsplit('/').next().unwrap_or_default().to_owned();
+            let inner;
+            let args = match args.as_slice() {
+                [shell, flag, script, ..]
+                    if matches!(program(shell).as_str(), "sh" | "bash" | "zsh" | "dash")
+                        && matches!(flag.as_str(), "-lc" | "-c") =>
+                {
+                    inner =
+                        shlex::split(script.lines().next().unwrap_or_default()).unwrap_or_default();
+                    &inner
+                }
+                _ => &args,
+            };
+            let Some(name) = args.first().map(|s| program(s)) else {
+                return "Run command".into();
+            };
+            if matches!(
+                name.as_str(),
+                "cargo" | "git" | "just" | "npm" | "pnpm" | "uv"
+            ) && let Some(action) = args.get(1)
+            {
+                format!("Run {name} {}", one_line(action))
+            } else {
+                format!("Run {}", one_line(&name))
+            }
+        }
+    }
 }
 
 fn command_lines(
     command: &str,
+    actions: &[CommandAction],
     status: &CommandExecutionStatus,
     output: Option<&str>,
     exit_code: Option<i32>,
     duration_ms: Option<i64>,
 ) -> TranscriptLines {
     let (status_label, color) = command_status(status);
-    let args = shlex::split(command).unwrap_or_default();
-    let display = match args.as_slice() {
-        [shell, flag, script]
-            if matches!(
-                std::path::Path::new(shell)
-                    .file_name()
-                    .and_then(|s| s.to_str()),
-                Some("sh" | "bash" | "zsh" | "dash")
-            ) && matches!(flag.as_str(), "-c" | "-lc") =>
-        {
-            script.as_str()
-        }
-        _ => command,
-    };
-    let mut command_lines = display.lines();
-    let mut spans = vec![
-        "$ ".fg(palette::muted()),
-        command_lines.next().unwrap_or_default().to_owned().bold(),
-    ];
+    let mut spans = vec![command_action(command, actions).bold()];
+    if actions.len() > 1 {
+        spans.push(format!("  +{}", actions.len() - 1).fg(palette::muted()));
+    }
     if !matches!(status, CommandExecutionStatus::Completed) {
         spans.push(format!("  {status_label}").fg(color));
     }
@@ -379,24 +449,15 @@ fn command_lines(
         spans.push(format!("  {}", format_duration(ms)).fg(palette::muted()));
     }
     let mut lines = vec![spans.into()];
-    lines.extend(command_lines.map(|line| Line::from(format!("  {line}"))));
-    let Some(output) = output.map(str::trim_end).filter(|s| !s.is_empty()) else {
-        return lines;
-    };
-    let output_lines = output.lines().collect::<Vec<_>>();
-    let visible_start = output_lines.len().saturating_sub(MAX_COMMAND_OUTPUT_LINES);
-    if visible_start > 0 {
-        lines.push(
-            format!("… {visible_start} earlier lines")
-                .fg(palette::muted())
-                .into(),
-        );
+    let successful_inspection = !actions.is_empty()
+        && matches!(status, CommandExecutionStatus::Completed)
+        && exit_code.unwrap_or(0) == 0
+        && actions
+            .iter()
+            .all(|action| !matches!(action, CommandAction::Unknown { .. }));
+    if !successful_inspection && let Some(text) = output {
+        append_output(&mut lines, text);
     }
-    lines.extend(output_lines[visible_start..].iter().map(|line| {
-        truncate_text(line.trim_end(), MAX_OUTPUT_LINE_GRAPHEMES)
-            .fg(palette::muted())
-            .into()
-    }));
     lines
 }
 
@@ -474,11 +535,7 @@ fn tool_lines(
     }
     let mut lines = vec![spans.into()];
     if let Some(error) = error {
-        lines.push(
-            truncate_text(error, MAX_ERROR_GRAPHEMES)
-                .fg(palette::error())
-                .into(),
-        );
+        lines.push(one_line(error).fg(palette::error()).into());
     }
     lines
 }

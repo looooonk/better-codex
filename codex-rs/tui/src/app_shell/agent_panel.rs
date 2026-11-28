@@ -33,9 +33,18 @@ enum Hit {
     LaterLanes,
 }
 
+#[derive(Default)]
+struct DetailRows {
+    width: u16,
+    lines: Vec<crate::terminal_hyperlinks::HyperlinkLine>,
+}
+
 struct Detail {
     message: Message,
     route: String,
+    links: super::agent_text::AgentTextLinks,
+    rows: std::cell::RefCell<DetailRows>,
+    cwd: std::path::PathBuf,
     scroll: usize,
     max_scroll: Cell<usize>,
 }
@@ -47,7 +56,7 @@ pub(super) struct AgentPanel {
     error: bool,
     follow: bool,
     focus: Focus,
-    message: usize,
+    message: Option<usize>,
     lane: usize,
     first_row: Cell<usize>,
     first_lane: Cell<usize>,
@@ -65,7 +74,7 @@ impl Default for AgentPanel {
             error: false,
             follow: false,
             focus: Focus::Message,
-            message: 0,
+            message: None,
             lane: 0,
             first_row: Cell::new(0),
             first_lane: Cell::new(0),
@@ -88,12 +97,15 @@ impl AgentPanel {
     fn activate(&mut self, hit: Hit) -> Option<AgentLogTarget> {
         match hit {
             Hit::Message(i) => {
-                let message = self.trace.messages.get(i)?;
+                let message = self.trace.messages.get(i).filter(|msg| msg.readable())?;
                 self.follow = false;
-                self.message = i;
+                self.message = Some(i);
                 self.focus = Focus::Message;
                 self.detail = Some(Detail {
                     route: self.route(message),
+                    rows: Default::default(),
+                    links: Default::default(),
+                    cwd: self.trace.lanes[message.from].cwd.clone(),
                     message: message.clone(),
                     scroll: 0,
                     max_scroll: Cell::new(0),
@@ -110,6 +122,10 @@ impl AgentPanel {
         None
     }
 
+    pub(super) fn link_at(&self, p: Position) -> Option<crate::terminal_hyperlinks::ClickTarget> {
+        self.detail.as_ref()?.links.at(p)
+    }
+
     fn route(&self, msg: &Message) -> String {
         format!(
             "{} → {}",
@@ -119,6 +135,7 @@ impl AgentPanel {
     }
 
     fn select_lane(&mut self, index: usize) {
+        self.follow = false;
         self.focus = Focus::Lane;
         self.lane = index.min(self.trace.lanes.len().saturating_sub(1));
         reveal(&self.first_lane, self.lane, self.columns.get());
@@ -147,24 +164,63 @@ impl AgentPanel {
             | KeyCode::PageDown
             | KeyCode::PageUp
             | KeyCode::Char('g' | 'G' | 'j' | 'k') => {
-                self.focus = Focus::Message;
-                self.follow = matches!(key, KeyCode::End | KeyCode::Char('G'));
-                self.message = next_index(
-                    key,
-                    self.message,
-                    self.trace.messages.len().saturating_sub(1),
-                    page,
-                );
-                reveal(&self.first_row, self.message, page);
-                if let Some(msg) = self.trace.messages.get(self.message) {
-                    let first = self.first_lane.get();
-                    let last = first + self.columns.get();
-                    if msg.from.min(msg.to) >= last || msg.from.max(msg.to) < first {
-                        reveal(&self.first_lane, msg.from, self.columns.get());
-                    }
-                }
+                self.navigate_messages(key, page);
             }
             _ => {}
+        }
+    }
+    fn navigate_messages(&mut self, key: KeyCode, page: usize) {
+        self.focus = Focus::Message;
+        self.follow = matches!(key, KeyCode::End | KeyCode::Char('G'));
+        let messages = &self.trace.messages;
+        let first = self.first_row.get();
+        let max_first = messages.len().saturating_sub(page);
+        let mut row = next_index(key, first, max_first, page);
+        let selected = match key {
+            KeyCode::Up | KeyCode::Char('k') => {
+                let start = self.message.unwrap_or(first).min(messages.len());
+                let found = messages[..start].iter().rposition(Message::readable);
+                if found.is_none() && self.message.is_some() {
+                    row = 0;
+                }
+                found
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let start = self.message.map_or(first, |i| i + 1).min(messages.len());
+                let found = messages[start..]
+                    .iter()
+                    .position(Message::readable)
+                    .map(|i| start + i);
+                if found.is_none() && self.message.is_some() {
+                    row = max_first;
+                }
+                found
+            }
+            _ => {
+                let visible = &messages[row..(row + page).min(messages.len())];
+                let found = if self.follow {
+                    visible.iter().rposition(Message::readable)
+                } else {
+                    visible.iter().position(Message::readable)
+                };
+                found.map(|i| row + i)
+            }
+        };
+        self.message = selected.or(self.message.filter(|i| (row..row + page).contains(i)));
+        if let Some(index) = self.message {
+            let step = matches!(key, KeyCode::Up | KeyCode::Down | KeyCode::Char('j' | 'k'));
+            if !step || selected.is_none() {
+                self.first_row.set(row);
+            }
+            reveal(&self.first_row, index, page);
+            let msg = &messages[index];
+            let first = self.first_lane.get();
+            let last = first + self.columns.get();
+            if msg.from.min(msg.to) >= last || msg.from.max(msg.to) < first {
+                reveal(&self.first_lane, msg.from, self.columns.get());
+            }
+        } else {
+            self.first_row.set(row);
         }
     }
 }
@@ -210,13 +266,17 @@ impl ShellState {
         {
             match task.await {
                 Ok(Ok(trace)) => {
+                    for lane in trace.lanes.iter().skip(1) {
+                        self.agent_activity.assign_color(&lane.target.thread_id);
+                    }
+                    let first_load = panel.trace.lanes.is_empty();
                     panel.trace = Arc::new(trace);
                     if panel.follow {
-                        panel.message = panel.trace.messages.len().saturating_sub(1);
+                        panel.navigate(KeyCode::End);
                     } else {
-                        panel.message = panel
-                            .message
-                            .min(panel.trace.messages.len().saturating_sub(1));
+                        panel.message = panel.message.or(first_load.then_some(0)).filter(|i| {
+                            panel.trace.messages.get(*i).is_some_and(Message::readable)
+                        });
                     }
                     panel.lane = panel.lane.min(panel.trace.lanes.len().saturating_sub(1));
                     panel.error = false;
@@ -264,7 +324,10 @@ impl ShellState {
                 let hit = if panel.focus == Focus::Lane || panel.trace.messages.is_empty() {
                     Hit::Lane(panel.lane)
                 } else {
-                    Hit::Message(panel.message)
+                    let Some(index) = panel.message else {
+                        return;
+                    };
+                    Hit::Message(index)
                 };
                 if let Some(target) = panel.activate(hit) {
                     self.open_agent_log(target, config, backend);
@@ -316,11 +379,13 @@ impl ShellState {
                 panel.trace.messages.len().saturating_sub(page),
                 1,
             );
-            let offset = panel.message.saturating_sub(first).min(page - 1);
             panel.first_row.set(next);
-            panel.message = (next + offset).min(panel.trace.messages.len().saturating_sub(1));
+            panel.message = panel.message.filter(|i| (next..next + page).contains(i));
             panel.focus = Focus::Message;
             panel.follow = false;
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
