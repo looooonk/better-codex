@@ -22,7 +22,7 @@ To install a specific version:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh \
-  | sh -s -- --version 0.1.0-alpha.32
+  | sh -s -- --version 0.1.0-alpha.33
 ```
 
 ## Build from source
