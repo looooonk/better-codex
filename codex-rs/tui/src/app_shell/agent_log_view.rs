@@ -17,7 +17,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 
 pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buffer) {
-    let title = format!(" Agent log · {} ", log.target.display_name);
+    let title = format!(" {} · Trajectory ", log.target.display_name);
     let geometry = render_scrollback_frame(screen, title, buf);
 
     let (glyph, status_color) = status_visual(log.target.status);
@@ -32,22 +32,17 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
         ]),
         header_width,
     )];
-    if geometry.header.height > 1 {
-        let task = log
-            .target
-            .task_summary
-            .as_deref()
-            .unwrap_or("No task summary");
+    if geometry.header.height > 1
+        && let Some(task) = &log.target.task_summary
+    {
         header.push(truncate_line_with_ellipsis_if_overflow(
             Line::from(vec![
                 "Task  ".fg(palette::cyan()).bold(),
-                first_wrapped_line(task, header_width.saturating_sub(/*rhs*/ 6)).fg(
-                    if log.target.task_summary.is_some() {
-                        palette::text()
-                    } else {
-                        palette::muted()
-                    },
-                ),
+                task.lines()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned()
+                    .fg(palette::text()),
             ]),
             header_width,
         ));
@@ -59,11 +54,7 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
     let body_width = usize::from(geometry.body.width.max(/*other*/ 1));
     let body_height = usize::from(geometry.body.height);
     let transient_lines = if log.is_loading() {
-        Some(vec![
-            "Loading the complete agent history…"
-                .fg(palette::muted())
-                .into(),
-        ])
+        Some(vec!["Loading…".fg(palette::muted()).into()])
     } else {
         log.error().map(|error| {
             word_wrap_lines(
@@ -106,10 +97,4 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
 
 pub(super) fn agent_log_panel_area(screen: Rect) -> Rect {
     scrollback_panel_area(screen)
-}
-
-fn first_wrapped_line(text: &str, width: usize) -> String {
-    textwrap::wrap(text, textwrap::Options::new(width.max(1)))
-        .first()
-        .map_or_else(String::new, std::string::ToString::to_string)
 }

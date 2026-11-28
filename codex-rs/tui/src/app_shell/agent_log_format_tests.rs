@@ -20,8 +20,9 @@ use std::path::PathBuf;
 #[test]
 fn formats_only_digestible_subagent_activity() {
     let thread = forked_agent_thread();
-    let lines = thread_to_agent_log_lines(&thread, RawReasoningVisibility::Hidden)
-        .expect("full history should render");
+    let lines =
+        thread_to_agent_log_lines(&thread, RawReasoningVisibility::Hidden, &Trace::default())
+            .expect("full history should render");
     let rendered = plain_text(&lines);
 
     for hidden in [

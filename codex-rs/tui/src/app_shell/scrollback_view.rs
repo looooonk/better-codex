@@ -219,7 +219,7 @@ fn scrollback_footer(
 
 fn agent_log_hints() -> [&'static str; 5] {
     [
-        "j/k scroll  PgUp/PgDn page  g/G ends  r reload  Esc close",
+        "↑↓ scroll  PgUp/PgDn  r refresh  Esc back",
         "j/k scroll  PgUp/PgDn  r reload  Esc",
         "↑↓ scroll  PgUp/PgDn  r  Esc",
         "↑↓  Esc",

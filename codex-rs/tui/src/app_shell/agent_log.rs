@@ -2,6 +2,7 @@ use super::ShellState;
 use super::agent_activity::AgentActivity;
 use super::agent_activity::AgentLifecycleStatus;
 use super::agent_log_format::thread_to_agent_log_lines;
+use super::agent_trace::Trace;
 use super::backend::AppShellBackend;
 use crate::app_theme::TuiAppTheme;
 use crate::legacy_core::config::Config;
@@ -18,6 +19,7 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 const AGENT_LOG_PAGE_STEP: usize = 12;
@@ -46,9 +48,11 @@ impl From<&AgentActivity> for AgentLogTarget {
     }
 }
 
+type AgentLogLoad = JoinHandle<Result<(Thread, Arc<Trace>)>>;
+
 pub(super) struct AgentLogState {
     pub(super) target: AgentLogTarget,
-    load_task: Option<JoinHandle<Result<Thread>>>,
+    load_task: Option<AgentLogLoad>,
     lines: TranscriptLines,
     error: Option<String>,
     raw_reasoning_visibility: RawReasoningVisibility,
@@ -71,7 +75,7 @@ pub(super) struct AgentLogViewport {
 impl AgentLogState {
     fn loading(
         target: AgentLogTarget,
-        load_task: JoinHandle<Result<Thread>>,
+        load_task: AgentLogLoad,
         raw_reasoning_visibility: RawReasoningVisibility,
     ) -> Self {
         Self {
@@ -183,9 +187,9 @@ impl AgentLogState {
             return false;
         };
         match task.await {
-            Ok(Ok(thread)) => {
+            Ok(Ok((thread, trace))) => {
                 let _active_theme = crate::app_theme::activate(app_theme);
-                match thread_to_agent_log_lines(&thread, self.raw_reasoning_visibility) {
+                match thread_to_agent_log_lines(&thread, self.raw_reasoning_visibility, &trace) {
                     Ok(lines) => {
                         self.lines = lines;
                         self.error = None;
@@ -235,8 +239,12 @@ impl ShellState {
         self.open_agent_log(target, config, app_server);
     }
 
-    fn open_agent_log<S>(&mut self, target: AgentLogTarget, config: &Config, app_server: &S)
-    where
+    pub(super) fn open_agent_log<S>(
+        &mut self,
+        target: AgentLogTarget,
+        config: &Config,
+        app_server: &S,
+    ) where
         S: AppShellBackend,
     {
         self.close_agent_log();
@@ -261,7 +269,18 @@ impl ShellState {
         } else {
             RawReasoningVisibility::Hidden
         };
-        let load_task = tokio::spawn(app_server.thread_read_full_in_background(thread_id));
+        let history = app_server.thread_read_full_in_background(thread_id);
+        let local_history = !app_server.uses_remote_workspace();
+        let messages = app_server.agent_trace_in_background(self.thread_id, Arc::default());
+        let load_task = tokio::spawn(async move {
+            let (thread, trace) = tokio::join!(history, messages);
+            let trace = Arc::new(trace.unwrap_or_default());
+            let mut thread = thread?;
+            if local_history {
+                super::agent_trace::fill_unindexed_turns(&mut thread).await?;
+            }
+            Ok((thread, trace))
+        });
         self.agent_log = Some(AgentLogState::loading(target, load_task, visibility));
     }
 

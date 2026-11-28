@@ -74,7 +74,7 @@ fn navigation_scrolls_to_edges_and_escape_closes() {
 
 #[tokio::test]
 async fn async_load_formats_positioned_styles_with_the_selected_app_theme() {
-    let load_task = tokio::spawn(async { Ok(themed_thread()) });
+    let load_task = tokio::spawn(async { Ok((themed_thread(), Arc::default())) });
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
         while !load_task.is_finished() {
             tokio::task::yield_now().await;
@@ -271,6 +271,48 @@ fn target() -> AgentLogTarget {
     }
 }
 
+#[tokio::test]
+async fn unindexed_rollout_recovers_local_turns_and_latest_item_snapshots() {
+    use serde_json::json;
+    use std::io::Write;
+
+    let mut thread = themed_thread();
+    thread.turns.clear();
+    thread.history_mode = ThreadHistoryMode::Paginated;
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    thread.path = Some(file.path().to_owned());
+
+    let item = |id: &str, body: &str| {
+        json!({
+            "type":"item_completed","thread_id":id,"turn_id":"first",
+            "item":{"type":"AgentMessage","id":"update","content":[{"type":"Text","text":body}]}
+        })
+    };
+    for (ordinal, payload) in [
+        json!({"type":"task_started","turn_id":"first","started_at":1}),
+        item(&thread.id, "Draft"),
+        item(&thread.id, "Finished"),
+        item("01900000-0000-7000-8000-000000000088", "Inherited"),
+        json!({"type":"task_started","turn_id":"second","started_at":2}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let line = json!({"ordinal":ordinal,"timestamp":"2026-01-10T12:00:00Z","type":"event_msg","payload":payload});
+        writeln!(file, "{line}").unwrap();
+    }
+
+    crate::app_shell::agent_trace::fill_unindexed_turns(&mut thread)
+        .await
+        .unwrap();
+    assert_eq!(thread.turns.len(), 2);
+    assert_eq!(thread.turns[0].items.len(), 1);
+    assert!(
+        matches!(&thread.turns[0].items[0].payload, ThreadItemPayload::AgentMessage { text, .. } if text == "Finished")
+    );
+    assert_eq!(thread.turns[1].id, "second");
+}
+
 fn themed_thread() -> Thread {
     Thread {
         model: None,
@@ -416,6 +458,8 @@ fn render_log(log: &AgentLogState, width: u16, height: u16) -> String {
                 .filter_map(|x| buffer.cell((x, y)))
                 .map(ratatui::buffer::Cell::symbol)
                 .collect::<String>()
+                .trim_end()
+                .to_owned()
         })
         .collect::<Vec<_>>()
         .join("\n")

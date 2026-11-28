@@ -1,3 +1,6 @@
+use super::agent_trace::Message;
+use super::agent_trace::Trace;
+use super::agent_trace::clock;
 use super::design::markdown_styles;
 use super::design::palette;
 use crate::git_action_directives::parse_assistant_markdown;
@@ -24,7 +27,7 @@ use ratatui::style::Color;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
-const MAX_COMMAND_OUTPUT_LINES: usize = 8;
+const MAX_COMMAND_OUTPUT_LINES: usize = 3;
 const MAX_OUTPUT_LINE_GRAPHEMES: usize = 240;
 const MAX_FILE_ROWS: usize = 12;
 const MAX_ERROR_GRAPHEMES: usize = 400;
@@ -32,6 +35,7 @@ const MAX_ERROR_GRAPHEMES: usize = 400;
 pub(super) fn thread_to_agent_log_lines(
     thread: &Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
+    trace: &Trace,
 ) -> Result<TranscriptLines, String> {
     for turn in &thread.turns {
         match turn.items_view {
@@ -51,78 +55,128 @@ pub(super) fn thread_to_agent_log_lines(
         }
     }
 
-    let rendered_turns = local_activity_turns(thread)
+    let lane = trace
+        .lanes
         .iter()
-        .filter_map(|turn| render_turn(turn, thread, raw_reasoning_visibility))
+        .position(|lane| lane.target.thread_id == thread.id);
+    let mut mail = trace
+        .messages
+        .iter()
+        .filter_map(|msg| {
+            if Some(msg.from) == lane {
+                Some((msg.at, msg))
+            } else if Some(msg.to) == lane {
+                Some((msg.received_at.unwrap_or(msg.at), msg))
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
-    if rendered_turns.is_empty() {
-        return Ok(vec![
-            "No subagent activity available"
-                .italic()
-                .fg(palette::muted())
-                .into(),
-        ]);
-    }
-
+    mail.sort_by_key(|(at, _)| *at);
+    let sent_ids = mail
+        .iter()
+        .filter(|(_, msg)| Some(msg.from) == lane)
+        .filter_map(|(_, msg)| msg.call_id.as_deref())
+        .collect::<std::collections::HashSet<_>>();
+    let mut mail = mail.into_iter().peekable();
+    let turns = local_activity_turns(thread);
     let mut lines = Vec::new();
-    for (index, (turn, mut activity)) in rendered_turns.into_iter().enumerate() {
-        if !lines.is_empty() {
-            lines.push(Line::default());
+    for (index, turn) in turns.iter().enumerate() {
+        let mut activity = Vec::new();
+        for item in &turn.items {
+            if sent_ids.contains(item.id()) {
+                continue;
+            }
+            let at = item.completed_at_ms.or(item.started_at_ms);
+            while let Some((time, msg)) = mail.next_if(|(time, _)| at.is_some_and(|at| *time <= at))
+            {
+                append_entry(&mut activity, Some(time), message_lines(trace, msg));
+            }
+            append_entry(
+                &mut activity,
+                at,
+                agent_item_lines(item, thread, raw_reasoning_visibility),
+            );
         }
-        lines.push(turn_header(index + 1, turn));
-        lines.append(&mut activity);
+        let next_turn = turns
+            .get(index + 1)
+            .and_then(|t| t.started_at)
+            .map(|s| s.saturating_mul(1000));
+        while let Some((time, msg)) = mail
+            .next_if(|(time, _)| next_turn.is_some_and(|t| *time < t) || index + 1 == turns.len())
+        {
+            append_entry(&mut activity, Some(time), message_lines(trace, msg));
+        }
+        if let Some(error) = &turn.error {
+            append_entry(
+                &mut activity,
+                None,
+                vec![
+                    "Turn failed".bold().fg(palette::error()).into(),
+                    truncate_text(&error.message, MAX_ERROR_GRAPHEMES)
+                        .fg(palette::error())
+                        .into(),
+                ],
+            );
+        }
+        if !activity.is_empty() {
+            if !lines.is_empty() {
+                lines.push(Line::default());
+            }
+            lines.push(turn_header(index + 1, turn));
+            lines.extend(activity);
+        }
+    }
+    for (time, msg) in mail {
+        append_entry(&mut lines, Some(time), message_lines(trace, msg));
+    }
+    if lines.is_empty() {
+        lines.push("No activity".fg(palette::muted()).into());
     }
     Ok(lines)
 }
 
 fn local_activity_turns(thread: &Thread) -> &[Turn] {
-    if thread.forked_from_id.is_some()
-        && let Some(local_start) = thread
+    if thread.forked_from_id.is_some() && thread.parent_thread_id.is_some() {
+        // Older copied forks include the parent's turns. Never discard an
+        // agent's earlier run just because a later turn has user input.
+        if let Some(start) = thread
             .turns
             .iter()
-            .rposition(turn_contains_user_message)
-            .map(|index| index + 1)
-        && local_start < thread.turns.len()
-    {
-        return &thread.turns[local_start..];
+            .position(|t| t.started_at.is_some_and(|at| at >= thread.created_at))
+        {
+            return &thread.turns[start..];
+        }
     }
     &thread.turns
 }
 
-fn turn_contains_user_message(turn: &Turn) -> bool {
-    turn.items
-        .iter()
-        .any(|item| matches!(&item.payload, ThreadItemPayload::UserMessage { .. }))
+fn append_entry(lines: &mut TranscriptLines, at: Option<i64>, mut entry: TranscriptLines) {
+    let Some(head) = entry.first_mut() else {
+        return;
+    };
+    if let Some(at) = at {
+        head.spans
+            .insert(0, format!("{}  ", clock(at)).fg(palette::muted()));
+    }
+    if !lines.is_empty() {
+        lines.push(Line::default());
+    }
+    lines.extend(entry);
 }
 
-fn render_turn<'a>(
-    turn: &'a Turn,
-    thread: &Thread,
-    raw_reasoning_visibility: RawReasoningVisibility,
-) -> Option<(&'a Turn, TranscriptLines)> {
-    let mut lines = Vec::new();
-    for item in &turn.items {
-        let mut item_lines = agent_item_lines(item, thread, raw_reasoning_visibility);
-        if item_lines.is_empty() {
-            continue;
-        }
-        if !lines.is_empty() {
-            lines.push(Line::default());
-        }
-        lines.append(&mut item_lines);
-    }
-    if let Some(error) = &turn.error {
-        if !lines.is_empty() {
-            lines.push(Line::default());
-        }
-        lines.push("Turn failed".bold().fg(palette::error()).into());
-        lines.push(
-            truncate_text(&error.message, MAX_ERROR_GRAPHEMES)
-                .fg(palette::error())
-                .into(),
-        );
-    }
-    (!lines.is_empty()).then_some((turn, lines))
+fn message_lines(trace: &Trace, msg: &Message) -> TranscriptLines {
+    let mut lines = vec![Line::from(vec![
+        format!(
+            "{} → {}",
+            trace.lanes[msg.from].target.display_name, trace.lanes[msg.to].target.display_name
+        )
+        .bold()
+        .fg(palette::cyan()),
+        format!("  {}", msg.kind).fg(palette::muted()),
+    ])];
+    lines.extend(msg.body.text().lines().map(|s| Line::from(s.to_owned())));
+    lines
 }
 
 fn turn_header(index: usize, turn: &Turn) -> Line<'static> {
@@ -145,7 +199,10 @@ fn agent_item_lines(
     raw_reasoning_visibility: RawReasoningVisibility,
 ) -> TranscriptLines {
     match &item.payload {
-        ThreadItemPayload::UserMessage { .. } | ThreadItemPayload::HookPrompt { .. } => Vec::new(),
+        ThreadItemPayload::HookPrompt { .. } => Vec::new(),
+        ThreadItemPayload::UserMessage { .. } => {
+            thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility)
+        }
         ThreadItemPayload::CommandExecution {
             command,
             status,
@@ -212,12 +269,17 @@ fn agent_item_lines(
             ]
             .into(),
         ],
-        ThreadItemPayload::AgentMessage { text, .. } => {
+        ThreadItemPayload::AgentMessage { text, phase, .. } => {
             let parsed = parse_assistant_markdown(text, &thread.cwd);
             if parsed.visible_markdown.trim().is_empty() {
                 Vec::new()
             } else {
-                let mut lines = vec!["Assistant".bold().fg(palette::purple()).into()];
+                let label = match phase {
+                    Some(codex_protocol::models::MessagePhase::Commentary) => "Update",
+                    Some(codex_protocol::models::MessagePhase::FinalAnswer) => "Final answer",
+                    _ => "Assistant",
+                };
+                let mut lines = vec![label.bold().fg(palette::purple()).into()];
                 lines.extend(
                     render_markdown_text_with_width_cwd_and_styles(
                         &parsed.visible_markdown,
@@ -283,47 +345,53 @@ fn command_lines(
     exit_code: Option<i32>,
     duration_ms: Option<i64>,
 ) -> TranscriptLines {
-    let (status, color) = command_status(status);
-    let mut header = vec![
-        "Command".bold().fg(palette::purple()),
-        "  ".into(),
-        status.fg(color),
+    let (status_label, color) = command_status(status);
+    let args = shlex::split(command).unwrap_or_default();
+    let display = match args.as_slice() {
+        [shell, flag, script]
+            if matches!(
+                std::path::Path::new(shell)
+                    .file_name()
+                    .and_then(|s| s.to_str()),
+                Some("sh" | "bash" | "zsh" | "dash")
+            ) && matches!(flag.as_str(), "-c" | "-lc") =>
+        {
+            script.as_str()
+        }
+        _ => command,
+    };
+    let mut command_lines = display.lines();
+    let mut spans = vec![
+        "$ ".fg(palette::muted()),
+        command_lines.next().unwrap_or_default().to_owned().bold(),
     ];
-    if let Some(exit_code) = exit_code {
-        header.push("  ".into());
-        header.push(format!("exit {exit_code}").fg(palette::muted()));
+    if !matches!(status, CommandExecutionStatus::Completed) {
+        spans.push(format!("  {status_label}").fg(color));
     }
-    if let Some(duration_ms) = duration_ms {
-        header.push("  ".into());
-        header.push(format_duration(duration_ms).fg(palette::muted()));
+    if let Some(code) = exit_code
+        && code != 0
+    {
+        spans.push(format!("  exit {code}").fg(palette::error()));
     }
-    let mut lines = vec![
-        header.into(),
-        vec!["$ ".fg(palette::muted()), command.to_string().into()].into(),
-    ];
-    let Some(output) = output
-        .map(str::trim_end)
-        .filter(|output| !output.is_empty())
-    else {
+    if let Some(ms) = duration_ms
+        && ms >= 1000
+    {
+        spans.push(format!("  {}", format_duration(ms)).fg(palette::muted()));
+    }
+    let mut lines = vec![spans.into()];
+    lines.extend(command_lines.map(|line| Line::from(format!("  {line}"))));
+    let Some(output) = output.map(str::trim_end).filter(|s| !s.is_empty()) else {
         return lines;
     };
     let output_lines = output.lines().collect::<Vec<_>>();
     let visible_start = output_lines.len().saturating_sub(MAX_COMMAND_OUTPUT_LINES);
-    lines.push(Line::default());
-    lines.push(
-        if visible_start == 0 {
-            "Output".bold().fg(palette::muted())
-        } else {
-            format!(
-                "Output  last {} of {} lines",
-                output_lines.len() - visible_start,
-                output_lines.len()
-            )
-            .bold()
-            .fg(palette::muted())
-        }
-        .into(),
-    );
+    if visible_start > 0 {
+        lines.push(
+            format!("… {visible_start} earlier lines")
+                .fg(palette::muted())
+                .into(),
+        );
+    }
     lines.extend(output_lines[visible_start..].iter().map(|line| {
         truncate_text(line.trim_end(), MAX_OUTPUT_LINE_GRAPHEMES)
             .fg(palette::muted())
@@ -499,7 +567,9 @@ fn collaboration_status(status: &CollabAgentToolCallStatus) -> (&'static str, Co
 }
 
 fn format_duration(duration_ms: i64) -> String {
-    if duration_ms < 1_000 {
+    if duration_ms >= 60_000 {
+        codex_utils_elapsed::format_duration(std::time::Duration::from_millis(duration_ms as u64))
+    } else if duration_ms < 1_000 {
         format!("{duration_ms}ms")
     } else {
         let tenths = duration_ms.saturating_add(50) / 100;

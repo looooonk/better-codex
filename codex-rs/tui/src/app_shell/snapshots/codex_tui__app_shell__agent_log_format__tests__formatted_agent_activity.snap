@@ -6,15 +6,8 @@ Turn 1  Completed  1.5s
 Reasoning
 Inspecting the relevant rendering path.
 
-Command  Completed  exit 0  1.3s
-$ just test -p codex-tui
-
-Output  last 8 of 11 lines
-running tests
-test agent_log_format ... ok
-test agent_log_view ... ok
-test hydration ... ok
-test navigation ... ok
+$ just test -p codex-tui  1.3s
+… 8 earlier lines
 test snapshots ... ok
 test transcript ... ok
 1316 passed; 0 failed
