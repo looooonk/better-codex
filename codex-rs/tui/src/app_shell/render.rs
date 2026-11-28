@@ -166,6 +166,8 @@ impl ShellView<'_> {
         }
         if let Some(log) = &self.shell.agent_log {
             super::agent_log_view::render_agent_log(log, area, buf);
+        } else if let Some(panel) = &self.shell.agent_panel {
+            super::agent_panel::render(panel, area, self.shell.pointer_position, buf);
         }
         if let Some(output) = &self.shell.tool_output {
             super::tool_output_view::render_tool_output(output, area, buf);
@@ -186,6 +188,7 @@ impl ShellView<'_> {
             || self.shell.command_palette.is_some()
             || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
+            || self.shell.agent_panel.is_some()
             || self.shell.tool_detail_open()
             || self.shell.preview.is_some()
             || self.shell.diff_view.is_some()
@@ -502,6 +505,7 @@ impl ShellView<'_> {
             || self.shell.command_palette.is_some()
             || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
+            || self.shell.agent_panel.is_some()
             || self.shell.tool_detail_open()
             || self.shell.preview.is_some()
             || self.shell.diff_view.is_some()

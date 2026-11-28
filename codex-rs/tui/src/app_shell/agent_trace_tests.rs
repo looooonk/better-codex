@@ -1,5 +1,9 @@
 use super::*;
+use crate::app_shell::agent_panel::AgentPanel;
+use crate::app_shell::agent_panel::render;
 use pretty_assertions::assert_eq;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
 use serde_json::Value;
 use serde_json::json;
 use std::io::Write;
@@ -144,4 +148,22 @@ async fn delayed_encrypted_delivery_keeps_send_order_and_restart_gaps() {
             .collect::<Vec<_>>(),
         vec![Some(0), None, Some(1)]
     );
+    let mut panel = AgentPanel::default();
+    panel.trace = Arc::new(graph);
+    let area = Rect::new(0, 0, 65, 20);
+    let mut buffer = Buffer::empty(area);
+    render(&panel, area, None, &mut buffer);
+    let text = buffer
+        .content
+        .chunks(usize::from(area.width))
+        .map(|row| {
+            row.iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!("communication_lanes", text);
 }

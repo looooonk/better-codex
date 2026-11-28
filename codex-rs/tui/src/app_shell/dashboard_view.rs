@@ -423,13 +423,13 @@ fn render_hover(
         | (DashboardRoute::Status, _)
         | (DashboardRoute::Settings, _) => false,
     };
-    if panel.title == "Agents" && panel_row > 0 {
+    if panel.title == "Agents" && panel_row > 1 {
         let overview_height =
             agent_activity_overview_lines(&shell.agent_activity, usize::from(text_area.width))
                 .len();
         let agent_line = panel_row
             .saturating_sub(1)
-            .checked_sub(overview_height)
+            .checked_sub(overview_height + 1)
             .and_then(|line| {
                 agent_activity_thread_at_line(&shell.agent_activity, line, /*line_budget*/ 24)
             });

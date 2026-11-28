@@ -271,10 +271,19 @@ impl ShellState {
         };
         let history = app_server.thread_read_full_in_background(thread_id);
         let local_history = !app_server.uses_remote_workspace();
-        let messages = app_server.agent_trace_in_background(self.thread_id, Arc::default());
+        let cached = self.agent_panel.as_ref().map(|panel| panel.trace.clone());
+        let trace = cached
+            .is_none()
+            .then(|| app_server.agent_trace_in_background(self.thread_id, Arc::default()));
         let load_task = tokio::spawn(async move {
+            let messages = async {
+                if let Some(load) = trace {
+                    Arc::new(load.await.unwrap_or_default())
+                } else {
+                    cached.unwrap_or_default()
+                }
+            };
             let (thread, trace) = tokio::join!(history, messages);
-            let trace = Arc::new(trace.unwrap_or_default());
             let mut thread = thread?;
             if local_history {
                 super::agent_trace::fill_unindexed_turns(&mut thread).await?;
@@ -282,6 +291,11 @@ impl ShellState {
             Ok((thread, trace))
         });
         self.agent_log = Some(AgentLogState::loading(target, load_task, visibility));
+    }
+
+    pub(super) fn close_agent_views(&mut self) {
+        self.close_agent_log();
+        self.agent_panel = None;
     }
 
     pub(super) fn close_agent_log(&mut self) {

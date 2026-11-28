@@ -289,7 +289,14 @@ fn dashboard_panel(
             activity_lines(&shell.tool_activity, content_width, "idle"),
         )),
         DashboardPanelKind::Agents => {
-            let mut lines = agent_activity_overview_lines(&shell.agent_activity, content_width);
+            let mut lines = vec![Line::from(vec![
+                "Communications".fg(palette::text()).bold(),
+                "  m ↗".fg(palette::muted()),
+            ])];
+            lines.extend(agent_activity_overview_lines(
+                &shell.agent_activity,
+                content_width,
+            ));
             lines.extend(agent_activity_inspector_lines(
                 &shell.agent_activity,
                 content_width,
@@ -297,9 +304,9 @@ fn dashboard_panel(
             ));
             lines.push(Line::from(
                 if shell.agents_focused {
-                    "Enter full log · j/k select · Esc release"
+                    "Enter trajectory · j/k select · Esc"
                 } else {
-                    "Enter focus · then Enter opens full log"
+                    "Enter focus"
                 }
                 .fg(if shell.agents_focused {
                     palette::cyan()

@@ -7,6 +7,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
       ▸ Starting agent...                         │─────────────────────────━━━━━━━━━━─────────────
                                                   │
    The new shell owns the fullscreen surface.     │▎◆ AGENTS
+                                                  │▎Communications  m ↗
                                                   │▎Agents 1  ● 1 active
                                                   │▎› ● running  agent-thread
                                                   │▎Inspector  agent-thread  ● running
@@ -20,8 +21,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │▎  • command output: tests pass
                                                   │▎  • reasoning: checking constraints
                                                   │▎  • message completed: Review complete.
-                                                  │▎Enter full log · j/k select · Esc release
-                                                  │
+                                                  │▎Enter trajectory · j/k select · Esc
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

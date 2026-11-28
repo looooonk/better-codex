@@ -205,7 +205,7 @@ impl ShellState {
     }
 
     fn close_overlays_for_interactive_request(&mut self) {
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.close_diff_view();
         self.selector = None;

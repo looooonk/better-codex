@@ -64,6 +64,7 @@ mod agent_history;
 mod agent_log;
 mod agent_log_format;
 mod agent_log_view;
+mod agent_panel;
 mod agent_trace;
 mod approval;
 mod approval_popup;
@@ -536,6 +537,7 @@ struct ShellState {
     tool_activity: VecDeque<ToolActivity>,
     agent_activity: AgentActivityState,
     agent_log: Option<AgentLogState>,
+    agent_panel: Option<agent_panel::AgentPanel>,
     tool_output: Option<ToolOutputState>,
     tool_review: Option<review_popup::ReviewPopup>,
     preview: Option<preview::Preview>,
@@ -709,6 +711,7 @@ impl ShellState {
             tool_activity: VecDeque::new(),
             agent_activity: AgentActivityState::for_root(session.thread_id.to_string()),
             agent_log: None,
+            agent_panel: None,
             tool_output: None,
             tool_review: None,
             preview: None,
@@ -897,7 +900,7 @@ impl ShellState {
     }
 
     fn open_command_palette(&mut self) {
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.close_diff_view();
         self.selector = None;
@@ -2177,6 +2180,7 @@ impl ShellState {
             }]),
             agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
+            agent_panel: None,
             tool_output: None,
             tool_review: None,
             preview: None,
@@ -2512,6 +2516,7 @@ pub mod bench_support {
             }]),
             agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
+            agent_panel: None,
             tool_output: None,
             tool_review: None,
             preview: None,

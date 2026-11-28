@@ -531,11 +531,13 @@ pub(crate) async fn run(
                     }
                 }
                 _ = agent_history_poll.tick(), if shell.has_pending_agent_history()
+                    || shell.agent_panel.is_some()
                     || shell.has_pending_agent_log()
                     || shell.has_pending_session_hydration()
                     || shell.has_pending_shell_command() =>
                 {
                     let mut changed = shell.poll_shell_command().await;
+                    changed |= shell.poll_agent_panel(&app_server).await;
                     changed |= shell.poll_session_hydration(&app_server).await;
                     if shell.has_pending_agent_history() {
                         changed |= shell.poll_agent_history(&app_server).await;
@@ -614,7 +616,7 @@ pub(crate) async fn run(
 
     let pet_clear_result = shell.pets.clear();
     shell.cancel_shell_command();
-    shell.close_agent_log();
+    shell.close_agent_views();
     shell.close_tool_output();
     shell.close_diff_view();
     shell.close_account_auth(&mut app_server).await;

@@ -211,7 +211,7 @@ impl ShellState {
     }
 
     pub(super) fn open_account_auth(&mut self, login_methods: LoginMethodAvailability) {
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.close_diff_view();
         self.pending_account_auth = Some(AccountAuthState::new(login_methods));

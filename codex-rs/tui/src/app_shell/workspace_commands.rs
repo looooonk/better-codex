@@ -191,6 +191,7 @@ impl ShellState {
                 self.dashboard_visible = true;
                 self.set_dashboard_route(DashboardRoute::Agents);
                 self.agents_focused = true;
+                self.open_agent_panel(app_server);
                 return Ok(());
             }
             WorkspaceCommand::Mention

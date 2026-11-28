@@ -730,7 +730,7 @@ impl ShellState {
             ServerNotification::ModelSafetyBufferingUpdated(updated) => {
                 self.on_model_safety_buffering_updated(updated);
                 if self.safety_buffering_modal_lines().is_some() {
-                    self.close_agent_log();
+                    self.close_agent_views();
                     self.close_tool_output();
                     self.close_diff_view();
                     self.pending_session_delete = None;

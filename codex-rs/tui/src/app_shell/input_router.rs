@@ -36,6 +36,7 @@ pub(super) enum ActiveInputRoute {
     ToolOutput,
     Preview,
     AgentLog,
+    AgentPanel,
     Selector,
     CommandPalette,
     AccountAuth,
@@ -62,6 +63,8 @@ impl ShellState {
             Some(ActiveInputRoute::ToolOutput)
         } else if self.agent_log.is_some() {
             Some(ActiveInputRoute::AgentLog)
+        } else if self.agent_panel.is_some() {
+            Some(ActiveInputRoute::AgentPanel)
         } else if self.selector.is_some() {
             Some(ActiveInputRoute::Selector)
         } else if self.command_palette.is_some() {
@@ -108,7 +111,8 @@ impl ShellState {
                 ActiveInputRoute::DiffView
                 | ActiveInputRoute::Preview
                 | ActiveInputRoute::ToolOutput
-                | ActiveInputRoute::AgentLog,
+                | ActiveInputRoute::AgentLog
+                | ActiveInputRoute::AgentPanel,
             ) => KeymapContextSet::new(Pager).with_copy(),
             Some(ActiveInputRoute::Approval) => KeymapContextSet::new(Approval).with(List),
             Some(ActiveInputRoute::Selector) if self.transcript_find.is_some() => {
@@ -234,6 +238,7 @@ impl ShellState {
             ActiveInputRoute::ToolOutput => {
                 self.handle_tool_output_key(key);
             }
+            ActiveInputRoute::AgentPanel => self.agent_panel_key(key, config, app_server),
             ActiveInputRoute::AgentLog => {
                 if key.kind == KeyEventKind::Press
                     && key.modifiers == KeyModifiers::NONE
@@ -649,10 +654,14 @@ impl ShellState {
         if self.dashboard_visible
             && self.dashboard_route == DashboardRoute::Agents
             && self.agents_focused
-            && matches!(key.code, KeyCode::Enter)
+            && matches!(key.code, KeyCode::Enter | KeyCode::Char('m'))
             && matches!(key.modifiers, KeyModifiers::NONE)
         {
-            self.open_selected_agent_log(config, app_server);
+            if key.code == KeyCode::Enter {
+                self.open_selected_agent_log(config, app_server);
+            } else {
+                self.open_agent_panel(app_server);
+            }
             return Ok(false);
         }
         if self.handle_agent_activity_key(key) {

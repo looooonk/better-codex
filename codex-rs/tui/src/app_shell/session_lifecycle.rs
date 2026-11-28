@@ -143,7 +143,7 @@ impl ShellState {
         self.clear_interactive_requests();
         self.pending_session_delete = None;
         self.safety_buffering.clear();
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.close_diff_view();
         self.selector = None;

@@ -153,7 +153,7 @@ impl ShellState {
 
     pub(super) fn open_selector(&mut self, mut selector: SelectorState<SelectorValue>) {
         self.transcript_find = None;
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.close_diff_view();
         self.command_palette = None;

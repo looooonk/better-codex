@@ -462,7 +462,7 @@ impl ShellState {
         self.stop_voice();
         self.terminal_clear_requested.set(true);
         self.invalidate_session_hydration();
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.close_diff_view();
         let AppServerStartedThread {

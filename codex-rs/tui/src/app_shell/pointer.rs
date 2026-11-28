@@ -84,6 +84,10 @@ impl ShellState {
             }
             return Ok(());
         }
+        if self.agent_panel.is_some() {
+            self.agent_panel_click(area, position, config, app_server);
+            return Ok(());
+        }
         if self
             .handle_selector_click(area, position, app_server)
             .await?
@@ -389,19 +393,26 @@ impl ShellState {
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Agents")
         {
             self.agents_focused = true;
+            if target.line == 0 {
+                self.open_agent_panel(app_server);
+                return Ok(());
+            }
             let overview_height = agent_activity_render::agent_activity_overview_lines(
                 &self.agent_activity,
                 target.width,
             )
             .len();
-            let thread_id = target.line.checked_sub(overview_height).and_then(|line| {
-                agent_activity_render::agent_activity_thread_at_line(
-                    &self.agent_activity,
-                    line,
-                    /*line_budget*/ 24,
-                )
-                .map(ToString::to_string)
-            });
+            let thread_id = target
+                .line
+                .checked_sub(overview_height + 1)
+                .and_then(|line| {
+                    agent_activity_render::agent_activity_thread_at_line(
+                        &self.agent_activity,
+                        line,
+                        /*line_budget*/ 24,
+                    )
+                    .map(ToString::to_string)
+                });
             if let Some(thread_id) = thread_id {
                 self.agent_activity.select_thread(&thread_id);
             }
@@ -471,6 +482,10 @@ impl ShellState {
                 MouseScrollDirection::Up => self.scroll_agent_log_up(),
                 MouseScrollDirection::Down => self.scroll_agent_log_down(),
             }
+            return false;
+        }
+        if self.agent_panel.is_some() {
+            self.scroll_agent_panel(key);
             return false;
         }
         if let Some((panel, _, _)) = (ShellView { shell: self }).management_menu(area) {
@@ -585,6 +600,7 @@ impl ShellState {
             || self.tool_detail_open()
             || self.preview.is_some()
             || self.agent_log.is_some()
+            || self.agent_panel.is_some()
             || self.pending_approval.is_some()
             || self.pending_session_delete.is_some()
             || self.pending_elicitation.is_some()

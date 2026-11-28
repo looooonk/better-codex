@@ -188,6 +188,7 @@ impl ShellState {
         let selection_blocked = self.diff_view.is_some()
             || self.tool_detail_open()
             || self.agent_log.is_some()
+            || self.agent_panel.is_some()
             || self.selector.is_some()
             || self.command_palette.is_some()
             || self.pending_account_auth.is_some()

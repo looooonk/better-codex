@@ -6,19 +6,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │  Sessions   │  Status  │  Agents  │  Settings
                             │─────────────────────────━━━━━━━━━━─────────────
    > Create a divergent stan│▎◆ AGENTS
+                            │▎Communications  m ↗
                             │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
-                            │▎  × 1 failed
-   Started a fullscreen app │▎  ● running  Hypatia
-                            │▎    └ ✓ completed  Picasso
-      ▸ Edited files        │▎  ! interrupted  Turing
-                            │▎›   └ × errored  Socrates
-   The new shell owns the fu│▎Inspector  Socrates  × errored
+   Started a fullscreen app │▎  × 1 failed
+                            │▎  ● running  Hypatia
+      ▸ Edited files        │▎    └ ✓ completed  Picasso
+                            │▎  ! interrupted  Turing
+   The new shell owns the fu│▎›   └ × errored  Socrates
+                            │▎Inspector  Socrates  × errored
                             │▎Model  gpt-5-codex
                             │▎Reasoning  high
                             │▎Path  /root/testing/failure
                             │▎Task  Review the new TUI flow and visual
                             │▎      hierarchy.
-                            │▎Latest  Compact flow failed
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │

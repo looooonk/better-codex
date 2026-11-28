@@ -43,7 +43,7 @@ impl ShellState {
         }
         let retention = retention(self.diff_store.item_is_truncated(&item_id));
 
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.command_palette = None;
         self.selector = None;
@@ -67,7 +67,7 @@ impl ShellState {
         }
         let retention = retention(self.diff_store.session_is_truncated());
 
-        self.close_agent_log();
+        self.close_agent_views();
         self.close_tool_output();
         self.command_palette = None;
         self.selector = None;
