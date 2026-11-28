@@ -4,10 +4,10 @@ expression: rendered
 ---
 Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted  × 1 failed
   research  running
-  GPT-5 Codex, high effort
+    GPT-5 Codex, high effort
     audit  completed
-    GPT-5 Codex, high effort
+      GPT-5 Codex, high effort
   test  interrupted
-  GPT-5 Codex, high effort
-›   failure  errored
     GPT-5 Codex, high effort
+›   failure  errored
+      GPT-5 Codex, high effort

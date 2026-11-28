@@ -3,4 +3,4 @@ source: tui/src/app_shell/agent_activity_render_tests.rs
 expression: rendered
 ---
 › review  running
-  Model unknown
+    Model unknown

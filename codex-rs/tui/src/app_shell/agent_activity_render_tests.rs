@@ -35,6 +35,27 @@ fn renders_bounded_agent_hierarchy_and_selected_inspector() {
 }
 
 #[test]
+fn only_agent_name_rows_accept_pointer_input() {
+    let state = hierarchy_fixture();
+    let targets: Vec<_> = (0..8)
+        .map(|line| agent_activity_thread_at_line(&state, line, /*line_budget*/ 8))
+        .collect();
+    assert_eq!(
+        targets,
+        [
+            Some("running"),
+            None,
+            Some("completed"),
+            None,
+            Some("interrupted"),
+            None,
+            Some("errored"),
+            None
+        ]
+    );
+}
+
+#[test]
 fn width_and_line_budget_bound_every_row() {
     let lines = agent_activity_inspector_lines(
         &hierarchy_fixture(),

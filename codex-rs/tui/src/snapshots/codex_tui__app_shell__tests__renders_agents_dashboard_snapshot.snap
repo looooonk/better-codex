@@ -11,13 +11,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
    Started a fullscreen app shell backed by app-server turns. │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
                                                               │▎  × 1 failed
       ▸ Edited files                                          │▎  research  running
-                                                              │▎  GPT-5 Codex, high effort
+                                                              │▎    GPT-5 Codex, high effort
    The new shell owns the fullscreen surface.                 │▎    visual  completed
-                                                              │▎    GPT-5 Codex, high effort
+                                                              │▎      GPT-5 Codex, high effort
                                                               │▎  testing  interrupted
-                                                              │▎  GPT-5 Codex, high effort
-                                                              │▎›   failure  errored
                                                               │▎    GPT-5 Codex, high effort
+                                                              │▎›   failure  errored
+                                                              │▎      GPT-5 Codex, high effort
                                                               │▎Enter trajectory · j/k select · Esc
                                                               │
                                                               │

@@ -91,7 +91,7 @@ pub(super) fn agent_activity_inspector_lines(
             .flatten()
             .collect::<Vec<_>>()
             .join(", ");
-        let indent = tree_indent(agent) + 2;
+        let indent = tree_indent(agent) + 4;
         let value = if model.is_empty() {
             "Model unknown"
         } else {
@@ -111,13 +111,13 @@ pub(super) fn agent_activity_thread_at_line(
     line: usize,
     line_budget: usize,
 ) -> Option<&str> {
-    let agents = state.ordered_agents();
-    let (start, end) = visible_agent_range(state, line_budget);
-    if line >= line_budget || line / AGENT_ROWS >= end.saturating_sub(start) {
+    if line >= line_budget || !line.is_multiple_of(AGENT_ROWS) {
         return None;
     }
-    agents
-        .get(start + line / AGENT_ROWS)
+    let agents = state.ordered_agents();
+    let (start, end) = visible_agent_range(state, line_budget);
+    agents[start..end]
+        .get(line / AGENT_ROWS)
         .map(|agent| agent.thread_id.as_str())
 }
 

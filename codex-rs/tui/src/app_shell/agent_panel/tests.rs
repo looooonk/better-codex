@@ -47,6 +47,15 @@ async fn encrypted_arrows_are_inert_and_crossings_belong_to_the_middle_lane() {
     let arrow = Position::new(symbol_at(y, "─"), y);
     assert_eq!(buf[arrow].fg, Color::White);
     assert_eq!(layout.hit(&panel, arrow), Some(Hit::Message(2)));
+    render(&panel, &agents, screen, Some(arrow), &mut buf);
+    assert_eq!(buf[arrow].fg, crate::app_shell::design::palette::focus());
+    assert_eq!(
+        buf[crossing].fg,
+        agents.color(&panel.trace.lanes[1].target.thread_id)
+    );
+    render(&panel, &agents, screen, Some(encrypted), &mut buf);
+    assert_eq!(buf[encrypted].fg, Color::DarkGray);
+    assert_eq!(buf[arrow].fg, Color::White);
 }
 
 #[tokio::test]

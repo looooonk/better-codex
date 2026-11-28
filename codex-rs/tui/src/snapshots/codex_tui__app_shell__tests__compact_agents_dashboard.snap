@@ -10,13 +10,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
    Started a fullscreen app │▎  × 1 failed
                             │▎  research  running
-      ▸ Edited files        │▎  GPT-5 Codex, high effort
+      ▸ Edited files        │▎    GPT-5 Codex, high effort
                             │▎    visual  completed
-   The new shell owns the fu│▎    GPT-5 Codex, high effort
+   The new shell owns the fu│▎      GPT-5 Codex, high effort
                             │▎  testing  interrupted
-                            │▎  GPT-5 Codex, high effort
-                            │▎›   failure  errored
                             │▎    GPT-5 Codex, high effort
+                            │▎›   failure  errored
+                            │▎      GPT-5 Codex, high effort
                             │▎Enter trajectory · j/k select · Esc
                             │
                             │

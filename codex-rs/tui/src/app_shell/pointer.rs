@@ -372,8 +372,8 @@ impl ShellState {
         if self.dashboard_route == DashboardRoute::Agents
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Agents")
         {
-            self.agents_focused = true;
             if target.line == 0 {
+                self.agents_focused = true;
                 self.open_agent_panel(app_server);
                 return Ok(());
             }
@@ -394,6 +394,7 @@ impl ShellState {
                     .map(ToString::to_string)
                 });
             if let Some(thread_id) = thread_id {
+                self.agents_focused = true;
                 self.agent_activity.select_thread(&thread_id);
                 self.open_selected_agent_log(config, app_server);
             }

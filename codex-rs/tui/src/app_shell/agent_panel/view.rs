@@ -306,9 +306,9 @@ pub(in crate::app_shell) fn render(
         if y + 1 >= g.body.bottom() {
             continue;
         }
-        let chosen = msg.readable()
-            && (hovered == Some(Hit::Message(index))
-                || panel.focus == Focus::Message && panel.message == Some(index));
+        let arrow_hovered = hovered == Some(Hit::Message(index));
+        let chosen = arrow_hovered
+            || msg.readable() && panel.focus == Focus::Message && panel.message == Some(index);
         let gutter = Rect::new(g.body.x, y + 1, layout.plot.x - g.body.x, 1);
         let index_label = format!("{}{} ", index + 1, if chosen { "›" } else { " " });
         Paragraph::new(index_label)
@@ -316,7 +316,9 @@ pub(in crate::app_shell) fn render(
             .fg(Color::DarkGray)
             .render(gutter, buf);
         if let Some((from, to)) = layout.arrow(panel, index) {
-            let color = if msg.readable() {
+            let color = if arrow_hovered {
+                palette::focus()
+            } else if msg.readable() {
                 Color::White
             } else {
                 Color::DarkGray

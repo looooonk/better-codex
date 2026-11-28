@@ -10,7 +10,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │▎Communications  m ↗
                                                   │▎Agents 1  ● 1 active
                                                   │▎› agent-thread  running
-                                                  │▎  GPT-5 Codex, high effort
+                                                  │▎    GPT-5 Codex, high effort
                                                   │▎Enter trajectory · j/k select · Esc
                                                   │
                                                   │
