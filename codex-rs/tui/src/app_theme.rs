@@ -164,6 +164,24 @@ pub(crate) fn activate(theme: TuiAppTheme) -> ActiveThemeGuard {
     }
 }
 
+/// Reuse the theme accents first, then vary their lightness for larger teams.
+pub(crate) fn agent_color(slot: usize) -> Color {
+    let p = palette();
+    let colors = [p.cyan, p.warning, p.purple, p.success, p.error, p.focus];
+    let color = colors[slot % colors.len()];
+    let band = slot / colors.len();
+    if band == 0 {
+        return color;
+    }
+    if let Color::Rgb(r, g, b) = color {
+        let amount = ((band * 31) % 117 + 24) as u16;
+        let tint = |c: u8| (u16::from(c) + (255 - u16::from(c)) * amount / 255) as u8;
+        Color::Rgb(tint(r), tint(g), tint(b))
+    } else {
+        color
+    }
+}
+
 pub(crate) fn palette() -> ThemePalette {
     ACTIVE_PALETTE.get()
 }

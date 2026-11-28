@@ -2697,7 +2697,8 @@ fn thread_started_tracks_subagent_nickname_but_not_root() {
         .agent_activity
         .agent(&child_id.to_string())
         .expect("subagent should be tracked");
-    assert_eq!(agent.display_name(), "Aristotle");
+    assert_eq!(agent.display_name(), "researcher");
+    assert_eq!(agent.nickname.as_deref(), Some("Aristotle"));
     assert_eq!(agent.depth, Some(1));
     assert_eq!(shell.agent_activity.counts().total, 1);
     assert!(

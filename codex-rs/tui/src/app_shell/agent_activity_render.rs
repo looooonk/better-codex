@@ -13,8 +13,7 @@ use ratatui::text::Span;
 
 const MAX_VISIBLE_AGENTS: usize = 8;
 const MAX_TREE_DEPTH: usize = 5;
-const MAX_FIELD_LINES: usize = 2;
-const MAX_TIMELINE_LINES: usize = 4;
+const AGENT_ROWS: usize = 2;
 
 pub(super) fn agent_activity_overview_lines(
     state: &AgentActivityState,
@@ -58,6 +57,7 @@ pub(super) fn agent_activity_inspector_lines(
     state: &AgentActivityState,
     width: usize,
     line_budget: usize,
+    models: &[codex_protocol::openai_models::ModelPreset],
 ) -> Vec<Line<'static>> {
     if line_budget == 0 {
         return Vec::new();
@@ -72,95 +72,35 @@ pub(super) fn agent_activity_inspector_lines(
 
     let selected_id = state.selected_thread_id();
     let (start, end) = visible_agent_range(state, line_budget);
-    let mut lines = agents[start..end]
-        .iter()
-        .map(|agent| agent_tree_line(agent, selected_id == Some(agent.thread_id.as_str()), width))
-        .collect::<Vec<_>>();
-
-    let Some(selected) = state.selected().or_else(|| agents.first().copied()) else {
-        return lines;
-    };
-    if lines.len() < line_budget {
-        lines.push(inspector_header(selected, width));
-    }
-    for (label, value) in [
-        ("Model", selected.model.as_deref().unwrap_or("Unknown")),
-        (
-            "Reasoning",
-            selected.reasoning_effort.as_ref().map_or(
-                "Unknown",
-                codex_protocol::openai_models::ReasoningEffort::as_str,
-            ),
-        ),
-    ] {
-        if lines.len() >= line_budget {
-            break;
-        }
-        lines.push(truncate_line_with_ellipsis_if_overflow(
-            Line::from(vec![
-                format!("{label}  ").fg(palette::cyan()).bold(),
-                value.to_string().fg(palette::purple()),
-            ]),
+    let mut lines = Vec::new();
+    for agent in &agents[start..end] {
+        let selected = selected_id == Some(agent.thread_id.as_str());
+        lines.push(agent_tree_line(
+            agent,
+            selected,
+            state.color(&agent.thread_id),
             width,
         ));
-    }
-    append_field(
-        &mut lines,
-        "Path",
-        selected
-            .path
+        let model = agent.model.as_deref().map(|slug| model_name(slug, models));
+        let effort = agent
+            .reasoning_effort
             .as_ref()
-            .map_or(selected.thread_id.as_str(), |path| path.as_str()),
-        width,
-        /*max_lines*/ 1,
-        palette::muted(),
-        line_budget,
-    );
-    append_field(
-        &mut lines,
-        "Task",
-        selected
-            .task_summary
-            .as_deref()
-            .unwrap_or("No task summary"),
-        width,
-        MAX_FIELD_LINES,
-        selected
-            .task_summary
-            .as_ref()
-            .map_or(palette::muted(), |_| palette::text()),
-        line_budget,
-    );
-    append_field(
-        &mut lines,
-        "Latest",
-        selected
-            .latest_message
-            .as_deref()
-            .unwrap_or("No message yet"),
-        width,
-        MAX_FIELD_LINES,
-        selected
-            .latest_message
-            .as_ref()
-            .map_or(palette::muted(), |_| palette::text()),
-        line_budget,
-    );
-
-    if !selected.timeline.is_empty() && lines.len() < line_budget {
-        lines.push(Line::from("Recent".fg(palette::cyan()).bold()));
-        for entry in selected.timeline.iter().rev().take(MAX_TIMELINE_LINES) {
-            if lines.len() >= line_budget {
-                break;
-            }
-            lines.push(truncate_line_with_ellipsis_if_overflow(
-                Line::from(vec![
-                    "  • ".fg(palette::border()),
-                    entry.label().to_string().fg(palette::muted()),
-                ]),
-                width,
-            ));
-        }
+            .map(|e| format!("{} effort", e.as_str()));
+        let model = [model, effort]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let indent = tree_indent(agent) + 2;
+        let value = if model.is_empty() {
+            "Model unknown"
+        } else {
+            &model
+        };
+        lines.push(truncate_line_with_ellipsis_if_overflow(
+            Line::from(format!("{:indent$}{value}", "").fg(palette::muted())),
+            width,
+        ));
     }
     lines.truncate(line_budget);
     lines
@@ -173,11 +113,11 @@ pub(super) fn agent_activity_thread_at_line(
 ) -> Option<&str> {
     let agents = state.ordered_agents();
     let (start, end) = visible_agent_range(state, line_budget);
-    if line >= end.saturating_sub(start) {
+    if line >= line_budget || line / AGENT_ROWS >= end.saturating_sub(start) {
         return None;
     }
     agents
-        .get(start.saturating_add(line))
+        .get(start + line / AGENT_ROWS)
         .map(|agent| agent.thread_id.as_str())
 }
 
@@ -190,41 +130,47 @@ fn visible_agent_range(state: &AgentActivityState, line_budget: usize) -> (usize
     let tree_limit = agents
         .len()
         .min(MAX_VISIBLE_AGENTS)
-        .min(line_budget.saturating_sub(/*rhs*/ 6).max(/*other*/ 1));
+        .min((line_budget / AGENT_ROWS).max(1));
     let start = selected_index
         .saturating_sub(tree_limit / 2)
         .min(agents.len().saturating_sub(tree_limit));
     (start, start.saturating_add(tree_limit))
 }
 
-fn agent_tree_line(agent: &AgentActivity, selected: bool, width: usize) -> Line<'static> {
-    let depth = agent
+fn tree_indent(agent: &AgentActivity) -> usize {
+    agent
         .depth
-        .unwrap_or(/*default*/ 1)
-        .saturating_sub(/*rhs*/ 1)
-        .min(MAX_TREE_DEPTH);
-    let (glyph, color) = status_visual(agent.status);
+        .unwrap_or(1)
+        .saturating_sub(1)
+        .min(MAX_TREE_DEPTH)
+        * 2
+}
+
+fn agent_tree_line(
+    agent: &AgentActivity,
+    selected: bool,
+    color: Color,
+    width: usize,
+) -> Line<'static> {
+    let active = matches!(
+        agent.status,
+        AgentLifecycleStatus::PendingInit | AgentLifecycleStatus::Running
+    );
+    let status_color = if active {
+        palette::text()
+    } else {
+        palette::muted()
+    };
     let mut line = Line::from(vec![
         if selected {
-            "› ".fg(palette::focus()).bold()
+            "› ".fg(palette::focus())
         } else {
             "  ".into()
         },
-        "  ".repeat(depth).into(),
-        if depth > 0 {
-            "└ ".fg(palette::border())
-        } else {
-            "".into()
-        },
-        glyph.fg(color).bold(),
-        " ".into(),
-        agent.status.label().to_string().fg(color),
+        " ".repeat(tree_indent(agent)).into(),
+        agent.display_name().to_string().bold().fg(color),
         "  ".into(),
-        agent.display_name().to_string().fg(if selected {
-            palette::text()
-        } else {
-            palette::muted()
-        }),
+        agent.status.label().fg(status_color),
     ]);
     if selected {
         line = line.style(Style::new().bg(palette::elevated()));
@@ -232,52 +178,45 @@ fn agent_tree_line(agent: &AgentActivity, selected: bool, width: usize) -> Line<
     truncate_line_with_ellipsis_if_overflow(line, width)
 }
 
-fn inspector_header(agent: &AgentActivity, width: usize) -> Line<'static> {
-    let (glyph, color) = status_visual(agent.status);
-    let spans = vec![
-        "Inspector  ".fg(palette::cyan()).bold(),
-        agent.display_name().to_string().fg(palette::text()).bold(),
-        "  ".into(),
-        glyph.fg(color).bold(),
-        " ".into(),
-        agent.status.label().to_string().fg(color),
-    ];
-    truncate_line_with_ellipsis_if_overflow(Line::from(spans), width)
-}
-
-fn append_field(
-    lines: &mut Vec<Line<'static>>,
-    label: &'static str,
-    value: &str,
-    width: usize,
-    max_lines: usize,
-    color: Color,
-    line_budget: usize,
-) {
-    if lines.len() >= line_budget || max_lines == 0 {
-        return;
-    }
-    let prefix = format!("{label}  ");
-    let body_width = width
-        .saturating_sub(prefix.chars().count())
-        .max(/*other*/ 1);
-    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
-    let wrapped = textwrap::wrap(&normalized, textwrap::Options::new(body_width));
-    for (index, part) in wrapped.into_iter().take(max_lines).enumerate() {
-        if lines.len() >= line_budget {
-            break;
-        }
-        lines.push(truncate_line_with_ellipsis_if_overflow(
-            Line::from(vec![
-                if index == 0 {
-                    prefix.clone().fg(palette::cyan()).bold()
-                } else {
-                    " ".repeat(prefix.chars().count()).into()
-                },
-                part.into_owned().fg(color),
-            ]),
-            width,
-        ));
+fn model_name(slug: &str, models: &[codex_protocol::openai_models::ModelPreset]) -> String {
+    let preset = models
+        .iter()
+        .find(|m| m.model == slug || m.id == slug)
+        .or_else(|| {
+            // A short family name can refer to several generations in the catalog.
+            let mut matches = models.iter().filter(|m| {
+                m.model
+                    .rsplit('-')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(slug))
+            });
+            let only = matches.next()?;
+            matches.next().is_none().then_some(only)
+        });
+    let name = preset
+        .map(|m| m.display_name.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(slug);
+    let Some(suffix) = name
+        .strip_prefix("GPT-")
+        .or_else(|| name.strip_prefix("gpt-"))
+    else {
+        return name.into();
+    };
+    let Some((version, family)) = suffix.split_once('-') else {
+        return format!("GPT-{suffix}");
+    };
+    let mut chars = family.chars();
+    if version.starts_with(|c: char| c.is_ascii_digit())
+        && let Some(first) = chars.next()
+    {
+        format!(
+            "GPT-{version} {}{}",
+            first.to_ascii_uppercase(),
+            chars.as_str()
+        )
+    } else {
+        name.into()
     }
 }
 

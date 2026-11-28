@@ -9,19 +9,19 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
    The new shell owns the fullscreen surface.     │▎◆ AGENTS
                                                   │▎Communications  m ↗
                                                   │▎Agents 1  ● 1 active
-                                                  │▎› ● running  agent-thread
-                                                  │▎Inspector  agent-thread  ● running
-                                                  │▎Model  gpt-5-codex
-                                                  │▎Reasoning  high
-                                                  │▎Path  agent-thread
-                                                  │▎Task  Inspect dashboard activity.
-                                                  │▎Latest  Review complete.
-                                                  │▎Recent
-                                                  │▎  • mcp progress: indexed 42 files
-                                                  │▎  • command output: tests pass
-                                                  │▎  • reasoning: checking constraints
-                                                  │▎  • message completed: Review complete.
+                                                  │▎› agent-thread  running
+                                                  │▎  GPT-5 Codex, high effort
                                                   │▎Enter trajectory · j/k select · Esc
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

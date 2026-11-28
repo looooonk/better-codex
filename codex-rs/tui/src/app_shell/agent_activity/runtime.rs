@@ -11,6 +11,16 @@ impl AgentActivity {
         model: Option<&str>,
         effort: Option<&ReasoningEffort>,
     ) {
+        let recorded_model = self.model.as_deref();
+        let model = model.map(|new| {
+            recorded_model
+                .filter(|known| {
+                    known
+                        .rsplit_once('-')
+                        .is_some_and(|(_, family)| family.eq_ignore_ascii_case(new))
+                })
+                .unwrap_or(new)
+        });
         self.model = model.and_then(|model| bounded_text(model, MAX_MODEL_CHARS));
         self.reasoning_effort = effort.map(bounded_effort);
     }

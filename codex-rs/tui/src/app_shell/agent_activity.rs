@@ -77,9 +77,10 @@ impl AgentActivity {
     }
 
     pub(super) fn display_name(&self) -> &str {
-        self.nickname
-            .as_deref()
-            .or_else(|| self.path.as_ref().map(AgentPath::name))
+        self.path
+            .as_ref()
+            .map(AgentPath::name)
+            .or(self.nickname.as_deref())
             .unwrap_or(&self.thread_id)
     }
 
@@ -181,6 +182,7 @@ pub(super) struct AgentActivityCounts {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct AgentActivityState {
     agents: HashMap<String, AgentActivity>,
+    color_slots: HashMap<String, usize>,
     insertion_order: VecDeque<String>,
     selected_thread_id: Option<String>,
     hydration_protected_thread_id: Option<String>,
@@ -490,8 +492,24 @@ impl AgentActivityState {
         true
     }
 
+    pub(super) fn assign_color(&mut self, thread_id: &str) {
+        if !self.color_slots.contains_key(thread_id) {
+            self.color_slots
+                .insert(thread_id.to_owned(), self.color_slots.len());
+        }
+    }
+
+    pub(super) fn color(&self, thread_id: &str) -> ratatui::style::Color {
+        self.color_slots
+            .get(thread_id)
+            .map_or(ratatui::style::Color::White, |slot| {
+                crate::app_theme::agent_color(*slot)
+            })
+    }
+
     fn ensure_agent(&mut self, thread_id: &str) -> &mut AgentActivity {
         debug_assert!(!self.is_root_thread(thread_id));
+        self.assign_color(thread_id);
         let thread_id = thread_id.to_string();
         if !self.agents.contains_key(&thread_id) {
             self.insertion_order.push_back(thread_id.clone());

@@ -431,7 +431,7 @@ fn render_hover(
             .saturating_sub(1)
             .checked_sub(overview_height + 1)
             .and_then(|line| {
-                agent_activity_thread_at_line(&shell.agent_activity, line, /*line_budget*/ 24)
+                agent_activity_thread_at_line(&shell.agent_activity, line, /*line_budget*/ 23)
             });
         if agent_line.is_none() {
             return;

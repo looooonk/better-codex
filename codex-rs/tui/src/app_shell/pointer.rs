@@ -409,12 +409,13 @@ impl ShellState {
                     agent_activity_render::agent_activity_thread_at_line(
                         &self.agent_activity,
                         line,
-                        /*line_budget*/ 24,
+                        /*line_budget*/ 23,
                     )
                     .map(ToString::to_string)
                 });
             if let Some(thread_id) = thread_id {
                 self.agent_activity.select_thread(&thread_id);
+                self.open_selected_agent_log(config, app_server);
             }
         }
         Ok(())

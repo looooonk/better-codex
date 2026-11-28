@@ -9,16 +9,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │▎Communications  m ↗
                             │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
    Started a fullscreen app │▎  × 1 failed
-                            │▎  ● running  Hypatia
-      ▸ Edited files        │▎    └ ✓ completed  Picasso
-                            │▎  ! interrupted  Turing
-   The new shell owns the fu│▎›   └ × errored  Socrates
-                            │▎Inspector  Socrates  × errored
-                            │▎Model  gpt-5-codex
-                            │▎Reasoning  high
-                            │▎Path  /root/testing/failure
-                            │▎Task  Review the new TUI flow and visual
-                            │▎      hierarchy.
+                            │▎  research  running
+      ▸ Edited files        │▎  GPT-5 Codex, high effort
+                            │▎    visual  completed
+   The new shell owns the fu│▎    GPT-5 Codex, high effort
+                            │▎  testing  interrupted
+                            │▎  GPT-5 Codex, high effort
+                            │▎›   failure  errored
+                            │▎    GPT-5 Codex, high effort
+                            │▎Enter trajectory · j/k select · Esc
+                            │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │> Summarize the new shell architecture                                      │

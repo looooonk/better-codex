@@ -80,14 +80,14 @@ fn nested_thread_histories_restore_hierarchy_timeline_and_lifecycle() {
             (
                 alpha_id.to_string(),
                 Some("/root/alpha".to_string()),
-                "Hypatia".to_string(),
+                "alpha".to_string(),
                 AgentLifecycleStatus::Shutdown,
                 Some("delegating nested work".to_string()),
             ),
             (
                 child_id.to_string(),
                 Some("/root/alpha/child".to_string()),
-                "Turing".to_string(),
+                "child".to_string(),
                 AgentLifecycleStatus::Shutdown,
                 Some("nested work complete".to_string()),
             ),

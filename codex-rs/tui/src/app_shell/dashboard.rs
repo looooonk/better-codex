@@ -301,6 +301,7 @@ fn dashboard_panel(
                 &shell.agent_activity,
                 content_width,
                 /*line_budget*/ 23,
+                &shell.available_models,
             ));
             lines.push(Line::from(
                 if shell.agents_focused {
